@@ -261,6 +261,34 @@ func TestToolPrecedence_UniqueSameNameToolClears(t *testing.T) {
 	}
 }
 
+func TestToolPrecedence_ReaperTerminationReleasesFlight(t *testing.T) {
+	// A crash/SIGKILL is reaped via ApplyRuntimeObservation, which fires no
+	// session-end hook — so it is the last chance to release the session's
+	// tool-flight state. A leaked entry would otherwise persist for the
+	// daemon's life (later observations return early on cur.IsTerminated).
+	m, st, _ := newManager()
+	// A live (non-sticky) session with stale activity so the reaper considers
+	// it clearly dead, plus an in-flight tool tracked in the flights map.
+	st.sessions["mer-1"] = domain.SessionRecord{
+		ID: "mer-1", ProjectID: "mer",
+		Activity:      domain.Activity{State: domain.ActivityActive, LastActivityAt: time.Now().Add(-2 * time.Minute)},
+		FirstSignalAt: time.Now().Add(-2 * time.Minute),
+	}
+	mustApply(t, m, "mer-1", sig(domain.ActivityActive, "pre-tool-use", "Bash", "toolu_1"))
+	if _, ok := m.flights["mer-1"]; !ok {
+		t.Fatal("setup: expected a flights entry after pre-tool-use")
+	}
+	if err := m.ApplyRuntimeObservation(ctx, "mer-1", ports.RuntimeFacts{Probe: ports.ProbeDead}); err != nil {
+		t.Fatal(err)
+	}
+	if !st.sessions["mer-1"].IsTerminated {
+		t.Fatal("reaper did not terminate the session")
+	}
+	if _, ok := m.flights["mer-1"]; ok {
+		t.Fatal("flights entry leaked after reaper termination")
+	}
+}
+
 func TestToolPrecedence_SuppressedSignalEmitsNoNotification(t *testing.T) {
 	// A suppressed clear must not fan out: the session never left blocked, so
 	// no needs-input exit/entry telemetry or notification may fire.

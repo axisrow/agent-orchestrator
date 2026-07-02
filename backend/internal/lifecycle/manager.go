@@ -115,6 +115,12 @@ func (m *Manager) ApplyRuntimeObservation(ctx context.Context, id domain.Session
 		next := cur
 		next.IsTerminated = true
 		next.Activity = domain.Activity{State: domain.ActivityExited, LastActivityAt: timeOr(f.ObservedAt, now)}
+		// Reaper-driven death (crash/SIGKILL) never fires a session-end hook,
+		// so this is the last chance to release the session's tool-flight
+		// state; a leaked entry would otherwise persist for the daemon's life
+		// (later observations return early on cur.IsTerminated). Runs under
+		// m.mu — mutate holds it across this callback.
+		delete(m.flights, id)
 		return next, true
 	})
 }
