@@ -82,8 +82,8 @@ var claudeManagedHooks = []claudeHookSpec{
 
 // GetAgentHooks installs AO's Claude Code hooks into the worktree-local
 // .claude/settings.local.json file (the per-session local settings, not the
-// shared .claude/settings.json). The hooks (SessionStart, UserPromptSubmit,
-// Stop, Notification, SessionEnd) report normalized session metadata and
+// shared .claude/settings.json). The hooks (see claudeManagedHooks) report
+// normalized session metadata and
 // activity-state signals back into AO's store. Existing hooks and unrelated
 // settings are preserved, and duplicate AO commands are not appended, so
 // the install is idempotent.

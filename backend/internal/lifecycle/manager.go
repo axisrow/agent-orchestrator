@@ -215,10 +215,17 @@ type toolFlight struct {
 	// the blocking signal carried no tool identity — then nothing tool-shaped
 	// may clear the block).
 	blockedTool string
-	// blockedCandidates snapshots the in-flight tool-use ids whose name
-	// matched blockedTool when the dialog appeared: the approved tool is one
-	// of them, and only their posts clear the blocked state.
-	blockedCandidates map[string]bool
+	// blockedCandidate is the tool-use id of the UNIQUE in-flight tool bearing
+	// blockedTool when the dialog appeared — the tool whose post proves the
+	// dialog was answered. Empty when no in-flight tool matched, or when the
+	// match was ambiguous (see ambiguousBlock); either way nothing tool-shaped
+	// may clear the block and it lifts only at a turn boundary.
+	blockedCandidate string
+	// ambiguousBlock is set when two or more in-flight tools shared
+	// blockedTool at dialog time: the permission payload carries no tool_use_id
+	// to disambiguate, so a sibling's post must NOT be mistaken for the
+	// approval. Fail closed — clear only at a turn boundary.
+	ambiguousBlock bool
 }
 
 // maxInflightTools caps a session's in-flight map so lost posts cannot grow
@@ -283,14 +290,31 @@ func (m *Manager) applyToolPrecedenceLocked(id domain.SessionID, cur domain.Acti
 		// Entering (or re-asserting) blocked: snapshot the dialog's identity.
 		// permission-request carries the blocking tool_name; the Notification
 		// duplicate does not and must not wipe an existing snapshot.
+		//
+		// The permission hook payload does not carry the blocking tool's
+		// tool_use_id (only its name), so we can only identify the blocking
+		// tool unambiguously when EXACTLY ONE in-flight tool bears that name.
+		// With two same-name tools in flight (a batch of Bash calls, one of
+		// them the one at the dialog), a sibling's post could otherwise clear
+		// a still-open dialog — the exact permission-bypass this change exists
+		// to prevent. So we correlate only in the unique case; otherwise no
+		// candidate is recorded and the block clears only at a turn boundary
+		// (fail-closed).
 		f := ensure()
 		if s.ToolName != "" {
 			f.blockedTool = s.ToolName
-			f.blockedCandidates = map[string]bool{}
+			f.blockedCandidate = ""
 			for useID, name := range f.inflight {
-				if name == f.blockedTool {
-					f.blockedCandidates[useID] = true
+				if name != f.blockedTool {
+					continue
 				}
+				if f.blockedCandidate != "" {
+					// A second same-name tool: ambiguous, fail closed.
+					f.blockedCandidate = ""
+					f.ambiguousBlock = true
+					break
+				}
+				f.blockedCandidate = useID
 			}
 		}
 		return s
@@ -303,15 +327,17 @@ func (m *Manager) applyToolPrecedenceLocked(id domain.SessionID, cur domain.Acti
 			delete(m.flights, id)
 			return s
 		case (s.Event == "post-tool-use" || s.Event == "post-tool-use-failure") &&
-			fl != nil && s.ToolUseID != "" && fl.blockedCandidates[s.ToolUseID]:
-			// The approved tool finished: the dialog was answered.
+			fl != nil && !fl.ambiguousBlock && fl.blockedCandidate != "" && s.ToolUseID == fl.blockedCandidate:
+			// The single unambiguous blocking tool finished: the dialog was
+			// answered.
 			fl.blockedTool = ""
-			fl.blockedCandidates = nil
+			fl.blockedCandidate = ""
 			return s
 		default:
-			// Subagent/sibling tool traffic, notification sub-types
-			// (idle_prompt, agent_completed), and anything else that is not
-			// evidence the dialog closed.
+			// Subagent/sibling tool traffic (including a same-name sibling when
+			// the block was ambiguous), notification sub-types (idle_prompt,
+			// agent_completed), and anything else that is not proof the dialog
+			// closed.
 			return suppressed
 		}
 

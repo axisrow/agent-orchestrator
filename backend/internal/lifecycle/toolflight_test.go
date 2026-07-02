@@ -193,20 +193,44 @@ func TestToolPrecedence_ToolEventsDoNotDemoteWaitingInput(t *testing.T) {
 	}
 }
 
-func TestToolPrecedence_SameNameSiblingPostClears_KnownResidual(t *testing.T) {
-	// Documented limitation, pinned so a change here is deliberate: two
-	// same-name tools in flight when the dialog appears both become
-	// candidates, so the sibling's post clears the block early. The window is
-	// narrow and the degradation equals the pre-guard behavior.
+func TestToolPrecedence_AmbiguousSameNameBlockFailsClosed(t *testing.T) {
+	// Two same-name tools in flight when the dialog appears: the permission
+	// payload has no tool_use_id to say WHICH one is at the dialog, so neither
+	// sibling's post may clear the block — that would let a paste answer a
+	// still-open dialog. Fail closed: the block lifts only at a turn boundary.
 	m, st, _ := newManager()
 	seedSignaled(st, "mer-1", domain.ActivityActive)
 	mustApply(t, m, "mer-1", sig(domain.ActivityActive, "pre-tool-use", "Bash", "toolu_1"))
 	mustApply(t, m, "mer-1", sig(domain.ActivityActive, "pre-tool-use", "Bash", "toolu_2"))
 	mustApply(t, m, "mer-1", sig(domain.ActivityBlocked, "permission-request", "Bash", ""))
 
+	// Either sibling's post must NOT clear the live dialog.
 	mustApply(t, m, "mer-1", sig(domain.ActivityActive, "post-tool-use", "Bash", "toolu_2"))
+	if got := stateOf(st, "mer-1"); got != domain.ActivityBlocked {
+		t.Fatalf("state after ambiguous sibling post = %q, want blocked (fail closed)", got)
+	}
+	mustApply(t, m, "mer-1", sig(domain.ActivityActive, "post-tool-use", "Bash", "toolu_1"))
+	if got := stateOf(st, "mer-1"); got != domain.ActivityBlocked {
+		t.Fatalf("state after second ambiguous post = %q, want blocked (fail closed)", got)
+	}
+	// A turn boundary still lifts it.
+	mustApply(t, m, "mer-1", sig(domain.ActivityIdle, "stop", "", ""))
+	if got := stateOf(st, "mer-1"); got != domain.ActivityIdle {
+		t.Fatalf("state after stop = %q, want idle", got)
+	}
+}
+
+func TestToolPrecedence_UniqueSameNameToolClears(t *testing.T) {
+	// The unambiguous case still works: exactly one in-flight Bash when the
+	// dialog appears, so its post is a valid approval signal.
+	m, st, _ := newManager()
+	seedSignaled(st, "mer-1", domain.ActivityActive)
+	mustApply(t, m, "mer-1", sig(domain.ActivityActive, "pre-tool-use", "Bash", "toolu_1"))
+	mustApply(t, m, "mer-1", sig(domain.ActivityBlocked, "permission-request", "Bash", ""))
+
+	mustApply(t, m, "mer-1", sig(domain.ActivityActive, "post-tool-use", "Bash", "toolu_1"))
 	if got := stateOf(st, "mer-1"); got != domain.ActivityActive {
-		t.Fatalf("state = %q; the same-name sibling residual changed — update the PR notes if deliberate", got)
+		t.Fatalf("state after unique tool's post = %q, want active", got)
 	}
 }
 
