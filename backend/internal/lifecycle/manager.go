@@ -63,6 +63,9 @@ type Manager struct {
 	clock     func() time.Time
 	react     reactionState
 	telemetry ports.EventSink
+	// flights tracks, per session, the in-flight tool executions and the
+	// pending permission dialog's identity (see toolFlight). Guarded by mu.
+	flights map[domain.SessionID]*toolFlight
 }
 
 // New builds a Lifecycle Manager over the session store it writes and the messenger it uses for agent nudges.
@@ -72,7 +75,7 @@ func New(store sessionStore, messenger ports.AgentMessenger, opts ...Option) *Ma
 	// `ao session get` showing created in UTC but updated in local time. A
 	// WithClock option may still override this in tests.
 	clock := func() time.Time { return time.Now().UTC() }
-	m := &Manager{store: store, window: defaultRecentActivityWindow, clock: clock, react: newReactionState()}
+	m := &Manager{store: store, window: defaultRecentActivityWindow, clock: clock, react: newReactionState(), flights: map[domain.SessionID]*toolFlight{}}
 	if messenger != nil {
 		m.guard = sessionguard.New(store, messenger, nil)
 	}
@@ -134,6 +137,17 @@ func (m *Manager) ApplyActivitySignal(ctx context.Context, id domain.SessionID, 
 	}
 	now := m.clock()
 	if rec.IsTerminated {
+		delete(m.flights, id)
+		m.mu.Unlock()
+		return nil
+	}
+	// Event-tagged signals fold through the session's tool-flight state first:
+	// they may be suppressed (state write skipped) by the blocked-precedence
+	// rule, while their tracking side effects still land. Untagged signals
+	// (old CLIs, adapters without tool identity) pass through untouched —
+	// last-writer-wins, exactly as before.
+	s = m.applyToolPrecedenceLocked(id, rec.Activity.State, s)
+	if !s.Valid {
 		m.mu.Unlock()
 		return nil
 	}
@@ -181,6 +195,137 @@ func (m *Manager) ApplyActivitySignal(ctx context.Context, id domain.SessionID, 
 	}
 	m.emitNotification(ctx, intent)
 	return nil
+}
+
+// toolFlight tracks one session's in-flight tool executions and the pending
+// permission dialog's identity, so a sticky `blocked` is cleared by the post
+// of the exact approved tool — and by nothing else tool-shaped. Answering a
+// permission dialog fires no hook of its own, so the approved tool's
+// post-tool-use is the earliest observable "the decision was resolved"
+// signal; but tool hooks also fire for parallel subagents on the same
+// session, whose traffic must never clear a dialog that is still on screen.
+// In-memory only: a daemon restart loses it and the session degrades to
+// clearing at the next turn boundary — fail-safe staleness, never a spurious
+// clear.
+type toolFlight struct {
+	// inflight maps toolUseID -> toolName for pre-tool-use signals whose post
+	// has not arrived yet.
+	inflight map[string]string
+	// blockedTool is the tool_name of the pending permission dialog ("" when
+	// the blocking signal carried no tool identity — then nothing tool-shaped
+	// may clear the block).
+	blockedTool string
+	// blockedCandidates snapshots the in-flight tool-use ids whose name
+	// matched blockedTool when the dialog appeared: the approved tool is one
+	// of them, and only their posts clear the blocked state.
+	blockedCandidates map[string]bool
+}
+
+// maxInflightTools caps a session's in-flight map so lost posts cannot grow
+// it without bound; hitting the cap resets the map, degrading that session to
+// turn-boundary clearing (fail-safe).
+const maxInflightTools = 128
+
+// isToolUseEvent reports whether the AO hook event is one of the tool-use
+// trio whose signals must not demote a sticky state on their own.
+func isToolUseEvent(event string) bool {
+	return event == "pre-tool-use" || event == "post-tool-use" || event == "post-tool-use-failure"
+}
+
+// isTurnBoundaryEvent reports the events that reliably mean the pending
+// dialog is gone: a prompt cannot be submitted while a dialog holds the
+// composer, and a turn cannot end (or the session exit) with one on screen.
+func isTurnBoundaryEvent(event string) bool {
+	return event == "user-prompt-submit" || event == "stop" || event == "session-end"
+}
+
+// applyToolPrecedenceLocked folds an event-tagged activity signal through the
+// session's tool-flight state and decides whether its state write may
+// proceed. Returned signal with Valid=false means "suppressed": the tracking
+// side effects have landed but the state must not change. Signals without an
+// Event pass through untouched — the compatibility contract for old CLIs and
+// for adapters that don't tag their signals (their last-writer-wins semantics
+// are pinned by tests). Caller must hold m.mu.
+func (m *Manager) applyToolPrecedenceLocked(id domain.SessionID, cur domain.ActivityState, s ports.ActivitySignal) ports.ActivitySignal {
+	if s.Event == "" {
+		return s
+	}
+	suppressed := s
+	suppressed.Valid = false
+
+	fl := m.flights[id]
+	ensure := func() *toolFlight {
+		if fl == nil {
+			fl = &toolFlight{inflight: map[string]string{}}
+			m.flights[id] = fl
+		}
+		return fl
+	}
+
+	// Tracking side effects happen regardless of what the state decision is.
+	switch s.Event {
+	case "pre-tool-use":
+		if s.ToolUseID != "" {
+			f := ensure()
+			if len(f.inflight) >= maxInflightTools {
+				f.inflight = map[string]string{}
+			}
+			f.inflight[s.ToolUseID] = s.ToolName
+		}
+	case "post-tool-use", "post-tool-use-failure":
+		if fl != nil {
+			delete(fl.inflight, s.ToolUseID)
+		}
+	}
+
+	switch {
+	case s.State == domain.ActivityBlocked:
+		// Entering (or re-asserting) blocked: snapshot the dialog's identity.
+		// permission-request carries the blocking tool_name; the Notification
+		// duplicate does not and must not wipe an existing snapshot.
+		f := ensure()
+		if s.ToolName != "" {
+			f.blockedTool = s.ToolName
+			f.blockedCandidates = map[string]bool{}
+			for useID, name := range f.inflight {
+				if name == f.blockedTool {
+					f.blockedCandidates[useID] = true
+				}
+			}
+		}
+		return s
+
+	case cur == domain.ActivityBlocked:
+		// Paused on a decision: only a turn boundary or the correlated post
+		// may change the state.
+		switch {
+		case isTurnBoundaryEvent(s.Event):
+			delete(m.flights, id)
+			return s
+		case (s.Event == "post-tool-use" || s.Event == "post-tool-use-failure") &&
+			fl != nil && s.ToolUseID != "" && fl.blockedCandidates[s.ToolUseID]:
+			// The approved tool finished: the dialog was answered.
+			fl.blockedTool = ""
+			fl.blockedCandidates = nil
+			return s
+		default:
+			// Subagent/sibling tool traffic, notification sub-types
+			// (idle_prompt, agent_completed), and anything else that is not
+			// evidence the dialog closed.
+			return suppressed
+		}
+
+	case cur.IsSticky() && isToolUseEvent(s.Event):
+		// waiting_input: background tool traffic must not clear the "waiting
+		// on the user" marker; only an explicit user/turn signal does.
+		return suppressed
+
+	default:
+		if isTurnBoundaryEvent(s.Event) {
+			delete(m.flights, id)
+		}
+		return s
+	}
 }
 
 func (m *Manager) waitingInputEvents(next domain.SessionRecord, prevState domain.ActivityState, prevAt, now time.Time) []ports.TelemetryEvent {
@@ -273,6 +418,7 @@ func (m *Manager) MarkTerminated(ctx context.Context, id domain.SessionID) error
 		}
 		cur.IsTerminated = true
 		cur.Activity = domain.Activity{State: domain.ActivityExited, LastActivityAt: now}
+		delete(m.flights, id) // runs under m.mu (mutate holds it)
 		return cur, true
 	})
 }
