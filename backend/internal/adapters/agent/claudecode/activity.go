@@ -20,6 +20,15 @@ func DeriveActivityState(event string, payload []byte) (domain.ActivityState, bo
 	switch event {
 	case "user-prompt-submit":
 		return domain.ActivityActive, true
+	case "pre-tool-use", "post-tool-use":
+		// The agent is executing tools — active. Beyond re-asserting liveness,
+		// these are what clear a stale sticky `blocked`: answering a permission
+		// dialog fires no hook of its own, and PreToolUse runs BEFORE the
+		// dialog (its verdict feeds the permission decision), so the earliest
+		// post-answer signals are the approved tool's PostToolUse and the next
+		// tool's PreToolUse. Without them, `blocked` would outlive the dialog
+		// until turn-end Stop and Send would keep refusing with 409.
+		return domain.ActivityActive, true
 	case "stop":
 		// End of a turn: the agent is idle but alive (not exited). A following
 		// Notification(idle_prompt) upgrades this to the sticky waiting_input.

@@ -52,16 +52,25 @@ type claudeHookSpec struct {
 var claudeStartupMatcher = "startup"
 
 // claudeManagedHooks is the source of truth for the hooks AO installs:
-// SessionStart (under the "startup" matcher), UserPromptSubmit, Stop,
-// Notification, and SessionEnd. They report normalized session metadata and
-// activity-state signals back into AO's store (see DeriveActivityState).
-// Notification and SessionEnd carry no matcher: each installs once and fires
-// for every sub-type, and the handler filters on the payload's
-// notification_type / reason field — installing one command under multiple
-// matchers would trip the per-command dedup in claudeHookCommandExists.
+// SessionStart (under the "startup" matcher), UserPromptSubmit, PreToolUse,
+// PostToolUse, Stop, Notification, and SessionEnd. They report normalized
+// session metadata and activity-state signals back into AO's store (see
+// DeriveActivityState). Notification and SessionEnd carry no matcher: each
+// installs once and fires for every sub-type, and the handler filters on the
+// payload's notification_type / reason field — installing one command under
+// multiple matchers would trip the per-command dedup in
+// claudeHookCommandExists. PreToolUse/PostToolUse also carry no matcher (fire
+// for every tool): they exist to clear a stale sticky `blocked` after the user
+// answers a permission dialog, which itself fires no hook — the approved
+// tool's PostToolUse (and the next tool's PreToolUse) are the earliest
+// observable "the decision was resolved" signals. Same-state repeats are
+// dropped daemon-side without a DB write, so the per-tool-call frequency is
+// cheap.
 var claudeManagedHooks = []claudeHookSpec{
 	{Event: "SessionStart", Matcher: &claudeStartupMatcher, Command: claudeHookCommandPrefix + "session-start"},
 	{Event: "UserPromptSubmit", Command: claudeHookCommandPrefix + "user-prompt-submit"},
+	{Event: "PreToolUse", Command: claudeHookCommandPrefix + "pre-tool-use"},
+	{Event: "PostToolUse", Command: claudeHookCommandPrefix + "post-tool-use"},
 	{Event: "Stop", Command: claudeHookCommandPrefix + "stop"},
 	{Event: "Notification", Command: claudeHookCommandPrefix + "notification"},
 	{Event: "SessionEnd", Command: claudeHookCommandPrefix + "session-end"},
@@ -69,11 +78,10 @@ var claudeManagedHooks = []claudeHookSpec{
 
 // GetAgentHooks installs AO's Claude Code hooks into the worktree-local
 // .claude/settings.local.json file (the per-session local settings, not the
-// shared .claude/settings.json). The hooks (SessionStart, UserPromptSubmit,
-// Stop, Notification, SessionEnd) report normalized session metadata and
-// activity-state signals back into AO's store. Existing hooks and unrelated
-// settings are preserved, and duplicate AO commands are not appended, so
-// the install is idempotent.
+// shared .claude/settings.json). The hooks (see claudeManagedHooks) report
+// normalized session metadata and activity-state signals back into AO's
+// store. Existing hooks and unrelated settings are preserved, and duplicate
+// AO commands are not appended, so the install is idempotent.
 func (p *Plugin) GetAgentHooks(ctx context.Context, cfg ports.WorkspaceHookConfig) error {
 	if err := ctx.Err(); err != nil {
 		return err

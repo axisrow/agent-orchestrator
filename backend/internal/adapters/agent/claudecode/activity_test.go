@@ -15,6 +15,10 @@ func TestDeriveActivityState(t *testing.T) {
 		wantOK  bool
 	}{
 		{"user prompt -> active", "user-prompt-submit", `{}`, domain.ActivityActive, true},
+		// pre/post-tool-use are the signals that clear a stale sticky blocked
+		// after a permission dialog is answered (the answer fires no hook).
+		{"pre-tool-use -> active", "pre-tool-use", `{}`, domain.ActivityActive, true},
+		{"post-tool-use -> active", "post-tool-use", `{}`, domain.ActivityActive, true},
 		{"stop -> idle", "stop", `{}`, domain.ActivityIdle, true},
 		{"notification idle_prompt -> waiting_input", "notification", `{"notification_type":"idle_prompt"}`, domain.ActivityWaitingInput, true},
 		{"notification permission_prompt -> blocked", "notification", `{"notification_type":"permission_prompt"}`, domain.ActivityBlocked, true},
