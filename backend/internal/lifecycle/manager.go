@@ -302,8 +302,11 @@ func (m *Manager) applyToolPrecedenceLocked(id domain.SessionID, cur domain.Acti
 		// (fail-closed).
 		f := ensure()
 		if s.ToolName != "" {
+			// Recompute from scratch: this is a fresh dialog, so any candidate
+			// or ambiguity carried from a prior one must not leak in.
 			f.blockedTool = s.ToolName
 			f.blockedCandidate = ""
+			f.ambiguousBlock = false
 			for useID, name := range f.inflight {
 				if name != f.blockedTool {
 					continue
@@ -329,9 +332,11 @@ func (m *Manager) applyToolPrecedenceLocked(id domain.SessionID, cur domain.Acti
 		case (s.Event == "post-tool-use" || s.Event == "post-tool-use-failure") &&
 			fl != nil && !fl.ambiguousBlock && fl.blockedCandidate != "" && s.ToolUseID == fl.blockedCandidate:
 			// The single unambiguous blocking tool finished: the dialog was
-			// answered.
+			// answered. Clear the block identity so a later dialog in the same
+			// turn starts from a clean slate.
 			fl.blockedTool = ""
 			fl.blockedCandidate = ""
+			fl.ambiguousBlock = false
 			return s
 		default:
 			// Subagent/sibling tool traffic (including a same-name sibling when

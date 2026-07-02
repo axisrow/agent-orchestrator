@@ -220,6 +220,33 @@ func TestToolPrecedence_AmbiguousSameNameBlockFailsClosed(t *testing.T) {
 	}
 }
 
+func TestToolPrecedence_SequentialDialogsResetAmbiguity(t *testing.T) {
+	// Two dialogs in one turn without a turn boundary between them (the block
+	// re-asserts via a fresh permission-request). A prior ambiguous block must
+	// not leak into a later unique one: the re-snapshot recomputes from
+	// scratch, so the unique dialog's tool can still clear it.
+	m, st, _ := newManager()
+	seedSignaled(st, "mer-1", domain.ActivityActive)
+	// Dialog 1: two same-name Bash tools -> ambiguous, cannot clear on a post.
+	mustApply(t, m, "mer-1", sig(domain.ActivityActive, "pre-tool-use", "Bash", "toolu_1"))
+	mustApply(t, m, "mer-1", sig(domain.ActivityActive, "pre-tool-use", "Bash", "toolu_2"))
+	mustApply(t, m, "mer-1", sig(domain.ActivityBlocked, "permission-request", "Bash", ""))
+	mustApply(t, m, "mer-1", sig(domain.ActivityActive, "post-tool-use", "Bash", "toolu_1"))
+	mustApply(t, m, "mer-1", sig(domain.ActivityActive, "post-tool-use", "Bash", "toolu_2"))
+	if got := stateOf(st, "mer-1"); got != domain.ActivityBlocked {
+		t.Fatalf("dialog 1 ambiguous: state = %q, want blocked", got)
+	}
+	// Both dialog-1 tools have posted, so their ids are drained from inflight.
+	// Dialog 2: a single new Bash -> unique, must be clearable despite the
+	// stale ambiguousBlock from dialog 1.
+	mustApply(t, m, "mer-1", sig(domain.ActivityActive, "pre-tool-use", "Bash", "toolu_3"))
+	mustApply(t, m, "mer-1", sig(domain.ActivityBlocked, "permission-request", "Bash", ""))
+	mustApply(t, m, "mer-1", sig(domain.ActivityActive, "post-tool-use", "Bash", "toolu_3"))
+	if got := stateOf(st, "mer-1"); got != domain.ActivityActive {
+		t.Fatalf("dialog 2 unique: state = %q, want active (ambiguity must reset)", got)
+	}
+}
+
 func TestToolPrecedence_UniqueSameNameToolClears(t *testing.T) {
 	// The unambiguous case still works: exactly one in-flight Bash when the
 	// dialog appears, so its post is a valid approval signal.
