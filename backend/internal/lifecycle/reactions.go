@@ -12,6 +12,7 @@ import (
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
+	"github.com/aoagents/agent-orchestrator/backend/internal/sessionguard"
 )
 
 const reviewMaxNudge = 3
@@ -58,7 +59,7 @@ func (m *Manager) ApplyReviewBatch(ctx context.Context, workerID domain.SessionI
 	if rec.IsTerminated || rec.Activity.State.NeedsInput() {
 		return ReviewDeliveryNoop, nil
 	}
-	if m.messenger == nil {
+	if m.guard == nil {
 		return ReviewDeliveryNoop, nil
 	}
 	sort.Slice(results, func(i, j int) bool {
@@ -213,7 +214,7 @@ func (m *Manager) ApplyReviewResult(ctx context.Context, workerID domain.Session
 	if rec.IsTerminated || rec.Activity.State.NeedsInput() {
 		return ReviewDeliveryNoop, nil
 	}
-	if m.messenger == nil {
+	if m.guard == nil {
 		return ReviewDeliveryNoop, nil
 	}
 	msg := fmt.Sprintf("[AO reviewer] AO's internal code reviewer submitted a review.\n\nPR: %s\nVerdict: %s", domain.SanitizeControlChars(r.PRURL), domain.SanitizeControlChars(string(r.Verdict)))
@@ -569,7 +570,7 @@ const (
 )
 
 func (m *Manager) sendOnce(ctx context.Context, id domain.SessionID, prURL, key, sig, msg string, maxAttempts int) (sendOnceOutcome, error) {
-	if m.messenger == nil {
+	if m.guard == nil {
 		return sendOnceAccounted, nil
 	}
 	m.react.mu.Lock()
@@ -589,24 +590,24 @@ func (m *Manager) sendOnce(ctx context.Context, id domain.SessionID, prURL, key,
 	if maxAttempts > 0 && attempts >= maxAttempts {
 		return sendOnceAccounted, nil
 	}
-	// Just-in-time re-read before pasting: the caller's NeedsInput() guard ran
-	// before this function's dedup/persist I/O, so a permission hook could have
-	// stored blocked (or the session could have terminated) in the meantime.
-	// The runtime appends Enter after the paste, so nudging a blocked session
-	// would answer its pending decision. Fail closed — a store error skips the
-	// nudge rather than risk sending on an unknown state (a missed nudge is
-	// re-attempted on the next observation; a wrong Enter is not recoverable).
-	// The nudge is SUPPRESSED (not accounted), so a review caller won't stamp it
-	// delivered and it re-fires once the session is workable again.
-	rec, ok, err := m.store.GetSession(ctx, id)
+	// The guard re-reads the session immediately before pasting: the caller's
+	// NeedsInput() entry check ran before this function's dedup/persist I/O, so
+	// a permission hook could have stored blocked (or the session could have
+	// terminated) in the meantime. A suppressed write returns SUPPRESSED (not
+	// accounted), so a review caller won't stamp it delivered and it re-fires
+	// once the session is workable again. A store failure inside the guard also
+	// suppresses (fail closed, nothing was written); a messenger failure means
+	// the write was attempted and stays accounted, matching the pre-guard
+	// behavior.
+	outcome, err := m.guard.Nudge(ctx, id, msg)
 	if err != nil {
-		return sendOnceSuppressed, err
-	}
-	if !ok || rec.IsTerminated || rec.Activity.State.NeedsInput() {
-		return sendOnceSuppressed, nil
-	}
-	if err := m.messenger.Send(ctx, id, msg); err != nil {
+		if outcome != sessionguard.Sent {
+			return sendOnceSuppressed, err
+		}
 		return sendOnceAccounted, err
+	}
+	if outcome != sessionguard.Sent {
+		return sendOnceSuppressed, nil
 	}
 	// Order: Send → in-memory mutation → durable persist. Sending first means a
 	// transient persist failure does NOT swallow a real send (the agent saw the

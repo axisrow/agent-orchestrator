@@ -2016,21 +2016,23 @@ func TestSend_ConfirmBudgetCapsRetries(t *testing.T) {
 	}
 }
 
-func TestSend_NoNudgeWhenBlocked(t *testing.T) {
-	// A signaling harness whose session is paused on a permission decision
-	// (blocked) must never receive an Enter nudge: it could answer the dialog.
-	// Exactly one Send (the message itself), and the confirm loop exits fast.
+func TestSend_BlockedSessionRejectsDelivery(t *testing.T) {
+	// A session paused on a permission decision (blocked) must not receive the
+	// paste at all: the runtime appends Enter, which could answer the dialog.
+	// Send surfaces ErrAwaitingDecision (the API's 409) and the messenger is
+	// never called, so nothing — message or nudge — reaches the pane.
 	st := newFakeStore()
 	st.sessions["s1"] = domain.SessionRecord{ID: "s1", Harness: "claude-code",
 		Activity: domain.Activity{State: domain.ActivityBlocked}}
 	msg := &fakeMessenger{}
 	m := newSendTestManager(t, signalingAgent{}, msg, st)
 
-	if err := m.Send(context.Background(), "s1", "status update please"); err != nil {
-		t.Fatalf("Send: %v", err)
+	err := m.Send(context.Background(), "s1", "status update please")
+	if !errors.Is(err, ErrAwaitingDecision) {
+		t.Fatalf("Send error = %v, want ErrAwaitingDecision", err)
 	}
-	if len(msg.msgs) != 1 {
-		t.Fatalf("Send calls = %d, want 1 (no Enter nudge into a pending decision)", len(msg.msgs))
+	if len(msg.msgs) != 0 {
+		t.Fatalf("Send calls = %d, want 0 (no paste into a pending decision)", len(msg.msgs))
 	}
 }
 

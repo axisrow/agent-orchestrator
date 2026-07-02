@@ -17,6 +17,7 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 	aoprocess "github.com/aoagents/agent-orchestrator/backend/internal/process"
+	"github.com/aoagents/agent-orchestrator/backend/internal/sessionguard"
 )
 
 // Sentinel errors returned by the Session Manager; callers match them with
@@ -42,6 +43,12 @@ var (
 	// with the system prompt only). Workers without a task and without a native
 	// session id have nothing meaningful to restore.
 	ErrNotResumable = errors.New("session: nothing to resume from")
+	// ErrAwaitingDecision means the session is paused on a pending
+	// permission/approval dialog. Send refuses to paste into it: the runtime
+	// appends Enter after every paste, and an Enter into a decision dialog
+	// would answer it on the user's behalf. The API maps it to a 409; the
+	// caller retries once the user has answered in the terminal.
+	ErrAwaitingDecision = errors.New("session: awaiting a user decision")
 )
 
 // Env vars a spawned process reads to learn who it is.
@@ -107,8 +114,11 @@ type Manager struct {
 	agents    ports.AgentResolver
 	workspace ports.Workspace
 	store     Store
-	messenger ports.AgentMessenger
-	lcm       lifecycleRecorder
+	// guard is the shared pane-write primitive (see sessionguard) every write
+	// into a live session goes through: the initial user message in Send and
+	// the Enter-only nudges in confirmActive.
+	guard *sessionguard.Guard
+	lcm   lifecycleRecorder
 	dataDir   string
 	clock     func() time.Time
 	// lookPath is exec.LookPath in production; tests substitute a stub so
@@ -184,7 +194,6 @@ func New(d Deps) *Manager {
 		agents:     d.Agents,
 		workspace:  d.Workspace,
 		store:      d.Store,
-		messenger:  d.Messenger,
 		lcm:        d.Lifecycle,
 		dataDir:    d.DataDir,
 		clock:      d.Clock,
@@ -212,6 +221,7 @@ func New(d Deps) *Manager {
 	if m.logger == nil {
 		m.logger = slog.Default()
 	}
+	m.guard = sessionguard.New(d.Store, d.Messenger, m.logger)
 	return m
 }
 
@@ -893,17 +903,30 @@ func (m *Manager) RestoreAll(ctx context.Context) error {
 	return nil
 }
 
-// Send delivers a message to a running session's agent via the messenger, then
-// best-effort confirms the agent actually accepted it. AO has no delivery ack:
-// the messenger returns nil the moment the runtime paste + Enter commands exit
-// 0, and for a large multiline prompt a single Enter may not submit (claude-code
-// leaves it as an unsubmitted draft). confirmActive observes the durable
-// Activity.State (flipped to active by the user-prompt-submit hook) and re-sends
-// Enter until the session is active or the budget is exhausted. Confirmation
-// never fails the send: it only decides whether to nudge again.
+// Send delivers a message to a running session's agent through the guarded
+// pane-write primitive, then best-effort confirms the agent actually accepted
+// it. The guard refuses delivery into a session that is gone, terminated, or
+// paused on a permission decision (pasting there could answer the dialog);
+// those refusals surface as typed sentinels so the API reports why instead of
+// silently dropping the message. AO has no delivery ack: the messenger returns
+// nil the moment the runtime paste + Enter commands exit 0, and for a large
+// multiline prompt a single Enter may not submit (claude-code leaves it as an
+// unsubmitted draft). confirmActive observes the durable Activity.State
+// (flipped to active by the user-prompt-submit hook) and re-sends Enter until
+// the session is active or the budget is exhausted. Confirmation never fails
+// the send: it only decides whether to nudge again.
 func (m *Manager) Send(ctx context.Context, id domain.SessionID, message string) error {
-	if err := m.messenger.Send(ctx, id, message); err != nil {
+	outcome, err := m.guard.Deliver(ctx, id, message)
+	if err != nil {
 		return fmt.Errorf("send %s: %w", id, err)
+	}
+	switch outcome {
+	case sessionguard.SuppressedNotFound:
+		return fmt.Errorf("send %s: %w", id, ErrNotFound)
+	case sessionguard.SuppressedTerminated:
+		return fmt.Errorf("send %s: %w", id, ErrTerminated)
+	case sessionguard.SuppressedAwaitingUser:
+		return fmt.Errorf("send %s: %w", id, ErrAwaitingDecision)
 	}
 	// confirmActive only helps — and is only SAFE — when the harness reports
 	// both a prompt-submit signal (so the loop can observe active) and a
@@ -980,38 +1003,22 @@ func (m *Manager) confirmActive(ctx context.Context, id domain.SessionID) {
 			return
 		}
 		// Timed out with budget remaining: the previous Enter did not land.
-		// Re-read state immediately before nudging — a permission dialog can
-		// appear in the gap between waitForActive's final poll and this send,
-		// and an Enter into it would answer the decision. This closes the
-		// TOCTOU the per-poll check inside waitForActive cannot cover.
-		if blocked, err := m.isBlocked(ctx, id); err != nil || blocked {
-			if blocked {
-				m.logger.Info("send: session became blocked before nudge; skipping Enter nudge", "sessionID", id, "attempt", attempt)
-			} else {
-				m.logger.Warn("send: confirm pre-nudge state read failed; skipping Enter nudge", "sessionID", id, "attempt", attempt, "error", err)
-			}
+		// Nudge again with an Enter-only send. Deliver re-reads state
+		// immediately before pasting — a permission dialog can appear in the
+		// gap between waitForActive's final poll and this send, and an Enter
+		// into it would answer the decision. This closes the TOCTOU the
+		// per-poll check inside waitForActive cannot cover; a store failure
+		// inside the guard fails closed (no Enter on an unknown state).
+		nudge, nudgeErr := m.guard.Deliver(ctx, id, "")
+		if nudgeErr != nil {
+			m.logger.Warn("send: confirm re-send failed", "sessionID", id, "attempt", attempt, "error", nudgeErr)
 			return
 		}
-		// Nudge again with an Enter-only send.
-		if err := m.messenger.Send(ctx, id, ""); err != nil {
-			m.logger.Warn("send: confirm re-send failed", "sessionID", id, "attempt", attempt, "error", err)
+		if nudge != sessionguard.Sent {
+			m.logger.Info("send: session became blocked before nudge; skipping Enter nudge", "sessionID", id, "attempt", attempt)
 			return
 		}
 	}
-}
-
-// isBlocked reports whether the session is currently paused on a user decision.
-// A store failure returns (false, err) so the caller aborts the nudge — it must
-// not press Enter on an unknown state.
-func (m *Manager) isBlocked(ctx context.Context, id domain.SessionID) (bool, error) {
-	rec, ok, err := m.store.GetSession(ctx, id)
-	if err != nil {
-		return false, err
-	}
-	if !ok {
-		return false, fmt.Errorf("session %s not found", id)
-	}
-	return rec.Activity.State == domain.ActivityBlocked, nil
 }
 
 // waitForActive polls Activity.State for up to attemptDeadline and reports
