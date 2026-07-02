@@ -2101,8 +2101,12 @@ func TestSend_NoNudgeWhenBlockedAppearsBeforeNudge(t *testing.T) {
 	st := newFakeStore()
 	st.sessions["s1"] = domain.SessionRecord{ID: "s1", Harness: "claude-code",
 		Activity: domain.Activity{State: domain.ActivityIdle}}
-	// blockAfterFirstReadStore flips the session to blocked only once a poll has
-	// observed it non-blocked, reproducing the post-final-poll / pre-nudge race.
+	// blockAfterFirstReadStore flips the session to blocked on read #4. The
+	// deterministic read sequence (attemptDeadline 0 makes waitForActive do
+	// exactly one poll): #1 Deliver's pre-paste read, #2 Send's harness lookup,
+	// #3 waitForActive's poll (idle → timeout), #4 the JIT pre-nudge re-read —
+	// which is the first to see blocked, landing the flip in the exact
+	// post-final-poll / pre-nudge window this test exists to cover.
 	bst := &blockAfterFirstReadStore{fakeStore: st, id: "s1"}
 	msg := &fakeMessenger{}
 	m := New(Deps{
@@ -2110,13 +2114,16 @@ func TestSend_NoNudgeWhenBlockedAppearsBeforeNudge(t *testing.T) {
 		Store: bst, Messenger: msg, Lifecycle: &fakeLCM{store: st},
 		LookPath: func(string) (string, error) { return "/bin/true", nil },
 	})
-	m.sendConfirm = sendConfirmConfig{pollInterval: time.Millisecond, attemptDeadline: 2 * time.Millisecond, maxAttempts: 3}
+	m.sendConfirm = sendConfirmConfig{pollInterval: time.Millisecond, attemptDeadline: 0, maxAttempts: 3}
 
 	if err := m.Send(context.Background(), "s1", "run the migration"); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 	if len(msg.msgs) != 1 {
 		t.Fatalf("Send calls = %d, want 1 (blocked appeared before nudge, JIT re-read caught it)", len(msg.msgs))
+	}
+	if bst.reads < 4 {
+		t.Fatalf("GetSession reads = %d, want >= 4 (the JIT pre-nudge re-read must have run)", bst.reads)
 	}
 }
 
@@ -2158,9 +2165,10 @@ func TestHarnessNudgeSafe(t *testing.T) {
 }
 
 // blockAfterFirstReadStore wraps fakeStore and flips the session to
-// ActivityBlocked on the SECOND GetSession call: the first (waitForActive's
-// poll) sees idle, the second (confirmActive's just-in-time pre-nudge re-read)
-// sees blocked — the exact post-final-poll / pre-nudge window.
+// ActivityBlocked on the FOURTH GetSession call, so with attemptDeadline 0 the
+// first read to observe blocked is confirmActive's just-in-time pre-nudge
+// re-read (reads #1-#3 are Deliver's pre-paste read, Send's harness lookup,
+// and waitForActive's single poll — see TestSend_NoNudgeWhenBlockedAppearsBeforeNudge).
 type blockAfterFirstReadStore struct {
 	*fakeStore
 	id    domain.SessionID
@@ -2169,7 +2177,7 @@ type blockAfterFirstReadStore struct {
 
 func (s *blockAfterFirstReadStore) GetSession(ctx context.Context, id domain.SessionID) (domain.SessionRecord, bool, error) {
 	s.reads++
-	if s.reads >= 2 {
+	if s.reads >= 4 {
 		if rec, ok := s.fakeStore.sessions[s.id]; ok {
 			rec.Activity.State = domain.ActivityBlocked
 			s.fakeStore.sessions[s.id] = rec

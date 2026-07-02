@@ -47,7 +47,9 @@ func TestGuard_OutcomeByState(t *testing.T) {
 		// automated nudge does not.
 		{"waiting_input", record(domain.ActivityWaitingInput, false), true, Sent, SuppressedAwaitingUser},
 		{"blocked", record(domain.ActivityBlocked, false), true, SuppressedAwaitingUser, SuppressedAwaitingUser},
-		{"exited", record(domain.ActivityExited, false), true, Sent, Sent},
+		// exited is refused even without IsTerminated: the pane holds an
+		// interactive shell after agent exit, so a paste would execute there.
+		{"exited", record(domain.ActivityExited, false), true, SuppressedTerminated, SuppressedTerminated},
 		{"terminated", record(domain.ActivityIdle, true), true, SuppressedTerminated, SuppressedTerminated},
 		{"missing", domain.SessionRecord{}, false, SuppressedNotFound, SuppressedNotFound},
 	}

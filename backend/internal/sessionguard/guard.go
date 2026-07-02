@@ -48,6 +48,22 @@ const (
 	SuppressedAwaitingUser
 )
 
+// String names the outcome for logs.
+func (o Outcome) String() string {
+	switch o {
+	case Sent:
+		return "sent"
+	case SuppressedNotFound:
+		return "suppressed_not_found"
+	case SuppressedTerminated:
+		return "suppressed_terminated"
+	case SuppressedAwaitingUser:
+		return "suppressed_awaiting_user"
+	default:
+		return "suppressed_unknown"
+	}
+}
+
 // Guard is the guarded pane-write primitive shared by the session manager and
 // lifecycle. It takes no locks of its own, so callers may hold theirs across a
 // call (lifecycle's sendOnce calls it under react.mu).
@@ -102,7 +118,12 @@ func (g *Guard) send(ctx context.Context, id domain.SessionID, msg string, refus
 		g.logger.Info("sessionguard: write suppressed", "sessionID", id, "reason", "not_found")
 		return SuppressedNotFound, nil
 	}
-	if rec.IsTerminated {
+	// ActivityExited is refused alongside IsTerminated as defense-in-depth:
+	// every exited writer today also sets IsTerminated, but a pane whose agent
+	// exited execs an interactive shell, so a paste+Enter there would run the
+	// message as shell commands — the invariant must not depend on writer
+	// discipline alone.
+	if rec.IsTerminated || rec.Activity.State == domain.ActivityExited {
 		g.logger.Info("sessionguard: write suppressed", "sessionID", id, "reason", "terminated")
 		return SuppressedTerminated, nil
 	}

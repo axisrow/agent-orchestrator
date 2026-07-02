@@ -212,6 +212,7 @@ func (r *Runtime) SendMessage(ctx context.Context, handle ports.RuntimeHandle, m
 	if err != nil {
 		return err
 	}
+	enterCtx := ctx
 	if message != "" {
 		for _, chunk := range chunks(message, r.chunkSize) {
 			if _, err := r.run(ctx, sendKeysLiteralArgs(id, chunk)...); err != nil {
@@ -224,22 +225,22 @@ func (r *Runtime) SendMessage(ctx context.Context, handle ports.RuntimeHandle, m
 		// unsubmitted (issue #2342). Empty-message nudges skip this — there is
 		// no paste ahead of a catch-up Enter.
 		//
-		// Known failure mode: if ctx is cancelled during this pause the chunks
-		// are already pasted but the Enter has not been sent, so we return with
-		// an unsubmitted draft in the pane. That is unavoidable (a cancelled ctx
-		// cannot drive the Enter), and re-driving the identical message would
-		// double-paste. It is not reached in practice: the confirm loop's retry
-		// sends an empty Enter (no paste), and the lifecycle nudges dedup by
-		// signature, so neither re-drives this exact non-empty Send on cancel.
+		// From here on the chunks are already in the pane, so the pause and
+		// the Enter are detached from the caller's cancellation (bounded by
+		// their own timeout instead): abandoning mid-pause would strand an
+		// unsubmitted draft that a retried send would then double-paste.
+		var cancel context.CancelFunc
+		enterCtx, cancel = context.WithTimeout(context.WithoutCancel(ctx), r.enterDelay+5*time.Second)
+		defer cancel()
 		if r.enterDelay > 0 {
 			select {
-			case <-ctx.Done():
-				return ctx.Err()
+			case <-enterCtx.Done():
+				return enterCtx.Err()
 			case <-time.After(r.enterDelay):
 			}
 		}
 	}
-	if _, err := r.run(ctx, sendEnterArgs(id)...); err != nil {
+	if _, err := r.run(enterCtx, sendEnterArgs(id)...); err != nil {
 		return fmt.Errorf("tmux runtime: send enter %s: %w", id, err)
 	}
 	return nil

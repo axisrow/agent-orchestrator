@@ -1015,7 +1015,9 @@ func (m *Manager) confirmActive(ctx context.Context, id domain.SessionID) {
 			return
 		}
 		if nudge != sessionguard.Sent {
-			m.logger.Info("send: session became blocked before nudge; skipping Enter nudge", "sessionID", id, "attempt", attempt)
+			// Not necessarily blocked: the session may also have terminated or
+			// vanished since the poll — the outcome says which.
+			m.logger.Info("send: session unavailable before nudge; skipping Enter nudge", "sessionID", id, "attempt", attempt, "outcome", nudge.String())
 			return
 		}
 	}

@@ -536,6 +536,32 @@ func TestSendMessageDelaysBeforeEnter(t *testing.T) {
 	}
 }
 
+// TestSendMessageEnterSurvivesCallerCancel pins the detached-Enter contract:
+// once the chunks are pasted, a caller cancellation landing in the pre-Enter
+// pause must NOT abandon the send — the pasted draft would sit unsubmitted and
+// a retried send would double-paste. The pause and Enter run on a context
+// detached from the caller's, so SendMessage completes (chunks then Enter).
+func TestSendMessageEnterSurvivesCallerCancel(t *testing.T) {
+	r, fr := newTestRuntime(0)
+	// A pause long enough that the 50ms-delayed cancel deterministically lands
+	// inside it (the chunk send is near-instant against the fake runner).
+	r.enterDelay = 200 * time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	timer := time.AfterFunc(50*time.Millisecond, cancel)
+	defer timer.Stop()
+
+	if err := r.SendMessage(ctx, ports.RuntimeHandle{ID: "sess-1"}, "hello"); err != nil {
+		t.Fatalf("SendMessage cancelled mid-pause: %v (Enter must run detached)", err)
+	}
+	if len(fr.calls) != 2 {
+		t.Fatalf("calls = %d, want 2 (chunk + Enter despite the caller cancel after the paste)", len(fr.calls))
+	}
+	if got, want := fr.calls[1].args, sendEnterArgs("sess-1"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("Enter args = %#v, want %#v", got, want)
+	}
+}
+
 // -- GetOutput tests --
 
 func TestGetOutputValidatesLines(t *testing.T) {
