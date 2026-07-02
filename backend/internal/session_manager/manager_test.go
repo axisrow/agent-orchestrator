@@ -1901,3 +1901,144 @@ func TestReconcileReap_TerminatedAndDeadTmuxLeftAlone(t *testing.T) {
 		t.Fatalf("Destroy calls = %d, want 0", rt.destroyed)
 	}
 }
+
+// --- Send activity-confirmation tests (issue #2342) ---
+
+// signalingAgent is a fakeAgent that advertises a prompt-submit activity signal,
+// so Manager.Send runs confirmActive for its harness (see ports.ActivitySignaler).
+type signalingAgent struct{ fakeAgent }
+
+func (signalingAgent) EmitsSubmitActivity() bool { return true }
+
+// newSendTestManager builds a Manager wired for Send confirmation tests with
+// fast (millisecond) confirmation timings so no test waits real seconds. The
+// returned messenger records every Send; the store is mutable so a test can
+// flip Activity.State between polls.
+func newSendTestManager(t *testing.T, agent ports.Agent, messenger ports.AgentMessenger, st *fakeStore) *Manager {
+	t.Helper()
+	rt := &fakeRuntime{}
+	ws := &fakeWorkspace{}
+	lcm := &fakeLCM{store: st}
+	lookPath := func(string) (string, error) { return "/bin/true", nil }
+	m := New(Deps{
+		Runtime: rt, Agents: singleAgent{agent}, Workspace: ws, Store: st,
+		Messenger: messenger, Lifecycle: lcm, LookPath: lookPath,
+	})
+	// Shrink the confirmation budget so the loop runs in milliseconds, not
+	// seconds. m.sendConfirm is unexported; tests live in this package.
+	m.sendConfirm = sendConfirmConfig{
+		pollInterval:    time.Millisecond,
+		attemptDeadline: 2 * time.Millisecond,
+		maxAttempts:     3,
+	}
+	return m
+}
+
+func TestSend_SkipsConfirmForHooklessHarness(t *testing.T) {
+	// A harness whose adapter does NOT implement ActivitySignaler (plain
+	// fakeAgent) must skip confirmActive entirely: one Send, no nudges, and the
+	// call returns immediately without polling.
+	st := newFakeStore()
+	st.sessions["s1"] = domain.SessionRecord{ID: "s1", Harness: "claude-code"}
+	msg := &fakeMessenger{}
+	m := newSendTestManager(t, fakeAgent{}, msg, st)
+
+	start := time.Now()
+	if err := m.Send(context.Background(), "s1", "hello"); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if len(msg.msgs) != 1 {
+		t.Fatalf("Send calls = %d, want 1 (no nudges for a hookless harness)", len(msg.msgs))
+	}
+	// Hookless path returns within milliseconds (no 2s+ confirmation wait).
+	if dt := time.Since(start); dt > 250*time.Millisecond {
+		t.Fatalf("Send took %s for a hookless harness; confirmActive should have been skipped", dt)
+	}
+}
+
+func TestSend_ConfirmsAndNudgesUntilActive(t *testing.T) {
+	// A signaling harness starts idle. The first nudge (Enter-only Send) should
+	// flip the session active, after which confirmActive stops. Net: the
+	// initial message plus exactly one nudge.
+	st := newFakeStore()
+	st.sessions["s1"] = domain.SessionRecord{ID: "s1", Harness: "claude-code",
+		Activity: domain.Activity{State: domain.ActivityIdle}}
+	// A messenger that flips the session active on the first Enter-only nudge,
+	// mimicking the agent accepting the prompt.
+	msg := &flipOnNudgeMessenger{sessionID: "s1", store: st}
+	m := newSendTestManager(t, signalingAgent{}, msg, st)
+
+	if err := m.Send(context.Background(), "s1", "do the thing"); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if len(msg.msgs) != 2 {
+		t.Fatalf("Send calls = %d, want 2 (initial + one nudge)", len(msg.msgs))
+	}
+	if msg.msgs[0] != "do the thing" {
+		t.Fatalf("first msg = %q, want the prompt", msg.msgs[0])
+	}
+	if msg.msgs[1] != "" {
+		t.Fatalf("nudge msg = %q, want empty (Enter-only)", msg.msgs[1])
+	}
+	if got := st.sessions["s1"].Activity.State; got != domain.ActivityActive {
+		t.Fatalf("Activity.State = %q, want active", got)
+	}
+}
+
+func TestSend_ConfirmBudgetCapsRetries(t *testing.T) {
+	// A signaling harness that never goes active must still terminate: at most
+	// maxAttempts Sends (initial + maxAttempts-1 nudges), and Send never errors.
+	st := newFakeStore()
+	st.sessions["s1"] = domain.SessionRecord{ID: "s1", Harness: "claude-code",
+		Activity: domain.Activity{State: domain.ActivityIdle}}
+	msg := &fakeMessenger{}
+	m := newSendTestManager(t, signalingAgent{}, msg, st)
+
+	if err := m.Send(context.Background(), "s1", "stuck prompt"); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if len(msg.msgs) > m.sendConfirm.maxAttempts {
+		t.Fatalf("Send calls = %d, want <= %d (budget cap)", len(msg.msgs), m.sendConfirm.maxAttempts)
+	}
+	if got := st.sessions["s1"].Activity.State; got == domain.ActivityActive {
+		t.Fatalf("Activity.State = active, want unchanged (session never went active)")
+	}
+}
+
+func TestHarnessSignalsSubmit(t *testing.T) {
+	m := New(Deps{Agents: singleAgent{agent: fakeAgent{}}})
+	if m.harnessSignalsSubmit("claude-code") {
+		t.Fatalf("hookless agent reported as signaling")
+	}
+	m2 := New(Deps{Agents: singleAgent{agent: signalingAgent{}}})
+	if !m2.harnessSignalsSubmit("claude-code") {
+		t.Fatalf("signaling agent not reported as signaling")
+	}
+	m3 := New(Deps{Agents: missingAgents{}})
+	if m3.harnessSignalsSubmit("claude-code") {
+		t.Fatalf("unresolved harness reported as signaling")
+	}
+}
+
+// flipOnNudgeMessenger records sends like fakeMessenger and additionally flips a
+// session to ActivityActive the first time it receives an Enter-only nudge (an
+// empty message), simulating the agent accepting the prompt after the retry.
+type flipOnNudgeMessenger struct {
+	msgs      []string
+	sessionID domain.SessionID
+	store     *fakeStore
+	flipped   bool
+}
+
+func (m *flipOnNudgeMessenger) Send(_ context.Context, _ domain.SessionID, msg string) error {
+	m.msgs = append(m.msgs, msg)
+	if msg == "" && !m.flipped {
+		rec, ok := m.store.sessions[m.sessionID]
+		if ok {
+			rec.Activity.State = domain.ActivityActive
+			m.store.sessions[m.sessionID] = rec
+		}
+		m.flipped = true
+	}
+	return nil
+}

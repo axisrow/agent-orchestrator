@@ -119,8 +119,37 @@ type Manager struct {
 	// production); its directory is prepended to spawned sessions' PATH so the
 	// workspace hook commands resolve back to this daemon. Tests inject a stub.
 	executable func() (string, error)
-	logger     *slog.Logger
+	// sendConfirm bounds the best-effort post-send confirmation that the session
+	// actually became active (the agent accepted the prompt). New fills in the
+	// sendConfirm* defaults; tests in this package shrink the timings directly.
+	sendConfirm sendConfirmConfig
+	logger      *slog.Logger
 }
+
+// sendConfirmConfig bounds the best-effort activity-confirmation loop run after
+// Send. AO has no delivery ack: ao send returns 200 the moment tmux send-keys
+// exits 0, and for a large multiline paste the single Enter may not submit the
+// prompt — so UserPromptSubmit never fires and the orchestrator cannot tell the
+// worker started. confirmActive observes the durable Activity.State (written by
+// the user-prompt-submit hook) and re-sends Enter until the session is active or
+// the budget is exhausted. It never fails the send.
+type sendConfirmConfig struct {
+	// pollInterval is the gap between activity reads.
+	pollInterval time.Duration
+	// attemptDeadline is how long to wait for active after each Enter.
+	attemptDeadline time.Duration
+	// maxAttempts bounds how many times Enter is (re)sent, counting the initial
+	// Enter from Send itself.
+	maxAttempts int
+}
+
+// Production sendConfirm bounds: 3 Enters total (1 from Send + 2 re-sends),
+// each given 2s to flip the session active, polled every 300ms.
+const (
+	sendConfirmPollInterval    = 300 * time.Millisecond
+	sendConfirmAttemptDeadline = 2 * time.Second
+	sendConfirmMaxAttempts     = 3
+)
 
 // Deps are the collaborators a Session Manager needs; New wires them together.
 type Deps struct {
@@ -161,7 +190,12 @@ func New(d Deps) *Manager {
 		clock:      d.Clock,
 		lookPath:   d.LookPath,
 		executable: d.Executable,
-		logger:     d.Logger,
+		sendConfirm: sendConfirmConfig{
+			pollInterval:    sendConfirmPollInterval,
+			attemptDeadline: sendConfirmAttemptDeadline,
+			maxAttempts:     sendConfirmMaxAttempts,
+		},
+		logger: d.Logger,
 	}
 	if m.clock == nil {
 		// UTC so spawn-stamped CreatedAt/UpdatedAt match every other session
@@ -859,12 +893,99 @@ func (m *Manager) RestoreAll(ctx context.Context) error {
 	return nil
 }
 
-// Send delivers a message to a running session's agent via the messenger.
+// Send delivers a message to a running session's agent via the messenger, then
+// best-effort confirms the agent actually accepted it. AO has no delivery ack:
+// the messenger returns nil the moment the runtime paste + Enter commands exit
+// 0, and for a large multiline prompt a single Enter may not submit (claude-code
+// leaves it as an unsubmitted draft). confirmActive observes the durable
+// Activity.State (flipped to active by the user-prompt-submit hook) and re-sends
+// Enter until the session is active or the budget is exhausted. Confirmation
+// never fails the send: it only decides whether to nudge again.
 func (m *Manager) Send(ctx context.Context, id domain.SessionID, message string) error {
 	if err := m.messenger.Send(ctx, id, message); err != nil {
 		return fmt.Errorf("send %s: %w", id, err)
 	}
+	// confirmActive only helps when the harness can report a prompt-submit
+	// signal; without it the loop could never observe active and would burn
+	// its full budget plus send spurious Enter nudges. Harnesses that delegate
+	// hooks (grok/continueagent/devin → claude-code) satisfy this via their
+	// adapter; copilot is deliberately excluded (its -p mode never fires).
+	rec, ok, err := m.store.GetSession(ctx, id)
+	if err != nil || !ok {
+		return nil
+	}
+	if m.harnessSignalsSubmit(rec.Harness) {
+		m.confirmActive(ctx, id)
+	}
 	return nil
+}
+
+// harnessSignalsSubmit reports whether the session's harness emits a
+// prompt-submit activity signal (see ports.ActivitySignaler). It is the gate for
+// confirmActive: only harnesses that can flip Activity.State to active are worth
+// polling after a send.
+func (m *Manager) harnessSignalsSubmit(harness domain.AgentHarness) bool {
+	agent, ok := m.agents.Agent(harness)
+	if !ok {
+		return false
+	}
+	s, ok := agent.(ports.ActivitySignaler)
+	return ok && s.EmitsSubmitActivity()
+}
+
+// confirmActive re-sends Enter until the session reports ActivityActive or the
+// attempt budget is exhausted. The initial Send already submitted one Enter;
+// each additional attempt sends Enter again (an empty message is an Enter-only
+// nudge, see ports.AgentMessenger) after waiting for Activity.State to flip. It
+// is best-effort: on context cancellation, store failure, or budget exhaustion
+// it returns silently (the message was already delivered; the agent may yet
+// pick it up). Harnesses without a user-prompt-submit hook never flip to
+// active, so the loop simply times out — Send remains successful for them.
+func (m *Manager) confirmActive(ctx context.Context, id domain.SessionID) {
+	for attempt := 1; ; attempt++ {
+		active, err := m.waitForActive(ctx, id)
+		if active || err != nil || attempt >= m.sendConfirm.maxAttempts {
+			return
+		}
+		// Not active with budget remaining: the previous Enter did not land,
+		// nudge again with an Enter-only send.
+		if err := m.messenger.Send(ctx, id, ""); err != nil {
+			m.logger.Warn("send: confirm re-send failed", "sessionID", id, "attempt", attempt, "error", err)
+			return
+		}
+	}
+}
+
+// waitForActive polls Activity.State for up to attemptDeadline. It returns
+// (true, nil) once the session is active, (false, nil) when the deadline
+// elapsed without it — another Enter nudge may still land — and (false, err)
+// when polling cannot continue (ctx cancelled, store failure, session gone).
+func (m *Manager) waitForActive(ctx context.Context, id domain.SessionID) (bool, error) {
+	deadlineAt := m.clock().Add(m.sendConfirm.attemptDeadline)
+	ticker := time.NewTicker(m.sendConfirm.pollInterval)
+	defer ticker.Stop()
+	for {
+		rec, ok, err := m.store.GetSession(ctx, id)
+		if err != nil {
+			return false, err
+		}
+		if !ok {
+			return false, fmt.Errorf("session %s not found", id)
+		}
+		if rec.Activity.State == domain.ActivityActive {
+			return true, nil
+		}
+		if !m.clock().Before(deadlineAt) {
+			return false, nil
+		}
+		// The tick select respects ctx cancellation so a request timeout
+		// unblocks promptly.
+		select {
+		case <-ctx.Done():
+			return false, ctx.Err()
+		case <-ticker.C:
+		}
+	}
 }
 
 // CleanupSkip reports one terminal session whose workspace was preserved

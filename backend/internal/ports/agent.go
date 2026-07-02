@@ -50,6 +50,22 @@ type AgentResolver interface {
 	Agent(harness domain.AgentHarness) (Agent, bool)
 }
 
+// ActivitySignaler is an OPTIONAL capability an Agent adapter may implement.
+// EmitsSubmitActivity reports whether the adapter's harness actually emits a
+// prompt-submit-equivalent activity signal (one that flips the durable
+// Activity.State to active) under AO's headless launch. The Session Manager uses
+// it to gate best-effort post-send confirmation: only harnesses that can report
+// active are worth polling, and nudging a harness that never will (with spurious
+// Enter-only sends) is pure waste. Adapters that do not implement it are treated
+// as non-signaling.
+//
+// copilot maps the hook but its CLI does not fire prompt-style hooks in -p mode,
+// so it must NOT implement this (it would otherwise be the only harness paying
+// the full confirmation budget on every send).
+type ActivitySignaler interface {
+	EmitsSubmitActivity() bool
+}
+
 // MetadataKeyAgentSessionID is the SessionRef.Metadata key that carries an
 // agent's native session id. It matches the json tag on
 // domain.SessionMetadata.AgentSessionID and the key the adapters read, so the
