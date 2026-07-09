@@ -52,6 +52,17 @@ func New() *Plugin {
 	return &Plugin{}
 }
 
+// EmitsSubmitActivity signals Kilo Code fires a user-prompt-submit hook (via its
+// TS plugin) under AO's launch. See ports.ActivitySignaler.
+func (p *Plugin) EmitsSubmitActivity() bool { return true }
+
+// EmitsBlockedActivity is false: Kilo Code reports permission prompts as
+// waiting_input — it installs no post-tool-use hook, so a blocked state could
+// never be cleared mid-turn. confirmActive must not nudge it (an Enter could
+// answer a pending decision it cannot report as blocked). See
+// ports.ActivitySignaler.
+func (p *Plugin) EmitsBlockedActivity() bool { return false }
+
 var _ adapters.Adapter = (*Plugin)(nil)
 var _ ports.Agent = (*Plugin)(nil)
 

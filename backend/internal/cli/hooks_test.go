@@ -130,7 +130,56 @@ func TestHooks_StopReportsIdle(t *testing.T) {
 	}
 }
 
-func TestHooks_CodexPermissionRequestReportsWaitingInput(t *testing.T) {
+func TestHooks_ClaudeCodePermissionRequestReportsBlocked(t *testing.T) {
+	// claude-code installs the pre/post-tool-use trio, so a permission-request
+	// blocked state can be correlated and cleared — it is the one harness that
+	// reports blocked.
+	t.Setenv("AO_SESSION_ID", "ao-7")
+	cfg := setConfigEnv(t)
+	srv, capture := activityServer(t, http.StatusOK, `{"ok":true}`)
+	writeRunFileFor(t, cfg, srv)
+
+	_, _, err := executeCLI(t, Deps{
+		In:           strings.NewReader(`{"tool_name":"Bash"}`),
+		ProcessAlive: func(int) bool { return true },
+	}, "hooks", "claude-code", "permission-request")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := capturedState(t, capture); got != "blocked" {
+		t.Errorf("state = %q, want blocked", got)
+	}
+}
+
+func TestHooks_PostToolUseCarriesCorrelationFields(t *testing.T) {
+	// Tool-use signals must carry the event and the native tool identity so
+	// lifecycle can clear a stale blocked only on the approved tool's post.
+	t.Setenv("AO_SESSION_ID", "ao-7")
+	cfg := setConfigEnv(t)
+	srv, capture := activityServer(t, http.StatusOK, `{"ok":true}`)
+	writeRunFileFor(t, cfg, srv)
+
+	_, _, err := executeCLI(t, Deps{
+		In:           strings.NewReader(`{"tool_name":"Bash","tool_use_id":"toolu_42","tool_response":"ok"}`),
+		ProcessAlive: func(int) bool { return true },
+	}, "hooks", "claude-code", "post-tool-use")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var req setActivityAPIRequest
+	if err := json.Unmarshal([]byte(capture.body), &req); err != nil {
+		t.Fatalf("decode body: %v\nbody=%s", err, capture.body)
+	}
+	want := setActivityAPIRequest{State: "active", Event: "post-tool-use", ToolName: "Bash", ToolUseID: "toolu_42"}
+	if req != want {
+		t.Errorf("body = %+v, want %+v", req, want)
+	}
+}
+
+func TestHooks_EventWithoutToolIdentityOmitsIt(t *testing.T) {
+	// Adapters whose payloads carry no tool fields (codex permission-request
+	// payload here has tool_name only) still tag the event; missing identity
+	// fields stay empty rather than inventing values.
 	t.Setenv("AO_SESSION_ID", "ao-7")
 	cfg := setConfigEnv(t)
 	srv, capture := activityServer(t, http.StatusOK, `{"ok":true}`)
@@ -143,8 +192,13 @@ func TestHooks_CodexPermissionRequestReportsWaitingInput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got := capturedState(t, capture); got != "waiting_input" {
-		t.Errorf("state = %q, want waiting_input", got)
+	var req setActivityAPIRequest
+	if err := json.Unmarshal([]byte(capture.body), &req); err != nil {
+		t.Fatalf("decode body: %v\nbody=%s", err, capture.body)
+	}
+	want := setActivityAPIRequest{State: "waiting_input", Event: "permission-request", ToolName: "Bash", ToolUseID: ""}
+	if req != want {
+		t.Errorf("body = %+v, want %+v", req, want)
 	}
 }
 

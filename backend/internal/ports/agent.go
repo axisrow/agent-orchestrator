@@ -96,6 +96,39 @@ type AgentResolver interface {
 	Agent(harness domain.AgentHarness) (Agent, bool)
 }
 
+// ActivitySignaler is an OPTIONAL capability an Agent adapter may implement to
+// describe which durable activity signals its harness actually produces under
+// AO's headless launch. The Session Manager gates best-effort post-send
+// confirmation on it — see the two methods.
+//
+// EmitsSubmitActivity reports whether the harness emits a prompt-submit signal
+// (one that flips Activity.State to active). Without it the confirm loop could
+// never observe active and would only burn its budget on spurious Enter nudges.
+//
+// EmitsBlockedActivity reports whether the harness emits a decision-pause
+// signal (a permission/approval prompt that flips Activity.State to blocked)
+// AND can clear that state before the turn ends — which requires the
+// pre/post-tool-use trio so lifecycle can correlate the approved tool's post
+// with the dialog that blocked the session. The Enter-only nudge is only SAFE
+// when this is true: a harness that submits but cannot report blocked leaves
+// the confirm loop unable to tell an unsubmitted draft from a pending
+// permission dialog, so an Enter meant to resubmit the draft could instead
+// answer the dialog. confirmActive therefore requires BOTH signals before it
+// will nudge.
+//
+// Only claude-code (and the harnesses that delegate to its hook set: grok,
+// continue, devin) satisfies both halves. Harnesses whose permission signal is
+// uncorrelatable — no post-tool-use hook (codex, droid, qwen, autohand,
+// kilocode) or a per-tool pre-hook collapse (cline, cursor, kiro) — map it to
+// waiting_input and return false, as do harnesses with no permission hook at
+// all (goose, opencode, agy). copilot maps the submit hook but its CLI does
+// not fire prompt-style hooks in -p mode, so it must NOT implement this at all
+// (it would otherwise pay the full confirmation budget on every send).
+type ActivitySignaler interface {
+	EmitsSubmitActivity() bool
+	EmitsBlockedActivity() bool
+}
+
 // MetadataKeyAgentSessionID is the SessionRef.Metadata key that carries an
 // agent's native session id. It matches the json tag on
 // domain.SessionMetadata.AgentSessionID and the key the adapters read, so the

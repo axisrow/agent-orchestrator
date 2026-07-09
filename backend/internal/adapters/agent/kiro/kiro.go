@@ -44,6 +44,17 @@ func New() *Plugin {
 	return &Plugin{}
 }
 
+// EmitsSubmitActivity signals Kiro fires a userPromptSubmit hook under AO's
+// launch. See ports.ActivitySignaler.
+func (p *Plugin) EmitsSubmitActivity() bool { return true }
+
+// EmitsBlockedActivity is false: Kiro maps its every-tool preToolUse to
+// permission-request → waiting_input and installs no post-tool-use hook, so a
+// blocked state could never be cleared mid-turn. confirmActive must not nudge
+// it (an Enter could answer a pending decision it cannot report as blocked).
+// See ports.ActivitySignaler.
+func (p *Plugin) EmitsBlockedActivity() bool { return false }
+
 var _ adapters.Adapter = (*Plugin)(nil)
 var _ ports.Agent = (*Plugin)(nil)
 
