@@ -17,8 +17,8 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 	aoprocess "github.com/aoagents/agent-orchestrator/backend/internal/process"
-	"github.com/aoagents/agent-orchestrator/backend/internal/skillassets"
 	"github.com/aoagents/agent-orchestrator/backend/internal/sessionguard"
+	"github.com/aoagents/agent-orchestrator/backend/internal/skillassets"
 )
 
 // Sentinel errors returned by the Session Manager; callers match them with
@@ -1461,7 +1461,14 @@ func (m *Manager) Send(ctx context.Context, id domain.SessionID, message string)
 	// satisfy both; every other harness opts out via EmitsBlockedActivity —
 	// see ports.ActivitySignaler.
 	rec, ok, err := m.store.GetSession(ctx, id)
-	if err != nil || !ok {
+	if err != nil {
+		// Confirmation is best-effort and never fails the send (the message
+		// was already delivered above); log so a store error is not swallowed
+		// silently.
+		m.logger.Warn("send: confirm skipped, session lookup failed", "sessionID", id, "error", err)
+		return nil
+	}
+	if !ok {
 		return nil
 	}
 	if m.harnessNudgeSafe(rec.Harness) {

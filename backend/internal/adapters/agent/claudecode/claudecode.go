@@ -67,6 +67,11 @@ func New() *Plugin {
 // accepted. See ports.ActivitySignaler.
 func (p *Plugin) EmitsSubmitActivity() bool { return true }
 
+// EmitsBlockedActivity signals that Claude Code fires both pre- and post-tool
+// hooks, so Activity.State can flip to blocked mid-turn on a permission dialog
+// and the guarded send loop can clear it once the tool completes. Only
+// claude-code (and its hook-delegators) carry this trio; see
+// ports.ActivitySignaler.
 func (p *Plugin) EmitsBlockedActivity() bool { return true }
 
 var _ adapters.Adapter = (*Plugin)(nil)
