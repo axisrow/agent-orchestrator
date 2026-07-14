@@ -115,10 +115,7 @@ func startSession(cfg config.Config, runtime runtimeselect.Runtime, store *sqlit
 	if err != nil {
 		logSCMProviderDisabled(log, err)
 	}
-	tracker, err := newGitHubTracker()
-	if err != nil {
-		logTrackerDisabled(log, err)
-	}
+	tracker := trackerForSession(log)
 	sessionSvc := sessionsvc.NewWithDeps(sessionsvc.Deps{
 		Manager:   mgr,
 		Store:     store,
