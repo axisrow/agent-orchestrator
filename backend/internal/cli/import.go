@@ -63,6 +63,12 @@ func (c *commandContext) runImport(cmd *cobra.Command, opts importOptions) error
 	if root == "" {
 		root = legacyimport.DefaultLegacyRootDir()
 	}
+	// Surface a parse error instead of masking it as "no data" (issue #2186):
+	// a broken legacy store is distinct from an absent or empty one.
+	if parseErr := legacyimport.LegacyConfigError(root); parseErr != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Cannot read legacy config at %s: %v\n", root, parseErr)
+		return parseErr
+	}
 	if !legacyimport.HasLegacyData(root) {
 		_, err := fmt.Fprintf(cmd.OutOrStdout(), "No legacy AO projects found at %s. Nothing to import.\n", root)
 		return err
