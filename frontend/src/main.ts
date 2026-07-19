@@ -908,9 +908,12 @@ async function startDaemonInner(startEpoch: number): Promise<DaemonStatus> {
 		//
 		// AO_KEEP_DAEMON opts out of the link entirely: the daemon is spawned but
 		// survives the window closing, stopping only on an explicit `ao stop`.
-		// Reuse the `keep` captured at spawn rather than re-reading process.env:
-		// the flag is a property of this spawn, not a value that should be able to
-		// flip between spawn and port-confirmation.
+		// Reuse the `keep` captured at spawn rather than re-reading process.env
+		// here: the flag is a property of this spawn, not a value that should be
+		// able to flip between spawn and port-confirmation. (The process.on("exit")
+		// orphan-cleanup below re-reads process.env because this `keep` is scoped
+		// to the spawn function — AO_KEEP_DAEMON is set once at startup and never
+		// mutated, so both reads agree.)
 		if (!keep) {
 			establishSupervisorLink();
 		}

@@ -310,7 +310,7 @@ func (m *Manager) Spawn(ctx context.Context, cfg ports.SpawnConfig) (domain.Sess
 		return domain.SessionRecord{}, fmt.Errorf("spawn %s: no agent adapter for harness %q", id, cfg.Harness)
 	}
 	agentConfig := effectiveAgentConfig(cfg.Kind, project.Config)
-	env := m.runtimeEnv(id, cfg.ProjectID, cfg.IssueID, mergeEnv(project.Config.Env, effectiveAgentConfig(cfg.Kind, project.Config).Env))
+	env := m.runtimeEnv(id, cfg.ProjectID, cfg.IssueID, mergeEnv(project.Config.Env, agentConfig.Env))
 	m.augmentAgentRuntimeEnv(agent, env)
 	if err := m.prepareWorkspace(ctx, agent, id, ws.Path, systemPrompt, systemPromptFile, agentConfig, env); err != nil {
 		m.destroySpawnWorkspace(ctx, ws, workspaceProject)
@@ -509,11 +509,13 @@ func effectiveAgentConfig(kind domain.SessionKind, cfg domain.ProjectConfig) por
 	if override.SystemPrompt != "" {
 		merged.SystemPrompt = override.SystemPrompt
 	}
-	if len(override.Env) > 0 {
+	if len(override.Env) > 0 || len(cfg.AgentConfig.Env) > 0 {
 		// mergeEnv returns a fresh map (deep copy) so the role override cannot
 		// mutate the project's base Env — an earlier inline write aliased it
 		// (Go copies the map header by value on struct copy), leaking role env
-		// into every later session of the project.
+		// into every later session of the project. Defense-in-depth matches the
+		// MCP pointer copy below. Guard both inputs empty so a project with no
+		// config still resolves to a zero AgentConfig.
 		merged.Env = mergeEnv(cfg.AgentConfig.Env, override.Env)
 	}
 	if override.MCP != nil {
