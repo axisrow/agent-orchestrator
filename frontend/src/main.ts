@@ -21,13 +21,11 @@ import {
 	downloadUpdateNow,
 	quitAndInstallUpdate,
 	getUpdateStatus,
+	setUpdateSettings,
+	type UpdateCheckOptions,
 } from "./main/auto-updater";
-import {
-	readUpdateSettings,
-	writeUpdateSettings,
-	type UpdateSettings,
-	type UpdateStatus,
-} from "./main/update-settings";
+import { listFeatureBuilds, getActiveFeatureBuild } from "./main/feature-builds";
+import { readUpdateSettings, type UpdateSettings, type UpdateStatus } from "./main/update-settings";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { closeSync, existsSync, openSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
@@ -38,7 +36,8 @@ import { promisify } from "node:util";
 import { type DaemonLaunchSpec, resolveDaemonLaunch } from "./shared/daemon-launch";
 import { createListenPortScanner, defaultRunFilePath, parseRunFile } from "./shared/daemon-discovery";
 import type { DaemonStatus } from "./shared/daemon-status";
-import { attachNewSessionShortcut } from "./main/new-session-shortcut";
+import { attachAppShortcuts } from "./main/app-shortcuts";
+import { KEYBOARD_SHORTCUTS_HELP_CHANNEL } from "./shared/shortcuts";
 import {
 	type DaemonProbe,
 	expectedDaemonPort,
@@ -296,7 +295,7 @@ function createWindow(): void {
 					// Hide the native menu bar. A role-based menu is still installed (for
 					// accelerators) below; the visible menu is painted by WindowTitlebar.
 					autoHideMenuBar: true,
-					titleBarOverlay: { color: "#0f1014", symbolColor: "#c7ccd4", height: TITLEBAR_HEIGHT },
+					titleBarOverlay: { color: "#17181c", symbolColor: "#c7ccd4", height: TITLEBAR_HEIGHT },
 				}
 			: {
 					titleBarStyle: "hiddenInset" as const,
@@ -340,12 +339,11 @@ function createWindow(): void {
 		}
 	});
 
-	// New-session shortcut (⌘N / Ctrl+Shift+N) handled at the app level so it
-	// fires no matter which web contents holds focus — the shell renderer,
-	// xterm's helper textarea, or a browser-preview view (wired per-view in the
-	// browser host). Each hook just tells the shell renderer to open the flow.
+	// Application shortcuts are handled here so they fire no matter which web
+	// contents holds focus — the shell renderer, xterm's helper textarea, or a
+	// browser-preview view (wired per-view in the browser host).
 	const isMac = process.platform === "darwin";
-	attachNewSessionShortcut(mainWindow.webContents, isMac, mainWindow.webContents);
+	attachAppShortcuts(mainWindow.webContents, isMac, mainWindow.webContents);
 
 	browserViewHost = createBrowserViewHost({
 		mainWindow,
@@ -829,17 +827,21 @@ async function startDaemonInner(startEpoch: number): Promise<DaemonStatus> {
 	// running.json handshake (the log pipe scan is skipped).
 	const keep = keepDaemonAlive(process.env);
 	let keepDaemonLogFd: number | undefined;
-	const stdio: "pipe" | "ignore" | ["ignore", number, number] = keep
-		? (() => {
-				const logPath = path.join(os.homedir(), ".ao", "daemon.log");
-				try {
-					keepDaemonLogFd = openSync(logPath, "a");
-				} catch {
-					keepDaemonLogFd = undefined;
-				}
-				return keepDaemonLogFd !== undefined ? ["ignore", keepDaemonLogFd, keepDaemonLogFd] : "ignore";
-			})()
-		: "pipe";
+	let stdio: "pipe" | "ignore" | ["ignore", number, number] = "pipe";
+	if (keep) {
+		const logPath = path.join(os.homedir(), ".ao", "daemon.log");
+		try {
+			keepDaemonLogFd = openSync(logPath, "a");
+			stdio = ["ignore", keepDaemonLogFd, keepDaemonLogFd];
+		} catch {
+			// Log redirect failed (e.g. ~/.ao not creatable, permission denied):
+			// fall back to "ignore" so the daemon still runs, but warn — otherwise
+			// a long-lived keep-alive daemon would run with zero log output.
+			console.warn(`AO: keep-daemon log redirect failed; daemon will run with stdio disabled: ${logPath}`);
+			keepDaemonLogFd = undefined;
+			stdio = "ignore";
+		}
+	}
 	let child: ChildProcess;
 	try {
 		child = spawn(launch.command, launch.args, {
@@ -908,9 +910,12 @@ async function startDaemonInner(startEpoch: number): Promise<DaemonStatus> {
 		//
 		// AO_KEEP_DAEMON opts out of the link entirely: the daemon is spawned but
 		// survives the window closing, stopping only on an explicit `ao stop`.
-		// Reuse the `keep` captured at spawn rather than re-reading process.env:
-		// the flag is a property of this spawn, not a value that should be able to
-		// flip between spawn and port-confirmation.
+		// Reuse the `keep` captured at spawn rather than re-reading process.env
+		// here: the flag is a property of this spawn, not a value that should be
+		// able to flip between spawn and port-confirmation. (The process.on("exit")
+		// orphan-cleanup below re-reads process.env because this `keep` is scoped
+		// to the spawn function — AO_KEEP_DAEMON is set once at startup and never
+		// mutated, so both reads agree.)
 		if (!keep) {
 			establishSupervisorLink();
 		}
@@ -1097,6 +1102,9 @@ ipcMain.handle("menu:action", (_event, action: string) => {
 			return win.close();
 		case "app.quit":
 			return app.quit();
+		case "help.shortcuts":
+			win.webContents.focus();
+			return win.webContents.send(KEYBOARD_SHORTCUTS_HELP_CHANNEL);
 		case "help.about":
 			void dialog.showMessageBox(win, {
 				type: "info",
@@ -1312,23 +1320,26 @@ ipcMain.handle("appState:setMigration", async (_event, migration: MigrationState
 
 ipcMain.handle("updateSettings:get", async (): Promise<UpdateSettings> => {
 	const runFile = runFilePath();
-	if (!runFile) return { enabled: false, channel: "latest", nightlyAck: false };
+	if (!runFile) return { enabled: false, channel: "latest", nightlyAck: false, feature: null };
 	return readUpdateSettings(path.dirname(runFile));
 });
 ipcMain.handle("updateSettings:set", async (_event, settings: UpdateSettings) => {
 	const runFile = runFilePath();
 	if (!runFile) return;
-	await writeUpdateSettings(path.dirname(runFile), settings);
+	await setUpdateSettings(path.dirname(runFile), settings);
 });
 
+ipcMain.handle("featureBuilds:list", () => listFeatureBuilds());
+ipcMain.handle("featureBuilds:getActive", () => getActiveFeatureBuild());
+
 ipcMain.handle("updates:getStatus", (): UpdateStatus => getUpdateStatus());
-ipcMain.handle("updates:check", async () => {
+ipcMain.handle("updates:check", async (_event, options?: UpdateCheckOptions) => {
 	const runFile = runFilePath();
 	if (!runFile) return;
-	await checkForUpdatesNow(path.dirname(runFile));
+	await checkForUpdatesNow(path.dirname(runFile), options);
 });
-ipcMain.handle("updates:download", async () => {
-	await downloadUpdateNow();
+ipcMain.handle("updates:download", async (_event, requestId?: string) => {
+	await downloadUpdateNow(requestId);
 });
 ipcMain.handle("updates:install", () => {
 	quitAndInstallUpdate();
