@@ -23,35 +23,42 @@ be copied into each project's blob.
 The blocker for any scope-above-project is the **absent-vs-empty** distinction. Once a
 User layer exists, an unset field on the project must mean "inherit from User," while a
 deliberately cleared field must mean "drop the User value." Today the codebase resolves
-this two different ways with no recorded principle:
+this with a single dominant pattern:
 
-- **Zero-value-means-inherit** (dominant): `Model`, `Permissions`, `SystemPrompt` use
-  `if override.X != ""` in `effectiveAgentConfig` (`manager.go`). Empty always means
-  "inherit"; there is no way to explicitly clear.
-- **Pointer for absent-vs-empty** (the single exception): `MCP *MCPConfig`
-  (`agentconfig.go`) — `nil` means inherit the global set, a present-but-empty
-  `MCPConfig{Strict:true}` means explicit isolation. This is the only pointer field in
-  the domain config, chosen because isolation is a product feature that needs a third
-  state.
+- **Zero-value-means-inherit** is the rule for every `AgentConfig` field that exists
+  (`Model`, `Permissions`): `effectiveAgentConfig` applies `if override.X != ""`
+  (`manager.go`). Empty always means "inherit"; there is no way to explicitly clear a
+  single field. (An earlier draft of this ADR referenced a `*MCPConfig` pointer field and
+  a `SystemPrompt` field; neither exists in the codebase today. The pointer-for-third-state
+  pattern is recorded here only as the established precedent to reach for, *if* a future
+  field ever needs per-field explicit-clear.)
 
-There is no ADR recording which pattern applies when; the rule lives only in code
-comments.
+There is no ADR recording the pattern; the rule lives only in code comments.
 
 ## Decision
 
 Introduce a **User-scope config layer**, stored as a **singleton row in a new SQLite
-table** (not a file, not a column on `projects`), exposing **the whole `AgentConfig`**
-(model/permissions/systemPrompt/env/mcp/pluginDirs). Precedence is **Project over User**:
-the project's `AgentConfig` wins over the User layer, mirroring Claude Code where User is
-the lowest-precedence settings scope.
+table** (not a file, not a column on `projects`), exposing **the current `AgentConfig`**
+(`model` and `permissions` — the only fields `domain.AgentConfig` carries today, per
+`agentconfig.go`). Precedence is **Project over User**: the project's `AgentConfig` wins
+over the User layer, mirroring Claude Code where User is the lowest-precedence settings
+scope.
+
+The surface is deliberately scoped to **exactly the fields `domain.AgentConfig` has
+today** (Model, Permissions). This keeps the first PR a pure storage/transport addition
+with zero changes to the domain package. When `AgentConfig` later gains fields (env,
+systemPrompt, mcp — currently absent), the User layer picks them up automatically with no
+schema change, because it reuses the same type end to end.
 
 The User layer merges **wholesale**, not field-by-field. Concretely:
 
 - The User config is a single `AgentConfig` that the project layer either inherits (when
   the project leaves a field at zero value) or overrides (when the project sets it).
 - This reuses the project's **existing** zero-value-means-inherit merge semantics in
-  `effectiveAgentConfig`: `roleBaseline` becomes `User.AgentConfig`-aware, so an unset
-  project field falls through to User before falling through to built-in defaults.
+  `effectiveAgentConfig` (`manager.go`): the project base `cfg.AgentConfig` becomes the
+  result of merging User-over-nothing, so an unset project field falls through to User
+  before falling through to built-in defaults. The role override
+  (`roleOverride(...).AgentConfig`) then merges over that, unchanged.
 - **No field-level explicit-clear is supported in this first layer.** A project cannot
   say "drop just the User model, keep the rest" — clearing is all-or-nothing at the
   project level (the project either declares an `AgentConfig` or inherits User). This
@@ -85,8 +92,9 @@ host environment.
 - Absent-vs-empty is deliberately **not** solved per-field. Clearing a single User field
   from the project layer is impossible in this PR; clearing is wholesale at the project
   level, consistent with existing `SetConfig`. If fine-grained clear becomes necessary
-  later, the established precedent is a pointer (`*MCPConfig`): promote `AgentConfig`
-  fields to pointers field-by-field as the need arises, without reworking the layer.
+  later, the established precedent is a pointer for the field that needs a third state
+  (no such field exists in `AgentConfig` today); promote fields to pointers one at a time
+  as the need arises, without reworking the layer.
 - This ADR records the wholesale-replace principle for the User layer so the choice is
   visible to reviewers; the older code-comment-only rule for project config is
   unchanged.
