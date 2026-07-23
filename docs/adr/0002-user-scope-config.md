@@ -1,4 +1,4 @@
-# 2. A User-scope config layer above projects, merged wholesale
+# 2. A User-scope config layer above projects, stored wholesale and resolved field-by-field
 
 Date: 2026-07-23
 Status: Proposed
@@ -50,55 +50,70 @@ with zero changes to the domain package. When `AgentConfig` later gains fields (
 systemPrompt, mcp — currently absent), the User layer picks them up automatically with no
 schema change, because it reuses the same type end to end.
 
-The User layer merges **wholesale**, not field-by-field. Concretely:
+The **write** is wholesale; the **resolution** is field-by-field. The two must not be
+conflated:
 
-- The User config is a single `AgentConfig` that the project layer either inherits (when
-  the project leaves a field at zero value) or overrides (when the project sets it).
-- This reuses the project's **existing** zero-value-means-inherit merge semantics in
-  `effectiveAgentConfig` (`manager.go`): the project base `cfg.AgentConfig` becomes the
-  result of merging User-over-nothing, so an unset project field falls through to User
-  before falling through to built-in defaults. The role override
-  (`roleOverride(...).AgentConfig`) then merges over that, unchanged.
-- **No field-level explicit-clear is supported in this first layer.** A project cannot
-  say "drop just the User model, keep the rest" — clearing is all-or-nothing at the
-  project level (the project either declares an `AgentConfig` or inherits User). This
-  matches how `SetConfig` already replaces project config wholesale (`service.go`,
-  `dto.go`: "Config replaces the project's stored config wholesale; a zero-value config
-  clears it").
+- **Write (wholesale).** A `PUT /api/v1/user-config` replaces the stored User
+  `AgentConfig` blob in full, mirroring how `SetConfig` replaces the project config
+  wholesale (`row.Config = in.Config`, `service.go`, `dto.go`: "Config replaces the
+  project's stored config wholesale; a zero-value config clears it"). There is one
+  `AgentConfig` per scope; setting it overwrites every field.
+- **Resolution (field-by-field, zero-value-means-inherit).** This is the *existing*
+  semantics of `effectiveAgentConfig` (`manager.go`), which overlays each role-override
+  field over the project base only when that field is non-zero (`if override.X != ""`).
+  A project that sets `Model` but leaves `Permissions` empty does **not** wholesale-override
+  User — it takes its `Model` and falls through to User for `Permissions`. An unset project
+  field falls through to User before falling through to built-in defaults; the role override
+  then overlays on top, unchanged.
+- **No field-level explicit-clear is supported in this first layer.** Because
+  `AgentConfig` is a value struct with no per-field presence bit, "is this field set?"
+  is answered only by its zero value — there is no way to say "drop just the User model,
+  keep the rest." Clearing the *project* blob wholesale via `SetConfig` returns that
+  project to inheriting User; it does not clear the User defaults themselves.
 
-Storage, endpoint, and merge are the scope of the first PR:
+Storage, endpoint, and the merge are split across two PRs:
 
-- **Storage:** new table, one row, `AgentConfig` JSON blob, migrated via goose.
-- **Endpoint:** new `/api/v1/user-config` (GET/PUT), a separate resource for a separate
-  scope; the project endpoint's semantics are unchanged.
-- **Merge:** `effectiveAgentConfig` resolves project-over-User before role-over-project.
-  Existing project blobs are untouched.
-- **No UI in this PR.** The desktop form (`ProjectSettingsForm`) is unchanged; a User
+- **#2998 (this layer's backend, no merge):** new table, one row, `AgentConfig` JSON blob,
+  migrated via goose; new `/api/v1/user-config` (GET/PUT); `ao user-config get/set`. The
+  layer is stored and editable but has **no effect on workers yet**.
+- **#2999 (merge layer, after #2848):** `effectiveAgentConfig` resolves
+  project-over-User before role-over-project. Existing project blobs are untouched.
+- **No UI in #2998.** The desktop form (`ProjectSettingsForm`) is unchanged; a User
   settings surface is a follow-up.
 
 Backward compatibility is by construction: a missing User row decodes to a zero
 `AgentConfig`, so existing projects and the 8k current users resolve to **exactly today's
 behavior** until a User config is set.
 
-Security (ties to #2951): a User `env` value reaches **every** worker across **every**
-project, so the layer must accept only explicitly-set values and must **never** copy or
-persist `os.Environ()`. The User layer is opt-in typed config, not a reflection of the
-host environment.
+Security (ties to #2951): when `AgentConfig` later gains an `env` field (it does not carry
+one today — that is #2848), a User `env` value would reach **every** worker across **every**
+project, so the layer must accept only explicitly-set typed values and must **never** copy
+or persist `os.Environ()`. The User layer is opt-in typed config, not a reflection of the
+host environment. Until #2848 lands this is vacuous; it becomes a real constraint at that
+rebase, which is why the invariant is recorded now.
 
 ## Consequences
 
 - A user gains one place to set a cross-project agent profile, removing per-project
   duplication. Projects remain free to override any field.
-- Absent-vs-empty is deliberately **not** solved per-field. Clearing a single User field
-  from the project layer is impossible in this PR; clearing is wholesale at the project
-  level, consistent with existing `SetConfig`. If fine-grained clear becomes necessary
-  later, the established precedent is a pointer for the field that needs a third state
-  (no such field exists in `AgentConfig` today); promote fields to pointers one at a time
-  as the need arises, without reworking the layer.
-- This ADR records the wholesale-replace principle for the User layer so the choice is
-  visible to reviewers; the older code-comment-only rule for project config is
-  unchanged.
-- The first PR is backend-only (storage + endpoint + merge) to keep the change narrow
-  and reviewable. UI, additional scopes (Local, Managed), `ProfileSource` across
-  layers, and Codex-style profile presets are follow-up PRs that build on this
-  foundation.
+- Absent-vs-empty is deliberately **not** solved per-field. Because `AgentConfig` is a
+  value struct with no per-field presence bit, clearing a single User field from the
+  project layer is impossible; only the zero value can express "inherit." Clearing the
+  project blob wholesale via `SetConfig` returns that project to inheriting User. If
+  fine-grained clear becomes necessary later, the established precedent is a pointer for
+  the field that needs a third state (no such field exists in `AgentConfig` today);
+  promote fields to pointers one at a time as the need arises, without reworking the layer.
+- This ADR records two distinct principles so the choice is visible to reviewers: the
+  User layer **stores wholesale** (one `PUT` replaces the whole blob) and **resolves
+  field-by-field** (reusing the project layer's zero-value-means-inherit overlay). The
+  older code-comment-only rule for project config is unchanged.
+- The first PR (#2998) is backend-only (storage + endpoint + cli, no merge) to keep the
+  change narrow and reviewable; the merge layer (#2999) lands only after #2848. UI,
+  additional scopes (Local, Managed), `ProfileSource` across layers, and Codex-style
+  profile presets are follow-up PRs that build on this foundation.
+- For the merge layer (#2999), `buildSystemPrompt` **does exist** (`manager.go`) and
+  already reads project config; Phase 2 must decide whether User scope affects only
+  `AgentConfig` fields or also flows into the prompt. The `mergeEnv` helper does not
+  exist under that name on `main` (env is assembled in `runtimeEnv` /
+  `augmentAgentRuntimeEnv`); it is introduced by #2848. Both are Phase-2 concerns and
+  do not touch #2998.
