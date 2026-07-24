@@ -2062,6 +2062,57 @@ paths:
       summary: Close a standalone shell terminal and destroy its PTY
       tags:
       - shellTerminals
+  /api/v1/user-config:
+    get:
+      operationId: getUserConfig
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserConfigResponse'
+          description: OK
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+      summary: Get the user-scoped agent config (the lowest-precedence scope above
+        projects)
+      tags:
+      - config
+    put:
+      operationId: setUserConfig
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetUserConfigInput'
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserConfigResponse'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Bad Request
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+      summary: Replace the user-scoped agent config wholesale (a zero agentConfig
+        clears it)
+      tags:
+      - config
 components:
   schemas:
     APIError:
@@ -3395,6 +3446,13 @@ components:
             entry point in the session workspace.
           type: string
       type: object
+    SetUserConfigInput:
+      properties:
+        agentConfig:
+          $ref: '#/components/schemas/AgentConfig'
+      required:
+      - agentConfig
+      type: object
     ShellTerminalEnvelope:
       properties:
         shellTerminal:
@@ -3592,6 +3650,13 @@ components:
       required:
       - displayName
       - config
+      type: object
+    UserConfigResponse:
+      properties:
+        agentConfig:
+          $ref: '#/components/schemas/AgentConfig'
+      required:
+      - agentConfig
       type: object
     WorkspaceFileResponse:
       properties:

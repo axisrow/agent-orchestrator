@@ -227,6 +227,11 @@ type TelemetryEvent struct {
 	PayloadJson string
 }
 
+type UserConfig struct {
+	ID     int64
+	Config sql.NullString
+}
+
 type WorkerIdleEvent struct {
 	ID            string
 	ProjectID     domain.ProjectID
