@@ -41,6 +41,9 @@ func NewWithDeps(d Deps) *Service {
 }
 
 // Get returns the stored user-scope config. Absent row → zero config, no error.
+// The store's "found" bool is intentionally discarded here: callers resolve to a
+// zero config whether the row is absent or explicitly cleared, so the distinction
+// (kept on the store for the Phase-2 merge layer) is not part of the read surface.
 func (s *Service) Get(ctx context.Context) (domain.AgentConfig, error) {
 	cfg, _, err := s.store.GetUserConfig(ctx)
 	if err != nil {

@@ -81,6 +81,28 @@ func TestUserConfigSet_Clear(t *testing.T) {
 	}
 }
 
+func TestUserConfigSet_ClearPrecedenceOverFieldFlags(t *testing.T) {
+	// --clear wins over field flags: --clear --model X sends an empty config,
+	// ignoring --model. Matches the project set-config precedence.
+	cfg := setConfigEnv(t)
+	srv, capture := userConfigServer(t, http.StatusOK, `{"agentConfig":{}}`)
+	writeRunFileFor(t, cfg, srv)
+
+	_, errOut, err := executeCLI(t, Deps{
+		ProcessAlive: func(int) bool { return true },
+	}, "user-config", "set", "--clear", "--model", "claude-opus-4-8", "--permission", "auto")
+	if err != nil {
+		t.Fatalf("unexpected error: %v\nstderr=%s", err, errOut)
+	}
+	var got setUserConfigRequest
+	if err := json.Unmarshal(capture.body, &got); err != nil {
+		t.Fatalf("decode request: %v\nbody=%s", err, capture.body)
+	}
+	if got.AgentConfig.Model != "" || got.AgentConfig.Permissions != "" {
+		t.Fatalf("--clear should win; agentConfig = %#v, want empty", got.AgentConfig)
+	}
+}
+
 func TestUserConfigSet_RequiresAFlag(t *testing.T) {
 	cfg := setConfigEnv(t)
 	srv, _ := userConfigServer(t, http.StatusOK, `{}`)
