@@ -30,7 +30,7 @@ this with a single dominant pattern:
   (`manager.go`). Empty always means "inherit"; there is no way to explicitly clear a
   single field. (An earlier draft of this ADR referenced a `*MCPConfig` pointer field and
   a `SystemPrompt` field; neither exists in the codebase today. The pointer-for-third-state
-  pattern is recorded here only as the established precedent to reach for, *if* a future
+  pattern is recorded here only as the established precedent to reach for, _if_ a future
   field ever needs per-field explicit-clear.)
 
 There is no ADR recording the pattern; the rule lives only in code comments.
@@ -58,7 +58,7 @@ conflated:
   wholesale (`row.Config = in.Config`, `service.go`, `dto.go`: "Config replaces the
   project's stored config wholesale; a zero-value config clears it"). There is one
   `AgentConfig` per scope; setting it overwrites every field.
-- **Resolution (field-by-field, zero-value-means-inherit).** This is the *existing*
+- **Resolution (field-by-field, zero-value-means-inherit).** This is the _existing_
   semantics of `effectiveAgentConfig` (`manager.go`), which overlays each role-override
   field over the project base only when that field is non-zero (`if override.X != ""`).
   A project that sets `Model` but leaves `Permissions` empty does **not** wholesale-override
@@ -68,7 +68,7 @@ conflated:
 - **No field-level explicit-clear is supported in this first layer.** Because
   `AgentConfig` is a value struct with no per-field presence bit, "is this field set?"
   is answered only by its zero value — there is no way to say "drop just the User model,
-  keep the rest." Clearing the *project* blob wholesale via `SetConfig` returns that
+  keep the rest." Clearing the _project_ blob wholesale via `SetConfig` returns that
   project to inheriting User; it does not clear the User defaults themselves.
 
 Storage, endpoint, and the merge are split across two PRs:

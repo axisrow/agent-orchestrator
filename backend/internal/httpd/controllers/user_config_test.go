@@ -93,8 +93,8 @@ func TestUserConfigAPI_PutReturnsStored(t *testing.T) {
 }
 
 func TestUserConfigAPI_PutRejectsUnknownField(t *testing.T) {
-	// decodeJSONStrict rejects unknown keys so a misspelled field surfaces as 400.
+	// decodeJSONStrict rejects unknown keys so an unexpected field surfaces as 400.
 	srv := userConfigServer(t, stubUserConfigManager{})
-	body, status, _ := doRequest(t, srv, "PUT", "/api/v1/user-config", `{"agentConfig":{"modle":"x"}}`)
+	body, status, _ := doRequest(t, srv, "PUT", "/api/v1/user-config", `{"agentConfig":{"bogus":"x"}}`)
 	assertErrorCode(t, body, status, 400, "INVALID_JSON")
 }
