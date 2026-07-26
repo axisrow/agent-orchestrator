@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import { useTranslation } from "react-i18next";
 import type { GlobalSettingsSection as GlobalSettingsPage } from "../stores/ui-store";
+import { AgentDefaultsSettingsSection } from "./settings/AgentDefaultsSettingsSection";
 import { GeneralSettingsSection } from "./settings/GeneralSettingsSection";
 import { CloudCredentialsSection } from "./settings/CloudCredentialsSection";
 import { ConnectMobileContent } from "./settings/ConnectMobileContent";
@@ -39,7 +40,12 @@ export function GlobalSettingsForm({
 			className="flex w-full flex-col gap-(--size-settings-section-gap)"
 			data-testid="settings-page"
 		>
-			{(all || section === "general") && <GeneralSettingsSection titleHidden={titleHidden} />}
+			{(all || section === "general") && (
+				<>
+					<AgentDefaultsSettingsSection />
+					<GeneralSettingsSection titleHidden={titleHidden} />
+				</>
+			)}
 
 			{(all || section === "cloud") && <CloudCredentialsSection titleHidden={titleHidden} />}
 
