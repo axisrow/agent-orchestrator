@@ -41,6 +41,15 @@ type ProjectConfig struct {
 	// orchestrator sessions.
 	OrchestratorRules string `json:"orchestratorRules,omitempty"`
 
+	// WorkerPromptOverride, when non-empty, REPLACES the hardcoded worker system
+	// prompt baseline (workerSystemPrompt) instead of being appended to it like
+	// AgentRules. An empty value keeps the default baseline.
+	WorkerPromptOverride string `json:"workerPromptOverride,omitempty"`
+	// OrchestratorPromptOverride, when non-empty, REPLACES the hardcoded
+	// orchestrator system prompt baseline (orchestratorSystemPrompt). An empty
+	// value keeps the default baseline.
+	OrchestratorPromptOverride string `json:"orchestratorPromptOverride,omitempty"`
+
 	// AgentConfig is the default agent config for the project.
 	AgentConfig AgentConfig `json:"agentConfig,omitempty"`
 	// Worker and Orchestrator are role-specific harness/agent-config overrides.

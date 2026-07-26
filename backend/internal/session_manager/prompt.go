@@ -36,7 +36,11 @@ type systemPromptConfig struct {
 	ProjectRules          string
 	OrchestratorRules     string
 	RolePrompt            string
-	AdditionalSections    []string
+	// Replace the built-in role prompt outright (project config, see #15).
+	// Empty means "use the built-in prompt for this role".
+	WorkerPromptOverride       string
+	OrchestratorPromptOverride string
+	AdditionalSections         []string
 }
 
 type projectRulesConfig struct {
@@ -72,13 +76,21 @@ func buildSystemPromptText(cfg systemPromptConfig) string {
 	sections := make([]string, 0, 6)
 	switch cfg.Role {
 	case sessionPromptRoleOrchestrator:
-		sections = append(sections, orchestratorSystemPrompt(cfg.Project))
+		if override := strings.TrimSpace(cfg.OrchestratorPromptOverride); override != "" {
+			sections = append(sections, override)
+		} else {
+			sections = append(sections, orchestratorSystemPrompt(cfg.Project))
+		}
 		if rules := strings.TrimSpace(cfg.OrchestratorRules); rules != "" {
 			sections = append(sections, "## Project-Specific Orchestrator Rules\n"+rules)
 		}
 	case sessionPromptRoleWorker:
 		orchestratorID := strings.TrimSpace(cfg.OrchestratorSessionID)
-		sections = append(sections, workerSystemPrompt(cfg.Project, orchestratorID != ""))
+		if override := strings.TrimSpace(cfg.WorkerPromptOverride); override != "" {
+			sections = append(sections, override)
+		} else {
+			sections = append(sections, workerSystemPrompt(cfg.Project, orchestratorID != ""))
+		}
 		if orchestratorID != "" {
 			sections = append(sections, workerOrchestratorPrompt(orchestratorID))
 		}
