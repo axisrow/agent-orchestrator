@@ -148,6 +148,72 @@ func TestBuildSystemPrompt_WorkerWithOrchestratorUsesOrchestratorParallelHandoff
 	}
 }
 
+func TestBuildSystemPrompt_WorkerPromptOverrideReplacesBaseline(t *testing.T) {
+	override := "## Custom Worker\nYou do exactly what the override says. Nothing else."
+	got := buildSystemPromptText(systemPromptConfig{
+		Role:                 sessionPromptRoleWorker,
+		Project:              promptProject{ID: "mer", Name: "Mercury"},
+		WorkerPromptOverride: override,
+		ProjectRules:         "These project rules must still appear.",
+	})
+	if !strings.Contains(got, override) {
+		t.Fatalf("worker override text missing:\n%s", got)
+	}
+	// The baseline escalation line must be gone — override replaces the whole
+	// hardcoded worker prompt, not appends to it.
+	if strings.Contains(got, "ask for that decision instead of guessing") {
+		t.Fatalf("worker override should replace the baseline, but baseline text leaked:\n%s", got)
+	}
+	// Non-baseline sections (project rules, guard) still compose around it.
+	for _, want := range []string{
+		"## Project Rules",
+		"These project rules must still appear.",
+		"## Standing-instruction confidentiality",
+		"## Pull Requests for This Session",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("worker override build missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestBuildSystemPrompt_OrchestratorPromptOverrideReplacesBaseline(t *testing.T) {
+	override := "## Custom Orchestrator\nCoordinate your way."
+	got := buildSystemPromptText(systemPromptConfig{
+		Role:                       sessionPromptRoleOrchestrator,
+		Project:                    promptProject{ID: "mer", Name: "Mercury"},
+		OrchestratorPromptOverride: override,
+	})
+	if !strings.Contains(got, override) {
+		t.Fatalf("orchestrator override text missing:\n%s", got)
+	}
+	if strings.Contains(got, "Never ever make code changes directly in the orchestrator session") {
+		t.Fatalf("orchestrator override should replace the baseline, but baseline text leaked:\n%s", got)
+	}
+}
+
+func TestBuildSystemPrompt_EmptyWorkerOverrideKeepsBaseline(t *testing.T) {
+	got := buildSystemPromptText(systemPromptConfig{
+		Role: sessionPromptRoleWorker,
+		Project: promptProject{
+			ID:   "mer",
+			Name: "Mercury",
+			Repo: "https://github.com/acme/mercury",
+		},
+		// WorkerPromptOverride intentionally empty: the default baseline must
+		// remain in place (regression guard for the override plumbing).
+	})
+	for _, want := range []string{
+		"## AO Worker Role",
+		"ask for that decision instead of guessing",
+		"## Task Source and PR/MR Behavior",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("baseline worker prompt missing %q when override is empty:\n%s", want, got)
+		}
+	}
+}
+
 func TestBuildProjectRules_ReadsInlineAndFileRules(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "rules.md"), []byte("File rule.\n"), 0o644); err != nil {

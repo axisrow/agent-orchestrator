@@ -78,7 +78,11 @@ func buildSystemPromptText(cfg systemPromptConfig) string {
 		}
 	case sessionPromptRoleWorker:
 		orchestratorID := strings.TrimSpace(cfg.OrchestratorSessionID)
-		sections = append(sections, workerSystemPrompt(cfg.Project, orchestratorID != ""))
+		if override := strings.TrimSpace(cfg.WorkerPromptOverride); override != "" {
+			sections = append(sections, override)
+		} else {
+			sections = append(sections, workerSystemPrompt(cfg.Project, orchestratorID != ""))
+		}
 		if orchestratorID != "" {
 			sections = append(sections, workerOrchestratorPrompt(orchestratorID))
 		}
