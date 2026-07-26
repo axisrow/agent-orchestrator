@@ -33,7 +33,15 @@ func (c *UserConfigController) get(w http.ResponseWriter, r *http.Request) {
 		envelope.WriteError(w, r, err)
 		return
 	}
-	envelope.WriteJSON(w, http.StatusOK, UserConfigResponse{AgentConfig: cfg})
+	// The assembled hardcoded prompt baselines are surfaced so the UI can
+	// prefill its override editors with the real text. DefaultPrompts never
+	// errors in practice, but a failure must not break the config read.
+	defaults, _ := c.Mgr.DefaultPrompts(r.Context())
+	envelope.WriteJSON(w, http.StatusOK, UserConfigResponse{
+		AgentConfig:               cfg,
+		DefaultWorkerPrompt:       defaults.Worker,
+		DefaultOrchestratorPrompt: defaults.Orchestrator,
+	})
 }
 
 func (c *UserConfigController) set(w http.ResponseWriter, r *http.Request) {

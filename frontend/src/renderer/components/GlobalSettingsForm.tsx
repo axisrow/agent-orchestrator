@@ -1,7 +1,7 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { GlobalSettingsSection as GlobalSettingsPage } from "../stores/ui-store";
-import { AgentDefaultsSettingsSection } from "./settings/AgentDefaultsSettingsSection";
+import { AgentDefaultsDialog } from "./settings/AgentDefaultsDialog";
 import { GeneralSettingsSection } from "./settings/GeneralSettingsSection";
 import { CloudCredentialsSection } from "./settings/CloudCredentialsSection";
 import { ConnectMobileContent } from "./settings/ConnectMobileContent";
@@ -29,12 +29,14 @@ export function GlobalSettingsForm({
 	section?: GlobalSettingsSection;
 }) {
 	const { t } = useTranslation();
+	const [agentDefaultsOpen, setAgentDefaultsOpen] = useState(false);
 	const all = section === "all";
 	// One section per page means the dialog header already names it, so a
 	// leading in-page heading would just repeat that title.
 	const titleHidden = !all;
 
 	return (
+		<>
 		<div
 			aria-label={t("settings.title")}
 			className="flex w-full flex-col gap-(--size-settings-section-gap)"
@@ -42,7 +44,15 @@ export function GlobalSettingsForm({
 		>
 			{(all || section === "general") && (
 				<>
-					<AgentDefaultsSettingsSection />
+					<SettingsSection title="Agent defaults" titleHidden={titleHidden}>
+						<button
+							type="button"
+							className="w-full rounded-md bg-[var(--color-bg-settings-row)] px-4 py-3 text-left"
+							onClick={() => setAgentDefaultsOpen(true)}
+						>
+							Agent defaults
+						</button>
+					</SettingsSection>
 					<GeneralSettingsSection titleHidden={titleHidden} />
 				</>
 			)}
@@ -80,5 +90,7 @@ export function GlobalSettingsForm({
 				</SettingsSection>
 			)}
 		</div>
+		<AgentDefaultsDialog open={agentDefaultsOpen} onOpenChange={setAgentDefaultsOpen} />
+		</>
 	);
 }

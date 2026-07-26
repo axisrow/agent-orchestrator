@@ -9,3 +9,13 @@ import "github.com/aoagents/agent-orchestrator/backend/internal/domain"
 type SetUserConfigInput struct {
 	AgentConfig domain.AgentConfig `json:"agentConfig"`
 }
+
+// DefaultPrompts is the assembled hardcoded system-prompt baseline for both
+// roles, served alongside the stored override so the UI can prefill its edit
+// boxes with the real baseline text. Worker/Orchestrator hold the static
+// "skeleton" prompts (role blocks + multi-PR/guard) without any per-session
+// dynamic data.
+type DefaultPrompts struct {
+	Worker       string `json:"defaultWorkerPrompt"`
+	Orchestrator string `json:"defaultOrchestratorPrompt"`
+}
