@@ -38,6 +38,11 @@ type AgentDefaultsDialogProps = {
  * text is stored as the override. PUT replaces AgentConfig wholesale, so the
  * two derived fields are merged over the loaded config to preserve
  * model/permissions/env/mcp/pluginDirs/systemPrompt.
+ *
+ * "Reset to default" bypasses the compare-with-default dance: it refills the
+ * textareas with the hardcoded baseline and writes an explicit
+ * {workerPromptOverride: undefined, orchestratorPromptOverride: undefined} PUT
+ * (merged over the loaded config so model/permissions survive).
  */
 export function AgentDefaultsDialog({ open, onOpenChange }: AgentDefaultsDialogProps) {
 	const workerId = useId();
@@ -79,17 +84,28 @@ export function AgentDefaultsDialog({ open, onOpenChange }: AgentDefaultsDialogP
 		setSavedAt(null);
 	}, [open, storedWorker, storedOrchestrator, defaultWorker, defaultOrchestrator]);
 
+	// Save the two overrides. Pass an explicit `{ worker, orchestrator }` to
+	// bypass the textarea state — used by "Reset to default" so the override is
+	// cleared regardless of the current textarea text (state updates are async,
+	// so mutating off the just-set state would race).
 	const mutation = useMutation({
-		mutationFn: async () => {
-			void captureRendererEvent("ao.renderer.user_settings_save_requested");
+		mutationFn: async (overrides?: { worker?: string; orchestrator?: string }) => {
+			const explicit = overrides !== undefined;
+			void captureRendererEvent(
+				explicit
+					? "ao.renderer.user_settings_reset_to_default"
+					: "ao.renderer.user_settings_save_requested",
+			);
 			// If the edited text equals the default (trimmed), clear the override so
 			// the hardcoded baseline is used; any other text becomes the override.
-			const workerOverride =
-				workerPrompt.trim() && workerPrompt.trim() !== defaultWorker.trim()
+			const workerOverride = explicit
+				? overrides!.worker
+				: workerPrompt.trim() && workerPrompt.trim() !== defaultWorker.trim()
 					? workerPrompt.trim()
 					: undefined;
-			const orchestratorOverride =
-				orchestratorPrompt.trim() && orchestratorPrompt.trim() !== defaultOrchestrator.trim()
+			const orchestratorOverride = explicit
+				? overrides!.orchestrator
+				: orchestratorPrompt.trim() && orchestratorPrompt.trim() !== defaultOrchestrator.trim()
 					? orchestratorPrompt.trim()
 					: undefined;
 			// Wholesale replace: merge the two derived fields over the loaded
@@ -128,7 +144,7 @@ export function AgentDefaultsDialog({ open, onOpenChange }: AgentDefaultsDialogP
 					if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
 						event.preventDefault();
 						setSavedAt(null);
-						mutation.mutate();
+						mutation.mutate(undefined);
 					}
 				}}
 			>
@@ -212,6 +228,25 @@ export function AgentDefaultsDialog({ open, onOpenChange }: AgentDefaultsDialogP
 				</div>
 
 				<div className={settingsDialogFooterClass}>
+					<button
+						type="button"
+						className="settings-footer-button mr-auto"
+						disabled={mutation.isPending || query.isLoading}
+						aria-label="Reset to default (restore the hardcoded AO prompt, clears your override)"
+						title="Restore the hardcoded AO prompt (clears your override)"
+						onClick={() => {
+							// Refill the textareas with the hardcoded baseline, then clear
+							// the stored override explicitly. Explicit undefined is passed
+							// so the override is wiped regardless of the textarea state
+							// (state updates are async and would race the mutation closure).
+							setWorkerPrompt(defaultWorker);
+							setOrchestratorPrompt(defaultOrchestrator);
+							setSavedAt(null);
+							mutation.mutate({ worker: undefined, orchestrator: undefined });
+						}}
+					>
+						Reset to default
+					</button>
 					<DialogClose asChild>
 						<button type="button" className="settings-footer-button">
 							Cancel
@@ -223,7 +258,7 @@ export function AgentDefaultsDialog({ open, onOpenChange }: AgentDefaultsDialogP
 						disabled={mutation.isPending || query.isLoading}
 						onClick={() => {
 							setSavedAt(null);
-							mutation.mutate();
+							mutation.mutate(undefined);
 						}}
 					>
 						{mutation.isPending ? "Saving…" : "Save"}
