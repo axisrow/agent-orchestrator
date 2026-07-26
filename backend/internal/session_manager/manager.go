@@ -280,6 +280,12 @@ type Store interface {
 
 // Manager coordinates internal session spawn, restore, kill, and cleanup over
 // the outbound ports. User-facing read-model assembly lives in the service package.
+// UserConfigSource is the narrow read surface for global prompt overrides.
+// A nil source preserves the historical hardcoded baseline.
+type UserConfigSource interface {
+	GetUserConfig(ctx context.Context) (domain.AgentConfig, bool, error)
+}
+
 type Manager struct {
 	runtime   runtimeController
 	agents    ports.AgentResolver
@@ -372,6 +378,7 @@ type Manager struct {
 	// user-paced waits reported through the activity boundary remain unbounded.
 	interfaceTransition interfaceTransitionConfig
 	logger              *slog.Logger
+	userConfig          UserConfigSource
 
 	// shellTerminalsMu guards shellTerminals: it is late-bound (see
 	// ShellTerminalCloser) after Manager already exists, so a setter mutates it
@@ -575,6 +582,9 @@ type Deps struct {
 	// Logger receives spawn-time diagnostics (e.g. when the session PATH
 	// cannot be pinned to the daemon binary). Nil defaults to slog.Default().
 	Logger *slog.Logger
+	// UserConfig supplies global prompt overrides from the user-config singleton.
+	// Nil preserves the historical hardcoded baseline.
+	UserConfig UserConfigSource
 }
 
 // New builds a Session Manager from its dependencies, defaulting the clock to
@@ -623,7 +633,8 @@ func New(d Deps) *Manager {
 			idleSettle:     interfaceTransitionIdleSettle,
 			staleIdleLimit: interfaceTransitionStaleIdleLimit,
 		},
-		logger: d.Logger,
+		logger:     d.Logger,
+		userConfig: d.UserConfig,
 	}
 	if m.clock == nil {
 		// UTC so spawn-stamped CreatedAt/UpdatedAt match every other session
@@ -3121,6 +3132,12 @@ func (m *Manager) buildSystemPrompt(ctx context.Context, kind domain.SessionKind
 	cfg := systemPromptConfig{
 		Role:    promptRoleForKind(kind),
 		Project: promptProjectContext(projectID, project),
+	}
+	if m.userConfig != nil {
+		if userCfg, _, err := m.userConfig.GetUserConfig(ctx); err == nil {
+			cfg.GlobalWorkerPromptOverride = userCfg.WorkerPromptOverride
+			cfg.GlobalOrchestratorPromptOverride = userCfg.OrchestratorPromptOverride
+		}
 	}
 
 	switch kind {

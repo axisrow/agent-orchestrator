@@ -75,13 +75,15 @@ type workspaceRepoDetails struct {
 
 // agentConfig mirrors the daemon's typed domain.AgentConfig for the CLI client.
 type agentConfig struct {
-	Model        string            `json:"model,omitempty"`
-	Mode         string            `json:"mode,omitempty"`
-	Permissions  string            `json:"permissions,omitempty"`
-	SystemPrompt string            `json:"systemPrompt,omitempty"`
-	Env          map[string]string `json:"env,omitempty"`
-	MCP          *mcpConfig        `json:"mcp,omitempty"`
-	PluginDirs   []string          `json:"pluginDirs,omitempty"`
+	Model                      string            `json:"model,omitempty"`
+	Mode                       string            `json:"mode,omitempty"`
+	Permissions                string            `json:"permissions,omitempty"`
+	SystemPrompt               string            `json:"systemPrompt,omitempty"`
+	Env                        map[string]string `json:"env,omitempty"`
+	MCP                        *mcpConfig        `json:"mcp,omitempty"`
+	PluginDirs                 []string          `json:"pluginDirs,omitempty"`
+	WorkerPromptOverride       string            `json:"workerPromptOverride,omitempty"`
+	OrchestratorPromptOverride string            `json:"orchestratorPromptOverride,omitempty"`
 }
 
 // mcpConfig mirrors domain.MCPConfig.
