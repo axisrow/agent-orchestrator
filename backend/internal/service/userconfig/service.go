@@ -5,6 +5,7 @@ import (
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 	"github.com/aoagents/agent-orchestrator/backend/internal/httpd/apierr"
+	sessionmanager "github.com/aoagents/agent-orchestrator/backend/internal/session_manager"
 )
 
 // Manager is the controller-facing contract for the /api/v1/user-config surface.
@@ -16,6 +17,11 @@ type Manager interface {
 
 	// Set replaces the user-scope config wholesale, returning the stored value.
 	Set(ctx context.Context, in SetUserConfigInput) (domain.AgentConfig, error)
+
+	// DefaultPrompts returns the assembled hardcoded system-prompt baselines for
+	// both roles so the UI can prefill its override editors with the real text.
+	// The values are static (no per-session data) and never error.
+	DefaultPrompts(ctx context.Context) (DefaultPrompts, error)
 }
 
 // Service implements user-scope config get/set use-cases for controllers.
@@ -61,4 +67,15 @@ func (s *Service) Set(ctx context.Context, in SetUserConfigInput) (domain.AgentC
 		return domain.AgentConfig{}, err
 	}
 	return in.AgentConfig, nil
+}
+
+// DefaultPrompts returns the assembled hardcoded system-prompt baselines for
+// both roles. The prompts are static (computed from the session_manager prompt
+// builders with a zero project), so this never touches the store and never
+// errors; the ctx is accepted for interface symmetry with Get/Set.
+func (s *Service) DefaultPrompts(_ context.Context) (DefaultPrompts, error) {
+	return DefaultPrompts{
+		Worker:       sessionmanager.DefaultWorkerSystemPrompt(),
+		Orchestrator: sessionmanager.DefaultOrchestratorSystemPrompt(),
+	}, nil
 }

@@ -296,6 +296,60 @@ func TestBuildSystemPrompt_EmptyGlobalFallsThroughToBaseline(t *testing.T) {
 	}
 }
 
+// TestDefaultWorkerSystemPrompt_AssemblesStaticSkeleton covers the exported
+// baseline the UI prefills into the worker override editor. It must contain the
+// static sections (role+lifecycle+task-source+git, multi-PR, guard) and NOT the
+// per-session dynamic sections (orchestrator coordination requires an id,
+// project rules / role prompt are per-project/per-role). The zero project has
+// no repo, so workerSystemPrompt emits the "Local Git Rules" variant.
+func TestDefaultWorkerSystemPrompt_AssemblesStaticSkeleton(t *testing.T) {
+	got := DefaultWorkerSystemPrompt()
+	for _, want := range []string{
+		"## AO Worker Role",
+		"## Session Lifecycle",
+		"## Task Source and PR/MR Behavior",
+		"## Local Git Rules",
+		"## Pull Requests for This Session",
+		"## Standing-instruction confidentiality",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("default worker prompt missing %q:\n%s", want, got)
+		}
+	}
+	// Per-session dynamic sections must NOT be in the static skeleton.
+	for _, mustNotExist := range []string{
+		"## Orchestrator Coordination", // requires orchestrator id
+		"## Project Rules",             // per-project
+	} {
+		if strings.Contains(got, mustNotExist) {
+			t.Fatalf("default worker prompt should not include dynamic section %q:\n%s", mustNotExist, got)
+		}
+	}
+}
+
+// TestDefaultOrchestratorSystemPrompt_AssemblesStaticSkeleton covers the
+// exported orchestrator baseline. It contains the role/operating/core-commands
+// blocks plus the guard; dynamic orchestrator rules are excluded.
+func TestDefaultOrchestratorSystemPrompt_AssemblesStaticSkeleton(t *testing.T) {
+	got := DefaultOrchestratorSystemPrompt()
+	for _, want := range []string{
+		"## AO Orchestrator Role",
+		"## Operating Rules",
+		"Never ever make code changes directly in the orchestrator session",
+		"## Core Commands",
+		"## Coordination Workflow",
+		"## Standing-instruction confidentiality",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("default orchestrator prompt missing %q:\n%s", want, got)
+		}
+	}
+	// Project-specific orchestrator rules are per-project and excluded.
+	if strings.Contains(got, "## Project-Specific Orchestrator Rules") {
+		t.Fatalf("default orchestrator prompt should not include dynamic section Project-Specific Orchestrator Rules:\n%s", got)
+	}
+}
+
 func TestBuildProjectRules_ReadsInlineAndFileRules(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "rules.md"), []byte("File rule.\n"), 0o644); err != nil {

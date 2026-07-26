@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
@@ -101,5 +102,30 @@ func TestUserService_SetRejectsInvalidPermissions(t *testing.T) {
 	}
 	if apiErr.Kind != apierr.KindInvalid {
 		t.Fatalf("kind = %v, want KindInvalid", apiErr.Kind)
+	}
+}
+
+// TestUserService_DefaultPromptsReturnsAssembledBaselines covers the default
+// prompt surface: both roles return a non-empty assembled baseline (the static
+// skeleton), independent of any stored config.
+func TestUserService_DefaultPromptsReturnsAssembledBaselines(t *testing.T) {
+	m := newManager(t)
+	ctx := context.Background()
+
+	got, err := m.DefaultPrompts(ctx)
+	if err != nil {
+		t.Fatalf("DefaultPrompts: %v", err)
+	}
+	if got.Worker == "" {
+		t.Fatal("DefaultPrompts.Worker empty; want assembled worker baseline")
+	}
+	if got.Orchestrator == "" {
+		t.Fatal("DefaultPrompts.Orchestrator empty; want assembled orchestrator baseline")
+	}
+	if !strings.Contains(got.Worker, "## AO Worker Role") {
+		t.Fatalf("DefaultPrompts.Worker missing worker role header:\n%s", got.Worker)
+	}
+	if !strings.Contains(got.Orchestrator, "## AO Orchestrator Role") {
+		t.Fatalf("DefaultPrompts.Orchestrator missing orchestrator role header:\n%s", got.Orchestrator)
 	}
 }

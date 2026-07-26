@@ -47,9 +47,19 @@ type ProjectResponse struct {
 
 // UserConfigResponse is the body of GET/PUT /api/v1/user-config: the whole
 // user-scope AgentConfig (model + permissions today; more fields land when
-// AgentConfig grows, picked up for free because the type is reused end to end).
+// AgentConfig grows, picked up for free because the type is reused end to end),
+// plus the assembled hardcoded system-prompt baselines so the UI can prefill
+// its override editors with the real text. The default-prompt fields are omitted
+// on the PUT response (they only matter on GET, where the editor opens).
 type UserConfigResponse struct {
 	AgentConfig domain.AgentConfig `json:"agentConfig"`
+	// DefaultWorkerPrompt is the assembled hardcoded worker system-prompt
+	// baseline (static skeleton, no per-session data). Surfaced so the UI can
+	// prefill the worker override editor with the real baseline text.
+	DefaultWorkerPrompt string `json:"defaultWorkerPrompt,omitempty"`
+	// DefaultOrchestratorPrompt is the assembled hardcoded orchestrator
+	// system-prompt baseline (static skeleton, no per-session data).
+	DefaultOrchestratorPrompt string `json:"defaultOrchestratorPrompt,omitempty"`
 }
 
 // GetProjectResponse is the { status, project } body of GET /projects/{id},
