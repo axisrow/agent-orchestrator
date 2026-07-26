@@ -23,11 +23,13 @@ type userConfigResponse struct {
 }
 
 type userConfigSetOptions struct {
-	model      string
-	permission string
-	configJSON string
-	clear      bool
-	json       bool
+	model              string
+	permission         string
+	workerPrompt       string
+	orchestratorPrompt string
+	configJSON         string
+	clear              bool
+	json               bool
 }
 
 func newUserConfigCommand(ctx *commandContext) *cobra.Command {
@@ -38,8 +40,9 @@ func newUserConfigCommand(ctx *commandContext) *cobra.Command {
 			"by every project unless a project overrides a field. Fields not set here fall through " +
 			"to the agent's built-in defaults. Set fields via flags, pass the whole object with " +
 			"--config-json, or --clear to remove the config entirely.\n\n" +
-			"This is a foundation layer; it does not affect worker resolution until a follow-up " +
-			"wires the merge.",
+			"Worker/orchestrator prompt overrides (--worker-prompt, --orchestrator-prompt) are the " +
+			"GLOBAL baseline: they replace the hardcoded prompt for every project, unless a project " +
+			"sets its own override (per-project wins).",
 	}
 	cmd.AddCommand(newUserConfigGetCommand(ctx))
 	cmd.AddCommand(newUserConfigSetCommand(ctx))
@@ -102,6 +105,8 @@ func newUserConfigSetCommand(ctx *commandContext) *cobra.Command {
 	f := cmd.Flags()
 	f.StringVar(&opts.model, "model", "", "Agent model override (e.g. claude-opus-4-8)")
 	f.StringVar(&opts.permission, "permission", "", "Permission mode: default, accept-edits, auto, bypass-permissions")
+	f.StringVar(&opts.workerPrompt, "worker-prompt", "", "Global worker system-prompt override (replaces the hardcoded baseline for every project unless a project sets its own)")
+	f.StringVar(&opts.orchestratorPrompt, "orchestrator-prompt", "", "Global orchestrator system-prompt override (replaces the hardcoded baseline for every project unless a project sets its own)")
 	f.StringVar(&opts.configJSON, "config-json", "", "Full agentConfig as a JSON object (overrides field flags)")
 	f.BoolVar(&opts.clear, "clear", false, "Clear the user-scoped config")
 	f.BoolVar(&opts.json, "json", false, "Output the updated config as JSON")
@@ -122,9 +127,14 @@ func buildUserConfig(opts userConfigSetOptions) (agentConfig, error) {
 		}
 		return cfg, nil
 	}
-	cfg := agentConfig{Model: strings.TrimSpace(opts.model), Permissions: strings.TrimSpace(opts.permission)}
+	cfg := agentConfig{
+		Model:                      strings.TrimSpace(opts.model),
+		Permissions:                strings.TrimSpace(opts.permission),
+		WorkerPromptOverride:       strings.TrimSpace(opts.workerPrompt),
+		OrchestratorPromptOverride: strings.TrimSpace(opts.orchestratorPrompt),
+	}
 	if reflect.DeepEqual(cfg, agentConfig{}) {
-		return agentConfig{}, usageError{errors.New("usage: provide at least one flag (--model, --permission), --config-json, or --clear")}
+		return agentConfig{}, usageError{errors.New("usage: provide at least one flag (--model, --permission, --worker-prompt, --orchestrator-prompt), --config-json, or --clear")}
 	}
 	return cfg, nil
 }
@@ -138,6 +148,18 @@ func writeUserConfig(w interface{ Write(p []byte) (int, error) }, cfg agentConfi
 	if cfg.Permissions != "" {
 		fmt.Fprintf(&b, "permissions\t%s\n", cfg.Permissions)
 	}
+	if cfg.WorkerPromptOverride != "" {
+		fmt.Fprintf(&b, "worker-prompt\t%s\n", oneLine(cfg.WorkerPromptOverride))
+	}
+	if cfg.OrchestratorPromptOverride != "" {
+		fmt.Fprintf(&b, "orchestrator-prompt\t%s\n", oneLine(cfg.OrchestratorPromptOverride))
+	}
 	_, err := w.Write([]byte(b.String()))
 	return err
+}
+
+// oneLine collapses a multi-line prompt body to a single line for the labeled
+// table view so a single-row value stays readable on a terminal.
+func oneLine(s string) string {
+	return strings.Join(strings.Fields(s), " ")
 }

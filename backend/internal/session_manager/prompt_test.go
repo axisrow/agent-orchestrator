@@ -217,6 +217,88 @@ func TestBuildSystemPrompt_EmptyWorkerOverrideKeepsBaseline(t *testing.T) {
 	}
 }
 
+// TestBuildSystemPrompt_GlobalWorkerOverrideAppliesWhenProjectOverrideEmpty
+// covers Phase 1 (#15): the GLOBAL user-scope worker override replaces the
+// hardcoded baseline when no per-project override is set.
+func TestBuildSystemPrompt_GlobalWorkerOverrideAppliesWhenProjectOverrideEmpty(t *testing.T) {
+	global := "## Global Worker Baseline\nDo the global thing."
+	got := buildSystemPromptText(systemPromptConfig{
+		Role:                       sessionPromptRoleWorker,
+		Project:                    promptProject{ID: "mer", Name: "Mercury"},
+		GlobalWorkerPromptOverride: global,
+		ProjectRules:               "Project rules still compose around it.",
+	})
+	if !strings.Contains(got, global) {
+		t.Fatalf("global worker override text missing:\n%s", got)
+	}
+	// The hardcoded baseline escalation line must be gone — global replaces it.
+	if strings.Contains(got, "ask for that decision instead of guessing") {
+		t.Fatalf("global override should replace the hardcoded baseline, but baseline text leaked:\n%s", got)
+	}
+	// Non-baseline sections (project rules, guard, multi-PR) still compose.
+	for _, want := range []string{
+		"## Project Rules",
+		"Project rules still compose around it.",
+		"## Standing-instruction confidentiality",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("global override build missing %q:\n%s", want, got)
+		}
+	}
+}
+
+// TestBuildSystemPrompt_PerProjectWorkerOverrideBeatsGlobal covers the
+// precedence rule: per-project (#15 phase 2) > global (user-config).
+func TestBuildSystemPrompt_PerProjectWorkerOverrideBeatsGlobal(t *testing.T) {
+	perProject := "## Per-Project Worker\nProject wins."
+	global := "## Global Worker Baseline\nShould NOT appear."
+	got := buildSystemPromptText(systemPromptConfig{
+		Role:                       sessionPromptRoleWorker,
+		Project:                    promptProject{ID: "mer", Name: "Mercury"},
+		WorkerPromptOverride:       perProject,
+		GlobalWorkerPromptOverride: global,
+	})
+	if !strings.Contains(got, perProject) {
+		t.Fatalf("per-project override should win:\n%s", got)
+	}
+	if strings.Contains(got, global) {
+		t.Fatalf("global override leaked when per-project override is set:\n%s", got)
+	}
+}
+
+// TestBuildSystemPrompt_GlobalOrchestratorOverrideAppliesWhenProjectOverrideEmpty
+// mirrors the worker test for the orchestrator role.
+func TestBuildSystemPrompt_GlobalOrchestratorOverrideAppliesWhenProjectOverrideEmpty(t *testing.T) {
+	global := "## Global Orchestrator Baseline\nCoordinate globally."
+	got := buildSystemPromptText(systemPromptConfig{
+		Role:                             sessionPromptRoleOrchestrator,
+		Project:                          promptProject{ID: "mer", Name: "Mercury"},
+		GlobalOrchestratorPromptOverride: global,
+	})
+	if !strings.Contains(got, global) {
+		t.Fatalf("global orchestrator override text missing:\n%s", got)
+	}
+	if strings.Contains(got, "Never ever make code changes directly in the orchestrator session") {
+		t.Fatalf("global override should replace the hardcoded baseline, but baseline text leaked:\n%s", got)
+	}
+}
+
+// TestBuildSystemPrompt_EmptyGlobalFallsThroughToBaseline ensures an empty
+// global override leaves today's behavior intact (current default).
+func TestBuildSystemPrompt_EmptyGlobalFallsThroughToBaseline(t *testing.T) {
+	got := buildSystemPromptText(systemPromptConfig{
+		Role:    sessionPromptRoleWorker,
+		Project: promptProject{ID: "mer", Name: "Mercury"},
+		// GlobalWorkerPromptOverride intentionally empty.
+	})
+	if !strings.Contains(got, "## AO Worker Role") {
+		t.Fatalf("hardcoded baseline missing when global override is empty:\n%s", got)
+	}
+	if !strings.Contains(got, "ask for that decision instead of guessing") {
+		t.Fatalf("hardcoded escalation line missing when global override is empty:\n%s", got)
+	}
+}
+
 func TestBuildProjectRules_ReadsInlineAndFileRules(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "rules.md"), []byte("File rule.\n"), 0o644); err != nil {
