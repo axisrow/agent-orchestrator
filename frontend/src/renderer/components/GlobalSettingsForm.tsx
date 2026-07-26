@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { AgentDefaultsSettingsSection } from "./settings/AgentDefaultsSettingsSection";
 import { GeneralSettingsSection } from "./settings/GeneralSettingsSection";
 import { ReportProblemDialog } from "./settings/ReportProblemDialog";
 import { SettingsLinkRow } from "./settings/SettingsRow";
@@ -33,6 +34,7 @@ export function GlobalSettingsForm({
 			>
 				{(section === "all" || section === "general") && (
 					<>
+						<AgentDefaultsSettingsSection />
 						<GeneralSettingsSection
 							onConnectMobile={() => onOpenConnectMobile?.()}
 							titleHidden={leadingTitleHidden}
