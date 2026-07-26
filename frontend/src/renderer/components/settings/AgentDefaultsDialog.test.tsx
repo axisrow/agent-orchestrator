@@ -176,6 +176,41 @@ describe("AgentDefaultsDialog", () => {
 		expect(putBody.agentConfig.workerPromptOverride).toBeUndefined();
 	});
 
+	it("Reset to default clears both overrides and refills the textareas with the hardcoded baseline", async () => {
+		const user = userEvent.setup();
+		// GET returns a stored override plus a model that must survive the
+		// wholesale-replace PUT; PUT echoes back a cleared config.
+		const handler = fetchMock(
+			{
+				agentConfig: {
+					model: "claude-opus-4-8",
+					workerPromptOverride: "## Custom Worker",
+					orchestratorPromptOverride: "## Custom Orch",
+				},
+				defaultWorkerPrompt: DEFAULT_WORKER,
+				defaultOrchestratorPrompt: DEFAULT_ORCH,
+			},
+			{ agentConfig: { model: "claude-opus-4-8" } },
+		);
+
+		renderDialog();
+		await waitForValue("Worker prompt override", "## Custom Worker");
+		await waitForValue("Orchestrator prompt override", "## Custom Orch");
+
+		await user.click(screen.getByRole("button", { name: /reset to default/i }));
+
+		// PUT stores explicit undefined for both overrides, preserving model.
+		await waitFor(() => expect(putRequestBody(handler)).toBeTruthy());
+		const putBody = putRequestBody(handler);
+		expect(putBody.agentConfig.workerPromptOverride).toBeUndefined();
+		expect(putBody.agentConfig.orchestratorPromptOverride).toBeUndefined();
+		expect(putBody.agentConfig.model).toBe("claude-opus-4-8");
+
+		// Textareas now show the hardcoded baseline.
+		await waitForValue("Worker prompt override", DEFAULT_WORKER);
+		await waitForValue("Orchestrator prompt override", DEFAULT_ORCH);
+	});
+
 	it("shows a save error when the PUT fails", async () => {
 		const user = userEvent.setup();
 		// GET succeeds; PUT fails with an error envelope.
