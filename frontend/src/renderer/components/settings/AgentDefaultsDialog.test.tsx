@@ -235,4 +235,68 @@ describe("AgentDefaultsDialog", () => {
 
 		expect(await screen.findByRole("alert")).toHaveTextContent("boom");
 	});
+
+	it("disables Save and shows a role-warning when the worker prompt is cleared", async () => {
+		const user = userEvent.setup();
+		fetchMock({
+			agentConfig: {},
+			defaultWorkerPrompt: DEFAULT_WORKER,
+			defaultOrchestratorPrompt: DEFAULT_ORCH,
+		});
+
+		renderDialog();
+		const worker = await screen.findByLabelText("Worker prompt override");
+		await waitForValue("Worker prompt override", DEFAULT_WORKER);
+		await user.clear(worker);
+
+		// An empty override would replace the hardcoded prompt with nothing, so the
+		// agent wouldn't know its role. Save must be disabled and a warning shown.
+		const save = screen.getByRole("button", { name: "Save" });
+		expect(save).toBeDisabled();
+		expect(screen.getByRole("alert")).toHaveTextContent(/A worker needs a system prompt/);
+	});
+
+	it("disables Save and shows a role-warning when the orchestrator prompt is cleared", async () => {
+		const user = userEvent.setup();
+		fetchMock({
+			agentConfig: {},
+			defaultWorkerPrompt: DEFAULT_WORKER,
+			defaultOrchestratorPrompt: DEFAULT_ORCH,
+		});
+
+		renderDialog();
+		const orchestrator = await screen.findByLabelText("Orchestrator prompt override");
+		await waitForValue("Orchestrator prompt override", DEFAULT_ORCH);
+		await user.clear(orchestrator);
+
+		const save = screen.getByRole("button", { name: "Save" });
+		expect(save).toBeDisabled();
+		expect(screen.getByRole("alert")).toHaveTextContent(/An orchestrator needs a system prompt/);
+	});
+
+	it("Reset to default refills both prompts and re-enables Save after clearing a field", async () => {
+		const user = userEvent.setup();
+		const handler = fetchMock(
+			{
+				agentConfig: {},
+				defaultWorkerPrompt: DEFAULT_WORKER,
+				defaultOrchestratorPrompt: DEFAULT_ORCH,
+			},
+			{ agentConfig: {} },
+		);
+
+		renderDialog();
+		const worker = await screen.findByLabelText("Worker prompt override");
+		await waitForValue("Worker prompt override", DEFAULT_WORKER);
+		// Clear worker → Save disabled (empty override is unsafe).
+		await user.clear(worker);
+		expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+
+		// Reset refills the hardcoded baseline, which is non-empty → Save re-enabled.
+		await user.click(screen.getByRole("button", { name: /reset to default/i }));
+
+		await waitFor(() => expect(putRequestBody(handler)).toBeTruthy());
+		expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+		await waitForValue("Worker prompt override", DEFAULT_WORKER);
+	});
 });
