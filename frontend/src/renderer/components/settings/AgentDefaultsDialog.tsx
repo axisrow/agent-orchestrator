@@ -90,6 +90,16 @@ export function AgentDefaultsDialog({
   const promptInvalid = workerEmpty || orchestratorEmpty;
   const [validationError, setValidationError] = useState<string | null>(null);
 
+  // The textareas start at initialWorker/initialOrchestrator (the stored
+  // override, or the hardcoded baseline when no override is stored). If neither
+  // field has been edited there is nothing to save, so disable Save — the same
+  // value would round-trip and (if it equals the default) the override would be
+  // cleared for nothing. Reset to default ignores this and stays always-on.
+  const workerUnchanged = workerPrompt.trim() === initialWorker.trim();
+  const orchestratorUnchanged =
+    orchestratorPrompt.trim() === initialOrchestrator.trim();
+  const promptUnchanged = workerUnchanged && orchestratorUnchanged;
+
   // Re-sync the form when the dialog opens or the server value/defaults change.
   useEffect(() => {
     if (!open) return;
@@ -173,6 +183,9 @@ export function AgentDefaultsDialog({
               );
               return;
             }
+            // No edits since the dialog opened — nothing to save, this is not
+            // a validation error so just bail silently.
+            if (promptUnchanged) return;
             setValidationError(null);
             setSavedAt(null);
             mutation.mutate(undefined);
@@ -319,7 +332,12 @@ export function AgentDefaultsDialog({
           <button
             type="button"
             className="settings-footer-button border-transparent bg-settings-accent text-white disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={promptInvalid || mutation.isPending || query.isLoading}
+            disabled={
+              promptInvalid ||
+              promptUnchanged ||
+              mutation.isPending ||
+              query.isLoading
+            }
             onClick={() => {
               if (promptInvalid) {
                 setValidationError(
