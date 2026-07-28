@@ -1,7 +1,7 @@
 import { lazy, Suspense, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { GlobalSettingsSection as GlobalSettingsPage } from "../stores/ui-store";
-import { AgentDefaultsDialog } from "./settings/AgentDefaultsDialog";
+import { PromptOverrideDialog } from "./settings/PromptOverrideDialog";
 import { GeneralSettingsSection } from "./settings/GeneralSettingsSection";
 import { CloudCredentialsSection } from "./settings/CloudCredentialsSection";
 import { ConnectMobileContent } from "./settings/ConnectMobileContent";
@@ -90,7 +90,7 @@ export function GlobalSettingsForm({
 				</SettingsSection>
 			)}
 		</div>
-		<AgentDefaultsDialog open={agentDefaultsOpen} onOpenChange={setAgentDefaultsOpen} />
+		<PromptOverrideDialog open={agentDefaultsOpen} onOpenChange={setAgentDefaultsOpen} scope="user" />
 		</>
 	);
 }
