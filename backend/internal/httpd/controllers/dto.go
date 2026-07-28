@@ -45,6 +45,21 @@ type ProjectResponse struct {
 	Project projectsvc.Project `json:"project"`
 }
 
+// DefaultPromptsWire carries the assembled hardcoded system-prompt baselines
+// (static skeleton, no per-session data) so the UI's prompt-override editor can
+// prefill with the real text. Embedded by the GET responses that open the
+// editor (UserConfigResponse, GetProjectResponse); omitted on PUT responses.
+// The fields flatten to the top level of the embedding response (Go embedding
+// → flat JSON), and the OpenAPI reflector expands them the same way.
+type DefaultPromptsWire struct {
+	// DefaultWorkerPrompt is the assembled hardcoded worker system-prompt
+	// baseline. Surfaced so the UI can prefill the worker override editor.
+	DefaultWorkerPrompt string `json:"defaultWorkerPrompt,omitempty"`
+	// DefaultOrchestratorPrompt is the assembled hardcoded orchestrator
+	// system-prompt baseline.
+	DefaultOrchestratorPrompt string `json:"defaultOrchestratorPrompt,omitempty"`
+}
+
 // UserConfigResponse is the body of GET/PUT /api/v1/user-config: the whole
 // user-scope AgentConfig (model + permissions today; more fields land when
 // AgentConfig grows, picked up for free because the type is reused end to end),
@@ -53,20 +68,19 @@ type ProjectResponse struct {
 // on the PUT response (they only matter on GET, where the editor opens).
 type UserConfigResponse struct {
 	AgentConfig domain.AgentConfig `json:"agentConfig"`
-	// DefaultWorkerPrompt is the assembled hardcoded worker system-prompt
-	// baseline (static skeleton, no per-session data). Surfaced so the UI can
-	// prefill the worker override editor with the real baseline text.
-	DefaultWorkerPrompt string `json:"defaultWorkerPrompt,omitempty"`
-	// DefaultOrchestratorPrompt is the assembled hardcoded orchestrator
-	// system-prompt baseline (static skeleton, no per-session data).
-	DefaultOrchestratorPrompt string `json:"defaultOrchestratorPrompt,omitempty"`
+	DefaultPromptsWire
 }
 
 // GetProjectResponse is the { status, project } body of GET /projects/{id},
-// where project is oneOf Project|Degraded discriminated by status.
+// where project is oneOf Project|Degraded discriminated by status. The default
+// prompt baselines are surfaced alongside the project so the UI's prompt
+// override editor (the same dialog used by user-config) can prefill with the
+// real hardcoded text. They are populated only on GET; the PUT responses
+// (ProjectResponse) do not carry them.
 type GetProjectResponse struct {
 	Status  string            `json:"status" enum:"ok,degraded"`
 	Project ProjectOrDegraded `json:"project"`
+	DefaultPromptsWire
 }
 
 // ProjectOrDegraded is the discriminated `project` field: exactly one of
@@ -110,14 +124,21 @@ func (ProjectOrDegraded) JSONSchemaOneOf() []interface{} {
 // newGetProjectResponse maps the internal GetResult onto the wire envelope —
 // the explicit project→httpd boundary the result type exists for. It errors
 // when the result sets neither variant, so the handler can return a clean 500
-// BEFORE writing the 200 status rather than flushing a truncated body.
-func newGetProjectResponse(res projectsvc.GetResult) (GetProjectResponse, error) {
+// BEFORE writing the 200 status rather than flushing a truncated body. The
+// defaultWorker/defaultOrchestrator baselines are injected so the UI's
+// prompt-override editor can prefill with the real hardcoded text (mirrors
+// UserConfigResponse); they are static and never error to obtain.
+func newGetProjectResponse(res projectsvc.GetResult, defaults projectsvc.DefaultPrompts) (GetProjectResponse, error) {
 	if res.Project == nil && res.Degraded == nil {
 		return GetProjectResponse{}, errEmptyProjectOrDegraded
 	}
 	return GetProjectResponse{
 		Status:  res.Status,
 		Project: ProjectOrDegraded{Project: res.Project, Degraded: res.Degraded},
+		DefaultPromptsWire: DefaultPromptsWire{
+			DefaultWorkerPrompt:       defaults.Worker,
+			DefaultOrchestratorPrompt: defaults.Orchestrator,
+		},
 	}, nil
 }
 

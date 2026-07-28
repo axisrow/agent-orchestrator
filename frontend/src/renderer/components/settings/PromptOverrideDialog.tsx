@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { components } from "../../../api/schema";
 import { apiClient, apiErrorMessage } from "../../lib/api-client";
+import { projectQueryKey } from "../../hooks/useProjectQuery";
 import { captureRendererEvent } from "../../lib/telemetry";
 import {
   Dialog,
@@ -17,61 +18,192 @@ import {
 } from "../ui/dialog";
 
 type AgentConfig = components["schemas"]["AgentConfig"];
+type Project = components["schemas"]["Project"];
+type ProjectConfig = components["schemas"]["ProjectConfig"];
 
 export const userConfigQueryKey = ["user-config"] as const;
 
-type AgentDefaultsDialogProps = {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+type PromptOverrideDialogProps =
+  | {
+      open: boolean;
+      onOpenChange: (open: boolean) => void;
+      scope: "user";
+    }
+  | {
+      open: boolean;
+      onOpenChange: (open: boolean) => void;
+      scope: "project";
+      projectId: string;
+    };
+
+// PromptLoad is the normalized read of whatever the scope's GET returns: the
+// stored worker/orchestrator overrides plus the assembled hardcoded prompt
+// baselines. Both scopes surface the same baseline fields so the editor prefills
+// identically; only the path to the stored override differs.
+type PromptLoad = {
+  storedWorker: string;
+  storedOrchestrator: string;
+  defaultWorker: string;
+  defaultOrchestrator: string;
 };
 
+// A scope adapter encapsulates the only things that differ between user- and
+// project-scope: the GET query, the query key, the PUT mutation, the telemetry
+// label, and the strings. Everything else (validation, unchanged-tracking,
+// reset, dialog chrome) is shared. save receives only the two override values;
+// it merges them over the config captured in the adapter's own closure during
+// load, so the dialog does not have to thread the loaded config back through.
+type ScopeAdapter = {
+  scope: "user" | "project";
+  queryKey: readonly unknown[];
+  load: () => PromptLoad | Promise<PromptLoad>;
+  save: (
+    workerOverride: string | undefined,
+    orchestratorOverride: string | undefined,
+  ) => Promise<void>;
+  title: string;
+  description: string;
+  hintFor: (role: "worker" | "orchestrator") => string;
+};
+
+function useScopeAdapter(props: PromptOverrideDialogProps): ScopeAdapter {
+  return useMemo<ScopeAdapter>(() => {
+    const scopeLabel =
+      props.scope === "user" ? "globally (all projects)" : "for this project";
+    const sharedStrings = {
+      title:
+        props.scope === "user" ? "Agent defaults" : "Project agent defaults",
+      description: `Override the hardcoded worker and orchestrator system prompts ${scopeLabel}.`,
+      hintFor: (role: "worker" | "orchestrator") =>
+        `This replaces the hardcoded ${role} system prompt ${scopeLabel}. Edit the default above; clearing it back to the default restores the baseline.`,
+    };
+
+    if (props.scope === "user") {
+      let loadedAgentConfig: AgentConfig = {};
+      return {
+        scope: "user",
+        queryKey: userConfigQueryKey,
+        ...sharedStrings,
+        async load() {
+          const { data, error } = await apiClient.GET("/api/v1/user-config");
+          if (error) throw new Error(apiErrorMessage(error));
+          const agentConfig = (data.agentConfig ?? {}) as AgentConfig;
+          loadedAgentConfig = agentConfig;
+          return {
+            storedWorker: agentConfig.workerPromptOverride ?? "",
+            storedOrchestrator: agentConfig.orchestratorPromptOverride ?? "",
+            defaultWorker: data.defaultWorkerPrompt ?? "",
+            defaultOrchestrator: data.defaultOrchestratorPrompt ?? "",
+          };
+        },
+        async save(workerOverride, orchestratorOverride) {
+          // Wholesale replace: merge the two derived fields over the loaded
+          // agentConfig so model/permissions/env/mcp/systemPrompt survive.
+          const next: AgentConfig = {
+            ...loadedAgentConfig,
+            workerPromptOverride: workerOverride,
+            orchestratorPromptOverride: orchestratorOverride,
+          };
+          const { error } = await apiClient.PUT("/api/v1/user-config", {
+            body: { agentConfig: next },
+          });
+          if (error) throw new Error(apiErrorMessage(error));
+        },
+      };
+    }
+
+    const { projectId } = props;
+    let loadedProject: { displayName: string; config: ProjectConfig } = {
+      displayName: "",
+      config: {} as ProjectConfig,
+    };
+    return {
+      scope: "project",
+      queryKey: projectQueryKey(projectId),
+      ...sharedStrings,
+      async load() {
+        const { data, error } = await apiClient.GET("/api/v1/projects/{id}", {
+          params: { path: { id: projectId } },
+        });
+        if (error) throw new Error(apiErrorMessage(error));
+        if (data?.status !== "ok" || !data.project) {
+          throw new Error("Project config is unavailable (degraded).");
+        }
+        // ProjectOrDegraded is oneOf; the ok-variant is Project. The runtime
+        // shape under status:"ok" is the Project object.
+        const project = data.project as Project;
+        const config = (project.config ?? {}) as ProjectConfig;
+        loadedProject = { displayName: project.name, config };
+        return {
+          storedWorker: config.workerPromptOverride ?? "",
+          storedOrchestrator: config.orchestratorPromptOverride ?? "",
+          defaultWorker: data.defaultWorkerPrompt ?? "",
+          defaultOrchestrator: data.defaultOrchestratorPrompt ?? "",
+        };
+      },
+      async save(workerOverride, orchestratorOverride) {
+        // Wholesale replace like PUT /projects/{id}: merge the two derived
+        // fields over the loaded config so model/permissions/agents/intake
+        // survive, and echo the displayName.
+        const config: ProjectConfig = {
+          ...loadedProject.config,
+          workerPromptOverride: workerOverride,
+          orchestratorPromptOverride: orchestratorOverride,
+        };
+        const { error } = await apiClient.PUT("/api/v1/projects/{id}", {
+          params: { path: { id: projectId } },
+          body: { displayName: loadedProject.displayName, config },
+        });
+        if (error) throw new Error(apiErrorMessage(error));
+      },
+    };
+  }, [props]);
+}
+
 /**
- * Agent defaults override editor, surfaced as a dialog (Report-a-problem
- * pattern). Reads/writes /api/v1/user-config via the typed apiClient. The
- * textareas are prefilled with the FULL assembled default system prompt served
- * by GET /api/v1/user-config (defaultWorkerPrompt / defaultOrchestratorPrompt),
+ * Prompt override editor, surfaced as a dialog (Report-a-problem pattern) and
+ * shared by Global Settings (user-scope) and Project Settings (project-scope)
+ * so the setting behaves identically everywhere it appears — same control, same
+ * save/reset/validation mechanics. Reads/writes /api/v1/user-config for
+ * user-scope and /api/v1/projects/{id} for project-scope.
+ *
+ * The textareas are prefilled with the FULL assembled default system prompt
+ * served by the scope's GET (defaultWorkerPrompt / defaultOrchestratorPrompt),
  * so the user sees and edits the real hardcoded baseline rather than starting
  * from an empty box.
  *
  * Save semantics: if the edited text equals the default (trimmed), the override
  * is cleared (stored as undefined) so the hardcoded baseline is used; any other
- * text is stored as the override. PUT replaces AgentConfig wholesale, so the
- * two derived fields are merged over the loaded config to preserve
- * model/permissions/env/mcp/pluginDirs/systemPrompt.
+ * text is stored as the override.
  *
  * "Reset to default" bypasses the compare-with-default dance: it refills the
  * textareas with the hardcoded baseline and writes an explicit
- * {workerPromptOverride: undefined, orchestratorPromptOverride: undefined} PUT
- * (merged over the loaded config so model/permissions survive).
+ * {workerPromptOverride: undefined, orchestratorPromptOverride: undefined} save
+ * (merged over the loaded config so the rest survives).
  */
-export function AgentDefaultsDialog({
-  open,
-  onOpenChange,
-}: AgentDefaultsDialogProps) {
+export function PromptOverrideDialog(props: PromptOverrideDialogProps) {
+  const { open, onOpenChange } = props;
   const workerId = useId();
   const orchestratorId = useId();
   const workerRef = useRef<HTMLTextAreaElement>(null);
 
+  const adapter = useScopeAdapter(props);
   const queryClient = useQueryClient();
 
   const query = useQuery({
-    queryKey: userConfigQueryKey,
-    queryFn: async () => {
-      const { data, error } = await apiClient.GET("/api/v1/user-config");
-      if (error) throw new Error(apiErrorMessage(error));
-      return data;
-    },
+    queryKey: adapter.queryKey,
+    queryFn: adapter.load,
   });
 
-  const agentConfig = query.data?.agentConfig ?? {};
-  const defaultWorker = query.data?.defaultWorkerPrompt ?? "";
-  const defaultOrchestrator = query.data?.defaultOrchestratorPrompt ?? "";
+  const loaded = query.data;
+  const defaultWorker = loaded?.defaultWorker ?? "";
+  const defaultOrchestrator = loaded?.defaultOrchestrator ?? "";
 
   // The textarea shows the stored override when one exists, otherwise the full
   // assembled default baseline. The "displayed" value is what the user sees and
   // edits; it re-syncs whenever the server value or defaults load/change.
-  const storedWorker = agentConfig.workerPromptOverride ?? "";
-  const storedOrchestrator = agentConfig.orchestratorPromptOverride ?? "";
+  const storedWorker = loaded?.storedWorker ?? "";
+  const storedOrchestrator = loaded?.storedOrchestrator ?? "";
   const initialWorker = storedWorker || defaultWorker;
   const initialOrchestrator = storedOrchestrator || defaultOrchestrator;
 
@@ -123,11 +255,14 @@ export function AgentDefaultsDialog({
       worker?: string;
       orchestrator?: string;
     }) => {
+      if (!loaded) return;
       const explicit = overrides !== undefined;
+      const scope = adapter.scope;
       void captureRendererEvent(
         explicit
-          ? "ao.renderer.user_settings_reset_to_default"
-          : "ao.renderer.user_settings_save_requested",
+          ? "ao.renderer.prompt_override_reset_to_default"
+          : "ao.renderer.prompt_override_save_requested",
+        { scope },
       );
       // If the edited text equals the default (trimmed), clear the override so
       // the hardcoded baseline is used; any other text becomes the override.
@@ -142,27 +277,23 @@ export function AgentDefaultsDialog({
             orchestratorPrompt.trim() !== defaultOrchestrator.trim()
           ? orchestratorPrompt.trim()
           : undefined;
-      // Wholesale replace: merge the two derived fields over the loaded
-      // agentConfig so model/permissions/env/mcp/pluginDirs/systemPrompt survive.
-      const next: AgentConfig = {
-        ...agentConfig,
-        workerPromptOverride: workerOverride,
-        orchestratorPromptOverride: orchestratorOverride,
-      };
-      const { error } = await apiClient.PUT("/api/v1/user-config", {
-        body: { agentConfig: next },
-      });
-      if (error) throw new Error(apiErrorMessage(error));
+      await adapter.save(workerOverride, orchestratorOverride);
     },
     onSuccess: () => {
-      void captureRendererEvent("ao.renderer.user_settings_save_succeeded");
+      void captureRendererEvent("ao.renderer.prompt_override_save_succeeded", {
+        scope: adapter.scope,
+      });
       setSavedAt(Date.now());
-      void queryClient.invalidateQueries({ queryKey: userConfigQueryKey });
+      void queryClient.invalidateQueries({ queryKey: adapter.queryKey });
     },
     onError: () => {
-      void captureRendererEvent("ao.renderer.user_settings_save_failed");
+      void captureRendererEvent("ao.renderer.prompt_override_save_failed", {
+        scope: adapter.scope,
+      });
     },
   });
+
+  const { title, description, hintFor } = adapter;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -196,7 +327,7 @@ export function AgentDefaultsDialog({
           <button
             type="button"
             className="settings-dialog-close-button settings-close-button"
-            aria-label="Close agent defaults dialog"
+            aria-label="Close prompt override dialog"
             title="Close (Esc)"
           >
             <X className="size-5" aria-hidden="true" />
@@ -204,12 +335,9 @@ export function AgentDefaultsDialog({
         </DialogClose>
 
         <div className={settingsDialogHeaderClass}>
-          <DialogTitle className="settings-dialog-title">
-            Agent defaults
-          </DialogTitle>
+          <DialogTitle className="settings-dialog-title">{title}</DialogTitle>
           <DialogDescription className="text-control leading-4 text-settings-muted">
-            Override the hardcoded worker and orchestrator system prompts
-            globally (all projects).
+            {description}
           </DialogDescription>
         </div>
 
@@ -244,9 +372,7 @@ export function AgentDefaultsDialog({
               spellCheck={false}
             />
             <span className="text-caption leading-4 text-settings-muted">
-              This replaces the hardcoded worker system prompt for all projects.
-              Edit the default above; clearing it back to the default restores
-              the baseline.
+              {hintFor("worker")}
             </span>
             {workerEmpty && (
               <p role="alert" className="text-caption leading-4 text-error">
@@ -273,9 +399,7 @@ export function AgentDefaultsDialog({
               spellCheck={false}
             />
             <span className="text-caption leading-4 text-settings-muted">
-              This replaces the hardcoded orchestrator system prompt for all
-              projects. Edit the default above; clearing it back to the default
-              restores the baseline.
+              {hintFor("orchestrator")}
             </span>
             {orchestratorEmpty && (
               <p role="alert" className="text-caption leading-4 text-error">

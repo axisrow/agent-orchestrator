@@ -83,7 +83,7 @@ The issue context above is current. Fetch comments or linked issues only if you 
 // promptProject so project-specific fields read as "not configured" placeholders.
 func DefaultWorkerSystemPrompt() string {
 	sections := []string{
-		workerSystemPrompt(promptProject{}),
+		workerSystemPrompt(promptProject{}, false),
 		workerMultiPRPrompt(),
 		systemPromptGuard(),
 	}

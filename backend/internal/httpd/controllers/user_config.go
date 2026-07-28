@@ -38,9 +38,11 @@ func (c *UserConfigController) get(w http.ResponseWriter, r *http.Request) {
 	// errors in practice, but a failure must not break the config read.
 	defaults, _ := c.Mgr.DefaultPrompts(r.Context())
 	envelope.WriteJSON(w, http.StatusOK, UserConfigResponse{
-		AgentConfig:               cfg,
-		DefaultWorkerPrompt:       defaults.Worker,
-		DefaultOrchestratorPrompt: defaults.Orchestrator,
+		AgentConfig: cfg,
+		DefaultPromptsWire: DefaultPromptsWire{
+			DefaultWorkerPrompt:       defaults.Worker,
+			DefaultOrchestratorPrompt: defaults.Orchestrator,
+		},
 	})
 }
 
