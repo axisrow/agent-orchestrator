@@ -1256,6 +1256,7 @@ func (m *Manager) destroySpawnWorkspace(ctx context.Context, ws ports.WorkspaceI
 			return err == nil
 		}
 	}
+	m.logger.Info("workspace: calling Destroy", "sessionID", ws.SessionID, "path", ws.Path, "branch", ws.Branch, "projectID", ws.ProjectID, "caller", "destroySpawnWorkspace")
 	err := m.workspace.Destroy(ctx, ws)
 	_ = m.store.DeleteSessionWorktrees(ctx, ws.SessionID)
 	return err == nil
@@ -1641,6 +1642,7 @@ func (m *Manager) Kill(ctx context.Context, id domain.SessionID) (bool, error) {
 			m.cleanupAgentWorkspace(ctx, rec, ws.Path)
 		}
 	} else if ws.Path != "" {
+		m.logger.Info("workspace: calling Destroy", "sessionID", id, "path", ws.Path, "branch", ws.Branch, "projectID", rec.ProjectID, "caller", "kill")
 		if err := m.workspace.Destroy(ctx, ws); err != nil {
 			if errors.Is(err, ports.ErrWorkspaceDirty) {
 				if err := m.store.DeleteSessionWorktrees(ctx, id); err != nil {
@@ -1755,6 +1757,7 @@ func (m *Manager) RetireForReplacement(ctx context.Context, id domain.SessionID)
 			return fmt.Errorf("retire replacement %s: runtime: %w", id, err)
 		}
 	}
+	m.logger.Info("workspace: calling ForceDestroy", "sessionID", id, "path", ws.Path, "branch", ws.Branch, "projectID", rec.ProjectID, "caller", "RetireForReplacement")
 	if err := m.workspace.ForceDestroy(ctx, ws); err != nil {
 		if staleWorkspace {
 			m.logger.Warn("retire replacement: stale workspace cleanup failed", "sessionID", id, "path", ws.Path, "error", err)
@@ -1834,7 +1837,9 @@ func (m *Manager) retireWorkspaceProjectForReplacement(ctx context.Context, rec 
 		}
 	}
 	for i := len(rows) - 1; i >= 0; i-- {
-		if err := m.workspace.ForceDestroy(ctx, workspaceInfoFromRepoInfo(rows[i])); err != nil {
+		info := workspaceInfoFromRepoInfo(rows[i])
+		m.logger.Info("workspace: calling ForceDestroy", "sessionID", rec.ID, "path", info.Path, "branch", info.Branch, "projectID", rec.ProjectID, "caller", "RetireForReplacement WorkspaceProject", "repoName", rows[i].RepoName)
+		if err := m.workspace.ForceDestroy(ctx, info); err != nil {
 			if staleRepos[rows[i].RepoName] {
 				m.logger.Warn("retire replacement: stale workspace repo cleanup failed", "sessionID", rec.ID, "repo", rows[i].RepoName, "path", rows[i].Path, "error", err)
 			}
@@ -2261,6 +2266,7 @@ func (m *Manager) saveAndTeardownOne(ctx context.Context, rec domain.SessionReco
 
 	// 6. Force-remove the worktree (safe: work is captured in step 1 and the
 	// DB write in step 2 is already committed).
+	m.logger.Info("workspace: calling ForceDestroy", "sessionID", rec.ID, "path", ws.Path, "branch", ws.Branch, "projectID", rec.ProjectID, "caller", "saveAndTeardownOne")
 	if err := m.workspace.ForceDestroy(ctx, ws); err != nil {
 		m.logger.Warn("save-teardown-all: force destroy failed", "sessionID", rec.ID, "error", err)
 	} else {
@@ -2308,8 +2314,10 @@ func (m *Manager) reconcileLive(ctx context.Context, rec domain.SessionRecord) e
 				return fmt.Errorf("reconcile %s: probe: %w", rec.ID, err)
 			}
 			if alive {
+				m.logger.Info("reconcile: runtime alive, adopting session", "sessionID", rec.ID, "kind", rec.Kind, "activity", rec.Activity.State, "path", rec.Metadata.WorkspacePath, "branch", rec.Metadata.Branch)
 				return nil // adopt: the session survived the crash.
 			}
+			m.logger.Info("reconcile: runtime NOT alive, triggering save-and-teardown", "sessionID", rec.ID, "kind", rec.Kind, "activity", rec.Activity.State, "path", rec.Metadata.WorkspacePath, "branch", rec.Metadata.Branch)
 		}
 	}
 	if projectKind == domain.ProjectKindScratch {
@@ -2929,6 +2937,7 @@ func (m *Manager) saveAndTeardownWorkspaceProject(ctx context.Context, rec domai
 	rootDestroyed := false
 	for i := len(rows) - 1; i >= 0; i-- {
 		info := workspaceInfoFromRepoInfo(rows[i])
+		m.logger.Info("workspace: calling ForceDestroy", "sessionID", rec.ID, "path", info.Path, "branch", info.Branch, "projectID", rec.ProjectID, "caller", "saveAndTeardownWorkspaceProject", "repoName", rows[i].RepoName)
 		if err := m.workspace.ForceDestroy(ctx, info); err != nil {
 			m.logger.Warn("save-teardown-all: force destroy failed", "sessionID", rec.ID, "repo", rows[i].RepoName, "error", err)
 		} else if info.Path == rec.Metadata.WorkspacePath {
