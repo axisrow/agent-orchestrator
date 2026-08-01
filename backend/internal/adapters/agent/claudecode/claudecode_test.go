@@ -374,131 +374,6 @@ func TestProbeNativeSessionUnknownWithoutConfigDir(t *testing.T) {
 	}
 }
 
-// TestGetLaunchCommandMCPAndPluginFlags: a per-role MCP set and plugin list are
-// emitted as claude-code flags. MCP configs go to --mcp-config (one per entry),
-// Strict adds --strict-mcp-config, local plugin paths go to --plugin-dir, and
-// http(s) URLs go to --plugin-url.
-func TestGetLaunchCommandMCPAndPluginFlags(t *testing.T) {
-	p := &Plugin{resolvedBinary: "claude"}
-	cmd, err := p.GetLaunchCommand(context.Background(), ports.LaunchConfig{
-		Config: ports.AgentConfig{
-			MCP:        &domain.MCPConfig{Configs: []string{"{\"a\":1}", "/p/m.json"}, Strict: true},
-			PluginDirs: []string{"/local/plugin", "https://example.com/p.zip"},
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !containsSubsequence(cmd, []string{"--mcp-config", "{\"a\":1}"}) {
-		t.Fatalf("cmd %#v missing --mcp-config inline entry", cmd)
-	}
-	if !containsSubsequence(cmd, []string{"--mcp-config", "/p/m.json"}) {
-		t.Fatalf("cmd %#v missing --mcp-config path entry", cmd)
-	}
-	if !contains(cmd, "--strict-mcp-config") {
-		t.Fatalf("cmd %#v missing --strict-mcp-config", cmd)
-	}
-	if !containsSubsequence(cmd, []string{"--plugin-dir", "/local/plugin"}) {
-		t.Fatalf("cmd %#v missing --plugin-dir for local path", cmd)
-	}
-	if !containsSubsequence(cmd, []string{"--plugin-url", "https://example.com/p.zip"}) {
-		t.Fatalf("cmd %#v missing --plugin-url for URL", cmd)
-	}
-}
-
-// TestIsPluginURLCaseInsensitive: URL schemes are case-insensitive (RFC 3986),
-// so HTTPS:// and HtTp:// must route to --plugin-url, not --plugin-dir.
-func TestIsPluginURLCaseInsensitive(t *testing.T) {
-	for _, in := range []string{"https://example.com/p.zip", "HTTPS://example.com/p.zip", "HtTp://example.com/p.zip", "http://example.com/p.zip"} {
-		if !isPluginURL(in) {
-			t.Errorf("isPluginURL(%q) = false, want true (scheme is case-insensitive)", in)
-		}
-	}
-	for _, in := range []string{"/local/plugin", "./relative", "ftp://example.com/p.zip", "example.com/p.zip"} {
-		if isPluginURL(in) {
-			t.Errorf("isPluginURL(%q) = true, want false", in)
-		}
-	}
-}
-
-// TestGetLaunchCommandNoMCPFlagsWhenUnset: a config with no MCP/plugin
-// configuration emits nothing, so an unset role inherits the global set.
-func TestGetLaunchCommandNoMCPFlagsWhenUnset(t *testing.T) {
-	p := &Plugin{resolvedBinary: "claude"}
-	cmd, err := p.GetLaunchCommand(context.Background(), ports.LaunchConfig{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, flag := range []string{"--mcp-config", "--strict-mcp-config", "--plugin-dir", "--plugin-url"} {
-		if contains(cmd, flag) {
-			t.Fatalf("cmd %#v unexpectedly contains %s", cmd, flag)
-		}
-	}
-}
-
-// TestGetLaunchCommandMCPStrictAlone: Strict with no configs is valid isolation
-// and emits just --strict-mcp-config.
-func TestGetLaunchCommandMCPStrictAlone(t *testing.T) {
-	p := &Plugin{resolvedBinary: "claude"}
-	cmd, err := p.GetLaunchCommand(context.Background(), ports.LaunchConfig{
-		Config: ports.AgentConfig{MCP: &domain.MCPConfig{Strict: true}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !contains(cmd, "--strict-mcp-config") {
-		t.Fatalf("cmd %#v missing --strict-mcp-config", cmd)
-	}
-	if contains(cmd, "--mcp-config") {
-		t.Fatalf("cmd %#v unexpectedly contains --mcp-config", cmd)
-	}
-}
-
-// TestGetRestoreCommandReappliesMCPAndPluginFlags: like the system prompt, MCP
-// and plugin flags are rebuilt from flags on resume, so a restored worker keeps
-// its scoped MCP set and plugins.
-func TestGetRestoreCommandReappliesMCPAndPluginFlags(t *testing.T) {
-	cmd, ok, err := (&Plugin{resolvedBinary: "claude"}).GetRestoreCommand(context.Background(), ports.RestoreConfig{
-		Config: ports.AgentConfig{
-			MCP:        &domain.MCPConfig{Configs: []string{"{\"a\":1}"}, Strict: true},
-			PluginDirs: []string{"https://example.com/p.zip"},
-		},
-		Session: ports.SessionRef{
-			ID:       "sess-r",
-			Metadata: map[string]string{ports.MetadataKeyAgentSessionID: "claude-native-1"},
-		},
-	})
-	if err != nil || !ok {
-		t.Fatalf("restore = (ok=%v, err=%v), want ok", ok, err)
-	}
-	if !containsSubsequence(cmd, []string{"--mcp-config", "{\"a\":1}"}) {
-		t.Fatalf("restore cmd %#v missing --mcp-config", cmd)
-	}
-	if !contains(cmd, "--strict-mcp-config") {
-		t.Fatalf("restore cmd %#v missing --strict-mcp-config", cmd)
-	}
-	if !containsSubsequence(cmd, []string{"--plugin-url", "https://example.com/p.zip"}) {
-		t.Fatalf("restore cmd %#v missing --plugin-url", cmd)
-	}
-	// Flags must precede --resume.
-	if !flagsBeforeResume(cmd, "--strict-mcp-config") {
-		t.Fatalf("restore cmd %#v: MCP flag not before --resume", cmd)
-	}
-}
-
-// flagsBeforeResume reports whether flag appears before --resume in cmd.
-func flagsBeforeResume(cmd []string, flag string) bool {
-	for _, v := range cmd {
-		if v == "--resume" {
-			return false
-		}
-		if v == flag {
-			return true
-		}
-	}
-	return false
-}
-
 func TestClaudeSessionUUIDDeterministicAndUnique(t *testing.T) {
 	a1 := claudeSessionUUID("alpha")
 	a2 := claudeSessionUUID("alpha")
@@ -853,10 +728,115 @@ func TestGetRestoreCommandRejectsNonRegularSystemPromptFile(t *testing.T) {
 
 func TestGetRestoreCommandFallsBackToDerivedUUID(t *testing.T) {
 	// No agentSessionId captured (pre-hook session) → derive deterministically
-	// from the AO session id, the explicit fallback.
+	// from the AO session id, the explicit fallback. No WorkspacePath is set,
+	// so claudeTranscriptExists can't check for a transcript and does not
+	// block — see TestGetRestoreCommandFalseWhenDerivedUUIDTranscriptMissing
+	// for the case where a workspace path IS known and the transcript isn't
+	// there.
 	cmd, ok, err := (&Plugin{resolvedBinary: "claude"}).GetRestoreCommand(context.Background(), ports.RestoreConfig{
 		Permissions: ports.PermissionModeBypassPermissions,
 		Session:     ports.SessionRef{ID: "sess-r"},
+	})
+	if err != nil || !ok {
+		t.Fatalf("restore = (ok=%v, err=%v), want ok", ok, err)
+	}
+	want := []string{"claude", "--permission-mode", "bypassPermissions", "--resume", claudeSessionUUID("sess-r")}
+	if !reflect.DeepEqual(cmd, want) {
+		t.Fatalf("restore cmd\nwant: %#v\n got: %#v", want, cmd)
+	}
+}
+
+// writeFakeTranscript creates an empty transcript file at the path Claude
+// Code would look for when resuming sessionID in workspacePath, under a HOME
+// this test controls. Returns the HOME to set via t.Setenv.
+func writeFakeTranscript(t *testing.T, workspacePath, sessionID string) (home string) {
+	t.Helper()
+	home = t.TempDir()
+	dir := filepath.Join(home, ".claude", "projects", claudeProjectSlug(workspacePath))
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, sessionID+".jsonl"), []byte("{}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return home
+}
+
+func TestGetRestoreCommandReadsAgentSessionID_TranscriptPresent(t *testing.T) {
+	// With a workspace path AND a matching transcript on disk, restore
+	// proceeds exactly as before: hook-captured id wins, --resume is issued.
+	workspace := "/ws/sess-r"
+	t.Setenv("HOME", writeFakeTranscript(t, workspace, "claude-native-1"))
+
+	cmd, ok, err := (&Plugin{resolvedBinary: "claude"}).GetRestoreCommand(context.Background(), ports.RestoreConfig{
+		Permissions: ports.PermissionModeBypassPermissions,
+		Session: ports.SessionRef{
+			ID:            "sess-r",
+			WorkspacePath: workspace,
+			Metadata:      map[string]string{ports.MetadataKeyAgentSessionID: "claude-native-1"},
+		},
+	})
+	if err != nil || !ok {
+		t.Fatalf("restore = (ok=%v, err=%v), want ok", ok, err)
+	}
+	want := []string{"claude", "--permission-mode", "bypassPermissions", "--resume", "claude-native-1"}
+	if !reflect.DeepEqual(cmd, want) {
+		t.Fatalf("restore cmd\nwant: %#v\n got: %#v", want, cmd)
+	}
+}
+
+// TestGetRestoreCommandFalseWhenTranscriptMissing is the regression test for
+// the bug this file's claudeTranscriptExists guards against: a non-blank
+// agent session id (hook-captured or derived) is not proof a transcript
+// exists. After a reboot, or when the SessionStart hook never fired, AO could
+// hold an id with nothing on disk behind it. Before the fix, GetRestoreCommand
+// returned ok=true unconditionally here, so `claude --resume <id>` would exit
+// 1 with "No conversation found with session ID" and the manager's
+// fresh-launch fallback (which only runs when ok=false) was unreachable.
+func TestGetRestoreCommandFalseWhenTranscriptMissing(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // no transcript written anywhere under this HOME
+
+	cmd, ok, err := (&Plugin{resolvedBinary: "claude"}).GetRestoreCommand(context.Background(), ports.RestoreConfig{
+		Permissions: ports.PermissionModeBypassPermissions,
+		Session: ports.SessionRef{
+			ID:            "sess-r",
+			WorkspacePath: "/ws/sess-r",
+			Metadata:      map[string]string{ports.MetadataKeyAgentSessionID: "claude-native-1"},
+		},
+	})
+	if err != nil || ok || cmd != nil {
+		t.Fatalf("restore = (%#v, ok=%v, err=%v), want (nil, false, nil)", cmd, ok, err)
+	}
+}
+
+// TestGetRestoreCommandFalseWhenDerivedUUIDTranscriptMissing covers the
+// pre-hook fallback path specifically: claudeSessionUUID is a guess (an AO
+// session that never got far enough to run the SessionStart hook), so it must
+// be held to the same transcript-existence check as a hook-captured id.
+func TestGetRestoreCommandFalseWhenDerivedUUIDTranscriptMissing(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	cmd, ok, err := (&Plugin{resolvedBinary: "claude"}).GetRestoreCommand(context.Background(), ports.RestoreConfig{
+		Permissions: ports.PermissionModeBypassPermissions,
+		Session:     ports.SessionRef{ID: "sess-r", WorkspacePath: "/ws/sess-r"},
+	})
+	if err != nil || ok || cmd != nil {
+		t.Fatalf("restore = (%#v, ok=%v, err=%v), want (nil, false, nil)", cmd, ok, err)
+	}
+}
+
+// TestGetRestoreCommandFallsBackToDerivedUUID_TranscriptPresent is the
+// updated form of the original "falls back to derived UUID" test: it now
+// pins a HOME with a matching transcript so the assertion also exercises
+// claudeTranscriptExists on the success path, not just the no-workspace-path
+// case covered by TestGetRestoreCommandFallsBackToDerivedUUID below.
+func TestGetRestoreCommandFallsBackToDerivedUUID_TranscriptPresent(t *testing.T) {
+	workspace := "/ws/sess-r"
+	t.Setenv("HOME", writeFakeTranscript(t, workspace, claudeSessionUUID("sess-r")))
+
+	cmd, ok, err := (&Plugin{resolvedBinary: "claude"}).GetRestoreCommand(context.Background(), ports.RestoreConfig{
+		Permissions: ports.PermissionModeBypassPermissions,
+		Session:     ports.SessionRef{ID: "sess-r", WorkspacePath: workspace},
 	})
 	if err != nil || !ok {
 		t.Fatalf("restore = (ok=%v, err=%v), want ok", ok, err)

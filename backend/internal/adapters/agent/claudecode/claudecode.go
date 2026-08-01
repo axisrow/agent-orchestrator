@@ -239,11 +239,22 @@ func (p *Plugin) GetRestoreCommand(ctx context.Context, cfg ports.RestoreConfig)
 		return nil, false, fmt.Errorf("claude-code: %w", err)
 	}
 
-	if _, ok := agentruntime.RestoreIdentity(
+	identity, ok := agentruntime.RestoreIdentity(
 		agentruntime.HarnessClaudeCode,
 		cfg.Session.ID,
 		cfg.Session.Metadata,
-	); !ok {
+	)
+	if !ok {
+		return nil, false, nil
+	}
+	// A non-blank id is not proof a resumable transcript exists: the
+	// SessionStart hook may never have fired (process died before it ran, or
+	// the machine rebooted mid-launch) and the derived UUID above is a guess,
+	// not a persisted fact. `claude --resume <id>` on a missing transcript
+	// exits 1 with "No conversation found" instead of starting fresh, so
+	// verify the file is actually there and let the caller's fresh-launch
+	// fallback take over when it isn't.
+	if !claudeTranscriptExists(cfg.Session.WorkspacePath, identity) {
 		return nil, false, nil
 	}
 
@@ -501,6 +512,50 @@ func SessionUUID(aoSessionID string) string {
 	return claudeSessionUUID(aoSessionID)
 }
 
+// claudeProjectSlug mirrors Claude Code's own transcript-directory naming:
+// every "/" and "." in the absolute workspace path becomes "-". This is the
+// same rule Claude Code uses to place a session's JSONL transcript under
+// ~/.claude/projects/<slug>/<sessionID>.jsonl.
+func claudeProjectSlug(workspacePath string) string {
+	slug := strings.ReplaceAll(workspacePath, "/", "-")
+	return strings.ReplaceAll(slug, ".", "-")
+}
+
+// claudeTranscriptPath returns the on-disk path of the transcript a
+// `claude --resume <sessionID>` would need, given the workspace it would run
+// in. It returns ok=false when workspacePath is empty — there's nothing to
+// derive a slug from — so callers can treat "can't tell" differently from
+// "checked, and it's missing".
+func claudeTranscriptPath(workspacePath, sessionID string) (path string, ok bool, err error) {
+	if workspacePath == "" {
+		return "", false, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", false, fmt.Errorf("claude-code: resolve home directory: %w", err)
+	}
+	return filepath.Join(home, ".claude", "projects", claudeProjectSlug(workspacePath), sessionID+".jsonl"), true, nil
+}
+
+// claudeTranscriptExists reports whether a --resume target actually has a
+// transcript on disk. Without this check, GetRestoreCommand would report
+// ok=true for any non-blank session id — including one this process
+// synthesized itself (see claudeSessionUUID) that may never correspond to a
+// real Claude session, e.g. after a reboot that dropped the SessionStart hook
+// call, or a pruned ~/.claude/projects entry. `claude --resume` then exits 1
+// with "No conversation found with session ID", and because ok=true short-
+// circuits restoreArgv's fresh-launch fallback (session_manager/manager.go),
+// the session is stranded rather than relaunched. If we can't tell (empty
+// workspace path, or a stat error other than "not found"), we don't block —
+// only a confirmed absence should force a fallback.
+func claudeTranscriptExists(workspacePath, sessionID string) bool {
+	path, ok, err := claudeTranscriptPath(workspacePath, sessionID)
+	if !ok || err != nil {
+		return true
+	}
+	_, err = os.Stat(path)
+	return err == nil
+}
 // appendMCPFlags emits claude-code's per-session MCP flags. Each MCPConfig
 // entry is passed to the repeatable --mcp-config as-is (a JSON string or a path
 // to a JSON file — both accepted by the CLI). Strict adds --strict-mcp-config
