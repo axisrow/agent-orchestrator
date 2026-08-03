@@ -6,7 +6,7 @@
 
 -- +goose Up
 -- +goose StatementBegin
-CREATE TABLE user_config (
+CREATE TABLE IF NOT EXISTS user_config (
     id     INTEGER PRIMARY KEY CHECK (id = 1),
     config TEXT
 );
