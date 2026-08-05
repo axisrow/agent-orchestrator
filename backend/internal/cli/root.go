@@ -204,13 +204,15 @@ func NewRootCommand(deps Deps) *cobra.Command {
 	root.AddCommand(newImportCommand(ctx))
 	root.AddCommand(newDevCommand(ctx))
 	root.AddCommand(newProjectCommand(ctx))
-	root.AddCommand(newUserConfigCommand(ctx))
 	root.AddCommand(newSessionCommand(ctx))
 	root.AddCommand(newOrchestratorCommand(ctx))
 	root.AddCommand(newPRCommand(ctx))
 	root.AddCommand(newReviewCommand(ctx))
 	root.AddCommand(newCompletionCommand())
 	root.AddCommand(newVersionCommand())
+	// Fork-only command, kept last to minimize rebase conflicts with upstream's
+	// insertions into this list (see docs/adr/0002-user-scope-config.md).
+	root.AddCommand(newUserConfigCommand(ctx))
 
 	return root
 }
