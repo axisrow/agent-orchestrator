@@ -56,6 +56,8 @@ import { Button } from "./ui/button";
 import { cn } from "../lib/utils";
 import { SessionTerminationPopover } from "./SessionTerminationPopover";
 import { ReviewerSelect } from "./ReviewerSelect";
+import { inheritedReviewerHarness } from "../lib/reviewer-harnesses";
+import { agentLabel } from "../lib/agent-options";
 import { agentsQueryOptions } from "../hooks/useAgentsQuery";
 import { Switch } from "./ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
@@ -1260,7 +1262,14 @@ function ReviewPanel({
 	const latest = runningRun ?? newestRun;
 	const autoReviewFailure =
 		latestAutoFailure && latestAutoFailure.id !== dismissedAutoFailureId ? latestAutoFailure.body.trim() : null;
-	const harness = latest?.harness || config?.reviewers?.[0]?.harness || "claude-code";
+	// Name the reviewer the daemon would actually pick. Its resolution order is
+	// session preference, then project config, then the worker's own harness when
+	// that harness is a supported reviewer, and claude-code only as the final
+	// fallback (see ResolveReviewerHarness). Omitting the worker step made this
+	// label claim claude-code for a codex worker with no project config, so the
+	// pane named one agent while a different one ran.
+	const harness =
+		latest?.harness || config?.reviewers?.[0]?.harness || inheritedReviewerHarness(session.provider) || "claude-code";
 	const projectDefaultLabel = t("newTask.projectDefault");
 	const hasReviewerSession = reviewerHandleId.trim() !== "";
 	const reviewRunning = reviewIsRunning(openReviewStates);
@@ -1328,8 +1337,8 @@ function ReviewPanel({
 							authorized={agentCatalog?.authorized}
 							contentAlign="end"
 							defaultHarness={harness}
-							defaultOptionLabel={harness ? `${projectDefaultLabel} (${harness})` : projectDefaultLabel}
-							defaultTriggerLabel={harness || projectDefaultLabel}
+							defaultOptionLabel={harness ? `${projectDefaultLabel} (${agentLabel(harness)})` : projectDefaultLabel}
+							defaultTriggerLabel={harness ? agentLabel(harness) : projectDefaultLabel}
 							disabled={reviewRunning || autoReviewEnabled || isKilling || isSwitchingReviewer || isTriggering || isCancelling}
 							installed={agentCatalog?.installed}
 							onChange={(next) => onReviewerOverrideChange(next as ReviewerHarness | "")}
