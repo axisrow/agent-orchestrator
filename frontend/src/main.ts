@@ -430,79 +430,28 @@ function writeDaemonLog(text: string): void {
 	if (daemonLogBytes >= DAEMON_LOG_MAX_BYTES) openDaemonLog();
 }
 
-// Durable daemon log for the desktop-owned launch (issue #2689). Without it the
-// daemon's stderr — including a panic stack — lives only in the Electron console
-// and dies with the app, so a crash leaves nothing to correlate with the request
-// ID the API handed out. Keep-daemon mode redirects stdio to this same file at
-// spawn time instead, so this writer is only for the piped path.
-const DAEMON_LOG_MAX_BYTES = 8 * 1024 * 1024;
-let daemonLogStream: WriteStream | undefined;
-let daemonLogBytes = 0;
-
-function daemonLogPath(): string {
-	return path.join(os.homedir(), ".ao", ...(isDev ? [DEV_STATE_SUBDIR] : []), "daemon.log");
-}
-
-function openDaemonLog(): void {
-	closeDaemonLog();
-	const logPath = daemonLogPath();
-	try {
-		mkdirSync(path.dirname(logPath), { recursive: true });
-		// Rotate before appending so one long-lived install cannot grow the log
-		// without bound; one generation back is enough to survive a crash loop.
-		let size = 0;
-		try {
-			size = statSync(logPath).size;
-		} catch {
-			size = 0; // absent on first run
-		}
-		if (size >= DAEMON_LOG_MAX_BYTES) {
-			try {
-				renameSync(logPath, `${logPath}.1`);
-				size = 0;
-			} catch {
-				// Rotation is best-effort; appending to an oversized log still beats
-				// losing the crash output entirely.
-			}
-		}
-		daemonLogBytes = size;
-		daemonLogStream = createWriteStream(logPath, { flags: "a" });
-		daemonLogStream.on("error", () => {
-			// A failed log write must never take the app down with it.
-			daemonLogStream = undefined;
-		});
-	} catch {
-		console.warn(`AO: daemon log unavailable: ${logPath}`);
-		daemonLogStream = undefined;
-	}
-}
-
-function closeDaemonLog(): void {
-	daemonLogStream?.end();
-	daemonLogStream = undefined;
-	daemonLogBytes = 0;
-}
-
-function writeDaemonLog(text: string): void {
-	if (!daemonLogStream) return;
-	daemonLogStream.write(text);
-	daemonLogBytes += Buffer.byteLength(text);
-	if (daemonLogBytes >= DAEMON_LOG_MAX_BYTES) openDaemonLog();
-}
-
 // Menu installed on Windows where the native menu bar is hidden. The bar stays
 // out of sight, but the roles keep their accelerators alive (Reload, zoom, full
 // screen, edit commands). DevTools uses the AO browser toggle so the focused
 // Browser panel opens the same native Chromium surface as the toolbar.
+// Open DevTools for whatever is actually focused. Electron's built-in
+// toggleDevTools role assumes focus is on the BrowserWindow; in AO it is usually
+// on a WebContentsView, where that role crashes the main process. Everything
+// that toggles DevTools goes through here instead.
+function toggleDevToolsForFocusedSurface(): void {
+	const fallback = () => getShellWebContents()?.toggleDevTools();
+	const host = browserViewHost;
+	if (!host) {
+		fallback();
+		return;
+	}
+	void host.toggleDevToolsForLastFocused().then((state) => {
+		if (!state) fallback();
+	}).catch(fallback);
+}
+
 function buildWindowsAppMenu(): Menu {
-	return Menu.buildFromTemplate(
-		buildWindowsAppMenuTemplate(() => {
-			const fallback = () => getShellWebContents()?.toggleDevTools();
-			void browserViewHost?.toggleDevToolsForLastFocused().then((state) => {
-				if (!state) fallback();
-			}).catch(fallback);
-		}),
-	);
+	return Menu.buildFromTemplate(buildWindowsAppMenuTemplate(toggleDevToolsForFocusedSurface));
 }
 
 async function disposeBrowserViewHost(): Promise<void> {

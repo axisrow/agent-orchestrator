@@ -121,11 +121,6 @@ const COPY_TOAST_MS = 1400;
 // callback is genuinely never coming.
 const ACTIVATION_WATCHDOG_MS = 2000;
 
-// Upper bound on hiding a pane while its activation settles. Generous next to
-// the fit budget (FIT_CAP_MS) plus two paint frames, so it only fires when a
-// callback is genuinely never coming.
-const ACTIVATION_WATCHDOG_MS = 2000;
-
 function preparePastedText(text: string): string {
 	return text.replace(/\r?\n/g, "\r");
 }
