@@ -1619,6 +1619,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/user-config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get the user-scoped agent config (the lowest-precedence scope above projects) */
+        get: operations["getUserConfig"];
+        /** Replace the user-scoped agent config wholesale (a zero agentConfig clears it) */
+        put: operations["setUserConfig"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1643,9 +1661,15 @@ export interface components {
             projectId?: null | string;
         };
         AgentConfig: {
+            env?: {
+                [key: string]: string;
+            };
+            mcp?: components["schemas"]["MCPConfig"];
             mode?: string;
             model?: string;
             permissions?: string;
+            pluginDirs?: string[];
+            systemPrompt?: string;
         };
         AgentInfo: {
             /**
@@ -2193,6 +2217,10 @@ export interface components {
             files: components["schemas"]["WorkspaceFileSummary"][];
             sessionId: string;
             truncated: boolean;
+        };
+        MCPConfig: {
+            configs?: string[];
+            strict?: boolean;
         };
         MarkAllNotificationsReadRequest: {
             /** @description Acknowledge exactly these notifications. Omit to acknowledge every unread notification; paginating clients should send the ids they actually rendered so later pages stay unread. */
@@ -2752,6 +2780,9 @@ export interface components {
             /** @enum {string} */
             harness?: "claude-code" | "codex" | "copilot" | "cursor" | "kilocode" | "opencode" | "kiro" | "pi" | "qwen" | "agy" | "continue" | "goose" | "vibe" | "devin" | "droid" | "kimi" | "kimchi" | "muse" | "amp" | "aider" | "grok" | "crush" | "auggie" | "cline" | "autohand";
         };
+        SetUserConfigInput: {
+            agentConfig: components["schemas"]["AgentConfig"];
+        };
         SettingsResponse: {
             chatHarnesses: string[];
             /** @enum {string} */
@@ -2926,6 +2957,9 @@ export interface components {
             outputTokens: null | number;
             reasoningTokens: null | number;
             uncachedInputTokens: null | number;
+        };
+        UserConfigResponse: {
+            agentConfig: components["schemas"]["AgentConfig"];
         };
         WorkspaceFileResponse: {
             additions: number;
@@ -9182,6 +9216,77 @@ export interface operations {
             };
             /** @description Not Implemented */
             501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    getUserConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserConfigResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    setUserConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetUserConfigInput"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserConfigResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };
