@@ -1,9 +1,48 @@
 package sqlite
 
 import (
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/pressly/goose/v3"
 )
+
+// migrationVersion resolves a migration's goose version from the distinctive
+// part of its filename.
+//
+// Fork migrations get renumbered on most upstream syncs, because upstream keeps
+// claiming the next free number for its own migrations. A test that hardcodes
+// the number has to be edited in lockstep with every rename — and a test that
+// silently keeps migrating to the *old* number still passes while exercising
+// the wrong schema. Looking the version up by name removes both failure modes:
+// the number becomes an implementation detail of the filename.
+func migrationVersion(t *testing.T, nameSuffix string) int64 {
+	t.Helper()
+	entries, err := migrationsFS.ReadDir("migrations")
+	if err != nil {
+		t.Fatalf("read migrations dir: %v", err)
+	}
+	var found string
+	for _, e := range entries {
+		// Match on the suffix after the numeric prefix so the lookup is not
+		// itself sensitive to the number it is meant to discover.
+		if _, rest, ok := strings.Cut(e.Name(), "_"); ok && rest == nameSuffix+".sql" {
+			if found != "" {
+				t.Fatalf("migrations %q and %q both end in %q", found, e.Name(), nameSuffix)
+			}
+			found = e.Name()
+		}
+	}
+	if found == "" {
+		t.Fatalf("no migration ending in %q; was it renamed?", nameSuffix)
+	}
+	version, err := goose.NumericComponent(found)
+	if err != nil {
+		t.Fatalf("parse version from %q: %v", found, err)
+	}
+	return version
+}
 
 // Sessions whose activity was last written from a local-zone clock carry the
 // zone (and sometimes a monotonic reading) in the column, because the driver
@@ -11,10 +50,16 @@ import (
 // directly in SQL, so such a row stops behaving like a timestamp: a "+0800"
 // wall clock sorts above the UTC rendering of a later instant, and the
 // agent-switch source-stop predicate then matches zero rows and strands the
-// saga. Migration 9002 rewrites those rows to the canonical UTC form.
-func TestMigration9002NormalizesLocalZoneActivityTimestamps(t *testing.T) {
+// saga. The normalize_activity_last_at migration rewrites those rows to the
+// canonical UTC form.
+func TestNormalizeActivityLastAtMigrationRewritesLocalZoneTimestamps(t *testing.T) {
 	db := openTestDB(t)
 
+	version := migrationVersion(t, "normalize_activity_last_at")
+
+	// 87 is the schema point that seeds below need (projects and sessions
+	// exist, activity_last_at is not yet normalized) — a fixed upstream
+	// version, deliberately not derived from the migration under test.
 	upTo(t, db, 87)
 
 	now := time.Now().UTC()
@@ -50,7 +95,7 @@ func TestMigration9002NormalizesLocalZoneActivityTimestamps(t *testing.T) {
 		}
 	}
 
-	upTo(t, db, 9002)
+	upTo(t, db, version)
 
 	// CAST to TEXT to see the stored bytes: scanning the column into a string
 	// lets the driver re-render it as RFC 3339, which would hide the very
