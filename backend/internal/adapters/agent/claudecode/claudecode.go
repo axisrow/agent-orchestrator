@@ -22,7 +22,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -155,7 +154,7 @@ func (p *Plugin) GetConfigSpec(ctx context.Context) (ports.ConfigSpec, error) {
 //
 // The prompt is passed after `--` so a prompt beginning with "-" is not
 // mistaken for a flag.
-func (p *Plugin) GetLaunchCommand(ctx context.Context, cfg ports.LaunchConfig) (cmd []string, err error) {
+func (p *Plugin) GetLaunchCommand(ctx context.Context, cfg ports.LaunchConfig) ([]string, error) {
 	// Defense-in-depth: the project service validates on write, but re-check
 	// here so a config written by any other path can't launch a bad command.
 	if err := cfg.Config.Validate(); err != nil {
@@ -174,7 +173,7 @@ func (p *Plugin) GetLaunchCommand(ctx context.Context, cfg ports.LaunchConfig) (
 	if permissions == "" {
 		permissions = cfg.Config.Permissions
 	}
-	cmd, err = agentruntime.BuildLaunchCommand(agentruntime.LaunchConfig{
+	return agentruntime.BuildLaunchCommand(agentruntime.LaunchConfig{
 		Harness:          agentruntime.HarnessClaudeCode,
 		Binary:           binary,
 		SessionID:        cfg.SessionID,
@@ -186,13 +185,8 @@ func (p *Plugin) GetLaunchCommand(ctx context.Context, cfg ports.LaunchConfig) (
 		Permission:       agentruntime.PermissionPolicy(permissions),
 		AllowedTools:     cfg.AllowedTools,
 		DisallowedTools:  cfg.DisallowedTools,
+		ProviderArgs:     claudeProfileArgs(cfg.Config),
 	})
-	if err != nil {
-		return nil, err
-	}
-	appendMCPFlags(&cmd, cfg.Config.MCP)
-	appendPluginFlags(&cmd, cfg.Config.PluginDirs)
-	return cmd, nil
 }
 
 // PreLaunch is an optional capability the spawn engine invokes (via type
@@ -228,7 +222,7 @@ func (p *Plugin) PreLaunch(ctx context.Context, cfg ports.LaunchConfig) error {
 // caller fresh-spawns. The command re-applies the permission mode and current
 // standing system instructions. When Prompt is present it is passed as the
 // resume-time user turn, avoiding a fragile terminal paste into Claude's TUI.
-func (p *Plugin) GetRestoreCommand(ctx context.Context, cfg ports.RestoreConfig) (cmd []string, ok bool, err error) {
+func (p *Plugin) GetRestoreCommand(ctx context.Context, cfg ports.RestoreConfig) ([]string, bool, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, false, err
 	}
@@ -253,7 +247,7 @@ func (p *Plugin) GetRestoreCommand(ctx context.Context, cfg ports.RestoreConfig)
 	// not a persisted fact. `claude --resume <id>` on a missing transcript
 	// exits 1 with "No conversation found" instead of starting fresh, so
 	// verify the file is actually there and let the caller's fresh-launch
-	// fallback take over when it isn't.
+	// fallback take over when it isn't. See claudecode_profile.go.
 	if !claudeTranscriptExists(cfg.Session.WorkspacePath, identity) {
 		return nil, false, nil
 	}
@@ -262,7 +256,9 @@ func (p *Plugin) GetRestoreCommand(ctx context.Context, cfg ports.RestoreConfig)
 	if err != nil {
 		return nil, false, err
 	}
-	cmd, ok, err = agentruntime.BuildRestoreCommand(agentruntime.RestoreConfig{
+	// MCP/plugin flags are not in the transcript, so a resume rebuilds them —
+	// see claudeProfileArgs in claudecode_profile.go.
+	return agentruntime.BuildRestoreCommand(agentruntime.RestoreConfig{
 		Harness:          agentruntime.HarnessClaudeCode,
 		Binary:           binary,
 		SessionID:        cfg.Session.ID,
@@ -273,42 +269,8 @@ func (p *Plugin) GetRestoreCommand(ctx context.Context, cfg ports.RestoreConfig)
 		Permission:       agentruntime.PermissionPolicy(cfg.Permissions),
 		AllowedTools:     cfg.AllowedTools,
 		DisallowedTools:  cfg.DisallowedTools,
+		ProviderArgs:     claudeProfileArgs(cfg.Config),
 	})
-	if err != nil {
-		return nil, false, err
-	}
-	if !ok {
-		return nil, false, nil
-	}
-	// MCP/plugin flags are also rebuilt from flags on resume (they are not part
-	// of the transcript), so re-apply them or a restored worker loses its scoped
-	// MCP set and plugins. Inserted before --resume so the resume target stays
-	// the last positional flag.
-	var extra []string
-	appendMCPFlags(&extra, cfg.Config.MCP)
-	appendPluginFlags(&extra, cfg.Config.PluginDirs)
-	cmd = insertBeforeResume(cmd, extra)
-	return cmd, true, nil
-}
-
-// insertBeforeResume inserts extra flags immediately before the --resume flag
-// (and its value), so the resume target stays the last positional argument.
-// Flags after --resume would still be parsed by the CLI, but keeping the
-// resume target last matches the launch shape and the restore contract.
-func insertBeforeResume(cmd, extra []string) []string {
-	if len(extra) == 0 {
-		return cmd
-	}
-	for i, v := range cmd {
-		if v == "--resume" {
-			out := make([]string, 0, len(cmd)+len(extra))
-			out = append(out, cmd[:i]...)
-			out = append(out, extra...)
-			out = append(out, cmd[i:]...)
-			return out
-		}
-	}
-	return append(cmd, extra...)
 }
 
 // SessionInfo surfaces the normalized session metadata that the Claude Code
@@ -531,101 +493,6 @@ func claudeSessionUUID(aoSessionID string) string {
 // used by --session-id and --resume.
 func SessionUUID(aoSessionID string) string {
 	return claudeSessionUUID(aoSessionID)
-}
-
-// claudeProjectSlug mirrors Claude Code's own transcript-directory naming:
-// every "/" and "." in the absolute workspace path becomes "-". This is the
-// same rule Claude Code uses to place a session's JSONL transcript under
-// ~/.claude/projects/<slug>/<sessionID>.jsonl.
-func claudeProjectSlug(workspacePath string) string {
-	slug := strings.ReplaceAll(workspacePath, "/", "-")
-	return strings.ReplaceAll(slug, ".", "-")
-}
-
-// claudeTranscriptPath returns the on-disk path of the transcript a
-// `claude --resume <sessionID>` would need, given the workspace it would run
-// in. It returns ok=false when workspacePath is empty — there's nothing to
-// derive a slug from — so callers can treat "can't tell" differently from
-// "checked, and it's missing".
-func claudeTranscriptPath(workspacePath, sessionID string) (path string, ok bool, err error) {
-	if workspacePath == "" {
-		return "", false, nil
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", false, fmt.Errorf("claude-code: resolve home directory: %w", err)
-	}
-	return filepath.Join(home, ".claude", "projects", claudeProjectSlug(workspacePath), sessionID+".jsonl"), true, nil
-}
-
-// claudeTranscriptExists reports whether a --resume target actually has a
-// transcript on disk. Without this check, GetRestoreCommand would report
-// ok=true for any non-blank session id — including one this process
-// synthesized itself (see claudeSessionUUID) that may never correspond to a
-// real Claude session, e.g. after a reboot that dropped the SessionStart hook
-// call, or a pruned ~/.claude/projects entry. `claude --resume` then exits 1
-// with "No conversation found with session ID", and because ok=true short-
-// circuits restoreArgv's fresh-launch fallback (session_manager/manager.go),
-// the session is stranded rather than relaunched. If we can't tell (empty
-// workspace path, or a stat error other than "not found"), we don't block —
-// only a confirmed absence should force a fallback.
-func claudeTranscriptExists(workspacePath, sessionID string) bool {
-	path, ok, err := claudeTranscriptPath(workspacePath, sessionID)
-	if !ok || err != nil {
-		return true
-	}
-	_, err = os.Stat(path)
-	return err == nil
-}
-
-// appendMCPFlags emits claude-code's per-session MCP flags. Each MCPConfig
-// entry is passed to the repeatable --mcp-config as-is (a JSON string or a path
-// to a JSON file — both accepted by the CLI). Strict adds --strict-mcp-config
-// so the session ignores every other MCP source, isolating the worker. A nil
-// MCPConfig emits nothing, so an unset config inherits the global MCP set as
-// before. Strict alone (empty Configs) is valid: it means "no MCP at all".
-func appendMCPFlags(cmd *[]string, mcp *domain.MCPConfig) {
-	if mcp == nil {
-		return
-	}
-	for _, c := range mcp.Configs {
-		if c = strings.TrimSpace(c); c != "" {
-			*cmd = append(*cmd, "--mcp-config", c)
-		}
-	}
-	if mcp.Strict {
-		*cmd = append(*cmd, "--strict-mcp-config")
-	}
-}
-
-// appendPluginFlags emits --plugin-dir / --plugin-url for each entry. An
-// http(s):// entry maps to --plugin-url (a fetched zip); any other value is
-// treated as a local path and mapped to --plugin-dir. Both flags are repeatable,
-// so one is emitted per entry. Empty/whitespace entries are skipped.
-func appendPluginFlags(cmd *[]string, dirs []string) {
-	for _, d := range dirs {
-		if d = strings.TrimSpace(d); d == "" {
-			continue
-		}
-		if isPluginURL(d) {
-			*cmd = append(*cmd, "--plugin-url", d)
-		} else {
-			*cmd = append(*cmd, "--plugin-dir", d)
-		}
-	}
-}
-
-// isPluginURL reports whether s is an http(s) plugin URL rather than a local
-// path, deciding --plugin-url vs --plugin-dir.
-func isPluginURL(s string) bool {
-	// URL schemes are case-insensitive (RFC 3986): HTTPS://example.com/p.zip is
-	// a valid plugin URL, so parse and compare the scheme rather than matching a
-	// lowercase prefix (which would route it to --plugin-dir as a local path).
-	u, err := url.Parse(s)
-	if err != nil {
-		return false
-	}
-	return strings.EqualFold(u.Scheme, "http") || strings.EqualFold(u.Scheme, "https")
 }
 
 // claudeBinarySpec locates the claude binary: PATH first, then the native
