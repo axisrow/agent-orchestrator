@@ -1227,7 +1227,6 @@ describe("SessionInspector summary reviews", () => {
 		expect(trigger).toHaveTextContent("Claude Code");
 		expect(trigger).not.toHaveTextContent("claude-code");
 	});
-	});
 
 	it("hides review summary sections when no review data exists", async () => {
 		mockCommonGets([], "", []);
