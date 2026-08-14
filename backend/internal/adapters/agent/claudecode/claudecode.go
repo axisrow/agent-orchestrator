@@ -283,10 +283,33 @@ func (p *Plugin) GetRestoreCommand(ctx context.Context, cfg ports.RestoreConfig)
 	}
 	// MCP/plugin flags are also rebuilt from flags on resume (they are not part
 	// of the transcript), so re-apply them or a restored worker loses its scoped
-	// MCP set and plugins.
-	appendMCPFlags(&cmd, cfg.Config.MCP)
-	appendPluginFlags(&cmd, cfg.Config.PluginDirs)
+	// MCP set and plugins. Inserted before --resume so the resume target stays
+	// the last positional flag.
+	var extra []string
+	appendMCPFlags(&extra, cfg.Config.MCP)
+	appendPluginFlags(&extra, cfg.Config.PluginDirs)
+	cmd = insertBeforeResume(cmd, extra)
 	return cmd, true, nil
+}
+
+// insertBeforeResume inserts extra flags immediately before the --resume flag
+// (and its value), so the resume target stays the last positional argument.
+// Flags after --resume would still be parsed by the CLI, but keeping the
+// resume target last matches the launch shape and the restore contract.
+func insertBeforeResume(cmd, extra []string) []string {
+	if len(extra) == 0 {
+		return cmd
+	}
+	for i, v := range cmd {
+		if v == "--resume" {
+			out := make([]string, 0, len(cmd)+len(extra))
+			out = append(out, cmd[:i]...)
+			out = append(out, extra...)
+			out = append(out, cmd[i:]...)
+			return out
+		}
+	}
+	return append(cmd, extra...)
 }
 
 // SessionInfo surfaces the normalized session metadata that the Claude Code
