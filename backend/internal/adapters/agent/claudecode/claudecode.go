@@ -555,6 +555,7 @@ func claudeTranscriptExists(workspacePath, sessionID string) bool {
 	_, err = os.Stat(path)
 	return err == nil
 }
+
 // appendMCPFlags emits claude-code's per-session MCP flags. Each MCPConfig
 // entry is passed to the repeatable --mcp-config as-is (a JSON string or a path
 // to a JSON file — both accepted by the CLI). Strict adds --strict-mcp-config
@@ -604,6 +605,7 @@ func isPluginURL(s string) bool {
 	}
 	return strings.EqualFold(u.Scheme, "http") || strings.EqualFold(u.Scheme, "https")
 }
+
 // claudeBinarySpec locates the claude binary: PATH first, then the native
 // installer's locations, npm global, Homebrew, and the claude-managed dir.
 var claudeBinarySpec = binaryutil.BinarySpec{
