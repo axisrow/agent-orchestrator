@@ -301,14 +301,25 @@ export function CommandPalette() {
 
 	const resumeAgentSession = useCallback(
 		async (sessionId: string) => {
-			const { error, response } = await apiClient.POST("/api/v1/sessions/{sessionId}/resume-agent", {
+			const { data, error, response } = await apiClient.POST("/api/v1/sessions/{sessionId}/resume-agent", {
 				params: { path: { sessionId } },
 			});
 			if (error) return apiErrorMessage(error, `Failed to resume agent (${response.status})`);
 			await queryClient.invalidateQueries({ queryKey: workspaceQueryKey });
+			if (data?.resumeMode === "saved_prompt") {
+				void aoBridge.notifications
+					.show({
+						id: `resume-agent-fallback:${sessionId}:${Date.now()}`,
+						title: t("inspector.startedFromPrompt"),
+						body: t("inspector.resumeFallbackBody"),
+					})
+					.catch((err) => {
+						console.warn("Unable to show resume fallback notification", err);
+					});
+			}
 			return null;
 		},
-		[queryClient],
+		[queryClient, t],
 	);
 
 	const runAction = useCallback(

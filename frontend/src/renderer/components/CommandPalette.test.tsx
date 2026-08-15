@@ -14,6 +14,7 @@ const postMock = vi.hoisted(() => vi.fn());
 const openExternalMock = vi.hoisted(() => vi.fn());
 const writeTextMock = vi.hoisted(() => vi.fn());
 const restoreMock = vi.hoisted(() => vi.fn());
+const notificationsShowMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 
 const ctx = vi.hoisted(() => {
 	const workspaces: WorkspaceSummary[] = [
@@ -142,6 +143,7 @@ vi.mock("../lib/bridge", () => ({
 	aoBridge: {
 		app: { openExternal: openExternalMock },
 		clipboard: { writeText: writeTextMock },
+		notifications: { show: notificationsShowMock },
 	},
 }));
 
@@ -241,6 +243,8 @@ beforeEach(() => {
 	postMock.mockReset();
 	openExternalMock.mockReset();
 	writeTextMock.mockReset();
+	notificationsShowMock.mockReset();
+	notificationsShowMock.mockResolvedValue(undefined);
 	restoreMock.mockReset();
 	restoreMock.mockResolvedValue({ status: "success" });
 	act(() => {
@@ -489,6 +493,34 @@ describe("CommandPalette drill-in + Enter", () => {
 				to: "/projects/$projectId/sessions/$sessionId",
 				params: { projectId: "proj-1", sessionId: "w-exited" },
 			}),
+		);
+	});
+
+	it("warns when resume-agent falls back to a saved prompt (native resumption unavailable)", async () => {
+		postMock.mockResolvedValue({ data: { resumeMode: "saved_prompt" }, error: undefined, response: { status: 200 } });
+		ctx.params = {};
+		renderPalette();
+		act(() => useUiStore.getState().setCommandPaletteOpen(true));
+		const input = await screen.findByPlaceholderText(/search projects/i);
+		fireEvent.change(input, { target: { value: "exited" } });
+		await waitFor(() => {
+			const selected = document.querySelector('[cmdk-item][data-selected="true"]');
+			expect(selected?.textContent).toContain("exited agent");
+		});
+		fireEvent.keyDown(input, { key: "Enter" });
+		await screen.findByPlaceholderText(/search actions/i);
+
+		fireEvent.click(screen.getByText("Resume agent"));
+		await waitFor(() =>
+			expect(navigateMock).toHaveBeenCalledWith({
+				to: "/projects/$projectId/sessions/$sessionId",
+				params: { projectId: "proj-1", sessionId: "w-exited" },
+			}),
+		);
+		await waitFor(() =>
+			expect(notificationsShowMock).toHaveBeenCalledWith(
+				expect.objectContaining({ title: "Started from saved prompt" }),
+			),
 		);
 	});
 
