@@ -27,7 +27,7 @@ UPDATE sessions SET
     latest_user_prompt = ?, latest_assistant_update = ?, native_transcript_path = ?,
     preview_url = ?, preview_revision = ?, terminate_on_pr_merge = ?,
     cleanup_generation = ?, browser_capability_verifier = ?,
-    provider_conversation_id = ?, controller_generation = ?, session_env = ?, updated_at = ?,
+    provider_conversation_id = ?, controller_generation = ?, updated_at = ?,
     is_pinned = ?, pinned_at = ?, auto_inject_review = ?, auto_inject_ci = ?
 WHERE id = ?;
 

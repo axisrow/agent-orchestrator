@@ -525,7 +525,6 @@ func recordToUpdate(rec domain.SessionRecord) gen.UpdateSessionParams {
 		BrowserCapabilityVerifier: rec.Metadata.BrowserCapabilityVerifier,
 		ProviderConversationID:    rec.Metadata.ProviderConversationID,
 		ControllerGeneration:      rec.Metadata.ControllerGeneration,
-		SessionEnv:                normalizedSessionEnv(rec.SessionEnv),
 		UpdatedAt:                 rec.UpdatedAt,
 	}
 }

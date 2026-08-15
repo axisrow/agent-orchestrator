@@ -1543,3 +1543,35 @@ func TestSessionEnvOverridesPersistAndMerge(t *testing.T) {
 		t.Fatalf("missing MergeSessionEnv = %v, %v; want false, nil", ok, err)
 	}
 }
+
+func TestSessionEnvOverridesSurviveStaleFullSessionUpdate(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	seedProject(t, s, "mer")
+	created, err := s.CreateSession(ctx, sampleRecord("mer"))
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	stale, ok, err := s.GetSession(ctx, created.ID)
+	if err != nil || !ok {
+		t.Fatalf("GetSession stale copy: ok=%v err=%v", ok, err)
+	}
+	if ok, err := s.MergeSessionEnv(ctx, created.ID, map[string]string{"ANTHROPIC_BASE_URL": "http://ollama"}, time.Now().UTC()); err != nil || !ok {
+		t.Fatalf("MergeSessionEnv: ok=%v err=%v", ok, err)
+	}
+	// Lifecycle and observer paths intentionally persist a full SessionRecord.
+	// They may hold this record from before the config update, so that write must
+	// not erase the separately-owned session_env column.
+	stale.DisplayName = "lifecycle update"
+	stale.UpdatedAt = time.Now().UTC()
+	if err := s.UpdateSession(ctx, stale); err != nil {
+		t.Fatalf("UpdateSession stale copy: %v", err)
+	}
+	got, ok, err := s.GetSession(ctx, created.ID)
+	if err != nil || !ok {
+		t.Fatalf("GetSession after stale update: ok=%v err=%v", ok, err)
+	}
+	if got.SessionEnv != `{"ANTHROPIC_BASE_URL":"http://ollama"}` {
+		t.Fatalf("SessionEnv = %q, want persisted override", got.SessionEnv)
+	}
+}
