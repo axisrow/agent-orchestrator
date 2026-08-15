@@ -31,6 +31,12 @@ type sessionCleanupOptions struct {
 	dryRun  bool
 }
 
+type sessionSetConfigOptions struct {
+	project string
+	env     []string
+	respawn bool
+}
+
 type sessionClaimPROptions struct {
 	project    string
 	json       bool
@@ -76,6 +82,23 @@ type killSessionResponse struct {
 type restoreSessionResponse struct {
 	SessionID string     `json:"sessionId"`
 	Session   sessionDTO `json:"session"`
+}
+
+type resumeAgentResponse struct {
+	SessionID  string     `json:"sessionId"`
+	ResumeMode string     `json:"resumeMode"`
+	Session    sessionDTO `json:"session"`
+}
+
+type sessionConfigRequest struct {
+	Env     map[string]string `json:"env"`
+	Respawn bool              `json:"respawn,omitempty"`
+}
+
+type sessionConfigResponse struct {
+	SessionID   string     `json:"sessionId"`
+	RespawnMode string     `json:"respawnMode"`
+	Session     sessionDTO `json:"session"`
 }
 
 type renameSessionResponse struct {
@@ -147,6 +170,8 @@ func newSessionCommand(ctx *commandContext) *cobra.Command {
 	cmd.AddCommand(newSessionGetCommand(ctx))
 	cmd.AddCommand(newSessionKillCommand(ctx))
 	cmd.AddCommand(newSessionRestoreCommand(ctx))
+	cmd.AddCommand(newSessionRespawnCommand(ctx))
+	cmd.AddCommand(newSessionSetConfigCommand(ctx))
 	cmd.AddCommand(newSessionRenameCommand(ctx))
 	cmd.AddCommand(newSessionCleanupCommand(ctx))
 	cmd.AddCommand(newSessionClaimPRCommand(ctx))
@@ -227,6 +252,47 @@ func newSessionRestoreCommand(ctx *commandContext) *cobra.Command {
 		},
 	}
 	addSessionProjectFlag(cmd.Flags(), &opts.project, "Project id to scope the lookup")
+	return cmd
+}
+
+func newSessionRespawnCommand(ctx *commandContext) *cobra.Command {
+	var opts sessionOptions
+	cmd := &cobra.Command{
+		Use:     "respawn <id>",
+		Aliases: []string{"resume"},
+		Short:   "Respawn an exited agent in its existing session",
+		Args:    oneSessionIDArg,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := normalizeSessionID(args[0])
+			if err != nil {
+				return err
+			}
+			return ctx.respawnSession(cmd.Context(), cmd, id, opts)
+		},
+	}
+	addSessionProjectFlag(cmd.Flags(), &opts.project, "Project id to scope the lookup")
+	return cmd
+}
+
+func newSessionSetConfigCommand(ctx *commandContext) *cobra.Command {
+	var opts sessionSetConfigOptions
+	cmd := &cobra.Command{
+		Use:   "set-config <id>",
+		Short: "Set persistent per-session runtime configuration",
+		Long: "Add or replace persistent per-session environment overrides. They win over project and role defaults on the next launch. " +
+			"Use --respawn to immediately restart an exited agent with the updated environment.",
+		Args: oneSessionIDArg,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := normalizeSessionID(args[0])
+			if err != nil {
+				return err
+			}
+			return ctx.setSessionConfig(cmd.Context(), cmd, id, opts)
+		},
+	}
+	addSessionProjectFlag(cmd.Flags(), &opts.project, "Project id to scope the lookup")
+	cmd.Flags().StringArrayVar(&opts.env, "env", nil, "Env override KEY=VALUE (repeatable; merged with existing session overrides)")
+	cmd.Flags().BoolVar(&opts.respawn, "respawn", false, "Respawn the exited agent after persisting the overrides")
 	return cmd
 }
 
@@ -510,6 +576,52 @@ func (c *commandContext) restoreSession(ctx context.Context, cmd *cobra.Command,
 		}
 	}
 	return nil
+}
+
+func (c *commandContext) respawnSession(ctx context.Context, cmd *cobra.Command, id string, opts sessionOptions) error {
+	if opts.project != "" {
+		if _, err := c.fetchScopedSession(ctx, id, opts.project); err != nil {
+			return err
+		}
+	}
+	var res resumeAgentResponse
+	if err := c.postJSON(ctx, "sessions/"+url.PathEscape(id)+"/resume-agent", struct{}{}, &res); err != nil {
+		return err
+	}
+	if res.SessionID == "" {
+		res.SessionID = id
+	}
+	_, err := fmt.Fprintf(cmd.OutOrStdout(), "session %s respawned\n", res.SessionID)
+	return err
+}
+
+func (c *commandContext) setSessionConfig(ctx context.Context, cmd *cobra.Command, id string, opts sessionSetConfigOptions) error {
+	env, err := parseEnvPairs(opts.env)
+	if err != nil {
+		return err
+	}
+	if len(env) == 0 {
+		return usageError{errors.New("usage: provide at least one --env KEY=VALUE override")}
+	}
+	if opts.project != "" {
+		if _, err := c.fetchScopedSession(ctx, id, opts.project); err != nil {
+			return err
+		}
+	}
+	var res sessionConfigResponse
+	if err := c.putJSON(ctx, "sessions/"+url.PathEscape(id)+"/config", sessionConfigRequest{Env: env, Respawn: opts.respawn}, &res); err != nil {
+		return err
+	}
+	if res.SessionID == "" {
+		res.SessionID = id
+	}
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "session %s config updated\n", res.SessionID); err != nil {
+		return err
+	}
+	if opts.respawn {
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "session %s respawned\n", res.SessionID)
+	}
+	return err
 }
 
 func (c *commandContext) renameSession(ctx context.Context, cmd *cobra.Command, id, displayName string, opts sessionOptions) error {

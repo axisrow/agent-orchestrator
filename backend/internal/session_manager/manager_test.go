@@ -7036,3 +7036,27 @@ func TestBuildSystemPrompt_NoRolePromptWhenUnset(t *testing.T) {
 		}
 	}
 }
+
+func TestResumeAgent_SessionEnvOverridesProjectAndRoleEnv(t *testing.T) {
+	runtime := &fakeRuntime{aliveByHandle: map[string]bool{"tmux-mer-1": true}}
+	agent := supervisedLaunchAgent{launchArgvAgent{argv: []string{"codex", "resume", "agent-x"}}}
+	m, st, _ := newExitedResumeManager(t, runtime, agent)
+	project := st.projects["mer"]
+	project.Config.Env = map[string]string{"PROJECT_ONLY": "project", "CONFLICT": "project"}
+	project.Config.Worker.AgentConfig.Env = map[string]string{"ROLE_ONLY": "role", "CONFLICT": "role"}
+	st.projects["mer"] = project
+	rec := st.sessions["mer-1"]
+	rec.SessionEnv = `{"SESSION_ONLY":"session","CONFLICT":"session"}`
+	st.sessions["mer-1"] = rec
+
+	if _, err := m.ResumeAgentWithMode(ctx, "mer-1"); err != nil {
+		t.Fatalf("ResumeAgentWithMode: %v", err)
+	}
+	for key, want := range map[string]string{
+		"PROJECT_ONLY": "project", "ROLE_ONLY": "role", "SESSION_ONLY": "session", "CONFLICT": "session",
+	} {
+		if got := runtime.lastCfg.Env[key]; got != want {
+			t.Errorf("runtime Env[%q] = %q, want %q", key, got, want)
+		}
+	}
+}

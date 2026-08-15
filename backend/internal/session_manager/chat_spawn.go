@@ -300,7 +300,7 @@ func (m *Manager) resumeChatController(
 		Harness:               rec.Harness,
 		DataDir:               m.dataDir,
 		WorkspacePath:         ws.Path,
-		Env:                   m.runtimeEnv(rec.ID, rec.ProjectID, rec.IssueID, project.Config.Env),
+		Env:                   m.runtimeEnv(rec.ID, rec.ProjectID, rec.IssueID, mergeEnv(project.Config.Env, agentConfig.Env, sessionEnvOverrides(rec))),
 		Model:                 agentConfig.Model,
 		Permissions:           agentConfig.Permissions,
 		SystemPrompt:          systemPrompt,

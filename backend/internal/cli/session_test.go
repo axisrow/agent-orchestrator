@@ -742,3 +742,51 @@ func TestSessionClaimPR_GHFallbackWhenProjectRepoMissing(t *testing.T) {
 		t.Fatalf("ghDir=%q out=%s", ghDir, out)
 	}
 }
+
+func TestSessionRespawnAndSetConfigUseSessionRoutes(t *testing.T) {
+	cfg := setConfigEnv(t)
+	var configRequest sessionConfigRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/sessions/demo-1/resume-agent":
+			_, _ = io.WriteString(w, `{"ok":true,"sessionId":"demo-1","resumeMode":"native","session":`+sessionJSON("demo-1", "demo", "worker", "idle", false)+`}`)
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/sessions/demo-1/config":
+			if err := json.NewDecoder(r.Body).Decode(&configRequest); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			_, _ = io.WriteString(w, `{"ok":true,"sessionId":"demo-1","respawnMode":"native","session":`+sessionJSON("demo-1", "demo", "worker", "idle", false)+`}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	writeRunFileFor(t, cfg, srv)
+
+	out, errOut, err := executeCLI(t, Deps{ProcessAlive: func(int) bool { return true }}, "session", "resume", "demo-1")
+	if err != nil {
+		t.Fatalf("session resume: %v stderr=%s", err, errOut)
+	}
+	if !strings.Contains(out, "session demo-1 respawned") {
+		t.Fatalf("resume output = %q", out)
+	}
+	out, errOut, err = executeCLI(t, Deps{ProcessAlive: func(int) bool { return true }}, "session", "set-config", "demo-1", "--env", "ANTHROPIC_BASE_URL=http://ollama", "--env", "ANTHROPIC_AUTH_TOKEN=local", "--respawn")
+	if err != nil {
+		t.Fatalf("session set-config: %v stderr=%s", err, errOut)
+	}
+	if !strings.Contains(out, "config updated") || !strings.Contains(out, "respawned") {
+		t.Fatalf("set-config output = %q", out)
+	}
+	if !configRequest.Respawn || !reflect.DeepEqual(configRequest.Env, map[string]string{"ANTHROPIC_BASE_URL": "http://ollama", "ANTHROPIC_AUTH_TOKEN": "local"}) {
+		t.Fatalf("config request = %#v", configRequest)
+	}
+}
+
+func TestSessionSetConfigRequiresEnv(t *testing.T) {
+	setConfigEnv(t)
+	_, _, err := executeCLI(t, Deps{}, "session", "set-config", "demo-1")
+	if err == nil || ExitCode(err) != 2 {
+		t.Fatalf("set-config without env error = %v, want usage exit 2", err)
+	}
+}

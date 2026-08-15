@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"sync"
@@ -240,6 +241,30 @@ func (f *fakeStore) SetSessionAutoReview(_ context.Context, id domain.SessionID,
 		return false, nil
 	}
 	r.AutoReviewEnabled = enabled
+	r.UpdatedAt = updatedAt
+	f.sessions[id] = r
+	return true, nil
+}
+
+func (f *fakeStore) MergeSessionEnv(_ context.Context, id domain.SessionID, env map[string]string, updatedAt time.Time) (bool, error) {
+	r, ok := f.sessions[id]
+	if !ok {
+		return false, nil
+	}
+	current := map[string]string{}
+	if r.SessionEnv != "" {
+		if err := json.Unmarshal([]byte(r.SessionEnv), &current); err != nil {
+			return false, err
+		}
+	}
+	for key, value := range env {
+		current[key] = value
+	}
+	encoded, err := json.Marshal(current)
+	if err != nil {
+		return false, err
+	}
+	r.SessionEnv = string(encoded)
 	r.UpdatedAt = updatedAt
 	f.sessions[id] = r
 	return true, nil
@@ -3357,4 +3382,27 @@ func sameStrings(got, want []string) bool {
 		}
 	}
 	return true
+}
+
+func TestSetConfigPersistsEnvThenRespawns(t *testing.T) {
+	st := newFakeStore()
+	rec := domain.SessionRecord{ID: "mer-1", ProjectID: "mer", Kind: domain.KindWorker, Harness: domain.HarnessCodex, Activity: domain.Activity{State: domain.ActivityExited}}
+	st.sessions[rec.ID] = rec
+	fc := &fakeCommander{restoreResult: sessionmanager.RestoreResult{Session: rec, Mode: sessionmanager.RestoreModeNative}}
+	svc := &Service{store: st, manager: fc}
+
+	out, err := svc.SetConfig(context.Background(), rec.ID, SetConfigInput{Env: map[string]string{"ANTHROPIC_BASE_URL": "http://ollama"}, Respawn: true})
+	if err != nil {
+		t.Fatalf("SetConfig: %v", err)
+	}
+	if !reflect.DeepEqual(fc.resumed, []domain.SessionID{rec.ID}) {
+		t.Fatalf("resumed = %v, want %v", fc.resumed, []domain.SessionID{rec.ID})
+	}
+	var persisted map[string]string
+	if err := json.Unmarshal([]byte(st.sessions[rec.ID].SessionEnv), &persisted); err != nil || persisted["ANTHROPIC_BASE_URL"] != "http://ollama" {
+		t.Fatalf("persisted env = %q, err=%v", st.sessions[rec.ID].SessionEnv, err)
+	}
+	if out.RespawnMode == nil || *out.RespawnMode != RestoreModeViewNative {
+		t.Fatalf("respawn mode = %v, want native", out.RespawnMode)
+	}
 }

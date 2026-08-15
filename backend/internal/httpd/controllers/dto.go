@@ -508,6 +508,22 @@ type SetSessionAutoInjectCIResponse struct {
 	Session      SessionView      `json:"session"`
 }
 
+// SetSessionConfigRequest updates additive per-session environment overrides.
+// Respawn immediately replaces an exited agent using the new persisted values.
+type SetSessionConfigRequest struct {
+	Env     map[string]string `json:"env"`
+	Respawn bool              `json:"respawn,omitempty"`
+}
+
+// SetSessionConfigResponse confirms an environment update without exposing its
+// values, which may include provider credentials.
+type SetSessionConfigResponse struct {
+	OK          bool                        `json:"ok"`
+	SessionID   domain.SessionID            `json:"sessionId"`
+	RespawnMode *sessionsvc.RestoreModeView `json:"respawnMode,omitempty" enum:"native,saved_prompt,fresh"`
+	Session     SessionView                 `json:"session"`
+}
+
 // RestoreSessionResponse is the body of POST /api/v1/sessions/{sessionId}/restore.
 type RestoreSessionResponse struct {
 	OK          bool                       `json:"ok"`

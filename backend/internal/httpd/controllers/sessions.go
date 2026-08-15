@@ -97,6 +97,7 @@ type SessionService interface {
 	SetAutoInjectCI(ctx context.Context, id domain.SessionID, autoInject bool) (domain.Session, error)
 	SetReviewerHarness(ctx context.Context, id domain.SessionID, harness domain.ReviewerHarness) (domain.Session, error)
 	SetAutoReview(ctx context.Context, id domain.SessionID, enabled bool) (domain.Session, error)
+	SetConfig(ctx context.Context, id domain.SessionID, in sessionsvc.SetConfigInput) (sessionsvc.SetConfigOutcome, error)
 	Send(ctx context.Context, id domain.SessionID, message string, attachment *ports.SpawnAttachment) error
 	DelegateTask(ctx context.Context, in sessionsvc.DelegateTaskInput) (sessionsvc.DelegateTaskOutcome, error)
 	ListPRSummaries(ctx context.Context, id domain.SessionID) ([]sessionsvc.PRSummary, error)
@@ -173,6 +174,7 @@ func (c *SessionsController) Register(r chi.Router) {
 	r.Patch("/sessions/{sessionId}/auto-inject-ci", c.setAutoInjectCIPolicy)
 	r.Put("/sessions/{sessionId}/reviewer", c.setReviewer)
 	r.Put("/sessions/{sessionId}/auto-review", c.setAutoReview)
+	r.Put("/sessions/{sessionId}/config", c.setConfig)
 	r.Post("/sessions/{sessionId}/restore", c.restore)
 	r.Post("/sessions/{sessionId}/resume-agent", c.resumeAgent)
 	r.Post("/sessions/{sessionId}/switch-agent", c.switchAgent)
@@ -1038,6 +1040,39 @@ func (c *SessionsController) setAutoReview(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	envelope.WriteJSON(w, http.StatusOK, SessionResponse{Session: sessionView(sess)})
+}
+
+func (c *SessionsController) setConfig(w http.ResponseWriter, r *http.Request) {
+	if c.Svc == nil {
+		apispec.NotImplemented(w, r, http.MethodPut, "/api/v1/sessions/{sessionId}/config")
+		return
+	}
+	var in SetSessionConfigRequest
+	if err := decodeJSONStrict(r, &in); err != nil {
+		envelope.WriteAPIError(w, r, http.StatusBadRequest, "bad_request", "INVALID_JSON", "Invalid JSON body", nil)
+		return
+	}
+	if len(in.Env) == 0 {
+		envelope.WriteAPIError(w, r, http.StatusBadRequest, "bad_request", "SESSION_ENV_REQUIRED", "env must contain at least one KEY=VALUE override", nil)
+		return
+	}
+	env := make(map[string]string, len(in.Env))
+	for rawKey, value := range in.Env {
+		key := strings.TrimSpace(rawKey)
+		if key == "" || strings.ContainsRune(key, '=') || strings.ContainsRune(key, '\x00') || strings.ContainsRune(value, '\x00') {
+			envelope.WriteAPIError(w, r, http.StatusBadRequest, "bad_request", "INVALID_SESSION_ENV", "env keys must be non-empty environment variable names and values must not contain NUL", nil)
+			return
+		}
+		env[key] = value
+	}
+	out, err := c.Svc.SetConfig(r.Context(), sessionID(r), sessionsvc.SetConfigInput{Env: env, Respawn: in.Respawn})
+	if err != nil {
+		envelope.WriteError(w, r, err)
+		return
+	}
+	envelope.WriteJSON(w, http.StatusOK, SetSessionConfigResponse{
+		OK: true, SessionID: sessionID(r), RespawnMode: out.RespawnMode, Session: sessionView(out.Session),
+	})
 }
 
 func (c *SessionsController) restore(w http.ResponseWriter, r *http.Request) {

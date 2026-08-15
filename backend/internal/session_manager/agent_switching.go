@@ -1108,7 +1108,7 @@ func (m *Manager) prepareTargetActivation(ctx context.Context, store ports.Agent
 	if model := strings.TrimSpace(modelOverride); model != "" {
 		config.Model = model
 	}
-	env := m.runtimeEnv(rec.ID, rec.ProjectID, rec.IssueID, project.Config.Env)
+	env := m.runtimeEnv(rec.ID, rec.ProjectID, rec.IssueID, mergeEnv(project.Config.Env, config.Env, sessionEnvOverrides(rec)))
 	m.augmentAgentRuntimeEnv(agent, env)
 	configDir, err := nativeConfigDir(ctx, agent, env)
 	if err != nil {

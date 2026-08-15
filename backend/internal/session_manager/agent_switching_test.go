@@ -3507,3 +3507,32 @@ func TestSafeNativeTranscriptPathRejectsSymlinkEscape(t *testing.T) {
 		t.Fatalf("contained transcript = %q, want %q", got, wantInside)
 	}
 }
+
+func TestSwitchAgentMergesProjectRoleAndSessionEnv(t *testing.T) {
+	runtime := &fakeRestartRuntime{fakeRuntime: &fakeRuntime{}}
+	manager, store, _ := newSwitchTestManager(t, runtime)
+	project := store.projects["proj"]
+	project.Config.Env = map[string]string{"PROJECT_ONLY": "project", "CONFLICT": "project"}
+	project.Config.Worker.AgentConfig.Env = map[string]string{"ROLE_ONLY": "role", "CONFLICT": "role"}
+	store.projects[project.ID] = project
+	rec := store.sessions["proj-1"]
+	rec.SessionEnv = `{"SESSION_ONLY":"session","CONFLICT":"session"}`
+	store.sessions[rec.ID] = rec
+
+	result, err := switchAgentSynchronously(context.Background(), manager, rec.ID, SwitchAgentConfig{
+		TargetHarness: domain.HarnessCodex, IdempotencyKey: "merged-env-layers",
+	})
+	if err != nil {
+		t.Fatalf("SwitchAgent: %v", err)
+	}
+	if result.State != domain.AgentSwitchCompleted {
+		t.Fatalf("switch state = %q, want completed", result.State)
+	}
+	for key, want := range map[string]string{
+		"PROJECT_ONLY": "project", "ROLE_ONLY": "role", "SESSION_ONLY": "session", "CONFLICT": "session",
+	} {
+		if got := runtime.lastCfg.Env[key]; got != want {
+			t.Errorf("runtime Env[%q] = %q, want %q", key, got, want)
+		}
+	}
+}

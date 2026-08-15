@@ -114,7 +114,7 @@ SELECT id, project_id, num, issue_id, kind, harness,
     preview_revision, cleanup_generation, runtime_launch_id,
     workspace_repo_path, terminate_on_pr_merge, diff_base_sha, diff_base_ref,
     reviewer_harness, is_pinned, pinned_at,
-    session_mode, provider_conversation_id, controller_generation, browser_capability_verifier,
+    session_mode, provider_conversation_id, controller_generation, session_env, browser_capability_verifier,
     latest_user_prompt, latest_assistant_update, native_transcript_path, auto_inject_review, auto_inject_ci, auto_review_enabled
 FROM sessions WHERE id = ?
 `
@@ -152,6 +152,7 @@ type GetSessionRow struct {
 	SessionMode               domain.SessionMode
 	ProviderConversationID    string
 	ControllerGeneration      string
+	SessionEnv                string
 	BrowserCapabilityVerifier string
 	LatestUserPrompt          string
 	LatestAssistantUpdate     string
@@ -197,6 +198,7 @@ func (q *Queries) GetSession(ctx context.Context, id domain.SessionID) (GetSessi
 		&i.SessionMode,
 		&i.ProviderConversationID,
 		&i.ControllerGeneration,
+		&i.SessionEnv,
 		&i.BrowserCapabilityVerifier,
 		&i.LatestUserPrompt,
 		&i.LatestAssistantUpdate,
@@ -216,13 +218,13 @@ INSERT INTO sessions (
     runtime_launch_id, agent_session_id, prompt,
     latest_user_prompt, latest_assistant_update, native_transcript_path,
     preview_url, preview_revision, terminate_on_pr_merge, cleanup_generation, browser_capability_verifier,
-    session_mode, provider_conversation_id, controller_generation,
+    session_mode, provider_conversation_id, controller_generation, session_env,
     created_at, updated_at, is_pinned, pinned_at, auto_inject_review, auto_inject_ci
 ) VALUES (
     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-    ?, ?, ?, ?, ?, ?, ?, ?, ?
+    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 )
 `
 
@@ -260,6 +262,7 @@ type InsertSessionParams struct {
 	SessionMode               domain.SessionMode
 	ProviderConversationID    string
 	ControllerGeneration      string
+	SessionEnv                string
 	CreatedAt                 time.Time
 	UpdatedAt                 time.Time
 	IsPinned                  bool
@@ -303,6 +306,7 @@ func (q *Queries) InsertSession(ctx context.Context, arg InsertSessionParams) er
 		arg.SessionMode,
 		arg.ProviderConversationID,
 		arg.ControllerGeneration,
+		arg.SessionEnv,
 		arg.CreatedAt,
 		arg.UpdatedAt,
 		arg.IsPinned,
@@ -321,7 +325,7 @@ SELECT id, project_id, num, issue_id, kind, harness,
     preview_revision, cleanup_generation, runtime_launch_id,
     workspace_repo_path, terminate_on_pr_merge, diff_base_sha, diff_base_ref,
     reviewer_harness, is_pinned, pinned_at,
-    session_mode, provider_conversation_id, controller_generation, browser_capability_verifier,
+    session_mode, provider_conversation_id, controller_generation, session_env, browser_capability_verifier,
     latest_user_prompt, latest_assistant_update, native_transcript_path, auto_inject_review, auto_inject_ci, auto_review_enabled
 FROM sessions ORDER BY project_id, num
 `
@@ -359,6 +363,7 @@ type ListAllSessionsRow struct {
 	SessionMode               domain.SessionMode
 	ProviderConversationID    string
 	ControllerGeneration      string
+	SessionEnv                string
 	BrowserCapabilityVerifier string
 	LatestUserPrompt          string
 	LatestAssistantUpdate     string
@@ -410,6 +415,7 @@ func (q *Queries) ListAllSessions(ctx context.Context) ([]ListAllSessionsRow, er
 			&i.SessionMode,
 			&i.ProviderConversationID,
 			&i.ControllerGeneration,
+			&i.SessionEnv,
 			&i.BrowserCapabilityVerifier,
 			&i.LatestUserPrompt,
 			&i.LatestAssistantUpdate,
@@ -439,7 +445,7 @@ SELECT id, project_id, num, issue_id, kind, harness,
     preview_revision, cleanup_generation, runtime_launch_id,
     workspace_repo_path, terminate_on_pr_merge, diff_base_sha, diff_base_ref,
     reviewer_harness, is_pinned, pinned_at,
-    session_mode, provider_conversation_id, controller_generation, browser_capability_verifier,
+    session_mode, provider_conversation_id, controller_generation, session_env, browser_capability_verifier,
     latest_user_prompt, latest_assistant_update, native_transcript_path, auto_inject_review, auto_inject_ci, auto_review_enabled
 FROM sessions WHERE project_id = ? ORDER BY num
 `
@@ -477,6 +483,7 @@ type ListSessionsByProjectRow struct {
 	SessionMode               domain.SessionMode
 	ProviderConversationID    string
 	ControllerGeneration      string
+	SessionEnv                string
 	BrowserCapabilityVerifier string
 	LatestUserPrompt          string
 	LatestAssistantUpdate     string
@@ -528,6 +535,7 @@ func (q *Queries) ListSessionsByProject(ctx context.Context, projectID domain.Pr
 			&i.SessionMode,
 			&i.ProviderConversationID,
 			&i.ControllerGeneration,
+			&i.SessionEnv,
 			&i.BrowserCapabilityVerifier,
 			&i.LatestUserPrompt,
 			&i.LatestAssistantUpdate,
@@ -547,6 +555,30 @@ func (q *Queries) ListSessionsByProject(ctx context.Context, projectID domain.Pr
 		return nil, err
 	}
 	return items, nil
+}
+
+const mergeSessionEnv = `-- name: MergeSessionEnv :one
+UPDATE sessions
+SET session_env = json_patch(session_env, ?1),
+    updated_at = ?2
+WHERE id = ?3
+RETURNING session_env
+`
+
+type MergeSessionEnvParams struct {
+	SessionEnv interface{}
+	UpdatedAt  time.Time
+	ID         domain.SessionID
+}
+
+// Session overrides are additive: each update changes only named keys and
+// preserves existing overrides. The service validates the map before this
+// write; JSON is used solely as the compact durable representation.
+func (q *Queries) MergeSessionEnv(ctx context.Context, arg MergeSessionEnvParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, mergeSessionEnv, arg.SessionEnv, arg.UpdatedAt, arg.ID)
+	var session_env string
+	err := row.Scan(&session_env)
+	return session_env, err
 }
 
 const nextSessionNum = `-- name: NextSessionNum :one
@@ -772,7 +804,7 @@ UPDATE sessions SET
     latest_user_prompt = ?, latest_assistant_update = ?, native_transcript_path = ?,
     preview_url = ?, preview_revision = ?, terminate_on_pr_merge = ?,
     cleanup_generation = ?, browser_capability_verifier = ?,
-    provider_conversation_id = ?, controller_generation = ?, updated_at = ?,
+    provider_conversation_id = ?, controller_generation = ?, session_env = ?, updated_at = ?,
     is_pinned = ?, pinned_at = ?, auto_inject_review = ?, auto_inject_ci = ?
 WHERE id = ?
 `
@@ -807,6 +839,7 @@ type UpdateSessionParams struct {
 	BrowserCapabilityVerifier string
 	ProviderConversationID    string
 	ControllerGeneration      string
+	SessionEnv                string
 	UpdatedAt                 time.Time
 	IsPinned                  bool
 	PinnedAt                  sql.NullTime
@@ -846,6 +879,7 @@ func (q *Queries) UpdateSession(ctx context.Context, arg UpdateSessionParams) er
 		arg.BrowserCapabilityVerifier,
 		arg.ProviderConversationID,
 		arg.ControllerGeneration,
+		arg.SessionEnv,
 		arg.UpdatedAt,
 		arg.IsPinned,
 		arg.PinnedAt,

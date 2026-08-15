@@ -1515,3 +1515,31 @@ func TestUpsertSessionWorktreeEmptyStateDefaultsToActive(t *testing.T) {
 		t.Fatalf("State = %q, want %q", got.State, "active")
 	}
 }
+
+func TestSessionEnvOverridesPersistAndMerge(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	seedProject(t, s, "mer")
+	rec, err := s.CreateSession(ctx, sampleRecord("mer"))
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	if ok, err := s.MergeSessionEnv(ctx, rec.ID, map[string]string{"ANTHROPIC_BASE_URL": "http://ollama", "TOKEN": "one"}, time.Now().UTC()); err != nil || !ok {
+		t.Fatalf("first MergeSessionEnv = %v, %v", ok, err)
+	}
+	if ok, err := s.MergeSessionEnv(ctx, rec.ID, map[string]string{"TOKEN": "two", "EXTRA": "yes"}, time.Now().UTC()); err != nil || !ok {
+		t.Fatalf("second MergeSessionEnv = %v, %v", ok, err)
+	}
+	got, ok, err := s.GetSession(ctx, rec.ID)
+	if err != nil || !ok {
+		t.Fatalf("GetSession: ok=%v err=%v", ok, err)
+	}
+	want := map[string]string{"ANTHROPIC_BASE_URL": "http://ollama", "TOKEN": "two", "EXTRA": "yes"}
+	var persisted map[string]string
+	if err := json.Unmarshal([]byte(got.SessionEnv), &persisted); err != nil || !reflect.DeepEqual(persisted, want) {
+		t.Fatalf("SessionEnv = %q (%#v, err=%v), want %#v", got.SessionEnv, persisted, err, want)
+	}
+	if ok, err := s.MergeSessionEnv(ctx, "missing-1", map[string]string{"X": "y"}, time.Now().UTC()); err != nil || ok {
+		t.Fatalf("missing MergeSessionEnv = %v, %v; want false, nil", ok, err)
+	}
+}
