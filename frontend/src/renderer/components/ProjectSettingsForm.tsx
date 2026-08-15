@@ -507,13 +507,13 @@ function SettingsBody({
 							missingRequiredAgent ? t("settings.project.agentsRequired") : null
 						}
 					/>
-				<ProjectSettingsSection title="Project agent defaults" grouped>
+				<ProjectSettingsSection title={t("settings.project.agentDefaults")} grouped>
 					<button
 						type="button"
 						className="w-full rounded-md bg-[var(--color-bg-settings-row)] px-4 py-3 text-left"
 						onClick={() => setPromptOverrideOpen(true)}
 					>
-						Prompt override
+						{t("settings.project.promptOverride")}
 					</button>
 				</ProjectSettingsSection>
 				{promptOverrideOpen && (

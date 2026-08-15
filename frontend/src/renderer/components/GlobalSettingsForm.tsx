@@ -44,13 +44,13 @@ export function GlobalSettingsForm({
 		>
 			{(all || section === "general") && (
 				<>
-					<SettingsSection title="Agent defaults" titleHidden={titleHidden}>
+					<SettingsSection title={t("settings.agentDefaults")} titleHidden={titleHidden}>
 						<button
 							type="button"
 							className="w-full rounded-md bg-[var(--color-bg-settings-row)] px-4 py-3 text-left"
 							onClick={() => setAgentDefaultsOpen(true)}
 						>
-							Agent defaults
+							{t("settings.agentDefaults")}
 						</button>
 					</SettingsSection>
 					<GeneralSettingsSection titleHidden={titleHidden} />
