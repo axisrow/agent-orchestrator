@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
@@ -59,6 +60,7 @@ type fakeSessionService struct {
 	handoffSource       domain.AgentGenerationID
 	autoInjectCISession domain.SessionID
 	autoInjectCIEnabled bool
+	configInput         sessionsvc.SetConfigInput
 }
 
 type fakeManagedPreviewServer struct {
@@ -266,6 +268,20 @@ func (f *fakeSessionService) SetAutoReview(_ context.Context, id domain.SessionI
 	s.AutoReviewEnabled = enabled
 	f.sessions[id] = s
 	return s, nil
+}
+
+func (f *fakeSessionService) SetConfig(_ context.Context, id domain.SessionID, in sessionsvc.SetConfigInput) (sessionsvc.SetConfigOutcome, error) {
+	s, ok := f.sessions[id]
+	if !ok {
+		return sessionsvc.SetConfigOutcome{}, apierr.NotFound("SESSION_NOT_FOUND", "Unknown session")
+	}
+	f.configInput = in
+	mode := sessionsvc.RestoreModeViewNative
+	out := sessionsvc.SetConfigOutcome{Session: s}
+	if in.Respawn {
+		out.RespawnMode = &mode
+	}
+	return out, nil
 }
 
 func (f *fakeSessionService) Restore(_ context.Context, id domain.SessionID) (sessionsvc.RestoreOutcome, error) {
@@ -2517,4 +2533,25 @@ func TestSessionsAPI_ClaimPRErrors(t *testing.T) {
 			assertErrorCode(t, body, status, tc.code, tc.want)
 		})
 	}
+}
+
+func TestSessionsAPI_SetConfigPersistsEnvAndCanRespawn(t *testing.T) {
+	svc := newFakeSessionService()
+	srv := newSessionTestServer(t, svc)
+
+	body, status, _ := doRequest(t, srv, http.MethodPut, "/api/v1/sessions/ao-1/config", `{"env":{" ANTHROPIC_BASE_URL ":"http://ollama"},"respawn":true}`)
+	if status != http.StatusOK {
+		t.Fatalf("set config = %d body=%s", status, body)
+	}
+	if !svc.configInput.Respawn || !reflect.DeepEqual(svc.configInput.Env, map[string]string{"ANTHROPIC_BASE_URL": "http://ollama"}) {
+		t.Fatalf("config input = %#v", svc.configInput)
+	}
+	if !containsAll(body, `"sessionId":"ao-1"`, `"respawnMode":"native"`) {
+		t.Fatalf("set config response = %s", body)
+	}
+
+	body, status, _ = doRequest(t, srv, http.MethodPut, "/api/v1/sessions/ao-1/config", `{"env":{}}`)
+	assertErrorCode(t, body, status, http.StatusBadRequest, "SESSION_ENV_REQUIRED")
+	body, status, _ = doRequest(t, srv, http.MethodPut, "/api/v1/sessions/ao-1/config", `{"env":{"A=B":"value"}}`)
+	assertErrorCode(t, body, status, http.StatusBadRequest, "INVALID_SESSION_ENV")
 }

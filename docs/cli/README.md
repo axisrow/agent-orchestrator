@@ -50,6 +50,8 @@ Every product command resolves to a daemon HTTP route. Run `ao <command>
 | `ao session get <id>`               | `GET /api/v1/sessions/{id}`                    |
 | `ao session kill <id>`              | `POST /api/v1/sessions/{id}/kill`              |
 | `ao session restore <id>`           | `POST /api/v1/sessions/{id}/restore`           |
+| `ao session respawn <id>` / `resume` | `POST /api/v1/sessions/{id}/resume-agent`     |
+| `ao session set-config <id> --env K=V [--respawn]` | `PUT /api/v1/sessions/{id}/config` |
 | `ao session switch-agent <id> <target-harness>` | `POST /api/v1/sessions/{id}/switch-agent` |
 | `ao session agent-switch ls <session-id>` | `GET /api/v1/sessions/{id}/agent-switches` |
 | `ao session handoff submit`         | `POST /api/v1/sessions/{id}/agent-switches/{switchId}/handoff` |
@@ -101,6 +103,17 @@ AO_SESSION_ID=ao-7 ao session handoff submit \
   --file /tmp/ao-handoff.json \
   --json
 ```
+
+`ao session respawn <id>` (also `resume`) replaces an exited agent without
+terminating the AO session or recreating its worktree. This is distinct from
+`restore`, which relaunches a terminated session.
+
+`ao session set-config <id> --env KEY=VALUE` adds a durable per-session
+runtime override. Per-session values win over project and role environment
+defaults, while AO-owned variables always win last. Use `--respawn` to persist
+and immediately restart an exited agent using those values; a failed restart
+leaves the override in place for a later retry. Individual unset operations and
+named provider profiles are intentionally not part of this command.
 
 Switching preserves the AO worker session and worktree. It does not translate,
 clip, or rewrite provider transcript files; providers continue to own their

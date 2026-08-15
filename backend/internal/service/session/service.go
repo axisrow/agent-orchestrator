@@ -34,6 +34,7 @@ type Store interface {
 	SetSessionPinned(ctx context.Context, id domain.SessionID, isPinned bool, pinnedAt *time.Time, updatedAt time.Time) (bool, error)
 	SetSessionReviewerHarness(ctx context.Context, id domain.SessionID, harness domain.ReviewerHarness, updatedAt time.Time) (bool, error)
 	SetSessionAutoReview(ctx context.Context, id domain.SessionID, enabled bool, updatedAt time.Time) (bool, error)
+	MergeSessionEnv(ctx context.Context, id domain.SessionID, env map[string]string, updatedAt time.Time) (bool, error)
 	GetDisplayPRFactsForSession(ctx context.Context, id domain.SessionID) (domain.PRFacts, bool, error)
 	ListPRFactsForSession(ctx context.Context, id domain.SessionID) ([]domain.PRFacts, error)
 	ListPRsBySession(ctx context.Context, sessionID domain.SessionID) ([]domain.PullRequest, error)
@@ -533,6 +534,51 @@ func (s *Service) ResumeAgent(ctx context.Context, id domain.SessionID) (ResumeA
 		return ResumeAgentOutcome{}, err
 	}
 	return ResumeAgentOutcome{Session: session, Mode: restoreModeView(res.Mode)}, nil
+}
+
+// SetConfigInput is the intentionally small mutable session configuration
+// surface. Environment overrides are additive; clearing individual keys is a
+// separate product operation.
+type SetConfigInput struct {
+	Env     map[string]string
+	Respawn bool
+}
+
+// SetConfigOutcome reports the refreshed session and, when requested, the
+// exact relaunch mode used for the newly spawned agent process.
+type SetConfigOutcome struct {
+	Session     domain.Session
+	RespawnMode *RestoreModeView
+}
+
+// SetConfig persists per-session environment overrides. A requested respawn is
+// deliberately attempted after the durable write: if startup fails, the chosen
+// provider settings remain available for a later retry instead of being lost.
+func (s *Service) SetConfig(ctx context.Context, id domain.SessionID, in SetConfigInput) (SetConfigOutcome, error) {
+	updated, err := s.store.MergeSessionEnv(ctx, id, in.Env, s.now())
+	if err != nil {
+		return SetConfigOutcome{}, fmt.Errorf("merge session environment %s: %w", id, err)
+	}
+	if !updated {
+		return SetConfigOutcome{}, apierr.NotFound("SESSION_NOT_FOUND", "Unknown session")
+	}
+	if !in.Respawn {
+		sess, err := s.Get(ctx, id)
+		if err != nil {
+			return SetConfigOutcome{}, err
+		}
+		return SetConfigOutcome{Session: sess}, nil
+	}
+	res, err := s.manager.ResumeAgentWithMode(ctx, id)
+	if err != nil {
+		return SetConfigOutcome{}, toAPIError(err)
+	}
+	sess, err := s.toSession(ctx, res.Session)
+	if err != nil {
+		return SetConfigOutcome{}, err
+	}
+	mode := restoreModeView(res.Mode)
+	return SetConfigOutcome{Session: sess, RespawnMode: &mode}, nil
 }
 
 // InterfaceTransitionStatus returns capability and progress without launching

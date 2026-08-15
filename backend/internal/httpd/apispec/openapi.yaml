@@ -2110,6 +2110,63 @@ paths:
       summary: Enable or disable automatic review for a session
       tags:
       - sessions
+  /api/v1/sessions/{sessionId}/config:
+    put:
+      operationId: setSessionConfig
+      parameters:
+      - description: Session identifier, e.g. project-1.
+        in: path
+        name: sessionId
+        required: true
+        schema:
+          description: Session identifier, e.g. project-1.
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetSessionConfigRequest'
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetSessionConfigResponse'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Bad Request
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Conflict
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: Set persistent per-session environment overrides
+      tags:
+      - sessions
   /api/v1/sessions/{sessionId}/conversation:
     get:
       operationId: getSessionConversation
@@ -7925,6 +7982,40 @@ components:
       - ok
       - sessionId
       - autoInjectReview
+      - session
+      type: object
+    SetSessionConfigRequest:
+      properties:
+        env:
+          additionalProperties:
+            type: string
+          type:
+          - object
+          - "null"
+        respawn:
+          type: boolean
+      required:
+      - env
+      type: object
+    SetSessionConfigResponse:
+      properties:
+        ok:
+          type: boolean
+        respawnMode:
+          enum:
+          - native
+          - saved_prompt
+          - fresh
+          type:
+          - "null"
+          - string
+        session:
+          $ref: '#/components/schemas/ControllersSessionView'
+        sessionId:
+          type: string
+      required:
+      - ok
+      - sessionId
       - session
       type: object
     SetSessionMergePolicyRequest:

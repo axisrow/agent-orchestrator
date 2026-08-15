@@ -216,6 +216,21 @@ func (emptyTransitionAgent) NativeConversationExists(context.Context, ports.Sess
 	return false, nil
 }
 
+// envCapturingTransitionAgent records the env passed to NativeConversationExists and reports
+// the conversation as existing only when a marker key is present, so a test can assert the
+// probe was built from the effective (project+role+session-override) env, not just project env.
+type envCapturingTransitionAgent struct {
+	transitionAgent
+	capturedEnv map[string]string
+	existsIfKey string
+}
+
+func (a *envCapturingTransitionAgent) NativeConversationExists(_ context.Context, _ ports.SessionRef, _ string, env map[string]string) (bool, error) {
+	a.capturedEnv = env
+	_, ok := env[a.existsIfKey]
+	return ok, nil
+}
+
 type transitionRuntime struct {
 	*fakeRuntime
 	log                        *[]string
@@ -515,6 +530,38 @@ func TestInterfaceTransitionTUIToChatStopsBeforeStartingAndReusesNativeConversat
 	}
 	if got := fmt.Sprint(*log); got != "[stop:tui:runtime-1 start:chat]" {
 		t.Fatalf("controller order = %s", got)
+	}
+}
+
+// TestInterfaceTransitionProbesNativeConversationWithSessionEnvOverride guards against the
+// history probe (persistedNativeConversationID) silently dropping a durable per-session env
+// override (e.g. CODEX_HOME/CLAUDE_CONFIG_DIR): if the probe only sees project.Config.Env, it
+// looks for the transcript in the default state directory, doesn't find it, and this transition
+// starts a fresh conversation instead of resuming the one that exists under the override.
+func TestInterfaceTransitionProbesNativeConversationWithSessionEnvOverride(t *testing.T) {
+	manager, store, _, chat, _ := newTransitionManager(t, domain.SessionModeTUI)
+	rec := store.sessions["session-1"]
+	rec.SessionEnv = `{"CODEX_HOME":"/custom/codex-home"}`
+	store.sessions["session-1"] = rec
+
+	probeAgent := &envCapturingTransitionAgent{existsIfKey: "CODEX_HOME"}
+	manager.agents = singleAgent{agent: probeAgent}
+
+	transition, err := manager.StartInterfaceTransition(context.Background(), "session-1", domain.SessionModeChat, domain.SessionInterfaceTransitionDrain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settled := awaitTransition(t, store, transition.ID)
+	if settled.Phase != domain.SessionInterfaceTransitionCompleted {
+		t.Fatalf("phase = %s, error = %s", settled.Phase, settled.ErrorDetail)
+	}
+	if _, ok := probeAgent.capturedEnv["CODEX_HOME"]; !ok {
+		t.Fatalf("native conversation probe env = %v, want CODEX_HOME from session override", probeAgent.capturedEnv)
+	}
+	// The probe reported the conversation as existing (because the override was visible), so
+	// the transition must have resumed it rather than starting fresh.
+	if chat.start.ProviderConversationID != "native-1" {
+		t.Fatalf("provider conversation = %q, want native-1 (resumed, not fresh)", chat.start.ProviderConversationID)
 	}
 }
 

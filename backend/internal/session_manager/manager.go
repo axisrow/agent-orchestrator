@@ -4,6 +4,7 @@ package sessionmanager
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -1712,7 +1713,7 @@ func (m *Manager) relaunchSessionWithPolicy(ctx context.Context, operation strin
 	// Restore re-applies the project's resolved agent config so a configured
 	// model/permissions carry across a restore, matching fresh spawn.
 	agentConfig := effectiveAgentConfig(rec.Kind, project.Config)
-	env, browserCapabilityVerifier, err := m.launchRuntimeEnv(rec.ID, rec.ProjectID, rec.IssueID, mergeEnv(project.Config.Env, agentConfig.Env))
+	env, browserCapabilityVerifier, err := m.launchRuntimeEnv(rec.ID, rec.ProjectID, rec.IssueID, mergeEnv(project.Config.Env, agentConfig.Env, sessionEnvOverrides(rec)))
 	if err != nil {
 		return RestoreResult{}, fmt.Errorf("%s %s: browser capability: %w", operation, rec.ID, err)
 	}
@@ -3327,18 +3328,34 @@ func workspaceRepoList(repos []domain.WorkspaceRepoRecord) string {
 	return strings.Join(lines, "\n")
 }
 
-// mergeEnv overlays roleEnv on top of projectEnv so a per-role value wins on
-// key collision, mirroring the effectiveAgentConfig merge for Env. nil inputs
-// are handled (range over a nil map is a no-op). The result is always a fresh
-// map so the caller can mutate it without affecting either input — the project
-// config in particular must never be mutated through a role override.
-func mergeEnv(projectEnv, roleEnv map[string]string) map[string]string {
-	out := make(map[string]string, len(projectEnv)+len(roleEnv))
-	for k, v := range projectEnv {
-		out[k] = v
+// sessionEnvOverrides decodes the compact durable JSON representation at the
+// launch boundary. Only the store writes this field, so malformed historical
+// data behaves as an empty override rather than exposing values or crashing a
+// lifecycle recovery.
+func sessionEnvOverrides(rec domain.SessionRecord) map[string]string {
+	if rec.SessionEnv == "" || rec.SessionEnv == "{}" {
+		return nil
 	}
-	for k, v := range roleEnv {
-		out[k] = v
+	var env map[string]string
+	if err := json.Unmarshal([]byte(rec.SessionEnv), &env); err != nil {
+		return nil
+	}
+	return env
+}
+
+// mergeEnv overlays each later configuration layer over the preceding one.
+// The result is always a fresh map so a caller can mutate it without affecting
+// project, role, or durable session configuration.
+func mergeEnv(layers ...map[string]string) map[string]string {
+	size := 0
+	for _, layer := range layers {
+		size += len(layer)
+	}
+	out := make(map[string]string, size)
+	for _, layer := range layers {
+		for k, v := range layer {
+			out[k] = v
+		}
 	}
 	return out
 }

@@ -3,8 +3,10 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
@@ -30,6 +32,26 @@ func (s *Store) CreateSession(ctx context.Context, rec domain.SessionRecord) (do
 		return domain.SessionRecord{}, fmt.Errorf("insert session %s: %w", rec.ID, err)
 	}
 	return rec, nil
+}
+
+// MergeSessionEnv persists additive per-session environment overrides. The
+// JSON patch executes in SQLite under the writer lock, so concurrent updates to
+// distinct keys cannot lose each other. Values are never included in the normal
+// Session API read model because they may be credentials.
+func (s *Store) MergeSessionEnv(ctx context.Context, id domain.SessionID, env map[string]string, updatedAt time.Time) (bool, error) {
+	payload, err := json.Marshal(env)
+	if err != nil {
+		return false, fmt.Errorf("marshal session environment: %w", err)
+	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	if _, err := s.qw.MergeSessionEnv(ctx, gen.MergeSessionEnvParams{SessionEnv: string(payload), UpdatedAt: updatedAt, ID: id}); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, fmt.Errorf("merge session environment for %s: %w", id, err)
+	}
+	return true, nil
 }
 
 // UpdateSession writes the full mutable state of an existing session. The
@@ -382,6 +404,7 @@ func rowToRecord(row gen.GetSessionRow) domain.SessionRecord {
 		TerminateOnPRMerge: row.TerminateOnPRMerge,
 		AutoInjectReview:   row.AutoInjectReview,
 		AutoInjectCI:       row.AutoInjectCI,
+		SessionEnv:         row.SessionEnv,
 		Metadata: domain.SessionMetadata{
 			Branch:                    row.Branch,
 			WorkspacePath:             row.WorkspacePath,
@@ -459,6 +482,7 @@ func recordToInsert(rec domain.SessionRecord, num int64) gen.InsertSessionParams
 		SessionMode:               domain.NormalizeSessionMode(rec.Mode),
 		ProviderConversationID:    rec.Metadata.ProviderConversationID,
 		ControllerGeneration:      rec.Metadata.ControllerGeneration,
+		SessionEnv:                normalizedSessionEnv(rec.SessionEnv),
 		CreatedAt:                 rec.CreatedAt,
 		UpdatedAt:                 rec.UpdatedAt,
 	}
@@ -503,6 +527,13 @@ func recordToUpdate(rec domain.SessionRecord) gen.UpdateSessionParams {
 		ControllerGeneration:      rec.Metadata.ControllerGeneration,
 		UpdatedAt:                 rec.UpdatedAt,
 	}
+}
+
+func normalizedSessionEnv(raw string) string {
+	if strings.TrimSpace(raw) == "" {
+		return "{}"
+	}
+	return raw
 }
 
 // nullTimeToTime / timeToNullTime bridge the nullable first_signal_at column
