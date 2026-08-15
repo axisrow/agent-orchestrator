@@ -647,4 +647,47 @@ describe("buildSessionActions", () => {
 		const items = buildSessionActions(workspace, session({ id: "syn", branch: "session/syn" }));
 		expect(items.some((i) => i.action?.kind === "copy-branch")).toBe(false);
 	});
+
+	it("adds Resume agent only for a live session whose agent exited", () => {
+		const exited = buildSessionActions(
+			workspace,
+			session({ id: "exited", status: "no_signal", activity: { state: "exited", lastActivityAt: "2026-06-10T00:00:00Z" } }),
+		);
+		expect(exited.find((i) => i.action?.kind === "resume-agent-session")?.action).toEqual({
+			kind: "resume-agent-session",
+			projectId: "proj-1",
+			sessionId: "exited",
+		});
+
+		const terminated = buildSessionActions(
+			workspace,
+			session({ id: "gone", status: "terminated", activity: { state: "exited", lastActivityAt: "2026-06-10T00:00:00Z" } }),
+		);
+		expect(terminated.some((i) => i.action?.kind === "resume-agent-session")).toBe(false);
+
+		const running = buildSessionActions(
+			workspace,
+			session({ id: "running", status: "working", activity: { state: "active", lastActivityAt: "2026-06-10T00:00:00Z" } }),
+		);
+		expect(running.some((i) => i.action?.kind === "resume-agent-session")).toBe(false);
+	});
+
+	it("omits Resume agent while an agent switch is in flight", () => {
+		const items = buildSessionActions(
+			workspace,
+			session({
+				id: "switching",
+				status: "no_signal",
+				activity: { state: "exited", lastActivityAt: "2026-06-10T00:00:00Z" },
+				activeAgentSwitch: {
+					agentHandoffStatus: "pending",
+					fromHarness: "claude-code",
+					id: "switch-1",
+					state: "pending",
+					targetHarness: "codex",
+				},
+			}),
+		);
+		expect(items.some((i) => i.action?.kind === "resume-agent-session")).toBe(false);
+	});
 });

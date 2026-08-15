@@ -4,6 +4,7 @@ import {
 	attentionZoneOrder,
 	isOrchestratorSession,
 	openPRs,
+	sessionAgentExited,
 	sessionIsActive,
 	sessionNeedsAttention,
 	workerSessions,
@@ -35,6 +36,7 @@ export type CommandAction =
 	| { kind: "open-orchestrator"; projectId: string }
 	| { kind: "open-session-actions"; sessionId: string }
 	| { kind: "resume-session"; projectId: string; sessionId: string }
+	| { kind: "resume-agent-session"; projectId: string; sessionId: string }
 	| { kind: "copy-branch"; branch: string }
 	| { kind: "open-pr"; url: string }
 	| { kind: "copy-pr-url"; url: string }
@@ -157,10 +159,21 @@ export function buildSessionActions(
 		items.push({
 			id: `session-action:resume:${session.id}`,
 			group: "current",
-			title: t("command.resumeAgent"),
-			subtitle: t("command.resumeAgentSubtitle"),
+			title: t("command.resumeSession"),
+			subtitle: t("command.resumeSessionSubtitle"),
 			keywords: ["restore", "restart", "retry", "resume", session.title],
 			action: { kind: "resume-session", projectId: workspace.id, sessionId: session.id },
+		});
+	}
+
+	if (sessionAgentExited(session) && !isOrchestratorSession(session)) {
+		items.push({
+			id: `session-action:resume-agent:${session.id}`,
+			group: "current",
+			title: t("command.resumeAgent"),
+			subtitle: t("command.resumeAgentSubtitle"),
+			keywords: ["restart", "retry", "resume", "agent", session.title],
+			action: { kind: "resume-agent-session", projectId: workspace.id, sessionId: session.id },
 		});
 	}
 
