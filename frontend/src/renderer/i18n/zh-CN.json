@@ -91,7 +91,7 @@
 	"command.palette": "命令面板",
 	"command.projectSettings": "项目设置",
 	"command.resumeAgent": "恢复代理",
-	"command.resumeAgentSubtitle": "重新启动这个已终止的会话",
+	"command.resumeAgentSubtitle": "在此会话中重新启动已退出的代理",
 	"command.resumeNotResumable": "此会话没有可恢复的已保存代理会话或提示词。",
 	"command.reviewAlreadyRunning": "评审已在进行中",
 	"command.reviewPr": "{{action}} #{{number}}",

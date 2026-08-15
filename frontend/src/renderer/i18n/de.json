@@ -91,7 +91,7 @@
 	"command.palette": "Befehlspalette",
 	"command.projectSettings": "Projekteinstellungen",
 	"command.resumeAgent": "Agent fortsetzen",
-	"command.resumeAgentSubtitle": "Diese beendete Sitzung neu starten",
+	"command.resumeAgentSubtitle": "Den beendeten Agenten in dieser Sitzung neu starten",
 	"command.resumeNotResumable": "Diese Sitzung hat keine gespeicherte Agentensitzung oder Eingabe zum Fortsetzen.",
 	"command.reviewAlreadyRunning": "Review läuft bereits",
 	"command.reviewPr": "{{action}} #{{number}}",

@@ -92,7 +92,7 @@
 	"command.palette": "Paleta de comandos",
 	"command.projectSettings": "Ajustes del proyecto",
 	"command.resumeAgent": "Reanudar agente",
-	"command.resumeAgentSubtitle": "Reiniciar esta sesión terminada",
+	"command.resumeAgentSubtitle": "Reiniciar el agente que salió en esta sesión",
 	"command.resumeNotResumable": "Esta sesión no tiene una sesión de agente ni un mensaje guardado para reanudar.",
 	"command.reviewAlreadyRunning": "Ya hay una revisión en curso",
 	"command.reviewPr": "{{action}} #{{number}}",

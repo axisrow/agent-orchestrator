@@ -92,7 +92,7 @@
 	"command.palette": "Palette de commandes",
 	"command.projectSettings": "Paramètres du projet",
 	"command.resumeAgent": "Reprendre l’agent",
-	"command.resumeAgentSubtitle": "Relancer cette session terminée",
+	"command.resumeAgentSubtitle": "Relancer l’agent qui s’est arrêté dans cette session",
 	"command.resumeNotResumable": "Cette session n’a aucune session d’agent ni invite enregistrée à reprendre.",
 	"command.reviewAlreadyRunning": "Une revue est déjà en cours",
 	"command.reviewPr": "{{action}} #{{number}}",
