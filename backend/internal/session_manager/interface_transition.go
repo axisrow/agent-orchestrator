@@ -432,7 +432,8 @@ func (m *Manager) persistedNativeConversationID(
 	if err != nil {
 		return "", err
 	}
-	env := m.runtimeEnv(rec.ID, rec.ProjectID, rec.IssueID, project.Config.Env)
+	agentConfig := effectiveAgentConfig(rec.Kind, project.Config)
+	env := m.runtimeEnv(rec.ID, rec.ProjectID, rec.IssueID, mergeEnv(project.Config.Env, agentConfig.Env, sessionEnvOverrides(rec)))
 	exists, err := probe.NativeConversationExists(ctx, ports.SessionRef{
 		ID:            string(rec.ID),
 		WorkspacePath: rec.Metadata.WorkspacePath,
