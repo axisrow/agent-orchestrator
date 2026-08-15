@@ -17,8 +17,9 @@ import (
 // deterministic Manager implementation, without a store.
 type stubUserConfigManager struct {
 	userconfigsvc.Manager
-	get func(context.Context) (domain.AgentConfig, error)
-	set func(context.Context, userconfigsvc.SetUserConfigInput) (domain.AgentConfig, error)
+	get            func(context.Context) (domain.AgentConfig, error)
+	set            func(context.Context, userconfigsvc.SetUserConfigInput) (domain.AgentConfig, error)
+	defaultPrompts func(context.Context) (userconfigsvc.DefaultPrompts, error)
 }
 
 func (m stubUserConfigManager) Get(ctx context.Context) (domain.AgentConfig, error) {
@@ -33,6 +34,15 @@ func (m stubUserConfigManager) Set(ctx context.Context, in userconfigsvc.SetUser
 		return in.AgentConfig, nil
 	}
 	return m.set(ctx, in)
+}
+
+func (m stubUserConfigManager) DefaultPrompts(ctx context.Context) (userconfigsvc.DefaultPrompts, error) {
+	if m.defaultPrompts == nil {
+		// Return recognizable sentinels so a test can assert the GET handler
+		// threads the defaults through.
+		return userconfigsvc.DefaultPrompts{Worker: "default-worker", Orchestrator: "default-orchestrator"}, nil
+	}
+	return m.defaultPrompts(ctx)
 }
 
 func userConfigServer(t *testing.T, mgr userconfigsvc.Manager) *httptest.Server {
@@ -69,11 +79,21 @@ func TestUserConfigAPI_GetUnsetReturnsEmpty(t *testing.T) {
 		t.Fatalf("status = %d, want 200", status)
 	}
 	var resp struct {
-		AgentConfig domain.AgentConfig `json:"agentConfig"`
+		AgentConfig               domain.AgentConfig `json:"agentConfig"`
+		DefaultWorkerPrompt       string             `json:"defaultWorkerPrompt"`
+		DefaultOrchestratorPrompt string             `json:"defaultOrchestratorPrompt"`
 	}
 	mustJSON(t, body, &resp)
 	if !resp.AgentConfig.IsZero() {
 		t.Fatalf("agentConfig = %+v, want zero", resp.AgentConfig)
+	}
+	// GET must also surface the assembled default prompt baselines so the UI can
+	// prefill its override editors.
+	if resp.DefaultWorkerPrompt == "" {
+		t.Fatal("defaultWorkerPrompt empty on GET; want the assembled baseline")
+	}
+	if resp.DefaultOrchestratorPrompt == "" {
+		t.Fatal("defaultOrchestratorPrompt empty on GET; want the assembled baseline")
 	}
 }
 

@@ -21,6 +21,7 @@ import {
 	type AgentModelCatalog,
 } from "../hooks/useAgentModelsQuery";
 import { agentsQueryKey, agentsQueryOptions, refreshAgents } from "../hooks/useAgentsQuery";
+import { projectQueryKey } from "../hooks/useProjectQuery";
 import { useWorkspaceQuery, workspaceQueryKey } from "../hooks/useWorkspaceQuery";
 import { apiClient, apiErrorMessage } from "../lib/api-client";
 import { captureOrchestratorReplacementFailure } from "../lib/orchestrator-replacement-telemetry";
@@ -34,8 +35,9 @@ import { buildIntake, deriveGitHubRepo, IntakeFields, type IntakeForm } from "./
 import { ProductExternalLink } from "./ProductExternalLink";
 import { ReviewerSelect, reviewerTrustWarning } from "./ReviewerSelect";
 import { AgentModelCombobox } from "./settings/AgentModelCombobox";
+import { PromptOverrideDialog } from "./settings/PromptOverrideDialog";
 import { SettingsOptionMenu } from "./settings/SettingsOptionMenu";
-import { SettingsRow } from "./settings/SettingsRow";
+import { SettingsLinkRow, SettingsRow } from "./settings/SettingsRow";
 
 type Project = components["schemas"]["Project"];
 type ProjectConfig = components["schemas"]["ProjectConfig"];
@@ -43,7 +45,6 @@ type TrackerIntakeConfig = components["schemas"]["TrackerIntakeConfig"];
 
 const PERMISSION_MODE_VALUES = ["default", "accept-edits", "auto", "bypass-permissions"] as const;
 
-const projectQueryKey = (id: string) => ["project", id] as const;
 
 type SettingsSaveResult = {
 	replacementError: string | null;
@@ -156,6 +157,7 @@ function SettingsBody({
 	const [showSaving, setShowSaving] = useState(false);
 	const [replacementError, setReplacementError] = useState<string | null>(null);
 	const [validationError, setValidationError] = useState<string | null>(null);
+	const [promptOverrideOpen, setPromptOverrideOpen] = useState(false);
 	const initialOrchestratorAgent = config.orchestrator?.agent ?? "";
 	const missingRequiredAgent = form.workerAgent === "" || form.orchestratorAgent === "";
 	const agentsQuery = useQuery(agentsQueryOptions);
@@ -504,6 +506,17 @@ function SettingsBody({
 							missingRequiredAgent ? t("settings.project.agentsRequired") : null
 						}
 					/>
+					<ProjectSettingsSection title={t("settings.project.promptOverride")} grouped>
+						<SettingsLinkRow label={t("settings.project.editPromptOverride")} onClick={() => setPromptOverrideOpen(true)} />
+					</ProjectSettingsSection>
+					{promptOverrideOpen && (
+						<PromptOverrideDialog
+							open={promptOverrideOpen}
+							onOpenChange={setPromptOverrideOpen}
+							scope="project"
+							projectId={projectId}
+						/>
+					)}
 				</>
 			)}
 

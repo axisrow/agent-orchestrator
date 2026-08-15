@@ -204,6 +204,9 @@ func startSession(ctx context.Context, cfg config.Config, runtime runtimeselect.
 		DataDir:             cfg.DataDir,
 		BackgroundContext:   ctx,
 		Logger:              log,
+		// UserConfig supplies global prompt overrides; unset config falls through
+		// to project overrides or hardcoded defaults.
+		UserConfig: store,
 	})
 	scmProvider := newMultiSCMProvider(cfg.GitLab, log)
 	// Build the multi-tracker dispatching to both GitHub and GitLab. The

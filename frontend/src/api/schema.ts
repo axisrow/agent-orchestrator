@@ -1667,9 +1667,11 @@ export interface components {
             mcp?: components["schemas"]["MCPConfig"];
             mode?: string;
             model?: string;
+            orchestratorPromptOverride?: string;
             permissions?: string;
             pluginDirs?: string[];
             systemPrompt?: string;
+            workerPromptOverride?: string;
         };
         AgentInfo: {
             /**
@@ -2374,6 +2376,7 @@ export interface components {
                 [key: string]: string;
             };
             orchestrator?: components["schemas"]["RoleOverride"];
+            orchestratorPromptOverride?: string;
             orchestratorRules?: string;
             postCreate?: string[];
             reviewers?: components["schemas"]["DomainReviewerConfig"][];
@@ -2381,8 +2384,11 @@ export interface components {
             symlinks?: string[];
             trackerIntake?: components["schemas"]["TrackerIntakeConfig"];
             worker?: components["schemas"]["RoleOverride"];
+            workerPromptOverride?: string;
         };
         ProjectGetResponse: {
+            defaultOrchestratorPrompt?: string;
+            defaultWorkerPrompt?: string;
             project: components["schemas"]["ProjectOrDegraded"];
             /** @enum {string} */
             status: "ok" | "degraded";
@@ -2961,6 +2967,8 @@ export interface components {
         };
         UserConfigResponse: {
             agentConfig: components["schemas"]["AgentConfig"];
+            defaultOrchestratorPrompt?: string;
+            defaultWorkerPrompt?: string;
         };
         WorkspaceFileResponse: {
             additions: number;

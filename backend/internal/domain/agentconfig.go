@@ -56,6 +56,19 @@ type AgentConfig struct {
 	// (claude-code: a local path maps to --plugin-dir, an http(s):// URL to
 	// --plugin-url). nil/empty means inherit the global plugin set.
 	PluginDirs []string `json:"pluginDirs,omitempty"`
+
+	// WorkerPromptOverride is the GLOBAL worker system-prompt override sourced from
+	// the user-scope config (#2998). When non-empty it REPLACES the hardcoded
+	// workerSystemPrompt() baseline for every project — UNLESS a project sets its
+	// own ProjectConfig.WorkerPromptOverride, which wins (per-project > global).
+	// Empty falls through to the hardcoded default. This field lives on AgentConfig
+	// only so the existing user_config singleton (which already serializes
+	// AgentConfig) carries it for free; per-role AgentConfig values ignore it.
+	WorkerPromptOverride string `json:"workerPromptOverride,omitempty"`
+	// OrchestratorPromptOverride is the GLOBAL orchestrator system-prompt override
+	// sourced from the user-scope config. Same precedence as
+	// WorkerPromptOverride: per-project > global > hardcoded default.
+	OrchestratorPromptOverride string `json:"orchestratorPromptOverride,omitempty"`
 }
 
 // MCPConfig narrows the MCP servers a session sees. It is a pointer on

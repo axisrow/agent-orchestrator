@@ -78,3 +78,28 @@ func TestUserConfigStore_ZeroStoresNULL(t *testing.T) {
 	// zero value, not on found, to mean "inherit User defaults."
 	_ = found
 }
+
+// TestUserConfigStore_PromptOverrideRoundTrip covers Phase 1 (#15): the global
+// worker/orchestrator prompt overrides persist through the JSON column.
+func TestUserConfigStore_PromptOverrideRoundTrip(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	in := domain.AgentConfig{
+		WorkerPromptOverride:       "## Global Worker\nCustom global worker baseline.",
+		OrchestratorPromptOverride: "## Global Orchestrator\nCustom global orchestrator baseline.",
+	}
+	if err := s.UpsertUserConfig(ctx, in); err != nil {
+		t.Fatalf("UpsertUserConfig: %v", err)
+	}
+	got, found, err := s.GetUserConfig(ctx)
+	if err != nil || !found {
+		t.Fatalf("GetUserConfig after upsert = (%+v, %v, %v), want found", got, found, err)
+	}
+	if got.WorkerPromptOverride != in.WorkerPromptOverride {
+		t.Fatalf("worker prompt override round-trip got = %q, want %q", got.WorkerPromptOverride, in.WorkerPromptOverride)
+	}
+	if got.OrchestratorPromptOverride != in.OrchestratorPromptOverride {
+		t.Fatalf("orchestrator prompt override round-trip got = %q, want %q", got.OrchestratorPromptOverride, in.OrchestratorPromptOverride)
+	}
+}

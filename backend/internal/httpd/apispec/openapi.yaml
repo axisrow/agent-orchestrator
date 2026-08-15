@@ -5023,6 +5023,8 @@ components:
           type: string
         model:
           type: string
+        orchestratorPromptOverride:
+          type: string
         permissions:
           type: string
         pluginDirs:
@@ -5030,6 +5032,8 @@ components:
             type: string
           type: array
         systemPrompt:
+          type: string
+        workerPromptOverride:
           type: string
       type: object
     AgentInfo:
@@ -6923,6 +6927,8 @@ components:
           type: object
         orchestrator:
           $ref: '#/components/schemas/RoleOverride'
+        orchestratorPromptOverride:
+          type: string
         orchestratorRules:
           type: string
         postCreate:
@@ -6943,9 +6949,15 @@ components:
           $ref: '#/components/schemas/TrackerIntakeConfig'
         worker:
           $ref: '#/components/schemas/RoleOverride'
+        workerPromptOverride:
+          type: string
       type: object
     ProjectGetResponse:
       properties:
+        defaultOrchestratorPrompt:
+          type: string
+        defaultWorkerPrompt:
+          type: string
         project:
           $ref: '#/components/schemas/ProjectOrDegraded'
         status:
@@ -8457,6 +8469,10 @@ components:
       properties:
         agentConfig:
           $ref: '#/components/schemas/AgentConfig'
+        defaultOrchestratorPrompt:
+          type: string
+        defaultWorkerPrompt:
+          type: string
       required:
       - agentConfig
       type: object

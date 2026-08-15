@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { PromptOverrideDialog } from "./settings/PromptOverrideDialog";
 import { GeneralSettingsSection } from "./settings/GeneralSettingsSection";
 import { ReportProblemDialog } from "./settings/ReportProblemDialog";
 import { SettingsLinkRow } from "./settings/SettingsRow";
@@ -19,6 +20,7 @@ export function GlobalSettingsForm({
 }) {
 	const { t } = useTranslation();
 	const [reportProblemOpen, setReportProblemOpen] = useState(false);
+	const [agentDefaultsOpen, setAgentDefaultsOpen] = useState(false);
 	// One section per page means the dialog header already names it, so the
 	// page's leading heading would just repeat that title. Only "all" (no
 	// single-page header) shows every section's own heading.
@@ -33,6 +35,9 @@ export function GlobalSettingsForm({
 			>
 				{(section === "all" || section === "general") && (
 					<>
+						<SettingsSection title={t("settings.agentDefaults")} sectionId="agent-defaults" grouped>
+							<SettingsLinkRow label={t("settings.agentDefaults")} onClick={() => setAgentDefaultsOpen(true)} />
+						</SettingsSection>
 						<GeneralSettingsSection
 							onConnectMobile={() => onOpenConnectMobile?.()}
 							titleHidden={leadingTitleHidden}
@@ -53,6 +58,9 @@ export function GlobalSettingsForm({
 				)}
 			</div>
 			<ReportProblemDialog open={reportProblemOpen} onOpenChange={setReportProblemOpen} />
+			{agentDefaultsOpen && (
+				<PromptOverrideDialog open={agentDefaultsOpen} onOpenChange={setAgentDefaultsOpen} scope="user" />
+			)}
 		</>
 	);
 }
