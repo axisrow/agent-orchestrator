@@ -226,6 +226,16 @@ export function sessionIsActive(session: WorkspaceSession): boolean {
 	return session.isTerminated !== true && session.status !== "terminated";
 }
 
+/**
+ * A live (non-terminated) session whose agent process has exited and can be relaunched via
+ * `resume-agent`, as opposed to a terminated session that needs `restore`. Mirrors the gate in
+ * `SessionInspector`'s `ResumeAgentControl`, plus the same terminated check `sessionIsActive` uses
+ * so a session reporting `status: "terminated"` isn't treated as a live exited agent.
+ */
+export function sessionAgentExited(session: WorkspaceSession): boolean {
+	return sessionIsActive(session) && session.activity?.state === "exited" && !session.activeAgentSwitch;
+}
+
 export function sessionNeedsAttention(session: WorkspaceSession): boolean {
 	return presentationAttentionZone(session) === "action";
 }

@@ -93,6 +93,8 @@
 	"command.resumeAgent": "Agent fortsetzen",
 	"command.resumeAgentSubtitle": "Den beendeten Agenten in dieser Sitzung neu starten",
 	"command.resumeNotResumable": "Diese Sitzung hat keine gespeicherte Agentensitzung oder Eingabe zum Fortsetzen.",
+	"command.resumeSession": "Sitzung wiederherstellen",
+	"command.resumeSessionSubtitle": "Diese beendete Sitzung neu starten",
 	"command.reviewAlreadyRunning": "Review läuft bereits",
 	"command.reviewPr": "{{action}} #{{number}}",
 	"command.searchPlaceholder": "Projekte, Sitzungen, PRs und Befehle suchen…",

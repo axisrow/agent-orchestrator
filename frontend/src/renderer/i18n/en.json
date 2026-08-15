@@ -93,6 +93,8 @@
 	"command.resumeAgent": "Resume agent",
 	"command.resumeAgentSubtitle": "Relaunch the exited agent inside this session",
 	"command.resumeNotResumable": "This session has no saved agent session or prompt to resume from.",
+	"command.resumeSession": "Resume session",
+	"command.resumeSessionSubtitle": "Relaunch this terminated session",
 	"command.reviewAlreadyRunning": "Review already running",
 	"command.reviewPr": "{{action}} #{{number}}",
 	"command.searchActionsPlaceholder": "Search actions…",

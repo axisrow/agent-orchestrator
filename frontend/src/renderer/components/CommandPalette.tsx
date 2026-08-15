@@ -299,6 +299,18 @@ export function CommandPalette() {
 		[restoreSessionById, t],
 	);
 
+	const resumeAgentSession = useCallback(
+		async (sessionId: string) => {
+			const { error, response } = await apiClient.POST("/api/v1/sessions/{sessionId}/resume-agent", {
+				params: { path: { sessionId } },
+			});
+			if (error) return apiErrorMessage(error, `Failed to resume agent (${response.status})`);
+			await queryClient.invalidateQueries({ queryKey: workspaceQueryKey });
+			return null;
+		},
+		[queryClient],
+	);
+
 	const runAction = useCallback(
 		async (item: CommandItemModel) => {
 			const action = item.action;
@@ -357,6 +369,20 @@ export function CommandPalette() {
 						closePalette();
 						break;
 					}
+					case "resume-agent-session": {
+						const message = await resumeAgentSession(action.sessionId);
+						if (!isCurrentRun()) break;
+						if (message) {
+							setError(message);
+							break;
+						}
+						navigateToTarget({
+							to: "/projects/$projectId/sessions/$sessionId",
+							params: { projectId: action.projectId, sessionId: action.sessionId },
+						});
+						closePalette();
+						break;
+					}
 					case "open-new-task":
 						if (blockedByRestart(action.projectId)) break;
 						pushView({ mode: "new-task", projectId: action.projectId });
@@ -376,7 +402,18 @@ export function CommandPalette() {
 				setPendingId(null);
 			}
 		},
-		[navigateToTarget, closePalette, toggleTheme, openOrchestrator, resumeSession, pushView, blockedByRestart, queryClient, t],
+		[
+			navigateToTarget,
+			closePalette,
+			toggleTheme,
+			openOrchestrator,
+			resumeSession,
+			resumeAgentSession,
+			pushView,
+			blockedByRestart,
+			queryClient,
+			t,
+		],
 	);
 
 	const onSelectItem = useCallback(

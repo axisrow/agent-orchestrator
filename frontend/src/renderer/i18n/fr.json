@@ -94,6 +94,8 @@
 	"command.resumeAgent": "Reprendre l’agent",
 	"command.resumeAgentSubtitle": "Relancer l’agent qui s’est arrêté dans cette session",
 	"command.resumeNotResumable": "Cette session n’a aucune session d’agent ni invite enregistrée à reprendre.",
+	"command.resumeSession": "Restaurer la session",
+	"command.resumeSessionSubtitle": "Relancer cette session terminée",
 	"command.reviewAlreadyRunning": "Une revue est déjà en cours",
 	"command.reviewPr": "{{action}} #{{number}}",
 	"command.searchPlaceholder": "Rechercher des projets, sessions, PRs et commandes…",

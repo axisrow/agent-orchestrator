@@ -94,6 +94,8 @@
 	"command.resumeAgent": "Retomar agente",
 	"command.resumeAgentSubtitle": "Reiniciar o agente que saiu nesta sessão",
 	"command.resumeNotResumable": "Esta sessão não tem uma sessão de agente ou prompt salvo para retomar.",
+	"command.resumeSession": "Restaurar sessão",
+	"command.resumeSessionSubtitle": "Reiniciar esta sessão encerrada",
 	"command.reviewAlreadyRunning": "Já existe uma revisão em andamento",
 	"command.reviewPr": "{{action}} #{{number}}",
 	"command.searchPlaceholder": "Buscar projetos, sessões, PRs e comandos…",
