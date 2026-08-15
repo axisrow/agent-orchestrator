@@ -115,7 +115,8 @@ func (m *Manager) launchChatController(ctx context.Context, in chatSpawn) (domai
 	// The same env the terminal path builds, including the HookPATH pin. The
 	// provider passes its environment through to the shell commands it runs, so
 	// this is what makes `ao` resolvable to the agent.
-	env := m.runtimeEnv(id, in.cfg.ProjectID, in.cfg.IssueID, in.project.Config.Env)
+	env := m.runtimeEnv(id, in.cfg.ProjectID, in.cfg.IssueID,
+		mergeEnv(in.project.Config.Env, agentConfig.Env))
 	var diffBaseSHA, diffBaseRef string
 	if in.projectKind == domain.ProjectKindSingleRepo {
 		diffBaseSHA, diffBaseRef = resolveSpawnDiffBase(

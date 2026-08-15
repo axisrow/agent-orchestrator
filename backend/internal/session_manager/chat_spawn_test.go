@@ -417,6 +417,35 @@ func TestChatSpawnAppliesRequestAgentConfigOverProjectDefaults(t *testing.T) {
 	}
 }
 
+func TestChatSpawnMergesProjectAndRoleEnv(t *testing.T) {
+	launcher := &recordingLauncher{}
+	mgr, store, _ := newChatManager(launcher)
+	project := store.projects[string(chatTestProject)]
+	project.Config.Env = map[string]string{"PROJECT_ONLY": "project", "CONFLICT": "project"}
+	project.Config.Worker.AgentConfig.Env = map[string]string{"ROLE_ONLY": "role", "CONFLICT": "role"}
+	store.projects[string(chatTestProject)] = project
+
+	_, _, _, err := mgr.Spawn(context.Background(), ports.SpawnConfig{
+		ProjectID:     chatTestProject,
+		Kind:          domain.KindWorker,
+		Harness:       domain.HarnessCodex,
+		RequestedMode: domain.SessionModeChat,
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	if len(launcher.started) != 1 {
+		t.Fatalf("started %d controllers, want 1", len(launcher.started))
+	}
+	for key, want := range map[string]string{
+		"PROJECT_ONLY": "project", "ROLE_ONLY": "role", "CONFLICT": "role",
+	} {
+		if got := launcher.started[0].Env[key]; got != want {
+			t.Errorf("controller Env[%q] = %q, want %q", key, got, want)
+		}
+	}
+}
+
 // A controller that fails to start must leave nothing running and no live row.
 func TestChatSpawnRollsBackWhenControllerFailsToStart(t *testing.T) {
 	mgr, store, runtime := newChatManager(&recordingLauncher{startErr: errors.New("app-server exited")})
