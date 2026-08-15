@@ -1,12 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
-  ProjectAgentsSettingsView,
-  ProjectGeneralSettingsView,
-  ProjectSettingsFormView,
-  ProjectSettingsSection,
-  ProjectWorkflowSettingsView,
-  validateProjectSettings,
+	ProjectAgentsSettingsView,
+	ProjectGeneralSettingsView,
+	ProjectSettingsFormView,
+	ProjectSettingsSection,
+	ProjectWorkflowSettingsView,
+	validateProjectSettings,
 } from "@aoagents/product-ui";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -23,20 +23,12 @@ import { agentsQueryKey, agentsQueryOptions, refreshAgentsIfStale } from "../hoo
 import { useWorkspaceQuery, workspaceQueryKey } from "../hooks/useWorkspaceQuery";
 import { apiClient, apiErrorMessage } from "../lib/api-client";
 import { captureOrchestratorReplacementFailure } from "../lib/orchestrator-replacement-telemetry";
-import {
-  OrchestratorSpawnError,
-  spawnOrchestrator,
-} from "../lib/spawn-orchestrator";
+import { OrchestratorSpawnError, spawnOrchestrator } from "../lib/spawn-orchestrator";
 import { captureRendererEvent } from "../lib/telemetry";
 import { type OrchestratorReplacementFailure, useUiStore } from "../stores/ui-store";
 import { newestActiveOrchestrator } from "../types/workspace";
 import { RequiredAgentField } from "./CreateProjectAgentSheet";
-import {
-  buildIntake,
-  deriveGitHubRepo,
-  IntakeFields,
-  type IntakeForm,
-} from "./IntakeFields";
+import { buildIntake, deriveGitHubRepo, IntakeFields, type IntakeForm } from "./IntakeFields";
 import { ProductExternalLink } from "./ProductExternalLink";
 import { ReviewerSelect, reviewerTrustWarning } from "./ReviewerSelect";
 import { AgentModelCombobox } from "./settings/AgentModelCombobox";
@@ -56,92 +48,84 @@ const DEFAULT_BRANCH_AUTO = "auto";
 const projectQueryKey = (id: string) => ["project", id] as const;
 
 type SettingsSaveResult = {
-  replacementError: string | null;
-  replacementSessionId: string | null;
-  replacementFailure: OrchestratorReplacementFailure | null;
-  spawnError: unknown;
+	replacementError: string | null;
+	replacementSessionId: string | null;
+	replacementFailure: OrchestratorReplacementFailure | null;
+	spawnError: unknown;
 };
 
-export type ProjectSettingsSection =
-  "general" | "agents" | "workflow" | "intake";
+export type ProjectSettingsSection = "general" | "agents" | "workflow" | "intake";
 export interface ProjectSettingsSaveState {
-  isPending: boolean;
-  showSaving: boolean;
-  validationError: string | null;
-  mutationError: string | null;
-  saved: boolean;
-  replacementError: string | null;
+	isPending: boolean;
+	showSaving: boolean;
+	validationError: string | null;
+	mutationError: string | null;
+	saved: boolean;
+	replacementError: string | null;
 }
 
 export function ProjectSettingsForm({
-  projectId,
-  section = "general",
-  onSaveState,
+	projectId,
+	section = "general",
+	onSaveState,
 }: {
-  projectId: string;
-  section?: ProjectSettingsSection;
-  onSaveState?: (state: ProjectSettingsSaveState) => void;
+	projectId: string;
+	section?: ProjectSettingsSection;
+	onSaveState?: (state: ProjectSettingsSaveState) => void;
 }) {
-  const { t } = useTranslation();
-  const queryClient = useQueryClient();
+	const { t } = useTranslation();
+	const queryClient = useQueryClient();
 
-  const query = useQuery({
-    queryKey: projectQueryKey(projectId),
-    queryFn: async () => {
-      const { data, error } = await apiClient.GET("/api/v1/projects/{id}", {
-        params: { path: { id: projectId } },
-      });
-      if (error) throw new Error(apiErrorMessage(error));
-      if (data?.status !== "ok")
-        throw new Error(t("settings.project.degraded"));
-      return data.project as Project;
-    },
-  });
+	const query = useQuery({
+		queryKey: projectQueryKey(projectId),
+		queryFn: async () => {
+			const { data, error } = await apiClient.GET("/api/v1/projects/{id}", {
+				params: { path: { id: projectId } },
+			});
+			if (error) throw new Error(apiErrorMessage(error));
+			if (data?.status !== "ok") throw new Error(t("settings.project.degraded"));
+			return data.project as Project;
+		},
+	});
 
-  return (
-    <>
-      {query.isLoading ? (
-        <p className="text-sm text-settings-muted">
-          {t("settings.project.loading")}
-        </p>
-      ) : query.isError || !query.data ? (
-        <p className="text-sm text-error">
-          {query.error instanceof Error
-            ? query.error.message
-            : t("settings.project.loadFailed")}
-        </p>
-      ) : (
-        <SettingsBody
-          key={projectId}
-          project={query.data}
-          onSaved={() =>
-            queryClient
-              .invalidateQueries({ queryKey: workspaceQueryKey })
-              .catch(() => {
-                // Saving succeeds even if the cache refresh fails.
-              })
-          }
-          projectId={projectId}
-          section={section}
-          onSaveState={onSaveState}
-        />
-      )}
-    </>
-  );
+	return (
+		<>
+			{query.isLoading ? (
+				<p className="text-sm text-settings-muted">{t("settings.project.loading")}</p>
+			) : query.isError || !query.data ? (
+				<p className="text-sm text-error">
+					{query.error instanceof Error ? query.error.message : t("settings.project.loadFailed")}
+				</p>
+			) : (
+				<SettingsBody
+					key={projectId}
+					project={query.data}
+					onSaved={() =>
+						queryClient.invalidateQueries({ queryKey: workspaceQueryKey }).catch(() => {
+							// Saving succeeds even if the cache refresh fails.
+						})
+					}
+					projectId={projectId}
+					section={section}
+					onSaveState={onSaveState}
+				/>
+			)}
+		</>
+	);
 }
 
 function SettingsBody({
-  project,
-  projectId,
-  onSaved,
-  section = "general",
-  onSaveState,
+	project,
+	projectId,
+	onSaved,
+	section = "general",
+	onSaveState,
 }: {
-  project: Project;
-  projectId: string;
-  onSaved: () => Promise<void>;
-  section?: ProjectSettingsSection;
-  onSaveState?: (state: ProjectSettingsSaveState) => void;
+	project: Project;
+	projectId: string;
+	onSaved: () => Promise<void>;
+	section?: ProjectSettingsSection;
+	onSaveState?: (state: ProjectSettingsSaveState) => void;
 }) {
 	const { t } = useTranslation();
 	const queryClient = useQueryClient();
@@ -327,141 +311,123 @@ function SettingsBody({
 			void queryClient.invalidateQueries({ queryKey: ["project", projectId] });
 			const workspaceRefresh = onSaved();
 
-      if (result.replacementSessionId) {
-        await workspaceRefresh;
-        closeSettings();
-        void navigate({
-          to: "/projects/$projectId/sessions/$sessionId",
-          params: { projectId, sessionId: result.replacementSessionId },
-        });
-        return;
-      }
+			if (result.replacementSessionId) {
+				await workspaceRefresh;
+				closeSettings();
+				void navigate({
+					to: "/projects/$projectId/sessions/$sessionId",
+					params: { projectId, sessionId: result.replacementSessionId },
+				});
+				return;
+			}
 
-      if (result.replacementFailure) {
-        closeSettings();
-        setOrchestratorReplacementError(projectId, result.replacementFailure);
-        if (result.spawnError) {
-          captureOrchestratorReplacementFailure(result.spawnError, projectId);
-        }
-      }
-    },
-    onError: () => {
-      void captureRendererEvent("ao.renderer.settings_save_failed", {
-        project_id: projectId,
-      });
-    },
-  });
+			if (result.replacementFailure) {
+				closeSettings();
+				setOrchestratorReplacementError(projectId, result.replacementFailure);
+				if (result.spawnError) {
+					captureOrchestratorReplacementFailure(result.spawnError, projectId);
+				}
+			}
+		},
+		onError: () => {
+			void captureRendererEvent("ao.renderer.settings_save_failed", { project_id: projectId });
+		},
+	});
 
-  useEffect(() => {
-    if (!mutation.isPending) {
-      setShowSaving(false);
-      return;
-    }
-    const timeout = window.setTimeout(() => setShowSaving(true), 200);
-    return () => window.clearTimeout(timeout);
-  }, [mutation.isPending]);
+	useEffect(() => {
+		if (!mutation.isPending) {
+			setShowSaving(false);
+			return;
+		}
+		const timeout = window.setTimeout(() => setShowSaving(true), 200);
+		return () => window.clearTimeout(timeout);
+	}, [mutation.isPending]);
 
-  useEffect(() => {
-    onSaveState?.({
-      isPending: mutation.isPending,
-      showSaving,
-      validationError,
-      mutationError: mutation.isError
-        ? mutation.error instanceof Error
-          ? mutation.error.message
-          : t("settings.project.saveFailed")
-        : null,
-      saved: savedAt !== null && !mutation.isPending && !mutation.isError,
-      replacementError:
-        replacementError && !mutation.isPending && !mutation.isError
-          ? replacementError
-          : null,
-    });
-  }, [
-    mutation.error,
-    mutation.isError,
-    mutation.isPending,
-    onSaveState,
-    replacementError,
-    savedAt,
-    showSaving,
-    t,
-    validationError,
-  ]);
+	useEffect(() => {
+		onSaveState?.({
+			isPending: mutation.isPending,
+			showSaving,
+			validationError,
+			mutationError: mutation.isError
+				? mutation.error instanceof Error
+					? mutation.error.message
+					: t("settings.project.saveFailed")
+				: null,
+			saved: savedAt !== null && !mutation.isPending && !mutation.isError,
+			replacementError:
+				replacementError && !mutation.isPending && !mutation.isError ? replacementError : null,
+		});
+	}, [
+		mutation.error,
+		mutation.isError,
+		mutation.isPending,
+		onSaveState,
+		replacementError,
+		savedAt,
+		showSaving,
+		t,
+		validationError,
+	]);
 
-  useEffect(() => {
-    if (savedAt === null) return;
-    const timeout = window.setTimeout(() => setSavedAt(null), 1800);
-    return () => window.clearTimeout(timeout);
-  }, [savedAt]);
+	useEffect(() => {
+		if (savedAt === null) return;
+		const timeout = window.setTimeout(() => setSavedAt(null), 1800);
+		return () => window.clearTimeout(timeout);
+	}, [savedAt]);
 
-  return (
-    <ProjectSettingsFormView
-      id="project-settings-form"
-      onSubmit={() => {
-        setSavedAt(null);
-        setReplacementError(null);
-        const validation = validateProjectSettings(form, {
-          validateIntake: !isScratchProject,
-        });
-        if (validation) {
-          setValidationError(
-            validation === "agents_required"
-              ? t("settings.project.agentsRequired")
-              : validation === "name_required"
-                ? t("settings.project.nameRequired")
-                : t("settings.project.intakeAssigneeRequired"),
-          );
-          return;
-        }
-        setValidationError(null);
-        mutation.mutate();
-      }}
-    >
-      {section === "general" && (
-        <>
-          <ProjectGeneralSettingsView
-            displayName={form.displayName}
-            externalLink={ProductExternalLink}
-            icons={{
-              edit: (
-                <Pencil
-                  className="settings-inline-edit-icon"
-                  aria-hidden="true"
-                />
-              ),
-            }}
-            onDisplayNameChange={(displayName) =>
-              setForm((f) => ({ ...f, displayName }))
-            }
-            labels={{
-              title: t("settings.project.identity"),
-              name: t("settings.project.name"),
-              id: t("settings.project.id"),
-              kind: t("settings.project.kind"),
-              path: t("settings.project.path"),
-              repo: t("settings.project.repo"),
-              workspaceRepos: t("settings.project.workspaceRepos"),
-              workspaceReposEmpty: t("settings.project.childReposEmpty"),
-              editName: t("settings.field.edit", {
-                label: t("settings.project.name"),
-              }),
-            }}
-            project={{
-              id: project.id,
-              kindLabel: projectKindLabel(project.kind, t),
-              path: project.path,
-              pathHref: `file://${encodeURI(project.path)}`,
-              repo: project.repo,
-              repoHref: project.repo ? repositoryHref(project.repo) : undefined,
-              workspaceRepos:
-                project.kind === "workspace"
-                  ? (project.workspaceRepos ?? [])
-                  : undefined,
-            }}
-          />
-        </>
-      )}
+	return (
+		<ProjectSettingsFormView
+			id="project-settings-form"
+			onSubmit={() => {
+				setSavedAt(null);
+				setReplacementError(null);
+				const validation = validateProjectSettings(form, { validateIntake: !isScratchProject });
+				if (validation) {
+					setValidationError(
+						validation === "agents_required"
+							? t("settings.project.agentsRequired")
+							: validation === "name_required"
+								? t("settings.project.nameRequired")
+								: t("settings.project.intakeAssigneeRequired"),
+					);
+					return;
+				}
+				setValidationError(null);
+				mutation.mutate();
+			}}
+		>
+			{section === "general" && (
+				<>
+					<ProjectGeneralSettingsView
+						displayName={form.displayName}
+						externalLink={ProductExternalLink}
+						icons={{
+							edit: <Pencil className="settings-inline-edit-icon" aria-hidden="true" />,
+						}}
+						onDisplayNameChange={(displayName) => setForm((f) => ({ ...f, displayName }))}
+						labels={{
+							title: t("settings.project.identity"),
+							name: t("settings.project.name"),
+							id: t("settings.project.id"),
+							kind: t("settings.project.kind"),
+							path: t("settings.project.path"),
+							repo: t("settings.project.repo"),
+							workspaceRepos: t("settings.project.workspaceRepos"),
+							workspaceReposEmpty: t("settings.project.childReposEmpty"),
+							editName: t("settings.field.edit", { label: t("settings.project.name") }),
+						}}
+						project={{
+							id: project.id,
+							kindLabel: projectKindLabel(project.kind, t),
+							path: project.path,
+							pathHref: `file://${encodeURI(project.path)}`,
+							repo: project.repo,
+							repoHref: project.repo ? repositoryHref(project.repo) : undefined,
+							workspaceRepos: project.kind === "workspace" ? project.workspaceRepos ?? [] : undefined,
+						}}
+					/>
+				</>
+			)}
 
 			{section === "agents" && (
 				<>
@@ -648,47 +614,42 @@ function SettingsBody({
 				</>
 			)}
 
-      {section === "intake" && (
-        <>
-          {!isScratchProject ? (
-            <ProjectSettingsSection
-              title={t("settings.project.trackerIntake")}
-              grouped
-            >
-              <IntakeFields
-                variant="settings"
-                form={intakeForm}
-                onChange={patchIntake}
-                repoPreview={{ value: effectiveIntakeRepo }}
-              />
-            </ProjectSettingsSection>
-          ) : (
-            <p className="px-1 text-xs text-settings-muted">
-              {t("settings.project.trackerIntake")}
-            </p>
-          )}
-        </>
-      )}
-    </ProjectSettingsFormView>
-  );
+			{section === "intake" && (
+				<>
+					{!isScratchProject ? (
+						<ProjectSettingsSection title={t("settings.project.trackerIntake")} grouped>
+							<IntakeFields
+								variant="settings"
+								form={intakeForm}
+								onChange={patchIntake}
+								repoPreview={{ value: effectiveIntakeRepo }}
+							/>
+						</ProjectSettingsSection>
+					) : (
+						<p className="px-1 text-xs text-settings-muted">{t("settings.project.trackerIntake")}</p>
+					)}
+				</>
+			)}
+		</ProjectSettingsFormView>
+	);
 }
 
 function AgentModelField({
-  role,
-  agentId,
-  projectId,
-  model,
-  mode,
-  onModelChange,
-  onModeChange,
+	role,
+	agentId,
+	projectId,
+	model,
+	mode,
+	onModelChange,
+	onModeChange,
 }: {
-  role: "worker" | "orchestrator";
-  agentId: string;
-  projectId: string;
-  model: string;
-  mode: string;
-  onModelChange: (value: string) => void;
-  onModeChange: (value: string) => void;
+	role: "worker" | "orchestrator";
+	agentId: string;
+	projectId: string;
+	model: string;
+	mode: string;
+	onModelChange: (value: string) => void;
+	onModeChange: (value: string) => void;
 }) {
 	const { t } = useTranslation();
 	const queryClient = useQueryClient();
@@ -824,44 +785,44 @@ function PermissionModeSelect({ value, onChange }: { value: string; onChange: (v
 		})),
 	];
 
-  return (
-    <SettingsOptionMenu
-      aria-label={t("settings.project.permissionMode")}
-      value={value || "__default__"}
-      options={options}
-      onChange={(v) => onChange(v === "__default__" ? "" : v)}
-    />
-  );
+	return (
+		<SettingsOptionMenu
+			aria-label={t("settings.project.permissionMode")}
+			value={value || "__default__"}
+			options={options}
+			onChange={(v) => onChange(v === "__default__" ? "" : v)}
+		/>
+	);
 }
 
 function projectKindLabel(kind: string, t: TFunction): string {
-  switch (kind) {
-    case "single_repo":
-      return t("settings.project.kind.singleRepo");
-    case "workspace":
-      return t("settings.project.kind.workspace");
-    case "scratch":
-      return t("settings.project.kind.scratch");
-    default:
-      return kind || t("settings.project.kind.unknown");
-  }
+	switch (kind) {
+		case "single_repo":
+			return t("settings.project.kind.singleRepo");
+		case "workspace":
+			return t("settings.project.kind.workspace");
+		case "scratch":
+			return t("settings.project.kind.scratch");
+		default:
+			return kind || t("settings.project.kind.unknown");
+	}
 }
 
 function repositoryHref(repository: string): string {
-  if (/^https?:\/\//i.test(repository)) return repository;
-  if (repository.startsWith("git@")) {
-    const [host, path] = repository.slice(4).split(":", 2);
-    return `https://${host}/${path.replace(/\.git$/, "")}`;
-  }
-  if (repository.startsWith("ssh://")) {
-    try {
-      const parsed = new URL(repository);
-      return `https://${parsed.hostname}${parsed.pathname.replace(/\.git$/, "")}`;
-    } catch {
-      return repository;
-    }
-  }
-  return repository;
+	if (/^https?:\/\//i.test(repository)) return repository;
+	if (repository.startsWith("git@")) {
+		const [host, path] = repository.slice(4).split(":", 2);
+		return `https://${host}/${path.replace(/\.git$/, "")}`;
+	}
+	if (repository.startsWith("ssh://")) {
+		try {
+			const parsed = new URL(repository);
+			return `https://${parsed.hostname}${parsed.pathname.replace(/\.git$/, "")}`;
+		} catch {
+			return repository;
+		}
+	}
+	return repository;
 }
 
 function scratchSupportedConfig(config: ProjectConfig): ProjectConfig {
@@ -876,18 +837,18 @@ function scratchSupportedConfig(config: ProjectConfig): ProjectConfig {
 }
 
 function blankToUndefined<T extends object>(obj: T): T | undefined {
-  return Object.values(obj).some((v) => v !== undefined) ? obj : undefined;
+	return Object.values(obj).some((v) => v !== undefined) ? obj : undefined;
 }
 
 function buildRoleAgentConfig(
-  existing: components["schemas"]["AgentConfig"] | undefined,
-  model: string,
-  mode: string,
+	existing: components["schemas"]["AgentConfig"] | undefined,
+	model: string,
+	mode: string,
 ): components["schemas"]["AgentConfig"] | undefined {
-  const next = { ...existing };
-  if (model) next.model = model;
-  else delete next.model;
-  if (mode) next.mode = mode;
-  else delete next.mode;
-  return Object.keys(next).length > 0 ? next : undefined;
+	const next = { ...existing };
+	if (model) next.model = model;
+	else delete next.model;
+	if (mode) next.mode = mode;
+	else delete next.mode;
+	return Object.keys(next).length > 0 ? next : undefined;
 }
