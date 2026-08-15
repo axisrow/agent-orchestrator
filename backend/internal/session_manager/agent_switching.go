@@ -277,7 +277,9 @@ func (m *Manager) admitAgentSwitch(ctx context.Context, id domain.SessionID, cfg
 		// the target generation is always a real AO_RUNTIME_LAUNCH_ID.
 		sourceGeneration = domain.AgentGenerationID("legacy-" + uuid.NewString())
 	}
-	sourceEnv := m.runtimeEnv(rec.ID, rec.ProjectID, rec.IssueID, project.Config.Env)
+	sourceConfig := effectiveAgentConfig(rec.Kind, project.Config)
+	sourceEnv := m.runtimeEnv(rec.ID, rec.ProjectID, rec.IssueID,
+		mergeEnv(project.Config.Env, sourceConfig.Env, sessionEnvOverrides(rec)))
 	m.augmentAgentRuntimeEnv(sourceAgent, sourceEnv)
 	sourceNative, err := m.preserveCurrentNativeSession(ctx, store, rec, sourceAgent, sourceEnv, sourceGeneration)
 	if err != nil {

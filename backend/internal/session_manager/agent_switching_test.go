@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -413,6 +414,7 @@ type switchTestAgent struct {
 	preflightCalls      int
 	hooksWaitForContext bool
 	hooksContextExpired chan struct{}
+	configDirEnv        map[string]string
 }
 
 type switchReleaseLCM struct {
@@ -509,7 +511,8 @@ func (a *switchTestAgent) ComposerIsEmpty(output string) bool {
 	return true
 }
 
-func (a *switchTestAgent) NativeSessionConfigDir(context.Context, map[string]string) (string, error) {
+func (a *switchTestAgent) NativeSessionConfigDir(_ context.Context, env map[string]string) (string, error) {
+	a.configDirEnv = maps.Clone(env)
 	return a.configDir, nil
 }
 
@@ -3518,6 +3521,7 @@ func TestSwitchAgentMergesProjectRoleAndSessionEnv(t *testing.T) {
 	rec := store.sessions["proj-1"]
 	rec.SessionEnv = `{"SESSION_ONLY":"session","CONFLICT":"session"}`
 	store.sessions[rec.ID] = rec
+	source := manager.agents.(switchTestAgents)[domain.HarnessClaudeCode].(*switchTestAgent)
 
 	result, err := switchAgentSynchronously(context.Background(), manager, rec.ID, SwitchAgentConfig{
 		TargetHarness: domain.HarnessCodex, IdempotencyKey: "merged-env-layers",
@@ -3528,11 +3532,20 @@ func TestSwitchAgentMergesProjectRoleAndSessionEnv(t *testing.T) {
 	if result.State != domain.AgentSwitchCompleted {
 		t.Fatalf("switch state = %q, want completed", result.State)
 	}
-	for key, want := range map[string]string{
+	want := map[string]string{
 		"PROJECT_ONLY": "project", "ROLE_ONLY": "role", "SESSION_ONLY": "session", "CONFLICT": "session",
-	} {
+	}
+	for key, want := range want {
 		if got := runtime.lastCfg.Env[key]; got != want {
-			t.Errorf("runtime Env[%q] = %q, want %q", key, got, want)
+			t.Errorf("target runtime Env[%q] = %q, want %q", key, got, want)
+		}
+	}
+	// The source side (preserveCurrentNativeSession -> NativeSessionConfigDir) must see the
+	// same merged env, or the source native-session record is written against the wrong
+	// config dir and a later switch back can't find it (loses the original conversation).
+	for key, want := range want {
+		if got := source.configDirEnv[key]; got != want {
+			t.Errorf("source configDir Env[%q] = %q, want %q", key, got, want)
 		}
 	}
 }
