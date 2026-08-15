@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { components } from "../../../api/schema";
 import { apiClient, apiErrorMessage } from "../../lib/api-client";
 import { projectQueryKey } from "../../hooks/useProjectQuery";
@@ -67,15 +68,25 @@ type ScopeAdapter = {
 };
 
 function useScopeAdapter(props: PromptOverrideDialogProps): ScopeAdapter {
+  const { t } = useTranslation();
   return useMemo<ScopeAdapter>(() => {
     const scopeLabel =
-      props.scope === "user" ? "globally (all projects)" : "for this project";
+      props.scope === "user"
+        ? t("settings.promptOverride.globalScope")
+        : t("settings.promptOverride.projectScope");
     const sharedStrings = {
       title:
-        props.scope === "user" ? "Agent defaults" : "Project agent defaults",
-      description: `Override the hardcoded worker and orchestrator system prompts ${scopeLabel}.`,
+        props.scope === "user"
+          ? t("settings.agentDefaults")
+          : t("settings.project.agentDefaults"),
+      description: t("settings.promptOverride.description", {
+        scope: scopeLabel,
+      }),
       hintFor: (role: "worker" | "orchestrator") =>
-        `This replaces the hardcoded ${role} system prompt ${scopeLabel}. Edit the default above; clearing it back to the default restores the baseline.`,
+        t("settings.promptOverride.hint", {
+          role: t(`settings.promptOverride.${role}`),
+          scope: scopeLabel,
+        }),
     };
 
     if (props.scope === "user") {
@@ -157,7 +168,7 @@ function useScopeAdapter(props: PromptOverrideDialogProps): ScopeAdapter {
         if (error) throw new Error(apiErrorMessage(error));
       },
     };
-  }, [props]);
+  }, [props, t]);
 }
 
 /**
@@ -183,6 +194,7 @@ function useScopeAdapter(props: PromptOverrideDialogProps): ScopeAdapter {
  */
 export function PromptOverrideDialog(props: PromptOverrideDialogProps) {
   const { open, onOpenChange } = props;
+  const { t } = useTranslation();
   const workerId = useId();
   const orchestratorId = useId();
   const workerRef = useRef<HTMLTextAreaElement>(null);
@@ -309,9 +321,7 @@ export function PromptOverrideDialog(props: PromptOverrideDialogProps) {
           if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
             event.preventDefault();
             if (promptInvalid) {
-              setValidationError(
-                "Worker and orchestrator prompts cannot be empty.",
-              );
+              setValidationError(t("settings.promptOverride.empty"));
               return;
             }
             // No edits since the dialog opened — nothing to save, this is not
@@ -327,8 +337,8 @@ export function PromptOverrideDialog(props: PromptOverrideDialogProps) {
           <button
             type="button"
             className="settings-dialog-close-button settings-close-button"
-            aria-label="Close prompt override dialog"
-            title="Close (Esc)"
+            aria-label={t("settings.promptOverride.closeAria")}
+            title={t("settings.promptOverride.closeTitle")}
           >
             <X className="size-5" aria-hidden="true" />
           </button>
@@ -344,20 +354,20 @@ export function PromptOverrideDialog(props: PromptOverrideDialogProps) {
         <div className={settingsDialogBodyClass}>
           {query.isLoading && (
             <p className="text-caption leading-4 text-settings-muted">
-              Loading agent defaults…
+              {t("settings.promptOverride.loading")}
             </p>
           )}
           {query.isError && (
             <p role="alert" className="text-caption leading-4 text-error">
               {query.error instanceof Error
                 ? query.error.message
-                : "Could not load agent defaults."}
+                : t("settings.promptOverride.loadFailed")}
             </p>
           )}
 
           <div className="flex flex-col gap-1.5">
             <label className="settings-field-label" htmlFor={workerId}>
-              Worker prompt override
+              {t("settings.promptOverride.worker")}
             </label>
             <textarea
               ref={workerRef}
@@ -376,16 +386,14 @@ export function PromptOverrideDialog(props: PromptOverrideDialogProps) {
             </span>
             {workerEmpty && (
               <p role="alert" className="text-caption leading-4 text-error">
-                A worker needs a system prompt — without it the agent won&apos;t
-                know its role, git rules, or session lifecycle. Use Reset to
-                default to restore the AO prompt.
+                {t("settings.promptOverride.workerEmpty")}
               </p>
             )}
           </div>
 
           <div className="flex flex-col gap-1.5">
             <label className="settings-field-label" htmlFor={orchestratorId}>
-              Orchestrator prompt override
+              {t("settings.promptOverride.orchestrator")}
             </label>
             <textarea
               id={orchestratorId}
@@ -403,9 +411,7 @@ export function PromptOverrideDialog(props: PromptOverrideDialogProps) {
             </span>
             {orchestratorEmpty && (
               <p role="alert" className="text-caption leading-4 text-error">
-                An orchestrator needs a system prompt — without it the agent
-                won&apos;t know its role, git rules, or session lifecycle. Use
-                Reset to default to restore the AO prompt.
+                {t("settings.promptOverride.orchestratorEmpty")}
               </p>
             )}
           </div>
@@ -414,11 +420,13 @@ export function PromptOverrideDialog(props: PromptOverrideDialogProps) {
             <p role="alert" className="text-caption leading-4 text-error">
               {mutation.error instanceof Error
                 ? mutation.error.message
-                : "Save failed"}
+                : t("settings.promptOverride.saveFailed")}
             </p>
           )}
           {savedAt && !mutation.isPending && !mutation.isError && (
-            <p className="text-caption leading-4 text-success">Saved.</p>
+            <p className="text-caption leading-4 text-success">
+              {t("settings.promptOverride.saved")}
+            </p>
           )}
         </div>
 
@@ -427,8 +435,8 @@ export function PromptOverrideDialog(props: PromptOverrideDialogProps) {
             type="button"
             className="settings-footer-button mr-auto"
             disabled={mutation.isPending || query.isLoading}
-            aria-label="Reset to default (restore the hardcoded AO prompt, clears your override)"
-            title="Restore the hardcoded AO prompt (clears your override)"
+            aria-label={t("settings.promptOverride.resetAria")}
+            title={t("settings.promptOverride.resetTitle")}
             onClick={() => {
               // Refill the textareas with the hardcoded baseline, then clear
               // the stored override explicitly. Explicit undefined is passed
@@ -441,7 +449,7 @@ export function PromptOverrideDialog(props: PromptOverrideDialogProps) {
               mutation.mutate({ worker: undefined, orchestrator: undefined });
             }}
           >
-            Reset to default
+            {t("settings.promptOverride.reset")}
           </button>
           {validationError && promptInvalid && (
             <span className="text-caption leading-4 text-error">
@@ -450,7 +458,7 @@ export function PromptOverrideDialog(props: PromptOverrideDialogProps) {
           )}
           <DialogClose asChild>
             <button type="button" className="settings-footer-button">
-              Cancel
+              {t("confirm.cancel")}
             </button>
           </DialogClose>
           <button
@@ -464,9 +472,7 @@ export function PromptOverrideDialog(props: PromptOverrideDialogProps) {
             }
             onClick={() => {
               if (promptInvalid) {
-                setValidationError(
-                  "Worker and orchestrator prompts cannot be empty.",
-                );
+                setValidationError(t("settings.promptOverride.empty"));
                 return;
               }
               setValidationError(null);
@@ -474,7 +480,9 @@ export function PromptOverrideDialog(props: PromptOverrideDialogProps) {
               mutation.mutate(undefined);
             }}
           >
-            {mutation.isPending ? "Saving…" : "Save"}
+            {mutation.isPending
+              ? t("settings.promptOverride.saving")
+              : t("settings.promptOverride.save")}
           </button>
         </div>
       </DialogContent>

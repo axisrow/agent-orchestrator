@@ -506,8 +506,8 @@ function SettingsBody({
 							missingRequiredAgent ? t("settings.project.agentsRequired") : null
 						}
 					/>
-					<ProjectSettingsSection title="Prompt override" grouped>
-						<SettingsLinkRow label="Edit prompt override" onClick={() => setPromptOverrideOpen(true)} />
+					<ProjectSettingsSection title={t("settings.project.promptOverride")} grouped>
+						<SettingsLinkRow label={t("settings.project.editPromptOverride")} onClick={() => setPromptOverrideOpen(true)} />
 					</ProjectSettingsSection>
 					{promptOverrideOpen && (
 						<PromptOverrideDialog

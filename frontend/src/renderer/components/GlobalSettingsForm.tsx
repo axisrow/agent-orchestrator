@@ -35,8 +35,8 @@ export function GlobalSettingsForm({
 			>
 				{(section === "all" || section === "general") && (
 					<>
-						<SettingsSection title="Agent defaults" sectionId="agent-defaults" grouped>
-							<SettingsLinkRow label="Agent defaults" onClick={() => setAgentDefaultsOpen(true)} />
+						<SettingsSection title={t("settings.agentDefaults")} sectionId="agent-defaults" grouped>
+							<SettingsLinkRow label={t("settings.agentDefaults")} onClick={() => setAgentDefaultsOpen(true)} />
 						</SettingsSection>
 						<GeneralSettingsSection
 							onConnectMobile={() => onOpenConnectMobile?.()}
