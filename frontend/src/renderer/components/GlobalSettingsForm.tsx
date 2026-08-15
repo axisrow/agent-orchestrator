@@ -10,80 +10,57 @@ import { UpdatesSection } from "./settings/UpdatesSection";
 export type GlobalSettingsSection = "general" | "updates" | "help" | "all";
 
 export function GlobalSettingsForm({
-  section = "all",
-  onOpenKeyboardShortcuts,
-  onOpenConnectMobile,
+	section = "all",
+	onOpenKeyboardShortcuts,
+	onOpenConnectMobile,
 }: {
-  section?: GlobalSettingsSection;
-  onOpenKeyboardShortcuts?: () => void;
-  onOpenConnectMobile?: () => void;
+	section?: GlobalSettingsSection;
+	onOpenKeyboardShortcuts?: () => void;
+	onOpenConnectMobile?: () => void;
 }) {
-  const { t } = useTranslation();
-  const [reportProblemOpen, setReportProblemOpen] = useState(false);
-  const [agentDefaultsOpen, setAgentDefaultsOpen] = useState(false);
-  // One section per page means the dialog header already names it, so the
-  // page's leading heading would just repeat that title. Only "all" (no
-  // single-page header) shows every section's own heading.
-  const leadingTitleHidden = section !== "all";
+	const { t } = useTranslation();
+	const [reportProblemOpen, setReportProblemOpen] = useState(false);
+	const [agentDefaultsOpen, setAgentDefaultsOpen] = useState(false);
+	// One section per page means the dialog header already names it, so the
+	// page's leading heading would just repeat that title. Only "all" (no
+	// single-page header) shows every section's own heading.
+	const leadingTitleHidden = section !== "all";
 
-  return (
-    <>
-      <div
-        aria-label={t("settings.title")}
-        className="flex w-full flex-col gap-(--size-settings-section-gap)"
-        data-testid="settings-page"
-      >
-        {(section === "all" || section === "general") && (
-          <>
-            <SettingsSection
-              title="Agent defaults"
-              sectionId="agent-defaults"
-              grouped
-            >
-              <SettingsLinkRow
-                label="Agent defaults"
-                onClick={() => setAgentDefaultsOpen(true)}
-              />
-            </SettingsSection>
-            <GeneralSettingsSection
-              onConnectMobile={() => onOpenConnectMobile?.()}
-              titleHidden={leadingTitleHidden}
-            />
-            <SettingsSection title={t("settings.preferences")} grouped>
-              <SettingsLinkRow
-                label={t("settings.keyboardShortcuts")}
-                onClick={() => onOpenKeyboardShortcuts?.()}
-              />
-            </SettingsSection>
-          </>
-        )}
-        {(section === "all" || section === "updates") && (
-          <UpdatesSection titleHidden={leadingTitleHidden} />
-        )}
-        {(section === "all" || section === "help") && (
-          <SettingsSection
-            title={t("settings.getHelp")}
-            titleHidden={leadingTitleHidden}
-            grouped
-          >
-            <SettingsLinkRow
-              label={t("settings.reportProblem")}
-              onClick={() => setReportProblemOpen(true)}
-            />
-          </SettingsSection>
-        )}
-      </div>
-      <ReportProblemDialog
-        open={reportProblemOpen}
-        onOpenChange={setReportProblemOpen}
-      />
-      {agentDefaultsOpen && (
-        <PromptOverrideDialog
-          open={agentDefaultsOpen}
-          onOpenChange={setAgentDefaultsOpen}
-          scope="user"
-        />
-      )}
-    </>
-  );
+	return (
+		<>
+			<div
+				aria-label={t("settings.title")}
+				className="flex w-full flex-col gap-(--size-settings-section-gap)"
+				data-testid="settings-page"
+			>
+				{(section === "all" || section === "general") && (
+					<>
+						<SettingsSection title="Agent defaults" sectionId="agent-defaults" grouped>
+							<SettingsLinkRow label="Agent defaults" onClick={() => setAgentDefaultsOpen(true)} />
+						</SettingsSection>
+						<GeneralSettingsSection
+							onConnectMobile={() => onOpenConnectMobile?.()}
+							titleHidden={leadingTitleHidden}
+						/>
+						<SettingsSection title={t("settings.preferences")} grouped>
+							<SettingsLinkRow
+								label={t("settings.keyboardShortcuts")}
+								onClick={() => onOpenKeyboardShortcuts?.()}
+							/>
+						</SettingsSection>
+					</>
+				)}
+				{(section === "all" || section === "updates") && <UpdatesSection titleHidden={leadingTitleHidden} />}
+				{(section === "all" || section === "help") && (
+					<SettingsSection title={t("settings.getHelp")} titleHidden={leadingTitleHidden} grouped>
+						<SettingsLinkRow label={t("settings.reportProblem")} onClick={() => setReportProblemOpen(true)} />
+					</SettingsSection>
+				)}
+			</div>
+			<ReportProblemDialog open={reportProblemOpen} onOpenChange={setReportProblemOpen} />
+			{agentDefaultsOpen && (
+				<PromptOverrideDialog open={agentDefaultsOpen} onOpenChange={setAgentDefaultsOpen} scope="user" />
+			)}
+		</>
+	);
 }
