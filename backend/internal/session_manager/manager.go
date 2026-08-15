@@ -341,14 +341,14 @@ type Store interface {
 	DeleteSessionWorktrees(ctx context.Context, id domain.SessionID) error
 }
 
-// Manager coordinates internal session spawn, restore, kill, and cleanup over
-// the outbound ports. User-facing read-model assembly lives in the service package.
 // UserConfigSource is the narrow read surface for global prompt overrides.
 // A nil source preserves the historical hardcoded baseline.
 type UserConfigSource interface {
 	GetUserConfig(ctx context.Context) (domain.AgentConfig, bool, error)
 }
 
+// Manager coordinates internal session spawn, restore, kill, and cleanup over
+// the outbound ports. User-facing read-model assembly lives in the service package.
 type Manager struct {
 	runtime   runtimeController
 	agents    ports.AgentResolver
