@@ -285,3 +285,69 @@ INSERT INTO projects (
 		}
 	}
 }
+
+// TestSessionKillSucceedsOnBurnedVersion96 reproduces a field profile where an
+// earlier build recorded goose version 96 as applied under a different
+// filename (0096_normalize_activity_last_at.sql or 0096_add_user_config.sql,
+// both of which occupied version 96 before a later rebase renumbered them and
+// 0096_session_worktree_base_ref.sql took the number). That earlier build's
+// effects are already present from their own current-numbered migrations, but
+// session_worktrees.base_ref never gets added: goose sees version 96 as
+// already applied and skips the real 0096 file entirely. Every session kill
+// or worktree read then 500s with "no such column: base_ref" (found live in
+// axisrow/agent-orchestrator#30, worker sessions hhru-112..116) instead of
+// tearing the session down.
+func TestSessionKillSucceedsOnBurnedVersion96(t *testing.T) {
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(t.TempDir(), "ao.db")+pragmas)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	upTo(t, db, 95) // session_worktrees exists but lacks base_ref
+	if _, err := db.Exec(
+		`INSERT INTO goose_db_version (version_id, is_applied) VALUES (96, 1)`,
+	); err != nil {
+		t.Fatalf("seed burned version 96: %v", err)
+	}
+
+	if err := migrate(db); err != nil {
+		t.Fatalf("migrate burned profile: %v", err)
+	}
+
+	ctx := t.Context()
+	store := sqlitestore.NewStore(db, db)
+	if _, err := db.Exec(`
+INSERT INTO projects (
+	id, path, repo_origin_url, display_name, registered_at, config, kind
+) VALUES (?, ?, ?, ?, ?, ?, ?)
+`,
+		"hhru",
+		"/src/hhru",
+		"https://example.com/hhru.git",
+		"Hhru",
+		"2026-08-15T00:00:00Z",
+		`{"worker":{"agent":"claude-code"}}`,
+		"single_repo",
+	); err != nil {
+		t.Fatalf("seed project: %v", err)
+	}
+	rec := domain.SessionRecord{
+		ProjectID: "hhru",
+		Kind:      domain.KindWorker,
+		Harness:   domain.HarnessClaudeCode,
+		Activity:  domain.Activity{State: domain.ActivityActive},
+		Metadata: domain.SessionMetadata{
+			Branch:        "ao/hhru-112/root",
+			WorkspacePath: "/src/hhru/.ao/data/worktrees/hhru/hhru-112",
+		},
+	}
+	created, err := store.CreateSession(ctx, rec)
+	if err != nil {
+		t.Fatalf("create session on repaired schema: %v", err)
+	}
+
+	if _, err := store.ListSessionWorktrees(ctx, created.ID); err != nil {
+		t.Fatalf("list session worktrees on burned version 96: %v", err)
+	}
+}
