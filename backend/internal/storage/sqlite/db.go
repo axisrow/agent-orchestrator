@@ -1107,6 +1107,13 @@ BEGIN
 		addDDL: `ALTER TABLE conversation_turns ADD COLUMN promotion_started_at TIMESTAMP`},
 	{version: 89, table: "conversation_turns", column: "promoted_to_turn_id",
 		addDDL: `ALTER TABLE conversation_turns ADD COLUMN promoted_to_turn_id TEXT REFERENCES conversation_turns(id) ON DELETE SET NULL`},
+	// 0096_session_worktree_base_ref.sql. Version 96 was previously occupied by
+	// 0096_normalize_activity_last_at.sql and 0096_add_user_config.sql before a
+	// rebase renumbered them; profiles that applied one of those under number 96
+	// have it recorded as applied and silently skip the real base_ref migration.
+	// Every workspace-worktree read (including session kill) then 500s.
+	{version: 96, table: "session_worktrees", column: "base_ref",
+		addDDL: `ALTER TABLE session_worktrees ADD COLUMN base_ref TEXT NOT NULL DEFAULT ''`},
 }
 
 // reconcileSchema verifies that the columns in schemaRepairs physically exist
