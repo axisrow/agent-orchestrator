@@ -7,7 +7,8 @@ import (
 
 func TestMigration0098LeavesLegacyNativeIdentitiesUnverified(t *testing.T) {
 	db := openTestDB(t)
-	upTo(t, db, 97)
+	version := migrationVersion(t, "session_native_identity_generation")
+	upTo(t, db, version-1)
 
 	now := time.Date(2026, time.August, 14, 12, 0, 0, 0, time.UTC)
 	mustExec(t, db, `
@@ -29,7 +30,7 @@ INSERT INTO sessions (
 );
 `, now, now, now, now, now, now, now)
 
-	upTo(t, db, 98)
+	upTo(t, db, version)
 
 	rows, err := db.Query(`
 SELECT id, agent_session_id_launch_id
