@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -39,7 +40,6 @@ type restartOutcome struct {
 const (
 	restartStatusRestarted = "restarted"
 	restartStatusPreserved = "restarted (workspace preserved)"
-	restartStatusSkipped   = "skipped"
 	restartStatusFailed    = "failed"
 	restartStatusPlanned   = "planned"
 )
@@ -49,7 +49,6 @@ type restartAllOutput struct {
 	Meta struct {
 		Total     int `json:"total"`
 		Restarted int `json:"restarted"`
-		Skipped   int `json:"skipped"`
 		Failed    int `json:"failed"`
 	} `json:"meta"`
 }
@@ -71,7 +70,13 @@ Workers are restarted by default. Orchestrators are skipped unless
 killing an orchestrator interrupts the work it is coordinating.
 
 The invoking session is always excluded: killing it would terminate this very
-process mid-run. It is detected through AO_SESSION_ID.`,
+process mid-run. It is detected through AO_SESSION_ID, or --self when unset.
+A mutating run (i.e. not --dry-run) refuses to proceed if neither is available —
+pass --self - to explicitly acknowledge that no session needs protecting.
+
+A mutating run without --yes prompts for confirmation, including under --json:
+JSON output does not imply non-interactive authorization, so a non-interactive
+--json call must also pass --yes.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return ctx.restartAllSessions(cmd.Context(), cmd, opts)
@@ -87,7 +92,8 @@ process mid-run. It is detected through AO_SESSION_ID.`,
 	flags.StringSliceVar(&opts.exclude, "exclude", nil,
 		"Session ids to leave running (repeatable, or comma-separated)")
 	flags.StringVar(&opts.self, "self", "",
-		"Id of the session running this command; excluded from the restart (default: AO_SESSION_ID)")
+		"Id of the session running this command; excluded from the restart (default: AO_SESSION_ID). "+
+			"Pass - to explicitly acknowledge that no session needs protecting (e.g. run from outside AO)")
 	flags.BoolVar(&opts.dryRun, "dry-run", false, "List what would be restarted and exit")
 	flags.BoolVarP(&opts.yes, "yes", "y", false, "Do not ask for confirmation")
 	flags.DurationVar(&opts.settleDelay, "settle-delay", 2*time.Second,
@@ -115,19 +121,36 @@ func (c *commandContext) restartAllSessions(ctx context.Context, cmd *cobra.Comm
 	}
 
 	// Without a known self-id we cannot guarantee this very session stays out of
-	// the list, so make that explicit rather than discovering it by being killed.
-	if self == "" && !opts.json {
-		_, _ = fmt.Fprintln(cmd.ErrOrStderr(),
-			"warning: AO_SESSION_ID is not set, so the calling session cannot be identified.\n"+
-				"         If you are running inside an AO session, pass --self <id> (or --exclude <id>)\n"+
-				"         to keep it from being killed mid-run.")
+	// the list. Warn about it for a dry run (nothing is at stake yet), but for a
+	// mutating run fail closed instead of silently risking a self-kill — this is
+	// the one case a fail-open warning cannot protect against under --json, where
+	// there is no interactive confirmation step to catch it either.
+	if self == "" {
+		if opts.dryRun {
+			_, _ = fmt.Fprintln(cmd.ErrOrStderr(),
+				"warning: AO_SESSION_ID is not set, so the calling session cannot be identified.\n"+
+					"         If you are running inside an AO session, pass --self <id> (or --exclude <id>)\n"+
+					"         to keep it from being killed mid-run.")
+		} else {
+			return usageError{errors.New(
+				"cannot identify the calling session: AO_SESSION_ID is not set and --self was not passed.\n" +
+					"If you are running this from inside an AO session, pass --self <id> (or set AO_SESSION_ID).\n" +
+					"If you are running it from an external shell where no session needs protecting, pass --self - to acknowledge that explicitly")}
+		}
 	}
 
 	if opts.dryRun {
 		return writeRestartPlan(cmd, targets, opts.json)
 	}
 
-	if !opts.yes && !opts.json {
+	// Confirmation is gated on --yes alone, matching every other destructive
+	// command in this package (project rm, session cleanup) — --json changes the
+	// output format, not whether the operation is authorized. A non-interactive
+	// --json caller must still pass --yes explicitly.
+	if !opts.yes {
+		if opts.json {
+			return usageError{errors.New("--json requires --yes for a mutating restart-all run (no interactive confirmation is possible)")}
+		}
 		ok, err := confirmRestart(cmd, targets)
 		if err != nil {
 			return err
@@ -162,12 +185,14 @@ func (c *commandContext) restartAllTargets(ctx context.Context, opts restartAllO
 		}
 	}
 	// Never restart the session this command runs in: the kill would take down
-	// the very process issuing the restore that follows it.
+	// the very process issuing the restore that follows it. "-" is the explicit
+	// "no session to protect, I'm running this from outside AO" acknowledgment;
+	// it counts as identified but excludes nothing.
 	self := strings.TrimSpace(opts.self)
 	if self == "" {
 		self = strings.TrimSpace(os.Getenv("AO_SESSION_ID"))
 	}
-	if self != "" {
+	if self != "" && self != "-" {
 		excluded[self] = struct{}{}
 	}
 
@@ -237,6 +262,18 @@ func (c *commandContext) runRestartAll(ctx context.Context, cmd *cobra.Command, 
 				if !opts.json {
 					_, _ = fmt.Fprintln(progress, "interrupted")
 				}
+				// The remaining targets were never reached — record that
+				// explicitly instead of dropping them from the output, so a
+				// caller can tell which sessions still need a manual restore.
+				for _, remaining := range targets[i+1:] {
+					results = append(results, restartOutcome{
+						SessionID: remaining.ID,
+						ProjectID: remaining.ProjectID,
+						Kind:      remaining.Kind,
+						Status:    restartStatusFailed,
+						Detail:    "interrupted before this session was reached",
+					})
+				}
 				return results
 			}
 		}
@@ -304,15 +341,13 @@ func writeRestartPlan(cmd *cobra.Command, targets []sessionDTO, asJSON bool) err
 }
 
 func writeRestartResults(cmd *cobra.Command, results []restartOutcome, asJSON bool) error {
-	var restarted, failed, skipped int
+	var restarted, failed int
 	for _, r := range results {
 		switch r.Status {
 		case restartStatusRestarted, restartStatusPreserved:
 			restarted++
 		case restartStatusFailed:
 			failed++
-		case restartStatusSkipped:
-			skipped++
 		}
 	}
 
@@ -323,7 +358,6 @@ func writeRestartResults(cmd *cobra.Command, results []restartOutcome, asJSON bo
 		}
 		out.Meta.Total = len(results)
 		out.Meta.Restarted = restarted
-		out.Meta.Skipped = skipped
 		out.Meta.Failed = failed
 		if err := writeJSON(cmd.OutOrStdout(), out); err != nil {
 			return err
@@ -371,14 +405,16 @@ func confirmRestart(cmd *cobra.Command, targets []sessionDTO) (bool, error) {
 
 	// A bare newline or a closed stdin is a decline, not a failure: the prompt
 	// defaults to "no", so treat an empty read as such and report anything else.
-	var answer string
-	if _, err := fmt.Fscanln(cmd.InOrStdin(), &answer); err != nil {
-		if errors.Is(err, io.EOF) || strings.Contains(err.Error(), "unexpected newline") {
+	// Same reader-based pattern as confirmSessionCleanup/confirmProjectRemoval.
+	reader := bufio.NewReader(cmd.InOrStdin())
+	line, err := reader.ReadString('\n')
+	if err != nil && line == "" {
+		if errors.Is(err, io.EOF) {
 			return false, nil
 		}
 		return false, err
 	}
-	answer = strings.ToLower(strings.TrimSpace(answer))
+	answer := strings.ToLower(strings.TrimSpace(line))
 	return answer == "y" || answer == "yes", nil
 }
 
