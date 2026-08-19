@@ -435,3 +435,36 @@ func TestRestartAll_InterruptionAccountsForRemainingTargets(t *testing.T) {
 		}
 	}
 }
+
+// TestRestartAll_ExcludesExitedSessions: a session with isTerminated=false but
+// activity.state="exited" is a real, reachable state (the agent process already
+// finished, but the session record and its transcript are still live — this is
+// exactly what ResumeAgent exists for). restart-all's kill+restore round trip
+// must not touch it: killing it would mark it terminated, and the subsequent
+// restore would relaunch the agent from its last checkpoint/prompt, silently
+// duplicating work the agent already completed.
+func TestRestartAll_ExcludesExitedSessions(t *testing.T) {
+	cfg := setConfigEnv(t)
+	t.Setenv("AO_SESSION_ID", "")
+	listBody := `{"sessions":[
+		{"id":"demo-1","projectId":"demo","kind":"worker","isTerminated":false,"activity":{"state":"working"}},
+		{"id":"demo-exited","projectId":"demo","kind":"worker","isTerminated":false,"activity":{"state":"exited"}}
+	]}`
+	srv, log := restartAllServer(t, listBody)
+	writeRunFileFor(t, cfg, srv)
+
+	out, errOut, err := executeCLI(t, Deps{
+		ProcessAlive: func(int) bool { return true },
+	}, "session", "restart-all", "--self", "-", "--yes", "--settle-delay", "0")
+	if err != nil {
+		t.Fatalf("restart-all failed: %v\nstderr=%s", err, errOut)
+	}
+	if !strings.Contains(out, "restarted 1 of 1 session") {
+		t.Fatalf("unexpected output (expected exactly 1 session restarted):\n%s", out)
+	}
+	for _, req := range log.all() {
+		if strings.Contains(req, "demo-exited") {
+			t.Fatalf("exited session demo-exited must not be killed/restored, got request %q\nrequests=%#v", req, log.all())
+		}
+	}
+}

@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 )
 
 // restartAllOptions collects the flags of `ao session restart-all`.
@@ -199,6 +201,14 @@ func (c *commandContext) restartAllTargets(ctx context.Context, opts restartAllO
 	targets := make([]sessionDTO, 0, len(res.Sessions))
 	for _, sess := range res.Sessions {
 		if sess.IsTerminated {
+			continue
+		}
+		// A session can be non-terminated but already exited (the agent process
+		// finished; the session record and transcript are still live — this is
+		// exactly what ResumeAgent exists for). Killing it would mark it
+		// terminated, and the subsequent restore would relaunch the agent from
+		// its last checkpoint, silently duplicating work it already completed.
+		if sess.Activity.State == string(domain.ActivityExited) {
 			continue
 		}
 		if _, skip := excluded[sess.ID]; skip {
