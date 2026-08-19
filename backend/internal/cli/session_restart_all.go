@@ -329,7 +329,7 @@ func writeRestartPlan(cmd *cobra.Command, targets []sessionDTO, asJSON bool) err
 	}
 
 	w := cmd.OutOrStdout()
-	if _, err := fmt.Fprintf(w, "would restart %s:\n", pluralSessions(len(targets))); err != nil {
+	if _, err := fmt.Fprintf(w, "would restart %d session%s:\n", len(targets), pluralS(len(targets))); err != nil {
 		return err
 	}
 	for _, sess := range targets {
@@ -369,7 +369,7 @@ func writeRestartResults(cmd *cobra.Command, results []restartOutcome, asJSON bo
 	}
 
 	w := cmd.OutOrStdout()
-	if _, err := fmt.Fprintf(w, "restarted %d of %s\n", restarted, pluralSessions(len(results))); err != nil {
+	if _, err := fmt.Fprintf(w, "restarted %d of %d session%s\n", restarted, len(results), pluralS(len(results))); err != nil {
 		return err
 	}
 	if failed == 0 {
@@ -391,7 +391,7 @@ func writeRestartResults(cmd *cobra.Command, results []restartOutcome, asJSON bo
 
 func confirmRestart(cmd *cobra.Command, targets []sessionDTO) (bool, error) {
 	w := cmd.OutOrStdout()
-	if _, err := fmt.Fprintf(w, "about to kill and restore %s:\n", pluralSessions(len(targets))); err != nil {
+	if _, err := fmt.Fprintf(w, "about to kill and restore %d session%s:\n", len(targets), pluralS(len(targets))); err != nil {
 		return false, err
 	}
 	for _, sess := range targets {
@@ -416,11 +416,4 @@ func confirmRestart(cmd *cobra.Command, targets []sessionDTO) (bool, error) {
 	}
 	answer := strings.ToLower(strings.TrimSpace(line))
 	return answer == "y" || answer == "yes", nil
-}
-
-func pluralSessions(n int) string {
-	if n == 1 {
-		return "1 session"
-	}
-	return fmt.Sprintf("%d sessions", n)
 }
