@@ -23,6 +23,12 @@ func restartAllServer(t *testing.T, listBody string) (*httptest.Server, *session
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/sessions":
 			_, _ = io.WriteString(w, listBody)
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/sessions/"):
+			// The restart loop re-checks each target's current state right
+			// before killing it; report it still "working" (not exited) so
+			// tests that don't care about the mid-run-exit race keep passing.
+			id := strings.TrimPrefix(r.URL.Path, "/api/v1/sessions/")
+			_, _ = io.WriteString(w, `{"session":{"id":"`+id+`","projectId":"demo","activity":{"state":"working"}}}`)
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/kill"):
 			id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/sessions/"), "/kill")
 			_, _ = io.WriteString(w, `{"ok":true,"sessionId":"`+id+`","freed":true}`)
@@ -62,8 +68,10 @@ func TestRestartAll_SkipsOrchestratorsByDefault(t *testing.T) {
 	}
 	want := []string{
 		"GET /api/v1/sessions?active=true",
+		"GET /api/v1/sessions/demo-1",
 		"POST /api/v1/sessions/demo-1/kill",
 		"POST /api/v1/sessions/demo-1/restore",
+		"GET /api/v1/sessions/demo-3",
 		"POST /api/v1/sessions/demo-3/kill",
 		"POST /api/v1/sessions/demo-3/restore",
 	}
@@ -87,6 +95,7 @@ func TestRestartAll_OrchestratorsOnly(t *testing.T) {
 	}
 	want := []string{
 		"GET /api/v1/sessions?active=true",
+		"GET /api/v1/sessions/demo-2",
 		"POST /api/v1/sessions/demo-2/kill",
 		"POST /api/v1/sessions/demo-2/restore",
 	}
@@ -274,8 +283,10 @@ func TestRestartAll_SelfDashAcknowledgesNoSessionToProtect(t *testing.T) {
 	}
 	want := []string{
 		"GET /api/v1/sessions?active=true",
+		"GET /api/v1/sessions/demo-1",
 		"POST /api/v1/sessions/demo-1/kill",
 		"POST /api/v1/sessions/demo-1/restore",
+		"GET /api/v1/sessions/demo-3",
 		"POST /api/v1/sessions/demo-3/kill",
 		"POST /api/v1/sessions/demo-3/restore",
 	}
@@ -336,7 +347,11 @@ func TestRestartAll_UnidentifiedSelfIsExcludedFromTargets(t *testing.T) {
 // meta.skipped counter that can never be non-zero — runRestartAll never produces
 // a "skipped" outcome, so the field was dead weight that misleads callers into
 // thinking partial-skip reporting exists.
-func TestRestartAll_JSONOutputHasNoSkippedField(t *testing.T) {
+// TestRestartAll_JSONOutputSkippedFieldReflectsRealSkips: meta.skipped is
+// produced by the exited-session re-check (see runRestartAll), so it must be 0
+// when nothing was skipped and must count real skips — it is no longer the
+// dead/always-zero field it was before that re-check existed.
+func TestRestartAll_JSONOutputSkippedFieldReflectsRealSkips(t *testing.T) {
 	cfg := setConfigEnv(t)
 	t.Setenv("AO_SESSION_ID", "")
 	srv, _ := restartAllServer(t, restartAllListBody)
@@ -349,16 +364,12 @@ func TestRestartAll_JSONOutputHasNoSkippedField(t *testing.T) {
 		t.Fatalf("restart-all failed: %v\nstderr=%s", err, errOut)
 	}
 
-	var raw map[string]interface{}
-	if err := json.Unmarshal([]byte(out), &raw); err != nil {
+	var got restartAllOutput
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
 	}
-	meta, ok := raw["meta"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("missing meta object in output: %s", out)
-	}
-	if _, present := meta["skipped"]; present {
-		t.Fatalf("meta.skipped must not be present (dead field, never non-zero); got meta=%+v", meta)
+	if got.Meta.Skipped != 0 {
+		t.Fatalf("meta.skipped = %d, want 0 (nothing exited mid-run in this fixture)", got.Meta.Skipped)
 	}
 }
 
@@ -376,6 +387,9 @@ func TestRestartAll_InterruptionAccountsForRemainingTargets(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/sessions/"):
+			id := strings.TrimPrefix(r.URL.Path, "/api/v1/sessions/")
+			_, _ = io.WriteString(w, `{"session":{"id":"`+id+`","projectId":"demo","activity":{"state":"working"}}}`)
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/kill"):
 			id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/sessions/"), "/kill")
 			killCount++
@@ -465,6 +479,65 @@ func TestRestartAll_ExcludesExitedSessions(t *testing.T) {
 	for _, req := range log.all() {
 		if strings.Contains(req, "demo-exited") {
 			t.Fatalf("exited session demo-exited must not be killed/restored, got request %q\nrequests=%#v", req, log.all())
+		}
+	}
+}
+
+// TestRestartAll_ReExcludesSessionThatExitedDuringTheRun: the initial exited-state
+// filter runs once, at selection time. But the confirmation prompt and the serial
+// per-session kill loop (each waiting on the prior session's settle-delay and
+// restore round trip) can take a while, during which a still-selected session can
+// legitimately finish its task and transition to "exited". Right before killing
+// each target, the loop must re-check its current state and skip it if it has
+// exited in the meantime — otherwise the round-3 fix only closes the widest part
+// of the window, not the one inside its own loop.
+func TestRestartAll_ReExcludesSessionThatExitedDuringTheRun(t *testing.T) {
+	cfg := setConfigEnv(t)
+	t.Setenv("AO_SESSION_ID", "")
+
+	// demo-2 is "working" in the initial list (so it's selected), but by the time
+	// its turn comes up in the loop, a GET on its individual record reports
+	// "exited" — simulating it finishing mid-run.
+	log := &sessionRequestLog{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.append(r)
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/sessions":
+			_, _ = io.WriteString(w, `{"sessions":[
+				{"id":"demo-1","projectId":"demo","kind":"worker","isTerminated":false,"activity":{"state":"working"}},
+				{"id":"demo-2","projectId":"demo","kind":"worker","isTerminated":false,"activity":{"state":"working"}}
+			]}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/sessions/demo-1":
+			_, _ = io.WriteString(w, `{"session":{"id":"demo-1","projectId":"demo","kind":"worker","isTerminated":false,"activity":{"state":"working"}}}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/sessions/demo-2":
+			// By the time the loop reaches demo-2, it has finished and exited.
+			_, _ = io.WriteString(w, `{"session":{"id":"demo-2","projectId":"demo","kind":"worker","isTerminated":false,"activity":{"state":"exited"}}}`)
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/kill"):
+			id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/sessions/"), "/kill")
+			_, _ = io.WriteString(w, `{"ok":true,"sessionId":"`+id+`","freed":true}`)
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/restore"):
+			id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/sessions/"), "/restore")
+			_, _ = io.WriteString(w, `{"ok":true,"sessionId":"`+id+`","session":{"id":"`+id+`","projectId":"demo"}}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	writeRunFileFor(t, cfg, srv)
+
+	out, errOut, err := executeCLI(t, Deps{
+		ProcessAlive: func(int) bool { return true },
+	}, "session", "restart-all", "--self", "-", "--yes", "--settle-delay", "0")
+	if err != nil {
+		t.Fatalf("restart-all failed: %v\nstderr=%s", err, errOut)
+	}
+	if !strings.Contains(out, "restarted 1 of 2 session") {
+		t.Fatalf("unexpected output (expected exactly 1 of 2 sessions restarted):\n%s", out)
+	}
+	for _, req := range log.all() {
+		if strings.Contains(req, "POST /api/v1/sessions/demo-2/kill") || strings.Contains(req, "POST /api/v1/sessions/demo-2/restore") {
+			t.Fatalf("demo-2 exited mid-run and must not be killed/restored, got request %q\nrequests=%#v", req, log.all())
 		}
 	}
 }

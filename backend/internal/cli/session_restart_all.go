@@ -40,10 +40,11 @@ type restartOutcome struct {
 }
 
 const (
-	restartStatusRestarted = "restarted"
-	restartStatusPreserved = "restarted (workspace preserved)"
-	restartStatusFailed    = "failed"
-	restartStatusPlanned   = "planned"
+	restartStatusRestarted     = "restarted"
+	restartStatusPreserved     = "restarted (workspace preserved)"
+	restartStatusFailed        = "failed"
+	restartStatusPlanned       = "planned"
+	restartStatusSkippedExited = "skipped (exited before restart)"
 )
 
 type restartAllOutput struct {
@@ -51,6 +52,7 @@ type restartAllOutput struct {
 	Meta struct {
 		Total     int `json:"total"`
 		Restarted int `json:"restarted"`
+		Skipped   int `json:"skipped"`
 		Failed    int `json:"failed"`
 	} `json:"meta"`
 }
@@ -70,6 +72,10 @@ at daemon boot (native --resume where a transcript exists, so history is kept).
 Workers are restarted by default. Orchestrators are skipped unless
 --include-orchestrators (both) or --orchestrators-only (just them) is passed, since
 killing an orchestrator interrupts the work it is coordinating.
+
+Sessions whose agent has already finished (activity state "exited") are skipped
+too, both at selection time and again right before each kill — restarting a
+finished session would relaunch its agent and duplicate work it already did.
 
 The invoking session is always excluded: killing it would terminate this very
 process mid-run. It is detected through AO_SESSION_ID, or --self when unset.
@@ -249,6 +255,33 @@ func (c *commandContext) runRestartAll(ctx context.Context, cmd *cobra.Command, 
 			_, _ = fmt.Fprintf(progress, "[%d/%d] %s ... ", i+1, len(targets), sess.ID)
 		}
 
+		// The exited-state filter in restartAllTargets only ran once, at
+		// selection time. The confirmation prompt and every earlier target's
+		// settle-delay + restore round trip can add up to a real delay before
+		// this target's turn — long enough for it to legitimately finish and
+		// exit in the meantime. Re-check its current state right before killing
+		// it, closing most of that window (short of a fully atomic server-side
+		// guard, which is out of scope for this CLI-only command).
+		current, err := c.fetchSessionByID(ctx, sess.ID)
+		if err != nil {
+			outcome.Status = restartStatusFailed
+			outcome.Detail = "recheck: " + err.Error()
+			results = append(results, outcome)
+			if !opts.json {
+				_, _ = fmt.Fprintln(progress, "failed (recheck)")
+			}
+			continue
+		}
+		if current.Activity.State == string(domain.ActivityExited) {
+			outcome.Status = restartStatusSkippedExited
+			outcome.Detail = "exited before this session's turn in the restart loop"
+			results = append(results, outcome)
+			if !opts.json {
+				_, _ = fmt.Fprintln(progress, "skipped (exited)")
+			}
+			continue
+		}
+
 		preserved, err := c.restartKill(ctx, sess.ID)
 		if err != nil {
 			outcome.Status = restartStatusFailed
@@ -310,6 +343,16 @@ func (c *commandContext) runRestartAll(ctx context.Context, cmd *cobra.Command, 
 	return results
 }
 
+// fetchSessionByID re-fetches a single session's current record, used to
+// re-check its activity state right before killing it (see runRestartAll).
+func (c *commandContext) fetchSessionByID(ctx context.Context, id string) (sessionDTO, error) {
+	var res sessionResponse
+	if err := c.getJSON(ctx, "sessions/"+url.PathEscape(id), &res); err != nil {
+		return sessionDTO{}, err
+	}
+	return res.Session, nil
+}
+
 func (c *commandContext) restartKill(ctx context.Context, id string) (preserved bool, err error) {
 	var res killSessionResponse
 	if err := c.postJSON(ctx, "sessions/"+url.PathEscape(id)+"/kill", struct{}{}, &res); err != nil {
@@ -351,11 +394,13 @@ func writeRestartPlan(cmd *cobra.Command, targets []sessionDTO, asJSON bool) err
 }
 
 func writeRestartResults(cmd *cobra.Command, results []restartOutcome, asJSON bool) error {
-	var restarted, failed int
+	var restarted, skipped, failed int
 	for _, r := range results {
 		switch r.Status {
 		case restartStatusRestarted, restartStatusPreserved:
 			restarted++
+		case restartStatusSkippedExited:
+			skipped++
 		case restartStatusFailed:
 			failed++
 		}
@@ -368,6 +413,7 @@ func writeRestartResults(cmd *cobra.Command, results []restartOutcome, asJSON bo
 		}
 		out.Meta.Total = len(results)
 		out.Meta.Restarted = restarted
+		out.Meta.Skipped = skipped
 		out.Meta.Failed = failed
 		if err := writeJSON(cmd.OutOrStdout(), out); err != nil {
 			return err
@@ -381,6 +427,11 @@ func writeRestartResults(cmd *cobra.Command, results []restartOutcome, asJSON bo
 	w := cmd.OutOrStdout()
 	if _, err := fmt.Fprintf(w, "restarted %d of %d session%s\n", restarted, len(results), pluralS(len(results))); err != nil {
 		return err
+	}
+	if skipped > 0 {
+		if _, err := fmt.Fprintf(w, "skipped %d session%s (exited before their turn in the restart loop)\n", skipped, pluralS(skipped)); err != nil {
+			return err
+		}
 	}
 	if failed == 0 {
 		return nil
