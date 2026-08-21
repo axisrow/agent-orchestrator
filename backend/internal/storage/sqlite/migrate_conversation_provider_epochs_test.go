@@ -5,7 +5,10 @@ import (
 	"time"
 )
 
-func TestMigration0101AllowsRepeatedProviderOwnershipEpochs(t *testing.T) {
+// The provider-ownership-epochs migration is fork-local and lives in the
+// reserved 9000+ range; pin the test to that version rather than a literal so
+// it cannot drift again if the number ever moves.
+func TestMigrationProviderOwnershipEpochsAllowsRepeatedEpochs(t *testing.T) {
 	db := openTestDB(t)
 	upTo(t, db, 99)
 
@@ -33,7 +36,7 @@ INSERT INTO conversation_branches (
     'conversation-1:root', 'conversation-1', 'provider-epochs-1', '', 0, ?
 );`, now, now, now, now, now, now)
 
-	upTo(t, db, 101)
+	upTo(t, db, forkProviderEpochsVersion)
 
 	// The session-owned trigger from 0087 must survive the table rebuild.
 	mustExec(t, db, `
