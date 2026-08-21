@@ -59,6 +59,7 @@ import type { UpdateStatus } from "../../main/update-settings";
 import {
 	hasConfiguredOrchestratorAgent,
 	newestActiveOrchestrator,
+	newestOrchestrator,
 	type WorkspaceSession,
 	type WorkspaceSummary,
 	sortedWorkerSessions,
@@ -1064,6 +1065,7 @@ const ProjectItemContent = memo(function ProjectItemContent({
 		hasInteractedWithDisclosure.current = true;
 		onToggle();
 	};
+	const orchestratorStatus = newestOrchestrator(workspace.sessions);
 
 	// Mirrors ShellTopbar's launcher: attach to the running orchestrator, or
 	// spawn one via the daemon and follow it once the workspace refetches.
@@ -1288,7 +1290,7 @@ const ProjectItemContent = memo(function ProjectItemContent({
 							{/* Per-project actions: orchestrator and kebab menu. Inside the scaled visual
 		row, but outside its navigation surface so their own presses stay independent.
 		Always visible (not hover-gated) to avoid CSS :hover group propagation in Chromium. */}
-							<div
+						<div
 								className={cn(
 									"sidebar-expanded-chrome absolute top-0 right-0.5 z-chrome flex h-control-form items-center gap-px",
 									"group-data-[collapsible=icon]:hidden",
@@ -1311,11 +1313,16 @@ const ProjectItemContent = memo(function ProjectItemContent({
 															name: workspace.name,
 														})
 											}
-											className={cn(HOVER_ACTION_CLASS, orchestratorActive && "text-foreground")}
+											className={cn(
+												HOVER_ACTION_CLASS,
+												orchestratorStatus && "w-7 gap-0.5",
+												orchestratorActive && "text-foreground",
+											)}
 											disabled={isSpawning || isProjectRestarting}
 											onClick={() => void openOrchestrator()}
 											type="button"
 										>
+											{orchestratorStatus ? <SessionStatusDot session={orchestratorStatus} /> : null}
 											<OrchestratorIcon aria-hidden="true" strokeWidth={orchestratorActive ? 2.5 : 2} />
 										</button>
 									</TooltipTrigger>
