@@ -1018,6 +1018,12 @@ var schemaRepairs = []struct {
 	addDDL  string
 	postAdd []string
 }{
+	// 0032_pr_state_changed_at.sql. Version 32 was held by
+	// 0032_add_user_config.sql before a rebase renumbered it, so installs that
+	// applied user_config under 32 skip this column and every PR state read
+	// referencing it fails.
+	{version: 32, table: "pr", column: "state_changed_at",
+		addDDL: `ALTER TABLE pr ADD COLUMN state_changed_at TIMESTAMP`},
 	// 0040_add_session_diff_base.sql
 	{version: 40, table: "sessions", column: "diff_base_sha",
 		addDDL: `ALTER TABLE sessions ADD COLUMN diff_base_sha TEXT NOT NULL DEFAULT ''`},
@@ -1114,6 +1120,13 @@ BEGIN
 	// Every workspace-worktree read (including session kill) then 500s.
 	{version: 96, table: "session_worktrees", column: "base_ref",
 		addDDL: `ALTER TABLE session_worktrees ADD COLUMN base_ref TEXT NOT NULL DEFAULT ''`},
+	// 0100_session_model.sql. Same renumbering hazard as version 96 above:
+	// 0100_add_user_config.sql held this number first, so profiles that applied
+	// it have 100 recorded and skip the real session_model migration. The
+	// generated session queries select model, so every session list — including
+	// the boot-time reconcile — then dies with "no such column: model".
+	{version: 100, table: "sessions", column: "model",
+		addDDL: `ALTER TABLE sessions ADD COLUMN model TEXT NOT NULL DEFAULT ''`},
 }
 
 // reconcileSchema verifies that the columns in schemaRepairs physically exist
