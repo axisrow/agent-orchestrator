@@ -104,19 +104,13 @@ var shippedMigrations = map[int64]string{
 	98:  "0098_session_native_identity_generation.sql",
 	99:  "0099_interface_transition_notice_acknowledgement.sql",
 	100: "0100_session_model.sql",
-<<<<<<< HEAD
-	101: "0101_conversation_provider_ownership_epochs.sql",
 	106: "0106_canonical_usage.sql",
-	104: "0104_add_user_config.sql",
-	107: "0107_normalize_activity_last_at.sql",
-=======
 	// Fork-local migrations live in the reserved 9000+ range so a sync rebase
 	// can never renumber them onto a number upstream will claim. See
 	// migrate_fork_reserved_range_test.go for why.
 	9001: "9001_conversation_provider_ownership_epochs.sql",
 	9002: "9002_add_user_config.sql",
 	9003: "9003_normalize_activity_last_at.sql",
->>>>>>> fb6451118 (fix(sqlite): stop sync rebases from burning migration versions)
 }
 
 // burnedVersion reports version numbers that must never be (re)used: they
