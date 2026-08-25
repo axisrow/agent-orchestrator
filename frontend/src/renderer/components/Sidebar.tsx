@@ -65,7 +65,7 @@ import {
 	sortedWorkerSessions,
 	workerSessions,
 } from "../types/workspace";
-import { getSessionStatusDotView } from "../lib/session-presentation";
+import { getOrchestratorStatusDotView, getSessionStatusDotView } from "../lib/session-presentation";
 import { deriveSessionAgentSwitchPresentation } from "../lib/agent-switch-presentation";
 import { aoBridge } from "../lib/bridge";
 import { useCommandPaletteEnabled } from "../hooks/useCommandPaletteEnabled";
@@ -386,6 +386,24 @@ function useSelection() {
 // blue when it starts working. See getSessionStatusDotView for the lane mapping.
 function SessionStatusDot({ session }: { session: WorkspaceSession }) {
 	const dot = getSessionStatusDotView(session);
+	return (
+		<span
+			aria-hidden="true"
+			className={cn(
+				"size-2 shrink-0 rounded-full",
+				dot.className,
+				dot.breathe && "animate-status-pulse",
+			)}
+			data-session-status={session.status}
+		/>
+	);
+}
+
+// The orchestrator row's status doesn't track activity the way a worker's
+// does (it stays "working" for its whole life), so its dot reads tone off
+// activity/isTerminated instead — see getOrchestratorStatusDotView.
+function OrchestratorStatusDot({ session }: { session: WorkspaceSession }) {
+	const dot = getOrchestratorStatusDotView(session);
 	return (
 		<span
 			aria-hidden="true"
@@ -1261,7 +1279,7 @@ const ProjectItemContent = memo(function ProjectItemContent({
 									{/* Orchestrator activity sits left of the project name, mirroring worker rows.
 		    gap-1.5 matches SessionRow's dot-to-title spacing (the row itself uses gap-2). */}
 									<span className="sidebar-expanded-chrome flex min-w-0 flex-1 items-center gap-1.5 translate-y-px group-data-[collapsible=icon]:hidden">
-										{orchestratorStatus ? <SessionStatusDot session={orchestratorStatus} /> : null}
+										{orchestratorStatus ? <OrchestratorStatusDot session={orchestratorStatus} /> : null}
 										<span className="min-w-0 flex-1 truncate" data-project-label="">
 											{workspace.name}
 										</span>
