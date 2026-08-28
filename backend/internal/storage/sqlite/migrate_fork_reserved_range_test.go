@@ -34,6 +34,14 @@ const forkReservedFloor int64 = 9000
 // through 100/101/103 the same way), but upstream shipped the identical
 // migration as its own 0101_conversation_provider_ownership_epochs.sql — the
 // fork now uses that file directly instead of carrying a duplicate at 9000+.
+//
+// add_user_config was briefly (and incorrectly) dropped from this list during
+// a 2026-08-28 sync: a mid-rebase collision made its file land at a low
+// number (0116/0117) that happened to look like an upstream-claimed slot, but
+// upstream never actually shipped this migration — confirmed via
+// `git show origin/main:.../0116_add_user_config.sql` (does not exist). It
+// belongs in forkLocalMigrations like normalize_activity_last_at; both should
+// live at forkReservedFloor+ once the collision that displaced it is cleared.
 var forkLocalMigrations = []string{
 	"add_user_config",
 	"normalize_activity_last_at",
