@@ -326,8 +326,20 @@ if git diff --name-only origin/main...HEAD -- backend/internal/storage/sqlite/qu
     fi
   fi
   if git diff --name-only -- backend/internal/storage/sqlite/gen/ | grep -q .; then
-    echo "   !! sqlc regen изменил gen/ — закоммить эти изменения."
-    git diff --stat -- backend/internal/storage/sqlite/gen/
+    # gen/ не всегда воспроизводим regen'ом: апстрим вписывал артефакты руками
+    # (issue #4621), поэтому regen может дать несобираемый дифф. Пробуем билд;
+    # красный — откатываем regen и оставляем gen/ как был, синк продолжается.
+    echo "   !! sqlc regen изменил gen/ — проверяю, что билд жив..."
+    if ( cd backend && go build ./... ) >/tmp/ao-sync-regen-build.log 2>&1; then
+      echo "   !! regen зелёный по билду — закоммить эти изменения отдельным chore-коммитом."
+      git diff --stat -- backend/internal/storage/sqlite/gen/
+    else
+      echo "   !! после regen билд красный — откатываю regen gen/ (артефакты апстрима не воспроизводимы, см. #4621):"
+      head -5 /tmp/ao-sync-regen-build.log | sed 's/^/        /'
+      git restore -- backend/internal/storage/sqlite/gen/
+      echo "   gen/ оставлен как был, синк продолжается."
+    fi
+    rm -f /tmp/ao-sync-regen-build.log
   else
     echo "   OK, без изменений"
   fi
