@@ -1,14 +1,21 @@
 #!/bin/bash
 # ao-sync.sh — синхронизировать fork/main с upstream origin/main: fetch → backup-тег →
-# rebase дельты форка → быстрые проверки-ловушки → быстрые гейты.
+# merge origin/main в дельту форка → быстрые проверки-ловушки → быстрые гейты.
+#
+# Модель синка — MERGE, не rebase (переход 2026-09-04): дельта форка живёт как
+# один squash-коммит (+ новые форковые коммиты) поверх origin/main, каждый синк
+# добавляет merge-коммит. История fork/main не переписывается: конфликты
+# разрешаются один раз в merge-коммите и не воспроизводятся в следующих синках,
+# force-push не нужен. (Сжатие дельты обратно в 1 коммит — отдельный ручной
+# squash-пасс «время от времени», не часть синка.)
 #
 # Цель: ловить типичные отказы (коллизия номера миграции, забытый `npm install`
 # после новой зависимости, рассинхрон regen-артефактов) ЗА СЕКУНДЫ, до того как
 # они всплывут через 5 минут `npm run package` или после запуска демона.
 #
-# НЕ делает: push в fork (force-with-lease — решение пользователя, история
-# переписывается), пересборку .app (это ~/bin/rebuild-ao.sh), разрешение
-# реальных смысловых конфликтов (только останавливается и объясняет где).
+# НЕ делает: push в fork (обычный fast-forward — решение пользователя),
+# пересборку .app (это ~/bin/rebuild-ao.sh), разрешение реальных смысловых
+# конфликтов (только останавливается и объясняет где).
 #
 # Запускать из корня репо agent-orchestrator (или откуда угодно — REPO_ROOT
 # ищется по .git+frontend+backend, см. rebuild-ao.sh).
@@ -33,22 +40,18 @@ cd "$REPO_ROOT"
 
 echo "==> репо: $REPO_ROOT (ветка: $(git rev-parse --abbrev-ref HEAD))"
 
-# 1. Guard: рабочее дерево обязано быть чистым — иначе rebase может всё смешать.
+# 1. Guard: рабочее дерево обязано быть чистым — иначе merge может всё смешать.
 if [ -n "$(git status --porcelain)" ]; then
   echo "!! Рабочее дерево не чистое. Закоммить/застэшь изменения и запусти снова." >&2
   git status --short >&2
   exit 1
 fi
 
-# 2. fetch + backup-тег на текущий main (страховка перед rebase).
+# 2. fetch + backup-тег на текущий main (страховка перед merge).
 #
 # ВАЖНО: тег ставится ОДИН РАЗ на синк. Скрипт задуман перезапускаемым (после
-# ручного разрешения конфликта rebase), а раньше он на каждом запуске делал
-# `git tag -f` на текущий main — то есть на УЖЕ ПЕРЕБАЖЕННЫЙ HEAD, затирая
-# единственную точку отката. После второго перезапуска откатиться «как было до
-# синка» становилось невозможно (14 авг так родилось 5 тегов за один синк).
-# Имя тега содержит время до минут, поэтому «тег с таким именем уже есть»
-# признаком не является — перезапуск через 5 минут дал бы другое имя. Реальное
+# ручного разрешения конфликта merge), а иначе он на каждом запуске ставил бы
+# тег на УЖЕ СМЁРЖЕННЫЙ HEAD, затирая единственную точку отката. Реальное
 # состояние держим в маркер-файле, который живёт ровно на время незавершённого
 # синка.
 # git rev-parse --git-dir, а не "$REPO_ROOT/.git": в worktree последний —
@@ -65,7 +68,7 @@ else
   [ -n "$BACKUP_TAG" ] && echo "!! маркер указывал на несуществующий тег $BACKUP_TAG — создаю новый." >&2 || true
   BACKUP_TAG="backup/pre-sync-$(date +%Y%m%d-%H%M)"
   # Без -f: если тег уже есть (два запуска в одну минуту), это тот же синк,
-  # и перезаписывать его нельзя — иначе точка отката уедет на перебаженный HEAD.
+  # и перезаписывать его нельзя — иначе точка отката уедет на смёрженный HEAD.
   git tag "$BACKUP_TAG" main 2>/dev/null || true
   printf '%s\n' "$BACKUP_TAG" > "$BACKUP_MARKER"
   echo "==> backup-тег: $BACKUP_TAG (на случай отката: git reset --hard $BACKUP_TAG)"
@@ -77,68 +80,75 @@ if git rev-parse --verify -q origin/main >/dev/null && [ "$(git rev-parse HEAD)"
   exit 0
 fi
 
-# 3. rebase дельты форка на свежий origin/main.
+# 3. merge origin/main в дельту форка.
 #    Миграционные конфликты (дубль номера дельты: наш коммит и upstream меняли
 #    одну строку shippedMigrations в migrate_burned_versions_test.go) авто-разрешаем
-#    фиксером в цикле; не-миграционные — прежнее ручное поведение.
+#    фиксером; не-миграционные — прежнее ручное поведение.
 FIXER="$HOME/bin/ao-fix-migration-collision.sh"
-export GIT_EDITOR=true   # чтобы `git rebase --continue` не открывал редактор
+export GIT_EDITOR=true   # чтобы merge-коммит не открывал редактор
 
 # Признак «миграционный конфликт»: среди конфликтующих файлов есть migrations/
-# или migrate_*. Тогда фиксер перенумерует дельту на свободный номер и добавит
-# запись в ledger, после чего rebase продолжаем.
+# или migrate_. Тогда фиксер перенумерует дельту на свободный номер и добавит
+# запись в ledger, после чего merge завершаем.
 migration_conflict() {
   git diff --name-only --diff-filter=U | grep -Eq 'backend/internal/storage/sqlite/(migrations/|migrate_)'
 }
 
-echo "==> git rebase origin/main..."
-if git rebase origin/main; then
+echo "==> git merge origin/main..."
+if git merge --no-edit -m "chore(sync): merge origin/main $(date +%Y-%m-%d)" origin/main; then
   :
 else
-  # Цикл: пока rebase конфликтует миграционно — автоперенумерация + continue.
-  # Из цикла выходим, когда rebase доехал до конца (--continue вернул 0).
-  while ! git rebase --continue; do
-    if ! migration_conflict; then
-      cat >&2 <<'EOF'
-
-!! Rebase остановился на НЕ-миграционном конфликте. Это ожидаемо для дельты
-   форка — разреши руками (git rerere уже включён и часть повторяющихся
-   конфликтов решит сам), затем:
-     git add <файлы> && git rebase --continue
-   и запусти этот скрипт снова — он продолжит с шага проверки миграций.
-   Откат: git rebase --abort
-EOF
-      exit 1
-    fi
-
+  if migration_conflict; then
     echo "==> миграционный конфликт — автоперенумерация..."
     if ! "$FIXER" --no-test; then
       echo "!! автопочинка не справилась — дальше руками (см. сообщение фиксера)." >&2
       exit 1
     fi
     git add -A
-  done
-  echo "==> rebase завершён после автоперенумерации миграций."
+    if ! git merge --continue; then
+      cat >&2 <<'EOF'
+
+!! git merge --continue не прошёл после автоперенумерации — вероятно, остались
+   неразрешённые не-миграционные файлы. Разреши руками, затем:
+     git add <файлы> && git merge --continue
+   и запусти этот скрипт снова — он продолжит с шага проверки миграций.
+   Откат: git merge --abort
+EOF
+      exit 1
+    fi
+    echo "==> merge завершён после автоперенумерации миграций."
+  else
+    cat >&2 <<'EOF'
+
+!! Merge остановился на НЕ-миграционном конфликте. Это ожидаемо для дельты
+   форка — разреши руками (git rerere уже включён и часть повторяющихся
+   конфликтов решит сам), затем:
+     git add <файлы> && git merge --continue
+   и запусти этот скрипт снова — он продолжит с шага проверки миграций.
+   Откат: git merge --abort
+EOF
+    exit 1
+  fi
 fi
 
 # 3b. Settle: привести миграции дельты к политике нумерации (канонические 9000+
 #     для fork-local, byte-identical дубли апстрима — удалить, ledger пересобрать
 #     детерминированно из origin/main + fork-блока). Идемпотентно: на чистом
-#     дереве ничего не меняет. Дрейф остаётся незакоммиченным — закоммитить
-#     вместе с ребейзом, как regen-артефакты ниже.
+#     дереве ничего не меняет. Дрейф остаётся незакоммиченным — закоммить
+#     отдельным chore-коммитом, как regen-артефакты ниже.
 echo "==> settle миграций (канонические номера, пересборка ledger)..."
 if ! "$FIXER" --settle --no-test; then
   echo "!! settle не справился — миграции дальше руками (см. сообщение фиксера)." >&2
   exit 1
 fi
 if git diff --name-only -- backend/internal/storage/sqlite/ | grep -q .; then
-  echo "   !! settle изменил миграции/ledger — закоммить эти изменения вместе с ребейзом."
+  echo "   !! settle изменил миграции/ledger — закоммить эти изменения отдельным chore-коммитом."
   git status --short -- backend/internal/storage/sqlite/
 else
   echo "   OK, дрейфа нет"
 fi
 
-# 3c. Гейт на маркеры конфликта. Ловит класс «rebase завершился УСПЕШНО, но
+# 3c. Гейт на маркеры конфликта. Ловит класс «merge завершился УСПЕШНО, но
 #     закоммитил мусор» (оба инцидента 2026-09-02: вложенные <<<<<<< в
 #     migrate_activity_zone_test.go и в ledger уехали в main при зелёном синке).
 #     Ограничение по расширениям исключает false-positive на setext-подчёркиваниях
@@ -151,7 +161,7 @@ check_conflict_markers() {
 echo "==> проверка маркеров конфликта в дереве..."
 MARKERS="$(check_conflict_markers)"
 if [ -n "$MARKERS" ]; then
-  echo "!! В дереве остались маркеры конфликта (rebase закоммитил мусор):" >&2
+  echo "!! В дереве остались маркеры конфликта (merge закоммитил мусор):" >&2
   printf '%s\n' "$MARKERS" >&2
   echo "   Почини вручную (выбрать сторону, убрать маркеры) и закоммить." >&2
   exit 1
@@ -196,27 +206,26 @@ echo "==> проверка forkLocalMigrations на совпадение с ап
 check_fork_migrations_not_merged_upstream
 echo "   OK"
 
-# 3e. Детекция дублей коммитов ВНУТРИ самой дельты (subject встречается >1 раза).
+# 3e. Детекция дублей коммитов ВНУТРИ дельты форка (subject встречается >1 раза).
 #     Инцидент: та же логическая фича (per-role env profile, user-scope config)
 #     оказалась переиграна в истории дважды — 11 subject-строк по 2 копии каждая
-#     (обнаружено 2026-08-28, вероятно связано с cherry-pick восстановлением
-#     из памяти ao-lost-fixes-2026-08-13). Порог: НЕ блокирует уже известный (с
-#     прошлого успешного sync) бардак — иначе скрипт был бы бесполезен, пока
-#     кто-то не почистит историю руками, — но блокирует появление НОВОГО дубля:
-#     типичный симптом случайного повторного cherry-pick/merge уже
-#     присутствующей feature-ветки.
+#     (обнаружено 2026-08-28). Порог: НЕ блокирует уже известный бардак, но
+#     блокирует появление НОВОГО дубля: типичный симптом случайного повторного
+#     cherry-pick/merge уже присутствующей feature-ветки.
+#     NB: --no-merges обязателен — merge-коммиты синка имеют одинаковый
+#     subject-паттерн и без фильтра каждый синк «находил бы» N-1 дублей.
 DUPES_CACHE="$(git rev-parse --git-dir)/ao-sync-known-dupes-count"
 KNOWN_DUPES="$(cat "$DUPES_CACHE" 2>/dev/null || echo 0)"
 
 echo "==> проверка дублей коммитов в дельте..."
-DUP_SUBJECTS="$(git log origin/main..HEAD --format='%s' | sort | uniq -d)"
+DUP_SUBJECTS="$(git log --no-merges origin/main..HEAD --format='%s' | sort | uniq -d)"
 CURRENT_DUPES="$(printf '%s\n' "$DUP_SUBJECTS" | grep -c . || true)"
 
 if [ "$CURRENT_DUPES" -gt 0 ]; then
   echo "   найдено $CURRENT_DUPES дублирующихся subject-строк (было известно: $KNOWN_DUPES):"
   printf '%s\n' "$DUP_SUBJECTS" | while IFS= read -r subj; do
     [ -z "$subj" ] && continue
-    shas="$(git log origin/main..HEAD --format='%H %s' | grep -F " $subj" | awk '{print $1}')"
+    shas="$(git log --no-merges origin/main..HEAD --format='%H %s' | grep -F " $subj" | awk '{print $1}')"
     ids="$(for sha in $shas; do git show "$sha" | git patch-id --stable | awk '{print $1}'; done | sort -u | wc -l | tr -d ' ')"
     if [ "$ids" = "1" ]; then eq="patch-id EQUAL (безопасно squash/drop)"; else eq="patch-id DIFFERENT (нужна ручная сверка diff)"; fi
     echo "     - \"$subj\": $shas — $eq"
@@ -289,10 +298,10 @@ npm run api >/tmp/ao-sync-regen.log 2>&1 || { echo "!! npm run api упал:" >&
 # Эти два файла помечены merge=ours в .git/info/attributes: при конфликте git
 # молча оставляет НАШУ версию, а корректное содержимое восстанавливает regen
 # выше. Поэтому непустой дифф здесь — нормальный и ОЖИДАЕМЫЙ исход после
-# rebase, а не тревога; важно его увидеть, иначе не отличить «regen ничего не
+# merge, а не тревога; важно его увидеть, иначе не отличить «regen ничего не
 # поменял» от «regen починил то, что merge=ours оставил устаревшим».
 if git diff --name-only -- backend/internal/httpd/apispec/openapi.yaml frontend/src/api/schema.ts | grep -q .; then
-  echo "   !! regen изменил openapi.yaml/schema.ts — закоммить эти изменения вместе с ребейзом."
+  echo "   !! regen изменил openapi.yaml/schema.ts — закоммить эти изменения отдельным chore-коммитом."
   git diff --stat -- backend/internal/httpd/apispec/openapi.yaml frontend/src/api/schema.ts
 else
   echo "   OK, без изменений"
@@ -328,16 +337,16 @@ fi
 #    её нет в node_modules» (стреляло: @fontsource-variable/geist и
 #    @tanstack/react-virtual, каждая съела 5 минут package до отказа).
 #    Гоняем ВСЕГДА, не по условию: зависимость может прийти и из апстрима
-#    (origin/main), и из дельты, а любое diff-условие на $BACKUP_TAG..HEAD
-#    ловит лишь то, что рядом с этой конкретной синк-сессией, а не «что вообще
-#    изменилось в package.json с последнего install». npm install при
-#    актуальном lockfile дёшев (~5с), а пропущенная зависимость стоит 5 минут
-#    сборки — всегда гонять.
+#    (origin/main), и из дельты, а любое diff-условие ловит лишь то, что
+#    рядом с этой конкретной синк-сессией, а не «что вообще изменилось в
+#    package.json с последнего install». npm install при актуальном lockfile
+#    дёшев (~5с), а пропущенная зависимость стоит 5 минут сборки — всегда
+#    гонять.
 echo "==> npm install (frontend)..."
 ( cd frontend && npm install ) || { echo "!! npm install упал." >&2; exit 1; }
 
 # 7. Быстрые гейты: whole-module gofmt (см. память ao-gofmt-whole-module-gate —
-#    точечный gofmt на файлах не ловит рассинхрон после rebase) + go build.
+#    точечный gofmt на файлах не ловит рассинхрон после merge) + go build.
 echo "==> gofmt -l . (весь backend-модуль)..."
 FMT_OUT="$(cd backend && gofmt -l .)"
 if [ -n "$FMT_OUT" ]; then
@@ -362,14 +371,14 @@ echo "   OK"
 #    backup-тег, а не продолжал считать этот синк незавершённым. Сам тег
 #    остаётся в репо как точка отката.
 rm -f "$BACKUP_MARKER"
-# Кэш дублей коммитов (шаг 3c) обновляем только здесь — синк дошёл до конца
+# Кэш дублей коммитов (шаг 3e) обновляем только здесь — синк дошёл до конца
 # успешно, значит текущее число дублей становится новым «известным» порогом.
 printf '%s\n' "$CURRENT_DUPES" > "$DUPES_CACHE"
 echo "=========================================="
-echo "==> синк готов. main = $(git rev-parse --short HEAD), $(git rev-list --count origin/main..HEAD) коммитов дельты поверх origin/main."
+echo "==> синк готов. main = $(git rev-parse --short HEAD): $(git rev-list --count --no-merges origin/main..HEAD) коммитов дельты + $(git rev-list --count --merges origin/main..HEAD) merge-коммитов поверх origin/main."
 echo "    Точка отката (состояние ДО синка): git reset --hard $BACKUP_TAG"
-echo "    Дальше вручную:"
-echo "      git push --force-with-lease fork main"
+echo "    Дальше вручную (merge историю не переписывает — push обычный fast-forward):"
+echo "      git push fork main"
 echo "      ~/bin/rebuild-ao.sh"
 echo ""
 echo "    Перед push ветки в upstream-PR — полные гейты (golangci-lint + typecheck:e2e,"
