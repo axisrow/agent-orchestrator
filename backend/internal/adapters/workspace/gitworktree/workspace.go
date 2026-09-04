@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -383,6 +384,7 @@ func (w *Workspace) DestroyWorkspaceProject(ctx context.Context, info ports.Work
 // Destroy removes the session's worktree and prunes it from the repo, refusing
 // (rather than force-deleting) if git still has the path registered afterwards.
 func (w *Workspace) Destroy(ctx context.Context, info ports.WorkspaceInfo) error {
+	slog.InfoContext(ctx, "gitworktree: Destroy called", "sessionID", info.SessionID, "path", info.Path, "branch", info.Branch, "projectID", info.ProjectID, "repoPath", info.RepoPath, "stack", string(debug.Stack()))
 	if info.Path == "" {
 		return fmt.Errorf("%w: empty path", ErrUnsafePath)
 	}
@@ -447,6 +449,7 @@ func (w *Workspace) Destroy(ctx context.Context, info ports.WorkspaceInfo) error
 // discards agent work. For interactive teardown (ao session kill, ao cleanup)
 // use Destroy, which refuses dirty worktrees via ErrWorkspaceDirty.
 func (w *Workspace) ForceDestroy(ctx context.Context, info ports.WorkspaceInfo) error {
+	slog.InfoContext(ctx, "gitworktree: ForceDestroy called", "sessionID", info.SessionID, "path", info.Path, "branch", info.Branch, "projectID", info.ProjectID, "repoPath", info.RepoPath, "stack", string(debug.Stack()))
 	if info.Path == "" {
 		return fmt.Errorf("%w: empty path", ErrUnsafePath)
 	}

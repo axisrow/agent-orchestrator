@@ -1298,6 +1298,12 @@ var schemaRepairs = []struct {
 	addDDL  string
 	postAdd []string
 }{
+	// 0032_pr_state_changed_at.sql. Version 32 was held by
+	// 0032_add_user_config.sql before a rebase renumbered it, so installs that
+	// applied user_config under 32 skip this column and every PR state read
+	// referencing it fails.
+	{version: 32, table: "pr", column: "state_changed_at",
+		addDDL: `ALTER TABLE pr ADD COLUMN state_changed_at TIMESTAMP`},
 	// 0040_add_session_diff_base.sql
 	{version: 40, table: "sessions", column: "diff_base_sha",
 		addDDL: `ALTER TABLE sessions ADD COLUMN diff_base_sha TEXT NOT NULL DEFAULT ''`},
@@ -1387,9 +1393,25 @@ BEGIN
 		addDDL: `ALTER TABLE conversation_turns ADD COLUMN promotion_started_at TIMESTAMP`},
 	{version: 89, table: "conversation_turns", column: "promoted_to_turn_id",
 		addDDL: `ALTER TABLE conversation_turns ADD COLUMN promoted_to_turn_id TEXT REFERENCES conversation_turns(id) ON DELETE SET NULL`},
-	// 0106_pr_comment_review_id.sql. Session projections join this column, so a
-	// field database that recorded 0106 without its physical effect must be
-	// repaired before the first list request.
+	// 0096_session_worktree_base_ref.sql. Version 96 was previously occupied by
+	// 0096_normalize_activity_last_at.sql and 0096_add_user_config.sql before a
+	// rebase renumbered them; profiles that applied one of those under number 96
+	// have it recorded as applied and silently skip the real base_ref migration.
+	// Every workspace-worktree read (including session kill) then 500s.
+	{version: 96, table: "session_worktrees", column: "base_ref",
+		addDDL: `ALTER TABLE session_worktrees ADD COLUMN base_ref TEXT NOT NULL DEFAULT ''`},
+	// 0100_session_model.sql. Same renumbering hazard as version 96 above:
+	// 0100_add_user_config.sql held this number first, so profiles that applied
+	// it have 100 recorded and skip the real session_model migration. The
+	// generated session queries select model, so every session list — including
+	// the boot-time reconcile — then dies with "no such column: model".
+	{version: 100, table: "sessions", column: "model",
+		addDDL: `ALTER TABLE sessions ADD COLUMN model TEXT NOT NULL DEFAULT ''`},
+	// 0106_pr_comment_review_id.sql. Version 106 is recorded as applied on
+	// profiles where the physical column never landed — a burned/skipped
+	// migration — and preparePRCommentReviewIDMigration only repairs the mirror
+	// case (column present, ledger entry missing). The generated PR comment
+	// queries select review_id, so every PR read then 500s.
 	{version: 106, table: "pr_comment", column: "review_id",
 		addDDL: `ALTER TABLE pr_comment ADD COLUMN review_id TEXT NOT NULL DEFAULT ''`},
 	// 0108_conversation_retry_source.sql. Some stacked development builds
@@ -1402,6 +1424,23 @@ BEGIN
     ON conversation_turns(conversation_id, retry_of_turn_id)
     WHERE retry_of_turn_id IS NOT NULL`,
 		}},
+}
+
+// tableRepairs is the table-level counterpart of schemaRepairs: migrations
+// whose schema effects are whole tables, recorded as applied on installs where
+// the table never physically landed. reconcileSchema's column check cannot see
+// this drift — pragma_table_info on an absent table returns zero rows and is
+// treated as healthy — so without this list a burned version leaves the daemon
+// green while every query against the missing table 500s.
+var tableRepairs = []struct {
+	version   int64
+	table     string
+	createDDL string
+}{
+	// No live entries: the original one (0104 agent_inventory_cache) was
+	// retired when upstream made 0122 canonically drop that table — recreating
+	// it here would resurrect a table the migration chain just removed. The
+	// machinery stays for future fork-local table-level repairs.
 }
 
 // reconcileSchema verifies that the columns in schemaRepairs physically exist
@@ -1431,6 +1470,23 @@ func reconcileSchema(db *sql.DB) error {
 			if _, err := db.Exec(stmt); err != nil {
 				return fmt.Errorf("schema repair: replay skipped migration effects for %s.%s: %w", rc.table, rc.column, err)
 			}
+		}
+	}
+	for _, tr := range tableRepairs {
+		var count int
+		if err := db.QueryRow(
+			`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, tr.table,
+		).Scan(&count); err != nil {
+			return fmt.Errorf("schema verification: inspect table %s: %w", tr.table, err)
+		}
+		if count > 0 {
+			continue
+		}
+		if _, err := db.Exec(tr.createDDL); err != nil {
+			return fmt.Errorf(
+				"schema repair: table %s is missing (a burned goose version skipped the migration that creates it, see #3475) and could not be created: %w",
+				tr.table, err,
+			)
 		}
 	}
 	if err := reconcileHarnessConstraint(db); err != nil {

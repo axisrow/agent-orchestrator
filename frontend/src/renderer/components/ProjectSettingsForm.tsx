@@ -33,6 +33,7 @@ import { buildIntake, deriveRepoPath, deriveRepoHost, IntakeFields, type IntakeF
 import { ProductExternalLink } from "./ProductExternalLink";
 import { ReviewerSelect, reviewerTrustWarning } from "./ReviewerSelect";
 import { AgentModelCombobox } from "./settings/AgentModelCombobox";
+import { PromptOverrideDialog } from "./settings/PromptOverrideDialog";
 import { SettingsOptionMenu } from "./settings/SettingsOptionMenu";
 import { SettingsRow } from "./settings/SettingsRow";
 import { Switch } from "./ui/switch";
@@ -159,6 +160,7 @@ function SettingsBody({
 	});
 	const [savedAt, setSavedAt] = useState<number | null>(null);
 	const [showSaving, setShowSaving] = useState(false);
+	const [promptOverrideOpen, setPromptOverrideOpen] = useState(false);
 	const [replacementError, setReplacementError] = useState<string | null>(null);
 	const [validationError, setValidationError] = useState<string | null>(null);
 	const initialOrchestratorAgent = config.orchestrator?.agent ?? "";
@@ -495,6 +497,23 @@ function SettingsBody({
 							missingRequiredAgent ? t("settings.project.agentsRequired") : null
 						}
 					/>
+				<ProjectSettingsSection title={t("settings.project.agentDefaults")} grouped>
+					<button
+						type="button"
+						className="w-full rounded-md bg-[var(--color-bg-settings-row)] px-4 py-3 text-left"
+						onClick={() => setPromptOverrideOpen(true)}
+					>
+						{t("settings.project.promptOverride")}
+					</button>
+				</ProjectSettingsSection>
+				{promptOverrideOpen && (
+					<PromptOverrideDialog
+						open={promptOverrideOpen}
+						onOpenChange={setPromptOverrideOpen}
+						scope="project"
+						projectId={projectId}
+					/>
+				)}
 				{!isScratchProject && (
 					<ProjectSettingsSection title={t("settings.project.reviewer")} grouped>
 						<SettingsRow label={t("settings.project.defaultReviewer")}>

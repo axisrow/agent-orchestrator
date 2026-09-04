@@ -6582,6 +6582,57 @@ paths:
       summary: Get detailed token and estimated cost usage for one session
       tags:
       - usage
+  /api/v1/user-config:
+    get:
+      operationId: getUserConfig
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserConfigResponse'
+          description: OK
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+      summary: Get the user-scoped agent config (the lowest-precedence scope above
+        projects)
+      tags:
+      - config
+    put:
+      operationId: setUserConfig
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetUserConfigInput'
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserConfigResponse'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Bad Request
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+      summary: Replace the user-scoped agent config wholesale (a zero agentConfig
+        clears it)
+      tags:
+      - config
 components:
   schemas:
     APIError:
@@ -6713,11 +6764,27 @@ components:
       type: object
     AgentConfig:
       properties:
+        env:
+          additionalProperties:
+            type: string
+          type: object
+        mcp:
+          $ref: '#/components/schemas/MCPConfig'
         mode:
           type: string
         model:
           type: string
+        orchestratorPromptOverride:
+          type: string
         permissions:
+          type: string
+        pluginDirs:
+          items:
+            type: string
+          type: array
+        systemPrompt:
+          type: string
+        workerPromptOverride:
           type: string
       type: object
     AgentInfo:
@@ -9460,6 +9527,15 @@ components:
       - entries
       - truncated
       type: object
+    MCPConfig:
+      properties:
+        configs:
+          items:
+            type: string
+          type: array
+        strict:
+          type: boolean
+      type: object
     MarkAllNotificationsReadRequest:
       properties:
         ids:
@@ -9889,6 +9965,8 @@ components:
           type: object
         orchestrator:
           $ref: '#/components/schemas/RoleOverride'
+        orchestratorPromptOverride:
+          type: string
         orchestratorRules:
           type: string
         postCreate:
@@ -9909,9 +9987,15 @@ components:
           $ref: '#/components/schemas/TrackerIntakeConfig'
         worker:
           $ref: '#/components/schemas/RoleOverride'
+        workerPromptOverride:
+          type: string
       type: object
     ProjectGetResponse:
       properties:
+        defaultOrchestratorPrompt:
+          type: string
+        defaultWorkerPrompt:
+          type: string
         project:
           $ref: '#/components/schemas/ProjectOrDegraded'
         status:
@@ -11013,6 +11097,13 @@ components:
           - autohand
           type: string
       type: object
+    SetUserConfigInput:
+      properties:
+        agentConfig:
+          $ref: '#/components/schemas/AgentConfig'
+      required:
+      - agentConfig
+      type: object
     SettingsResponse:
       properties:
         chatHarnesses:
@@ -11625,6 +11716,17 @@ components:
       - processedTokens
       - cacheReadTokens
       - estimatedCost
+      type: object
+    UserConfigResponse:
+      properties:
+        agentConfig:
+          $ref: '#/components/schemas/AgentConfig'
+        defaultOrchestratorPrompt:
+          type: string
+        defaultWorkerPrompt:
+          type: string
+      required:
+      - agentConfig
       type: object
     WorkspaceCommitSummary:
       properties:

@@ -228,6 +228,47 @@ func TestExecRunnerFallsBackWhenTempDirMissing(t *testing.T) {
 	}
 }
 
+// TestExecRunnerDropsParentSessionMarkers is the direct regression test for
+// the CLAUDE_CODE_CHILD_SESSION leak: execRunner.Run unconditionally does
+// `cmd.Env = append(os.Environ(), env...)`, and the first call auto-starts
+// tmux's persistent server, which keeps that environment for its entire
+// lifetime. If the daemon was itself launched from inside a Claude Code
+// session (rebuild-ao.sh run from an agent terminal, or the desktop app
+// opened from one), every worker session's tmux pane — and the claude-code
+// process running inside it — inherits that unrelated parent session's
+// identity markers, misidentifying itself as a child session ("Transcript
+// saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker"). This runs
+// the real execRunner (not fakeRunner), so it is the only test that would
+// catch a regression here.
+func TestExecRunnerDropsParentSessionMarkers(t *testing.T) {
+	t.Setenv("CLAUDE_CODE_CHILD_SESSION", "1")
+	t.Setenv("CLAUDECODE", "1")
+	t.Setenv("AO_EXECRUNNER_MARKER_TEST_KEEP", "kept")
+
+	out, err := (execRunner{}).Run(context.Background(), nil, "sh", "-c", "env")
+	if err != nil {
+		t.Fatalf("execRunner.Run: %v", err)
+	}
+	env := strings.Split(strings.TrimSpace(string(out)), "\n")
+
+	for _, blocked := range []string{"CLAUDE_CODE_CHILD_SESSION", "CLAUDECODE"} {
+		for _, line := range env {
+			if strings.HasPrefix(line, blocked+"=") {
+				t.Errorf("execRunner leaked parent-session marker into child process: %q", line)
+			}
+		}
+	}
+	found := false
+	for _, line := range env {
+		if line == "AO_EXECRUNNER_MARKER_TEST_KEEP=kept" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("execRunner dropped an unrelated env var along with the markers")
+	}
+}
+
 // -- command builder tests --
 
 func TestCommandBuilders(t *testing.T) {

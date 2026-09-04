@@ -130,6 +130,10 @@ var shippedMigrations = map[int64]string{
 	123: "0123_agent_install_jobs.sql",
 	124: "0124_codex_account_management.sql",
 	125: "0125_agent_switch_failure_observability.sql",
+	// Fork-local migrations live in the reserved 9000+ range so a sync rebase
+	// can never renumber them onto a number upstream will claim. See
+	// migrate_fork_reserved_range_test.go for why.
+	9001: "9001_add_user_config.sql",
 }
 
 // burnedVersion reports version numbers that must never be (re)used: they

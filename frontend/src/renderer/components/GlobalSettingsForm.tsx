@@ -1,6 +1,7 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { GlobalSettingsSection as GlobalSettingsPage } from "../stores/ui-store";
+import { PromptOverrideDialog } from "./settings/PromptOverrideDialog";
 import { GeneralSettingsSection } from "./settings/GeneralSettingsSection";
 import { HarnessSettingsSection } from "./settings/HarnessSettingsSection";
 import { CloudCredentialsSection } from "./settings/CloudCredentialsSection";
@@ -31,18 +32,33 @@ export function GlobalSettingsForm({
 	section?: GlobalSettingsSection;
 }) {
 	const { t } = useTranslation();
+	const [agentDefaultsOpen, setAgentDefaultsOpen] = useState(false);
 	const all = section === "all";
 	// One section per page means the dialog header already names it, so a
 	// leading in-page heading would just repeat that title.
 	const titleHidden = !all;
 
 	return (
+		<>
 		<div
 			aria-label={t("settings.title")}
 			className="flex w-full flex-col gap-(--size-settings-section-gap)"
 			data-testid="settings-page"
 		>
-			{(all || section === "general") && <GeneralSettingsSection titleHidden={titleHidden} />}
+			{(all || section === "general") && (
+				<>
+					<SettingsSection title={t("settings.agentDefaults")} titleHidden={titleHidden}>
+						<button
+							type="button"
+							className="w-full rounded-md bg-[var(--color-bg-settings-row)] px-4 py-3 text-left"
+							onClick={() => setAgentDefaultsOpen(true)}
+						>
+							{t("settings.agentDefaults")}
+						</button>
+					</SettingsSection>
+					<GeneralSettingsSection titleHidden={titleHidden} />
+				</>
+			)}
 
 			{(all || section === "harness") && <HarnessSettingsSection titleHidden={titleHidden} />}
 
@@ -82,5 +98,7 @@ export function GlobalSettingsForm({
 				</SettingsSection>
 			)}
 		</div>
+		<PromptOverrideDialog open={agentDefaultsOpen} onOpenChange={setAgentDefaultsOpen} scope="user" />
+		</>
 	);
 }
