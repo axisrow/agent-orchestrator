@@ -3522,6 +3522,7 @@ export interface components {
             agent?: string;
             config?: components["schemas"]["ProjectConfig"];
             defaultBranch: string;
+            folderMissing: boolean;
             id: string;
             /** @enum {string} */
             kind: "single_repo" | "workspace" | "scratch";
@@ -3563,6 +3564,7 @@ export interface components {
             project: components["schemas"]["Project"];
         };
         ProjectSummary: {
+            folderMissing: boolean;
             id: string;
             /** @enum {string} */
             kind: "single_repo" | "workspace" | "scratch";
