@@ -1792,5 +1792,8 @@
 	"settings.promptOverride.resetTitle": "Restore the hardcoded AO prompt (clears your override)",
 	"settings.promptOverride.reset": "Reset to default",
 	"settings.promptOverride.saving": "Saving…",
-	"settings.promptOverride.save": "Save"
+	"settings.promptOverride.save": "Save",
+	"session.interfaceSwitchFailed": "인터페이스를 전환할 수 없습니다",
+	"session.dismissInterfaceSwitchError": "인터페이스 전환 오류 닫기",
+	"session.dismissInterfaceSwitchNotice": "닫기"
 }

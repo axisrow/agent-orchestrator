@@ -1816,5 +1816,8 @@
 	"settings.promptOverride.resetTitle": "Restore the hardcoded AO prompt (clears your override)",
 	"settings.promptOverride.reset": "Reset to default",
 	"settings.promptOverride.saving": "Saving…",
-	"settings.promptOverride.save": "Save"
+	"settings.promptOverride.save": "Save",
+	"session.interfaceSwitchFailed": "Impossible de changer d’interface",
+	"session.dismissInterfaceSwitchError": "Fermer l’erreur de changement d’interface",
+	"session.dismissInterfaceSwitchNotice": "Fermer"
 }
