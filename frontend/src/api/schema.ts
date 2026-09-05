@@ -3536,6 +3536,7 @@ export interface components {
             agentRules?: string;
             agentRulesFile?: string;
             autoReview?: boolean;
+            canonicalRepoURL?: string;
             containerReap?: components["schemas"]["ContainerReapConfig"];
             defaultBranch?: string;
             env?: {
