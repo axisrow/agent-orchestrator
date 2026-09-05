@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
@@ -128,13 +129,30 @@ func TestGetRestoreCommandReappliesMCPAndPluginFlags(t *testing.T) {
 	}
 }
 
-// writeFakeTranscript creates an empty transcript file at the path Claude
-// Code would look for when resuming sessionID in workspacePath, under a HOME
+// claudeEncodedProjectDir mirrors Claude Code's real transcript-directory
+// naming: EVERY non-alphanumeric character in the absolute workspace path
+// becomes "-", including underscores and dots. This is deliberately a
+// test-local mirror of the provider's rule, kept independent from the
+// production probe (which must not depend on the encoding at all).
+func claudeEncodedProjectDir(workspacePath string) string {
+	var b strings.Builder
+	for _, r := range workspacePath {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('-')
+		}
+	}
+	return b.String()
+}
+
+// writeFakeTranscript creates a transcript file where Claude Code itself
+// would have put it when resuming sessionID in workspacePath, under a HOME
 // this test controls. Returns the HOME to set via t.Setenv.
 func writeFakeTranscript(t *testing.T, workspacePath, sessionID string) (home string) {
 	t.Helper()
 	home = t.TempDir()
-	dir := filepath.Join(home, ".claude", "projects", claudeProjectSlug(workspacePath))
+	dir := filepath.Join(home, ".claude", "projects", claudeEncodedProjectDir(workspacePath))
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -142,6 +160,37 @@ func writeFakeTranscript(t *testing.T, workspacePath, sessionID string) (home st
 		t.Fatal(err)
 	}
 	return home
+}
+
+// TestGetRestoreCommandResumesWhenWorkspacePathHasUnderscores reproduces the
+// "Session ID <uuid> is already in use" incident: Claude Code encodes EVERY
+// non-alphanumeric character of the workspace path (underscores included) into
+// the projects/<dir> name. A transcript probe that mirrored only "/" and "."
+// computed a different directory, concluded the conversation was missing, and
+// routed restore into the fresh-launch fallback — which pins the deterministic
+// --session-id over an existing transcript. The create-only --session-id flag
+// then makes claude exit immediately with "already in use", leaving the
+// session exited-but-not-terminated forever. The probe must find the
+// transcript under Claude's real encoding.
+func TestGetRestoreCommandResumesWhenWorkspacePathHasUnderscores(t *testing.T) {
+	workspace := "/ws/zai_python_helper/orchestrator"
+	t.Setenv("HOME", writeFakeTranscript(t, workspace, "claude-native-1"))
+
+	cmd, ok, err := (&Plugin{resolvedBinary: "claude"}).GetRestoreCommand(context.Background(), ports.RestoreConfig{
+		Permissions: ports.PermissionModeBypassPermissions,
+		Session: ports.SessionRef{
+			ID:            "sess-r",
+			WorkspacePath: workspace,
+			Metadata:      map[string]string{ports.MetadataKeyAgentSessionID: "claude-native-1"},
+		},
+	})
+	if err != nil || !ok {
+		t.Fatalf("restore = (ok=%v, err=%v), want ok — transcript exists under Claude's encoding", ok, err)
+	}
+	want := []string{"claude", "--permission-mode", "bypassPermissions", "--resume", "claude-native-1"}
+	if !reflect.DeepEqual(cmd, want) {
+		t.Fatalf("restore cmd\nwant: %#v\n got: %#v", want, cmd)
+	}
 }
 
 func TestGetRestoreCommandReadsAgentSessionID_TranscriptPresent(t *testing.T) {

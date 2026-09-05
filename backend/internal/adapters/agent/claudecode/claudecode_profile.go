@@ -16,7 +16,6 @@
 package claudecode
 
 import (
-	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -92,31 +91,6 @@ func isPluginURL(s string) bool {
 	return strings.EqualFold(u.Scheme, "http") || strings.EqualFold(u.Scheme, "https")
 }
 
-// claudeProjectSlug mirrors Claude Code's own transcript-directory naming:
-// every "/" and "." in the absolute workspace path becomes "-". This is the
-// same rule Claude Code uses to place a session's JSONL transcript under
-// ~/.claude/projects/<slug>/<sessionID>.jsonl.
-func claudeProjectSlug(workspacePath string) string {
-	slug := strings.ReplaceAll(workspacePath, "/", "-")
-	return strings.ReplaceAll(slug, ".", "-")
-}
-
-// claudeTranscriptPath returns the on-disk path of the transcript a
-// `claude --resume <sessionID>` would need, given the workspace it would run
-// in. It returns ok=false when workspacePath is empty — there's nothing to
-// derive a slug from — so callers can treat "can't tell" differently from
-// "checked, and it's missing".
-func claudeTranscriptPath(workspacePath, sessionID string) (path string, ok bool, err error) {
-	if workspacePath == "" {
-		return "", false, nil
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", false, fmt.Errorf("claude-code: resolve home directory: %w", err)
-	}
-	return filepath.Join(home, ".claude", "projects", claudeProjectSlug(workspacePath), sessionID+".jsonl"), true, nil
-}
-
 // claudeTranscriptExists reports whether a --resume target actually has a
 // transcript on disk. Without this check, GetRestoreCommand would report
 // ok=true for any non-blank session id — including one this process
@@ -125,14 +99,48 @@ func claudeTranscriptPath(workspacePath, sessionID string) (path string, ok bool
 // call, or a pruned ~/.claude/projects entry. `claude --resume` then exits 1
 // with "No conversation found with session ID", and because ok=true short-
 // circuits restoreArgv's fresh-launch fallback (session_manager/manager.go),
-// the session is stranded rather than relaunched. If we can't tell (empty
-// workspace path, or a stat error other than "not found"), we don't block —
-// only a confirmed absence should force a fallback.
+// the session is stranded rather than relaunched.
+//
+// The transcript is located by scanning every project directory under
+// ~/.claude/projects for <sessionID>.jsonl instead of deriving the directory
+// name from the workspace path. Claude Code encodes ALL non-alphanumeric
+// characters of the path (underscores and dots included) into that name; a
+// probe that mirrored only "/" and "." computed a different directory for
+// underscore workspaces, misdiagnosed the conversation as missing, and routed
+// restore into the fresh-launch fallback — whose deterministic --session-id
+// is create-only and collides with the existing transcript, leaving claude
+// dead with "Session ID ... is already in use". The scan matches claude's own
+// --resume lookup (which searches beyond the cwd's project directory) and
+// survives future encoding changes; it mirrors NativeConversationExists in
+// claudecode.go. If we can't tell (empty workspace path, or a read error
+// other than "not found"), we don't block — only a confirmed absence should
+// force a fallback.
 func claudeTranscriptExists(workspacePath, sessionID string) bool {
-	path, ok, err := claudeTranscriptPath(workspacePath, sessionID)
-	if !ok || err != nil {
+	if workspacePath == "" {
 		return true
 	}
-	_, err = os.Stat(path)
-	return err == nil
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return true
+	}
+	projectsDir := filepath.Join(home, ".claude", "projects")
+	projects, err := os.ReadDir(projectsDir)
+	if os.IsNotExist(err) {
+		// No projects directory at all is a confirmed absence, not an
+		// unreadable one — same distinction NativeConversationExists makes.
+		return false
+	}
+	if err != nil {
+		return true
+	}
+	for _, project := range projects {
+		if !project.IsDir() {
+			continue
+		}
+		info, err := os.Stat(filepath.Join(projectsDir, project.Name(), sessionID+".jsonl"))
+		if err == nil && info.Mode().IsRegular() && info.Size() > 0 {
+			return true
+		}
+	}
+	return false
 }
