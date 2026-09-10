@@ -12,6 +12,7 @@ import (
 	stdctx "context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -27,6 +28,13 @@ var (
 	ErrInvalid  = errors.New("review: invalid input")
 	ErrNotFound = errors.New("review: not found")
 )
+
+// agentConfigsEqual compares two agent configs. AgentConfig carries the Env
+// map (per-role env profile), so it is not comparable with ==; DeepEqual is
+// the map-safe equivalent for the "did the effective config change" checks.
+func agentConfigsEqual(a, b domain.AgentConfig) bool {
+	return reflect.DeepEqual(a, b)
+}
 
 // Store is the persistence surface the engine needs. *sqlite.Store satisfies it
 // in production; tests use a fake.
@@ -264,7 +272,7 @@ func (e *Engine) TriggerWithSource(ctx stdctx.Context, workerID domain.SessionID
 		harness = override
 		if override == resolvedHarness {
 			config = mergeReviewerAgentConfig(resolvedConfig, overrideConfig)
-			hasConfigOverride = config != resolvedConfig
+			hasConfigOverride = !agentConfigsEqual(config, resolvedConfig)
 		} else if !overrideConfig.IsZero() {
 			config = mergeReviewerAgentConfig(domain.AgentConfig{}, overrideConfig)
 		} else {
@@ -272,7 +280,7 @@ func (e *Engine) TriggerWithSource(ctx stdctx.Context, workerID domain.SessionID
 		}
 	} else if !overrideConfig.IsZero() {
 		config = mergeReviewerAgentConfig(config, overrideConfig)
-		hasConfigOverride = config != resolvedConfig
+		hasConfigOverride = !agentConfigsEqual(config, resolvedConfig)
 	}
 	reviewRows, err := e.store.ListReviewsBySession(ctx, workerID)
 	if err != nil {
@@ -546,7 +554,7 @@ func (e *Engine) SwitchReviewer(
 	if err := e.destroyOtherReviewerHandles(ctx, workerID, selected, reviewRows); err != nil {
 		return SessionReviews{}, err
 	}
-	if previousSelected == selected && previousConfig != selectedConfig {
+	if previousSelected == selected && !agentConfigsEqual(previousConfig, selectedConfig) {
 		if err := e.resetReviewerRuntimeLocked(ctx, workerID, selected); err != nil {
 			return SessionReviews{}, err
 		}

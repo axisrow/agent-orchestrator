@@ -3,8 +3,6 @@ package tmux
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -20,6 +18,7 @@ import (
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/runtime/ptyexec"
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
+	"github.com/aoagents/agent-orchestrator/backend/internal/envfilter"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 	"github.com/aoagents/agent-orchestrator/backend/internal/tmuxbin"
 )
@@ -225,7 +224,14 @@ type execRunner struct{}
 
 func (execRunner) Run(ctx context.Context, env []string, name string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Env = append(append([]string(nil), os.Environ()...), env...)
+	// A daemon started from inside a Claude Code session (rebuild-ao.sh run
+	// from an agent terminal, or the desktop app opened from one) inherits
+	// that session's own CLAUDECODE/CLAUDE_CODE_CHILD_SESSION/etc markers.
+	// The first call here auto-starts tmux's persistent server, which keeps
+	// whatever env it's given for its entire lifetime — so without this,
+	// every worker's claude-code process misidentifies itself as a child of
+	// that unrelated parent session. See envfilter for what's dropped and why.
+	cmd.Env = envfilter.DropParentSessionMarkers(append(append([]string(nil), os.Environ()...), env...))
 	// Run from a stable directory, not whatever the daemon process's cwd happens
 	// to be. The first tmux CLI call auto-starts tmux's persistent server, which
 	// inherits ITS launching process's cwd and keeps it for the server's entire
@@ -813,7 +819,7 @@ func (r *Runtime) Attach(ctx context.Context, handle ports.RuntimeHandle, rows, 
 		return nil, fmt.Errorf("tmux runtime: attach session %s: %w", id, err)
 	}
 	argv := r.attachCommandForSocket(id, socketName)
-	return ptyexec.Spawn(ctx, argv, attachEnv(os.Environ()), rows, cols)
+	return ptyexec.Spawn(ctx, argv, attachEnv(envfilter.DropParentSessionMarkers(os.Environ())), rows, cols)
 }
 
 // attachCommand returns the argv to attach a terminal to the session.
@@ -1113,43 +1119,7 @@ func tmuxSessionName(id domain.SessionID) (string, error) {
 	if raw == "" {
 		return "", errors.New("tmux runtime: session id is required")
 	}
-	return SessionName(raw), nil
-}
-
-// SessionName returns the tmux session name the runtime registers for a given
-// session id, applying the same sanitisation Create does. Callers that print an
-// attach hint must use this rather than the raw id.
-func SessionName(id string) string {
-	if sessionIDPattern.MatchString(id) && len(id) <= 48 {
-		return id
-	}
-	return sanitizedSessionName(id)
-}
-
-func sanitizedSessionName(raw string) string {
-	var b strings.Builder
-	lastDash := false
-	for _, r := range raw {
-		valid := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-'
-		if valid {
-			b.WriteRune(r)
-			lastDash = false
-			continue
-		}
-		if !lastDash {
-			b.WriteByte('-')
-			lastDash = true
-		}
-	}
-	base := strings.Trim(b.String(), "-")
-	if base == "" {
-		base = "session"
-	}
-	if len(base) > 32 {
-		base = strings.TrimRight(base[:32], "-")
-	}
-	sum := sha256.Sum256([]byte(raw))
-	return base + "-" + hex.EncodeToString(sum[:4])
+	return domain.RuntimeHandleName(raw), nil
 }
 
 func handleID(handle ports.RuntimeHandle) (string, error) {

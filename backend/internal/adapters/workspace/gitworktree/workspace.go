@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -610,6 +611,7 @@ func (w *Workspace) DestroyReclaim(ctx context.Context, info ports.WorkspaceInfo
 }
 
 func (w *Workspace) destroy(ctx context.Context, info ports.WorkspaceInfo) (ports.WorkspaceReclaim, error) {
+	slog.InfoContext(ctx, "gitworktree: Destroy called", "sessionID", info.SessionID, "path", info.Path, "branch", info.Branch, "projectID", info.ProjectID, "repoPath", info.RepoPath, "stack", string(debug.Stack()))
 	if info.Path == "" {
 		return ports.WorkspaceReclaimAlreadyAbsent, fmt.Errorf("%w: empty path", ErrUnsafePath)
 	}
@@ -683,6 +685,7 @@ func (w *Workspace) destroy(ctx context.Context, info ports.WorkspaceInfo) (port
 // discards agent work. For interactive teardown (ao session kill, ao cleanup)
 // use Destroy, which refuses dirty worktrees via ErrWorkspaceDirty.
 func (w *Workspace) ForceDestroy(ctx context.Context, info ports.WorkspaceInfo) error {
+	slog.InfoContext(ctx, "gitworktree: ForceDestroy called", "sessionID", info.SessionID, "path", info.Path, "branch", info.Branch, "projectID", info.ProjectID, "repoPath", info.RepoPath, "stack", string(debug.Stack()))
 	if info.Path == "" {
 		return fmt.Errorf("%w: empty path", ErrUnsafePath)
 	}
