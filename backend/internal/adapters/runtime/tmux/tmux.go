@@ -3,8 +3,6 @@ package tmux
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -20,6 +18,7 @@ import (
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/runtime/ptyexec"
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
+	"github.com/aoagents/agent-orchestrator/backend/internal/envfilter"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 	"github.com/aoagents/agent-orchestrator/backend/internal/tmuxbin"
 )
@@ -225,7 +224,14 @@ type execRunner struct{}
 
 func (execRunner) Run(ctx context.Context, env []string, name string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Env = append(append([]string(nil), os.Environ()...), env...)
+	// A daemon started from inside a Claude Code session (rebuild-ao.sh run
+	// from an agent terminal, or the desktop app opened from one) inherits
+	// that session's own CLAUDECODE/CLAUDE_CODE_CHILD_SESSION/etc markers.
+	// The first call here auto-starts tmux's persistent server, which keeps
+	// whatever env it's given for its entire lifetime — so without this,
+	// every worker's claude-code process misidentifies itself as a child of
+	// that unrelated parent session. See envfilter for what's dropped and why.
+	cmd.Env = envfilter.DropParentSessionMarkers(append(append([]string(nil), os.Environ()...), env...))
 	// Run from a stable directory, not whatever the daemon process's cwd happens
 	// to be. The first tmux CLI call auto-starts tmux's persistent server, which
 	// inherits ITS launching process's cwd and keeps it for the server's entire
@@ -553,10 +559,12 @@ func (r *Runtime) paneSessionIDs(ctx context.Context, id string) []int {
 // IsAlive reports whether the handle's session still exists via `tmux
 // has-session`. Exit 0 means alive. A non-zero exit with output naming this
 // session as missing is a definitive false, nil. A conclusively absent server
-// wraps ports.ErrRuntimeUnavailable so recovery may recreate it. A transient
-// connection or protocol/client failure wraps ErrRuntimeProbeInconclusive so
-// no caller can treat a possibly-live session as absent. Any other non-zero
-// exit is a plain probe error, which is likewise never per-session death.
+// — tmux ≥ 3.4 words it "error connecting … (No such file or directory)"
+// rather than "no server running" — wraps ports.ErrRuntimeUnavailable so
+// recovery may recreate it. A transient connection or protocol/client failure
+// wraps ErrRuntimeProbeInconclusive so no caller can treat a possibly-live
+// session as absent. Any other non-zero exit is a plain probe error, which is
+// likewise never per-session death.
 func (r *Runtime) IsAlive(ctx context.Context, handle ports.RuntimeHandle) (bool, error) {
 	id, err := handleID(handle)
 	if err != nil {
@@ -569,7 +577,7 @@ func (r *Runtime) IsAlive(ctx context.Context, handle ports.RuntimeHandle) (bool
 			if sessionMissingOutput(string(out)) {
 				return false, nil
 			}
-			if serverNotRunningOutput(string(out)) {
+			if serverNotRunningOutput(string(out)) || serverSocketAbsentOutput(string(out)) {
 				return false, fmt.Errorf("tmux runtime: probe session %s: %w: %s",
 					id, ports.ErrRuntimeUnavailable, strings.TrimSpace(string(out)))
 			}
@@ -846,7 +854,7 @@ func (r *Runtime) Attach(ctx context.Context, handle ports.RuntimeHandle, rows, 
 		return nil, fmt.Errorf("tmux runtime: attach session %s: %w", id, err)
 	}
 	argv := r.attachCommandForSocket(id, socketName)
-	return ptyexec.Spawn(ctx, argv, attachEnv(os.Environ()), rows, cols)
+	return ptyexec.Spawn(ctx, argv, attachEnv(envfilter.DropParentSessionMarkers(os.Environ())), rows, cols)
 }
 
 // attachCommand returns the argv to attach a terminal to the session.
@@ -969,7 +977,7 @@ func (r *Runtime) socketForSession(ctx context.Context, id string) (string, erro
 	// transient error cannot redirect a live session elsewhere.
 	if !sessionMissingOutput(string(out)) &&
 		!serverNotRunningOutput(string(out)) &&
-		!migrationSocketAbsentOutput(string(out)) {
+		!serverSocketAbsentOutput(string(out)) {
 		return r.socketName, nil
 	}
 	if r.legacyBinary == "" {
@@ -987,9 +995,13 @@ func (r *Runtime) socketForSession(ctx context.Context, id string) (string, erro
 	if ctx.Err() != nil {
 		return "", ctx.Err()
 	}
-	if sessionMissingOutput(string(legacyOut)) || serverNotRunningOutput(string(legacyOut)) {
+	if sessionMissingOutput(string(legacyOut)) ||
+		serverNotRunningOutput(string(legacyOut)) ||
+		serverSocketAbsentOutput(string(legacyOut)) {
 		// Both known sockets definitively lack the session. Return the private
-		// target so IsAlive's ordinary exact-session handling reports false.
+		// target so IsAlive's ordinary exact-session handling resolves it: a
+		// live private server reports the session missing, an absent one
+		// reports ErrRuntimeUnavailable so recovery may recreate it.
 		return r.socketName, nil
 	}
 	return "", fmt.Errorf(
@@ -1146,43 +1158,7 @@ func tmuxSessionName(id domain.SessionID) (string, error) {
 	if raw == "" {
 		return "", errors.New("tmux runtime: session id is required")
 	}
-	return SessionName(raw), nil
-}
-
-// SessionName returns the tmux session name the runtime registers for a given
-// session id, applying the same sanitisation Create does. Callers that print an
-// attach hint must use this rather than the raw id.
-func SessionName(id string) string {
-	if sessionIDPattern.MatchString(id) && len(id) <= 48 {
-		return id
-	}
-	return sanitizedSessionName(id)
-}
-
-func sanitizedSessionName(raw string) string {
-	var b strings.Builder
-	lastDash := false
-	for _, r := range raw {
-		valid := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-'
-		if valid {
-			b.WriteRune(r)
-			lastDash = false
-			continue
-		}
-		if !lastDash {
-			b.WriteByte('-')
-			lastDash = true
-		}
-	}
-	base := strings.Trim(b.String(), "-")
-	if base == "" {
-		base = "session"
-	}
-	if len(base) > 32 {
-		base = strings.TrimRight(base[:32], "-")
-	}
-	sum := sha256.Sum256([]byte(raw))
-	return base + "-" + hex.EncodeToString(sum[:4])
+	return domain.RuntimeHandleName(raw), nil
 }
 
 func handleID(handle ports.RuntimeHandle) (string, error) {
@@ -1223,11 +1199,14 @@ func serverNotRunningOutput(out string) bool {
 	return strings.Contains(s, "no server running")
 }
 
-// migrationSocketAbsentOutput identifies a named migration target whose Unix
-// socket does not exist. This is definitive only for choosing whether to
-// inspect the legacy default socket; it must not become per-session evidence
-// of death, because the session may still be alive on that legacy server.
-func migrationSocketAbsentOutput(out string) bool {
+// serverSocketAbsentOutput identifies tmux output meaning the target's Unix
+// socket file does not exist, so no server is listening there. tmux ≥ 3.4
+// reports an absent server this way instead of "no server running". Like
+// "no server running" this is definitive at the server level only; it must
+// not become per-session evidence of death, because liveness callers still
+// distinguish it from a conclusive "can't find session" and recovery paths
+// may recreate the missing server.
+func serverSocketAbsentOutput(out string) bool {
 	s := strings.ToLower(out)
 	return strings.Contains(s, "error connecting") &&
 		strings.Contains(s, "no such file or directory")

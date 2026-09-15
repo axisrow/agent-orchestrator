@@ -144,6 +144,10 @@ var shippedMigrations = map[int64]string{
 	137: "0137_conversation_edit_delivery.sql",
 	138: "0138_conversation_edit_dispatch_boundary.sql",
 	139: "0139_conversation_steer_delivery.sql",
+	// Fork-local migrations live in the reserved 9000+ range so a sync rebase
+	// can never renumber them onto a number upstream will claim. See
+	// migrate_fork_reserved_range_test.go for why.
+	9001: "9001_add_user_config.sql",
 }
 
 // burnedVersion reports version numbers that must never be (re)used: they
