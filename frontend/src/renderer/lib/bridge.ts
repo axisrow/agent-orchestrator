@@ -114,6 +114,7 @@ export const aoBridge: AoBridge =
 				isLoading: false,
 			}),
 			historySuggestions: async () => [],
+			historyFavicon: async () => undefined,
 			clear: async (viewId: string) => ({
 				viewId,
 				url: "",
@@ -181,6 +182,9 @@ export const aoBridge: AoBridge =
 			}),
 			destroy: () => undefined,
 			setAnnotationMode: async () => undefined,
+			completeAnnotation: async () => undefined,
+			discardAnnotations: async () => undefined,
+			annotationAction: async () => undefined,
 			onNavState: () => () => undefined,
 			onPageFocus: () => () => undefined,
 			onTabsState: () => () => undefined,
@@ -190,6 +194,7 @@ export const aoBridge: AoBridge =
 			onProfileManage: () => () => undefined,
 			onAnnotationSubmit: () => () => undefined,
 			onAnnotationCancel: () => () => undefined,
+			onAnnotationState: () => () => undefined,
 		},
 		browserProfiles: {
 			list: async () => ({ profiles: [] }),
@@ -240,6 +245,7 @@ export const aoBridge: AoBridge =
 			returnHome: async () => undefined,
 			download: async () => undefined,
 			install: async () => undefined,
+			isPostUpdateRelaunch: async () => false,
 			onStatus: () => () => undefined,
 			onTelemetry: () => () => undefined,
 		},

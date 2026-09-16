@@ -53,7 +53,13 @@ export async function installFakeBridge(page: Page, opts: FakeBridgeOptions = {}
 	await page.addInitScript(
 		({ version, daemonState, daemonPort, updateStatus, updateSettings }) => {
 			const unsubscribe = () => () => undefined;
+			const updateListeners = new Set<(status: UpdateStatus) => void>();
 			let currentUpdateSettings = updateSettings;
+			let currentUpdateStatus = updateStatus;
+			const emitUpdateStatus = (next: UpdateStatus) => {
+				currentUpdateStatus = next;
+				for (const listener of updateListeners) listener(next);
+			};
 			const status: DaemonStatus =
 				daemonState === "ready" ? { state: "ready", port: daemonPort } : { state: daemonState };
 			const navState = (viewId: string) => ({
@@ -155,6 +161,7 @@ export async function installFakeBridge(page: Page, opts: FakeBridgeOptions = {}
 					setOverlayOpen: () => undefined,
 					navigate: async ({ viewId }: { viewId: string }) => navState(viewId),
 					historySuggestions: async () => [],
+					historyFavicon: async () => undefined,
 					clear: async (viewId: string) => navState(viewId),
 					goBack: async (viewId: string) => navState(viewId),
 					goForward: async (viewId: string) => navState(viewId),
@@ -200,8 +207,12 @@ export async function installFakeBridge(page: Page, opts: FakeBridgeOptions = {}
 					// to these whenever SessionView mounts with window.ao.browser present, so
 					// an incomplete browser shape would crash the session-detail/preview specs.
 					setAnnotationMode: async () => undefined,
+					completeAnnotation: async () => undefined,
+					discardAnnotations: async () => undefined,
+					annotationAction: async () => undefined,
 					onAnnotationSubmit: unsubscribe,
 					onAnnotationCancel: unsubscribe,
+					onAnnotationState: unsubscribe,
 					onNavState: unsubscribe,
 					onTabsState: unsubscribe,
 					onAgentActivity: unsubscribe,
@@ -256,12 +267,18 @@ export async function installFakeBridge(page: Page, opts: FakeBridgeOptions = {}
 					setRecording: async () => undefined,
 				},
 				updates: {
-					getStatus: async () => updateStatus,
+					getStatus: async () => currentUpdateStatus,
 					check: async () => undefined,
 					returnHome: async () => undefined,
 					download: async () => undefined,
 					install: async () => undefined,
-					onStatus: unsubscribe,
+					isPostUpdateRelaunch: async () => false,
+					onStatus: (listener: (status: UpdateStatus) => void) => {
+						updateListeners.add(listener);
+						return () => {
+							updateListeners.delete(listener);
+						};
+					},
 					onTelemetry: unsubscribe,
 				},
 				// UpdatesSection calls featureBuilds.getActive() immediately on mount; an
@@ -290,6 +307,9 @@ export async function installFakeBridge(page: Page, opts: FakeBridgeOptions = {}
 					onStreamEvent: unsubscribe,
 				},
 			} satisfies AoBridge;
+			(window as unknown as { __aoFakeUpdates: { setStatus: (status: UpdateStatus) => void } }).__aoFakeUpdates = {
+				setStatus: emitUpdateStatus,
+			};
 			(window as unknown as { ao: unknown }).ao = ao;
 		},
 		{ version, daemonState, daemonPort, updateStatus, updateSettings },
@@ -358,9 +378,14 @@ export type FakeAgentController = {
 	notify: (n: { id: string; type: string; title: string; body?: string; sessionId?: string }) => void;
 };
 
+export type FakeUpdateController = {
+	setStatus: (status: UpdateStatus) => void;
+};
+
 declare global {
 	interface Window {
 		__aoFakeAgent?: FakeAgentController;
+		__aoFakeUpdates?: FakeUpdateController;
 	}
 }
 
@@ -694,6 +719,7 @@ export async function installFakeAgent(page: Page, opts: FakeAgentOptions = {}):
 					navigate: async ({ viewId, url }: { viewId: string; url: string }) =>
 						state.browserError ? navState(viewId, "", state.browserError) : navState(viewId, url),
 					historySuggestions: async () => [],
+					historyFavicon: async () => undefined,
 					clear: async (viewId: string) => navState(viewId),
 					goBack: async (viewId: string) => navState(viewId),
 					goForward: async (viewId: string) => navState(viewId),
@@ -739,8 +765,12 @@ export async function installFakeAgent(page: Page, opts: FakeAgentOptions = {}):
 					// to these whenever SessionView mounts with window.ao.browser present, so
 					// an incomplete browser shape would crash the session-detail/preview specs.
 					setAnnotationMode: async () => undefined,
+					completeAnnotation: async () => undefined,
+					discardAnnotations: async () => undefined,
+					annotationAction: async () => undefined,
 					onAnnotationSubmit: unsubscribe,
 					onAnnotationCancel: unsubscribe,
+					onAnnotationState: unsubscribe,
 					onNavState: unsubscribe,
 					onTabsState: unsubscribe,
 					onAgentActivity: unsubscribe,
@@ -792,6 +822,7 @@ export async function installFakeAgent(page: Page, opts: FakeAgentOptions = {}):
 					returnHome: async () => undefined,
 					download: async () => undefined,
 					install: async () => undefined,
+					isPostUpdateRelaunch: async () => false,
 					onStatus: unsubscribe,
 					onTelemetry: unsubscribe,
 				},

@@ -143,7 +143,9 @@ type WirePR = {
 
 type WireSession = {
 	id: string;
-	projectId: string;
+	// Absent for a standalone agent session: the daemon marks the field
+	// omitempty and a standalone session has no project to name.
+	projectId?: string;
 	terminalHandleId?: string;
 	issueId?: string;
 	kind?: string; // worker | orchestrator
@@ -221,7 +223,9 @@ function mapSession(s: WireSession): DashboardSession {
 	const prs = (s.prs ?? []).map(mapPR);
 	return {
 		id: s.id,
-		projectId: s.projectId,
+		// "" rather than undefined: every consumer treats the id as a string, and
+		// `shortLabel(undefined)` threw inside render and took the whole board down.
+		projectId: s.projectId ?? "",
 		terminalHandleId: s.terminalHandleId,
 		status: s.status ?? null,
 		activity: activityString(s.activity),
@@ -247,7 +251,7 @@ function mapSession(s: WireSession): DashboardSession {
 function mapOrchestrator(s: WireSession, projectName: string): OrchestratorLink {
 	return {
 		id: s.id,
-		projectId: s.projectId,
+		projectId: s.projectId ?? "",
 		terminalHandleId: s.terminalHandleId,
 		projectName,
 		status: s.status ?? null,
@@ -405,13 +409,16 @@ export async function getSessions(cfg: ServerConfig, _projectId?: string): Promi
 	// is actually running.
 	const bestByProject = new Map<string, WireSession>();
 	for (const s of rawOrchestrators) {
+		// An orchestrator belongs to a project by definition; one without is not
+		// something this screen can show or restart.
+		if (!s.projectId) continue;
 		const cur = bestByProject.get(s.projectId);
 		// Keep a live orchestrator once found; otherwise take the later entry
 		// (the daemon lists them oldest to newest).
 		if (!cur || cur.isTerminated) bestByProject.set(s.projectId, s);
 	}
 	const orchestrators = [...bestByProject.values()].map((s) =>
-		mapOrchestrator(s, nameOf.get(s.projectId) ?? s.projectId),
+		mapOrchestrator(s, nameOf.get(s.projectId ?? "") ?? s.projectId ?? ""),
 	);
 
 	return { sessions, orchestrators, orchestratorId: null, stats: {}, projects };
