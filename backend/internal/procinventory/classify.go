@@ -74,18 +74,29 @@ type Inventory struct {
 }
 
 // isPtyHostRoot reports whether the command line is a detached pty-host spawn
-// (`<...>/ao pty-host <sessionID> <cwd> ...`, built in
-// conpty/spawn_unix.go defaultSpawnHost). Only fields[1] and fields[2] are
-// read: the cwd can contain spaces, so nothing after fields[3] is parseable.
+// (`<path-to-ao> pty-host <sessionID> <cwd> ...`, built in
+// conpty/spawn_unix.go defaultSpawnHost). Token positions are relative to the
+// "pty-host" verb, not the front of the line: the packaged binary path
+// contains a space ("/Applications/Agent Orchestrator.app/.../ao"), and ps
+// renders args unquoted, so the executable path splits into several fields.
+// The token before the verb must end in the ao binary name; nothing after the
+// session id is read (the cwd can contain spaces too).
 func isPtyHostRoot(command string) (domain.SessionID, bool) {
 	fields := strings.Fields(command)
-	if len(fields) < 3 || fields[1] != "pty-host" || path.Base(fields[0]) != "ao" {
-		return "", false
+	for i := 1; i+1 < len(fields); i++ {
+		if fields[i] != "pty-host" {
+			continue
+		}
+		exe := fields[i-1]
+		if exe != "ao" && !strings.HasSuffix(exe, "/ao") {
+			continue
+		}
+		if !sessionIDShape.MatchString(fields[i+1]) {
+			return "", false
+		}
+		return domain.SessionID(fields[i+1]), true
 	}
-	if !sessionIDShape.MatchString(fields[2]) {
-		return "", false
-	}
-	return domain.SessionID(fields[2]), true
+	return "", false
 }
 
 // superviseSessionID extracts the --session argument from an

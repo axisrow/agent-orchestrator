@@ -52,6 +52,26 @@ func TestClassify_OwnedFreshAndAdopted(t *testing.T) {
 	}
 }
 
+func TestClassify_SpacedBundlePathRootMatches(t *testing.T) {
+	// The packaged binary lives under "/Applications/Agent Orchestrator.app/"
+	// — a space inside the executable path — and ps renders args unquoted, so
+	// the pty-host verb is NOT fields[1] of the row. The matcher must find it
+	// relative to the verb.
+	spaced := Entry{PID: 1439, PPID: 1, PGID: 1439, RSSKB: 25040,
+		Command: "/Applications/Agent Orchestrator.app/Contents/Resources/daemon/ao pty-host direct-cli-17 " +
+			"/Users/x/.ao/data/worktrees/direct-cli/orchestrator/direct-cli-orchestrator " +
+			"/Applications/Agent Orchestrator.app/Contents/Resources/daemon/ao agent-process supervise " +
+			"--session direct-cli-17 --launch f9b0df1e -- /Users/x/.local/bin/claude --resume abc"}
+	inv := classifyEntries(t, []Entry{spaced}, nil)
+
+	if inv.Totals.OrphansCount != 1 {
+		t.Fatalf("orphans = %d, want 1; trees = %+v", inv.Totals.OrphansCount, inv.Trees)
+	}
+	if inv.Trees[0].SessionID != "direct-cli-17" {
+		t.Fatalf("session = %q", inv.Trees[0].SessionID)
+	}
+}
+
 func TestClassify_OrphansAndForeign(t *testing.T) {
 	live := map[domain.SessionID]domain.SessionRecord{}
 	entries := []Entry{
