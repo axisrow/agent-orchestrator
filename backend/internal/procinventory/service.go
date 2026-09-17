@@ -3,6 +3,7 @@ package procinventory
 import (
 	"context"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
@@ -22,6 +23,13 @@ const (
 type Service struct {
 	deps   Deps
 	killMu chan struct{}
+	invMu  sync.Mutex
+	// cached is the last successful inventory with its wall-clock stamp;
+	// served instead of an error when a fresh scan fails or overruns its
+	// budget, so a thrashing machine degrades to slightly-stale numbers
+	// rather than a dead status bar.
+	cached   *Inventory
+	cachedAt time.Time
 }
 
 // Deps carries the service's collaborators. Zero fields select the defaults
@@ -48,6 +56,12 @@ type Deps struct {
 	// (ErrHostStatsUnsupported on windows). An error is not fatal — the
 	// inventory is returned without a host section.
 	HostStats func(ctx context.Context) (HostStats, error)
+	// ScanBudget bounds one scan/collect pass; on overrun the last good
+	// inventory is served (nil if none yet). Default 15s.
+	ScanBudget time.Duration
+	// CacheTTL is how long a successful inventory is reused before a fresh
+	// scan runs; overlapping pollers then share one pass. Default 3s.
+	CacheTTL time.Duration
 	// Unregister drops a killed orphan's PTY-host registry entry; the daemon
 	// wires conpty's ptyregistry.Unregister. Nil means skip.
 	Unregister func(ctx context.Context, sessionID string) error
@@ -82,6 +96,12 @@ func New(deps Deps) *Service {
 	if deps.Now == nil {
 		deps.Now = time.Now
 	}
+	if deps.ScanBudget <= 0 {
+		deps.ScanBudget = 15 * time.Second
+	}
+	if deps.CacheTTL <= 0 {
+		deps.CacheTTL = 3 * time.Second
+	}
 	if deps.Log == nil {
 		deps.Log = slog.Default()
 	}
@@ -91,20 +111,47 @@ func New(deps Deps) *Service {
 // Inventory snapshots and classifies the current process table. A host
 // memory fetch failure is not an error: the inventory is returned without
 // its host section (the status bar hides that section on nil).
+//
+// Inventories are cached for Deps.CacheTTL and served single-flight: the
+// status bar polls continuously, so overlapping clients share one scan pass
+// instead of each spawning its own process storm. When a scan fails or
+// overruns its budget, the last good inventory is served (slightly stale)
+// rather than an error — a thrashing machine degrades to stale numbers, not
+// to a dead status bar.
 func (s *Service) Inventory(ctx context.Context) (Inventory, error) {
-	entries, err := s.deps.Scan(ctx)
+	s.invMu.Lock()
+	defer s.invMu.Unlock()
+
+	now := s.deps.Now()
+	if s.cached != nil && now.Sub(s.cachedAt) < s.deps.CacheTTL {
+		return *s.cached, nil
+	}
+
+	scanCtx, cancel := context.WithTimeout(ctx, s.deps.ScanBudget)
+	defer cancel()
+	entries, err := s.deps.Scan(scanCtx)
 	if err != nil {
+		if s.cached != nil {
+			s.deps.Log.Debug("procinventory: scan failed, serving last good inventory", "err", err)
+			return *s.cached, nil
+		}
 		return Inventory{}, err
 	}
-	live, err := s.deps.LiveSessions(ctx)
+	live, err := s.deps.LiveSessions(scanCtx)
 	if err != nil {
+		if s.cached != nil {
+			s.deps.Log.Debug("procinventory: live session read failed, serving last good inventory", "err", err)
+			return *s.cached, nil
+		}
 		return Inventory{}, err
 	}
 	inv := BuildInventory(entries, live, s.deps.DaemonPID, s.deps.TmuxSocketName, s.deps.Now())
-	if host, err := s.deps.HostStats(ctx); err != nil {
+	if host, err := s.deps.HostStats(scanCtx); err != nil {
 		s.deps.Log.Debug("procinventory: host stats unavailable", "err", err)
 	} else {
 		inv.Host = &host
 	}
+	s.cached = &inv
+	s.cachedAt = now
 	return inv, nil
 }

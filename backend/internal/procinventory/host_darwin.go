@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	aoprocess "github.com/aoagents/agent-orchestrator/backend/internal/process"
 )
@@ -23,11 +24,19 @@ var freeRootDiskBytes = func() (int64, error) {
 	return int64(stat.Bavail) * int64(stat.Bsize), nil
 }
 
+// hostCommandBudget bounds each spawned collector: under a swap storm even
+// fork/exec can stall for minutes, and one stalled stat must not pin the
+// inventory request (the stat is simply omitted instead).
+const hostCommandBudget = 3 * time.Second
+
 // runCommand spawns name with a C-pinned locale: sysctl localizes its
 // swapusage decimals (comma under ru_RU), and the parsers accept both — the
-// pin just makes the common path canonical.
+// pin just makes the common path canonical. Bounded by hostCommandBudget;
+// an overrun surfaces as a canceled-context error the caller skips on.
 func runCommand(ctx context.Context, args ...string) (string, error) {
-	cmd := aoprocess.CommandContext(ctx, args[0], args[1:]...)
+	cmdCtx, cancel := context.WithTimeout(ctx, hostCommandBudget)
+	defer cancel()
+	cmd := aoprocess.CommandContext(cmdCtx, args[0], args[1:]...)
 	cmd.Env = append(os.Environ(), "LC_ALL=C", "LANG=C")
 	out, err := cmd.Output()
 	if err != nil {
