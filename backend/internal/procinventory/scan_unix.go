@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"syscall"
 
 	aoprocess "github.com/aoagents/agent-orchestrator/backend/internal/process"
@@ -39,9 +40,14 @@ func (s Signal) syscall() syscall.Signal {
 
 // SystemScan snapshots the full process table with parent, process group,
 // resident memory, and kernel start time. -ww is required: agent command
-// lines are long and ps truncates them otherwise.
+// lines are long and ps truncates them otherwise. LC_ALL=C pins the lstart
+// column to the fixed five-token C-locale format ("Mon Sep 14 00:13:51
+// 2026") — under a user locale it localizes ("понедельник, 14 сентября ...")
+// and the fixed-token parse would mis-slice every row.
 func SystemScan(ctx context.Context) ([]Entry, error) {
-	out, err := aoprocess.CommandContext(ctx, "ps", "-ww", "-axo", "pid=,ppid=,pgid=,rss=,lstart=,args=").Output()
+	cmd := aoprocess.CommandContext(ctx, "ps", "-ww", "-axo", "pid=,ppid=,pgid=,rss=,lstart=,args=")
+	cmd.Env = append(os.Environ(), "LC_ALL=C", "LANG=C")
+	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("process scan: %w", err)
 	}
