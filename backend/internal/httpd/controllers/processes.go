@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"sort"
 
 	"github.com/go-chi/chi/v5"
 
@@ -32,8 +33,15 @@ func (c *ProcessController) Register(r chi.Router) {
 }
 
 func processInventoryDTO(inv procinventory.Inventory) ProcessInventoryResponse {
-	trees := make([]ProcessTreeDTO, 0, len(inv.Trees))
-	for _, tree := range inv.Trees {
+	// Heaviest first: every client (CLI table, status bar) presents the list
+	// in this order, and a swapped-out tree whose RSS collapsed mid-scan still
+	// lands deterministically by its own snapshot value.
+	treesDTO := make([]procinventory.Tree, len(inv.Trees))
+	copy(treesDTO, inv.Trees)
+	sort.SliceStable(treesDTO, func(i, j int) bool { return treesDTO[i].RSSBytes > treesDTO[j].RSSBytes })
+
+	trees := make([]ProcessTreeDTO, 0, len(treesDTO))
+	for _, tree := range treesDTO {
 		trees = append(trees, ProcessTreeDTO{
 			SessionID:  tree.SessionID,
 			RootPID:    tree.RootPID,
