@@ -2058,7 +2058,6 @@
 	"statusBar.killAllOrphans": "すべての孤立を終了",
 	"statusBar.killGroup": "{{count}} 件を終了",
 	"statusBar.killGroupAria": "{{project}} の孤立ツリー {{count}} 件を終了",
-	"statusBar.otherTrees": "その他のツリー",
 	"statusBar.treeRow": "{{session}} · pid {{pid}} · {{rss}}",
 	"statusBar.ramLabel": "RAM",
 	"statusBar.swapLabel": "スワップ",

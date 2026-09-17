@@ -2039,7 +2039,6 @@
 	"statusBar.killAllOrphans": "Kill all orphans",
 	"statusBar.killGroup": "Kill {{count}}",
 	"statusBar.killGroupAria": "Kill {{count}} orphaned trees of project {{project}}",
-	"statusBar.otherTrees": "Other trees",
 	"statusBar.treeRow": "{{session}} · pid {{pid}} · {{rss}}",
 	"statusBar.ramLabel": "RAM",
 	"statusBar.swapLabel": "Swap",

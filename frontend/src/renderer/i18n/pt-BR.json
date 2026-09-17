@@ -2087,7 +2087,6 @@
 	"statusBar.killAllOrphans": "Encerrar todos os órfãos",
 	"statusBar.killGroup": "Encerrar {{count}}",
 	"statusBar.killGroupAria": "Encerrar {{count}} árvores órfãs de {{project}}",
-	"statusBar.otherTrees": "Outras árvores",
 	"statusBar.treeRow": "{{session}} · pid {{pid}} · {{rss}}",
 	"statusBar.ramLabel": "RAM",
 	"statusBar.swapLabel": "Swap",

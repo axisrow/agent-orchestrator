@@ -2087,7 +2087,6 @@
 	"statusBar.killAllOrphans": "Tuer tous les orphelins",
 	"statusBar.killGroup": "Tuer {{count}}",
 	"statusBar.killGroupAria": "Tuer {{count}} arbres orphelins de {{project}}",
-	"statusBar.otherTrees": "Autres arbres",
 	"statusBar.treeRow": "{{session}} · pid {{pid}} · {{rss}}",
 	"statusBar.ramLabel": "RAM",
 	"statusBar.swapLabel": "Swap",

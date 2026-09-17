@@ -2058,7 +2058,6 @@
 	"statusBar.killAllOrphans": "Alle Verwaisten beenden",
 	"statusBar.killGroup": "{{count}} beenden",
 	"statusBar.killGroupAria": "{{count}} verwaiste Bäume von {{project}} beenden",
-	"statusBar.otherTrees": "Andere Bäume",
 	"statusBar.treeRow": "{{session}} · pid {{pid}} · {{rss}}",
 	"statusBar.ramLabel": "RAM",
 	"statusBar.swapLabel": "Swap",

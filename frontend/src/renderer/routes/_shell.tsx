@@ -1052,6 +1052,7 @@ function ShellLayout() {
 								selfFramedCenterPanel={selfFramedCenterPanel}
 							/>
 						</div>
+						<StatusBar />
 						</main>
 					</div>
 					<DaemonFailureBanner status={daemonStatus} />
@@ -1097,7 +1098,6 @@ function ShellLayout() {
 					workspaces={workspaces}
 				/>
 					<CommandPalette />
-					<StatusBar />
 				</div>
 				</TerminalCacheProvider>
 			</SessionTopbarProvider>

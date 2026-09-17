@@ -13,12 +13,12 @@ import { Badge } from "./ui/badge";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { MemoryPopover } from "./MemoryPopover";
 
-// App-wide bottom strip, kept minimal: host RAM/Swap (the MemoryPopover
-// segment) plus the orphan count with the batch kill entry point. Renders
-// nothing while the inventory is unavailable, and hides entirely when the
-// daemon provides neither a host snapshot nor orphans. The left padding
-// clears the fixed sidebar via the same CSS variable the sidebar publishes
-// on :root (--ao-sidebar-w), so its content never paints underneath it.
+// Bottom strip of the content area (mounted inside <main>, so it always sits
+// right of the fixed sidebar at any width or collapse state), kept minimal:
+// host RAM/Swap (the MemoryPopover segment) plus the orphan count with the
+// batch kill entry point. Renders nothing while the inventory is
+// unavailable, and hides entirely when the daemon provides neither a host
+// snapshot nor orphans.
 export function StatusBar() {
 	const { t } = useTranslation();
 	const queryClient = useQueryClient();
@@ -54,7 +54,7 @@ export function StatusBar() {
 		<>
 			<div
 				data-testid="status-bar"
-				className="flex h-7 shrink-0 items-center gap-3 border-t border-border/60 bg-sidebar pl-(--ao-sidebar-w,var(--size-sidebar-default)) pr-3 text-caption text-muted-foreground"
+				className="flex h-7 shrink-0 items-center gap-3 border-t border-border/60 bg-sidebar px-3 text-caption text-muted-foreground"
 			>
 				{data.host && (
 					<MemoryPopover
