@@ -47,6 +47,20 @@ type processTotalsDTO struct {
 	TmuxRSSBytes     int64 `json:"tmuxRssBytes"`
 }
 
+type processHostMemoryDTO struct {
+	TotalBytes      int64 `json:"totalBytes"`
+	UsedBytes       int64 `json:"usedBytes"`
+	FreeBytes       int64 `json:"freeBytes"`
+	CachedBytes     int64 `json:"cachedBytes"`
+	WiredBytes      int64 `json:"wiredBytes"`
+	AppBytes        int64 `json:"appBytes"`
+	CompressedBytes int64 `json:"compressedBytes"`
+	SwapTotalBytes  int64 `json:"swapTotalBytes"`
+	SwapUsedBytes   int64 `json:"swapUsedBytes"`
+	SwapFreeBytes   int64 `json:"swapFreeBytes"`
+	SwapMaxBytes    int64 `json:"swapMaxBytes"`
+}
+
 type processInventoryResponse struct {
 	GeneratedAt string                 `json:"generatedAt"`
 	Daemon      processGroupSummaryDTO `json:"daemon"`
@@ -54,6 +68,7 @@ type processInventoryResponse struct {
 	Trees       []processTreeDTO       `json:"trees"`
 	Remnants    []processRemnantDTO    `json:"remnants"`
 	Totals      processTotalsDTO       `json:"totals"`
+	Host        *processHostMemoryDTO  `json:"host,omitempty"`
 }
 
 func newPsCommand(ctx *commandContext) *cobra.Command {
@@ -82,6 +97,16 @@ func newPsCommand(ctx *commandContext) *cobra.Command {
 
 func writeProcessInventory(cmd *cobra.Command, res processInventoryResponse) error {
 	out := cmd.OutOrStdout()
+	if res.Host != nil {
+		host := res.Host
+		memory := fmt.Sprintf("memory       RAM %s / %s   swap %s / %s   disk free %s",
+			formatBytesCLI(host.UsedBytes), formatBytesCLI(host.TotalBytes),
+			formatBytesCLI(host.SwapUsedBytes), formatBytesCLI(host.SwapTotalBytes),
+			formatBytesCLI(host.SwapMaxBytes-host.SwapTotalBytes))
+		if _, err := fmt.Fprintln(out, memory); err != nil {
+			return err
+		}
+	}
 	if _, err := fmt.Fprintf(out, "daemon       PID %d   RSS %s\n", res.Daemon.PID, formatBytesCLI(res.Daemon.RSSBytes)); err != nil {
 		return err
 	}

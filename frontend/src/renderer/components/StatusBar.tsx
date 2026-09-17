@@ -11,15 +11,12 @@ import {
 } from "../hooks/useProcessInventoryQuery";
 import { Badge } from "./ui/badge";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { MemoryPopover } from "./MemoryPopover";
 
-// A confirm dialog listing every tree gets unreadable; past this, the list
-// truncates with an "and N more" line.
-const maxTreesInDialog = 8;
-
-// App-wide bottom strip: one glanceable line of AO's process footprint —
-// daemon, tmux server, live sessions, orphaned trees — with the destructive
-// kill flow for orphans. Renders nothing while the inventory is unavailable
-// (headless daemon, older daemon, Windows) so it can never block the shell.
+// App-wide bottom strip, kept minimal: host RAM/Swap (the MemoryPopover
+// segment) plus the orphan count with the batch kill entry point. Renders
+// nothing while the inventory is unavailable, and hides entirely when the
+// daemon provides neither a host snapshot nor orphans.
 export function StatusBar() {
 	const { t } = useTranslation();
 	const queryClient = useQueryClient();
@@ -28,9 +25,6 @@ export function StatusBar() {
 	const { data } = useProcessInventoryQuery();
 
 	const orphans = (data?.trees ?? []).filter((tree) => tree.state === "orphan");
-	const totalBytes = data
-		? data.totals.daemonRssBytes + data.totals.tmuxRssBytes + data.totals.sessionsRssBytes + data.totals.orphansRssBytes
-		: 0;
 
 	const killMutation = useMutation({
 		mutationFn: async (targets: ProcessKillTarget[]) => {
@@ -42,10 +36,17 @@ export function StatusBar() {
 			setKillError(null);
 			setConfirmOpen(false);
 		},
+		// Failure keeps the dialog/popover open with the error inline — the
+		// trees are still there to retry.
 		onError: () => setKillError(t("statusBar.killFailed")),
 	});
 
-	if (!data) return null;
+	if (!data || (!data.host && orphans.length === 0)) return null;
+
+	const pendingSessionId =
+		killMutation.isPending && killMutation.variables && killMutation.variables.length === 1
+			? killMutation.variables[0].sessionId
+			: undefined;
 
 	return (
 		<>
@@ -53,20 +54,23 @@ export function StatusBar() {
 				data-testid="status-bar"
 				className="flex h-7 shrink-0 items-center gap-3 border-t border-border/60 bg-sidebar px-3 text-caption text-muted-foreground"
 			>
-				<span className="font-medium text-foreground">AO</span>
-				<span className="tabular-nums">{formatBytes(data.totals.daemonRssBytes)}</span>
-				{data.tmux.present && (
-					<>
-						<span aria-hidden="true">·</span>
-						<span>
-							tmux <span className="tabular-nums">{formatBytes(data.totals.tmuxRssBytes)}</span>
-						</span>
-					</>
+				{data.host && (
+					<MemoryPopover
+						host={data.host}
+						trees={data.trees}
+						totals={data.totals}
+						pendingSessionId={pendingSessionId}
+						killError={killError}
+						onKillTree={(target) => {
+							setKillError(null);
+							killMutation.mutate([target]);
+						}}
+						onBatchKill={() => {
+							setKillError(null);
+							setConfirmOpen(true);
+						}}
+					/>
 				)}
-				<span aria-hidden="true">·</span>
-				<span>
-					{t("statusBar.sessions")} <span className="tabular-nums">{data.totals.sessionsCount}</span>
-				</span>
 				{orphans.length > 0 && (
 					<>
 						<Badge variant="warning">
@@ -87,9 +91,6 @@ export function StatusBar() {
 						</button>
 					</>
 				)}
-				<span className="ml-auto tabular-nums" title={t("statusBar.footprintTitle")}>
-					Σ {formatBytes(totalBytes)}
-				</span>
 			</div>
 			<ConfirmDialog
 				open={confirmOpen}
@@ -98,14 +99,12 @@ export function StatusBar() {
 					<>
 						<p>{t("statusBar.killLead", { count: orphans.length, rss: formatBytes(data.totals.orphansRssBytes) })}</p>
 						<ul className="mt-2 space-y-0.5">
-							{orphans.slice(0, maxTreesInDialog).map((tree) => (
+							{orphans.slice(0, 8).map((tree) => (
 								<li key={tree.sessionId} className="tabular-nums">
 									{tree.sessionId} · pid {tree.rootPid} · {formatBytes(tree.rssBytes)}
 								</li>
 							))}
-							{orphans.length > maxTreesInDialog && (
-								<li>{t("statusBar.moreTrees", { count: orphans.length - maxTreesInDialog })}</li>
-							)}
+							{orphans.length > 8 && <li>{t("statusBar.moreTrees", { count: orphans.length - 8 })}</li>}
 						</ul>
 					</>
 				}

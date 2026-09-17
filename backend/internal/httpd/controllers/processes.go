@@ -53,7 +53,7 @@ func processInventoryDTO(inv procinventory.Inventory) ProcessInventoryResponse {
 			RSSBytes:  remnant.RSSBytes,
 		})
 	}
-	return ProcessInventoryResponse{
+	response := ProcessInventoryResponse{
 		GeneratedAt: inv.GeneratedAt,
 		Daemon: ProcessGroupSummaryDTO{
 			PID:      inv.Daemon.PID,
@@ -78,6 +78,23 @@ func processInventoryDTO(inv procinventory.Inventory) ProcessInventoryResponse {
 			TmuxRSSBytes:     inv.Totals.TmuxRSSBytes,
 		},
 	}
+	if inv.Host != nil {
+		response.Host = &ProcessHostMemoryDTO{
+			TotalBytes:          inv.Host.TotalBytes,
+			UsedBytes:           inv.Host.UsedBytes,
+			FreeBytes:           inv.Host.FreeBytes,
+			CachedBytes:         inv.Host.CachedBytes,
+			WiredBytes:          inv.Host.WiredBytes,
+			AppBytes:            inv.Host.AppBytes,
+			CompressedBytes:     inv.Host.CompressedBytes,
+			SwapTotalBytes:      inv.Host.SwapTotalBytes,
+			SwapUsedBytes:       inv.Host.SwapUsedBytes,
+			SwapFreeBytes:       inv.Host.SwapFreeBytes,
+			SwapMaxBytes:        inv.Host.SwapMaxBytes,
+			PressureFreePercent: inv.Host.PressureFreePercent,
+		}
+	}
+	return response
 }
 
 func (c *ProcessController) list(w http.ResponseWriter, r *http.Request) {

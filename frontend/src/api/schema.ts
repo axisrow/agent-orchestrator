@@ -3737,10 +3737,36 @@ export interface components {
             /** Format: int64 */
             rssBytes: number;
         };
+        ProcessHostMemory: {
+            /** Format: int64 */
+            appBytes?: number;
+            /** Format: int64 */
+            cachedBytes: number;
+            /** Format: int64 */
+            compressedBytes?: number;
+            /** Format: int64 */
+            freeBytes: number;
+            pressureFreePercent?: null | number;
+            /** Format: int64 */
+            swapFreeBytes: number;
+            /** Format: int64 */
+            swapMaxBytes: number;
+            /** Format: int64 */
+            swapTotalBytes: number;
+            /** Format: int64 */
+            swapUsedBytes: number;
+            /** Format: int64 */
+            totalBytes: number;
+            /** Format: int64 */
+            usedBytes: number;
+            /** Format: int64 */
+            wiredBytes?: number;
+        };
         ProcessInventoryResponse: {
             daemon: components["schemas"]["ProcessGroupSummary"];
             /** Format: date-time */
             generatedAt: string;
+            host?: components["schemas"]["ProcessHostMemory"];
             remnants: components["schemas"]["ProcessRemnant"][];
             tmux: components["schemas"]["ProcessGroupSummary"];
             totals: components["schemas"]["ProcessTotals"];

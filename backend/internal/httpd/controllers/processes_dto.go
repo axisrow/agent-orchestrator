@@ -45,6 +45,26 @@ type ProcessTotalsDTO struct {
 	TmuxRSSBytes     int64 `json:"tmuxRssBytes"`
 }
 
+type ProcessHostMemoryDTO struct {
+	TotalBytes  int64 `json:"totalBytes"`
+	UsedBytes   int64 `json:"usedBytes"`
+	FreeBytes   int64 `json:"freeBytes"`
+	CachedBytes int64 `json:"cachedBytes"`
+	// Wired/App/Compressed are darwin-only kinds (0 elsewhere, omitted).
+	WiredBytes      int64 `json:"wiredBytes,omitempty"`
+	AppBytes        int64 `json:"appBytes,omitempty"`
+	CompressedBytes int64 `json:"compressedBytes,omitempty"`
+	SwapTotalBytes  int64 `json:"swapTotalBytes"`
+	SwapUsedBytes   int64 `json:"swapUsedBytes"`
+	SwapFreeBytes   int64 `json:"swapFreeBytes"`
+	// SwapMaxBytes is the honest ceiling swap can grow into: free disk on the
+	// root volume on darwin; the current swap size on linux.
+	SwapMaxBytes int64 `json:"swapMaxBytes"`
+	// PressureFreePercent is the OS free-memory estimate; omitted when the
+	// platform does not provide one.
+	PressureFreePercent *int `json:"pressureFreePercent,omitempty"`
+}
+
 type ProcessInventoryResponse struct {
 	GeneratedAt time.Time              `json:"generatedAt"`
 	Daemon      ProcessGroupSummaryDTO `json:"daemon"`
@@ -52,6 +72,9 @@ type ProcessInventoryResponse struct {
 	Trees       []ProcessTreeDTO       `json:"trees"`
 	Remnants    []ProcessRemnantDTO    `json:"remnants"`
 	Totals      ProcessTotalsDTO       `json:"totals"`
+	// Host is the host memory snapshot; omitted on windows and older daemons
+	// — the status bar hides its host section on nil.
+	Host *ProcessHostMemoryDTO `json:"host,omitempty"`
 }
 
 type ProcessKillTargetDTO struct {

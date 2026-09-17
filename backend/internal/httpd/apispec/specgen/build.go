@@ -462,6 +462,7 @@ var schemaNames = map[string]string{ //nolint:gosec // Public OpenAPI type names
 	"ControllersUserConfigResponse": "UserConfigResponse",
 	// controller/processes wire envelopes (fork delta)
 	"ControllersProcessInventoryResponse": "ProcessInventoryResponse",
+	"ControllersProcessHostMemoryDTO":     "ProcessHostMemory",
 	"ControllersProcessGroupSummaryDTO":   "ProcessGroupSummary",
 	"ControllersProcessTreeDTO":           "ProcessTree",
 	"ControllersProcessRemnantDTO":        "ProcessRemnant",

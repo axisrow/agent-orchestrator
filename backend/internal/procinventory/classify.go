@@ -71,6 +71,10 @@ type Inventory struct {
 	Trees       []Tree
 	Remnants    []Remnant
 	Totals      Totals
+	// Host is the host memory snapshot, nil when the platform does not
+	// provide one or the fetch failed — the status bar hides its host
+	// section on nil.
+	Host *HostStats
 }
 
 // isPtyHostRoot reports whether the command line is a detached pty-host spawn

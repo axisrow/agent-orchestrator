@@ -4,6 +4,8 @@ import { apiClient } from "../lib/api-client";
 
 export type ProcessInventory = components["schemas"]["ProcessInventoryResponse"];
 export type ProcessKillTarget = components["schemas"]["ProcessKillTarget"];
+export type HostMemory = NonNullable<ProcessInventory["host"]>;
+export type ProcessTreeRow = ProcessInventory["trees"][number];
 
 export const processInventoryQueryKey = ["process-inventory"] as const;
 

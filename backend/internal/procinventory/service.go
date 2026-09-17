@@ -44,6 +44,10 @@ type Deps struct {
 	Signal func(pid int, sig Signal) error
 	// Probe reports whether a PID is alive; default processalive.Alive.
 	Probe func(pid int) bool
+	// HostStats snapshots host memory; default per-platform defaultHostStats
+	// (ErrHostStatsUnsupported on windows). An error is not fatal — the
+	// inventory is returned without a host section.
+	HostStats func(ctx context.Context) (HostStats, error)
 	// Unregister drops a killed orphan's PTY-host registry entry; the daemon
 	// wires conpty's ptyregistry.Unregister. Nil means skip.
 	Unregister func(ctx context.Context, sessionID string) error
@@ -72,6 +76,9 @@ func New(deps Deps) *Service {
 	if deps.Probe == nil {
 		deps.Probe = defaultProbe
 	}
+	if deps.HostStats == nil {
+		deps.HostStats = defaultHostStats
+	}
 	if deps.Now == nil {
 		deps.Now = time.Now
 	}
@@ -81,7 +88,9 @@ func New(deps Deps) *Service {
 	return &Service{deps: deps, killMu: make(chan struct{}, 1)}
 }
 
-// Inventory snapshots and classifies the current process table.
+// Inventory snapshots and classifies the current process table. A host
+// memory fetch failure is not an error: the inventory is returned without
+// its host section (the status bar hides that section on nil).
 func (s *Service) Inventory(ctx context.Context) (Inventory, error) {
 	entries, err := s.deps.Scan(ctx)
 	if err != nil {
@@ -91,5 +100,11 @@ func (s *Service) Inventory(ctx context.Context) (Inventory, error) {
 	if err != nil {
 		return Inventory{}, err
 	}
-	return BuildInventory(entries, live, s.deps.DaemonPID, s.deps.TmuxSocketName, s.deps.Now()), nil
+	inv := BuildInventory(entries, live, s.deps.DaemonPID, s.deps.TmuxSocketName, s.deps.Now())
+	if host, err := s.deps.HostStats(ctx); err != nil {
+		s.deps.Log.Debug("procinventory: host stats unavailable", "err", err)
+	} else {
+		inv.Host = &host
+	}
+	return inv, nil
 }
