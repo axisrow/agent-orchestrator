@@ -211,6 +211,10 @@ func formatBytesCLI(bytes int64) string {
 		decimals = 0
 	}
 	number := strconv.FormatFloat(value, 'f', decimals, 64)
-	number = strings.TrimRight(strings.TrimRight(number, "0"), ".")
+	// Trim only the fractional ".0" — a blind TrimRight("0") would turn
+	// "290" into "29" and every tenth-of-a-gigabyte row into a lie.
+	if decimals > 0 {
+		number = strings.TrimSuffix(number, ".0")
+	}
 	return number + " " + units[divisions-1]
 }

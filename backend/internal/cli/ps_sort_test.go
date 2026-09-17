@@ -19,7 +19,25 @@ func TestSortByRSS_HeaviestFirst(t *testing.T) {
 			t.Fatalf("order violation at %d: %d MB before %d MB", i, trees[i-1].RSSBytes/(1<<20), trees[i].RSSBytes/(1<<20))
 		}
 	}
-	if trees[0].SessionID != "a" || trees[3].SessionID != "d" {
-		t.Fatalf("unexpected head: %s, %s", trees[0].SessionID, trees[3].SessionID)
+	// Sorted: a(363), b(317), d(306), e(305), c(31), f(24).
+	if trees[0].SessionID != "a" || trees[2].SessionID != "d" || trees[3].SessionID != "e" {
+		t.Fatalf("unexpected head: %s, %s, %s", trees[0].SessionID, trees[2].SessionID, trees[3].SessionID)
+	}
+}
+
+// Regression: 290 MB must not lose its trailing zero and display as "29 MB".
+func TestFormatBytesCLI_NoTrimmedDigits(t *testing.T) {
+	cases := []struct {
+		bytes int64
+		want  string
+	}{
+		{290 << 20, "290 MB"},
+		{370 << 20, "370 MB"},
+		{210 << 20, "210 MB"},
+	}
+	for _, tc := range cases {
+		if got := formatBytesCLI(tc.bytes); got != tc.want {
+			t.Fatalf("formatBytesCLI(%d) = %q, want %q", tc.bytes, got, tc.want)
+		}
 	}
 }
