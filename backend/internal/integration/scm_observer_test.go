@@ -269,6 +269,7 @@ func failingSCMObservation(prURL string, num int, headSHA, logTail string) ports
 			SourceBranch: "feat/x",
 			TargetBranch: "main",
 			HeadSHA:      headSHA,
+			Author:       "octocat",
 			Title:        "Found a bug",
 		},
 		CI: ports.SCMCIObservation{
