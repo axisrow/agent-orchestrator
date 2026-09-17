@@ -2076,5 +2076,14 @@
 	"chat.draftDiscard.leaveAnyway": "Salir de todos modos",
 	"chat.edit.abandonRecovery": "Abandonar recuperación de edición",
 	"settings.harness.summary": "{{installed}} of {{total}} installed",
-	"shell.goHome": "Ir al inicio"
+	"shell.goHome": "Ir al inicio",
+	"statusBar.sessions": "sesiones",
+	"statusBar.orphans": "huérfanos",
+	"statusBar.kill": "Eliminar huérfanos",
+	"statusBar.killTitle": "¿Eliminar árboles de procesos huérfanos?",
+	"statusBar.killLead": "Estos árboles de procesos pertenecen a sesiones que AO ya no rastrea. Eliminar {{count}} libera unos {{rss}}.",
+	"statusBar.killConfirm": "Eliminar árboles",
+	"statusBar.killFailed": "No se pudo eliminar. Inténtalo de nuevo.",
+	"statusBar.moreTrees": "y {{count}} más…",
+	"statusBar.footprintTitle": "Huella total de procesos de AO"
 }

@@ -2047,5 +2047,14 @@
 	"chat.draftDiscard.leaveAnyway": "그래도 나가기",
 	"chat.edit.abandonRecovery": "편집 복구 포기",
 	"settings.harness.summary": "{{installed}} of {{total}} installed",
-	"shell.goHome": "홈으로 이동"
+	"shell.goHome": "홈으로 이동",
+	"statusBar.sessions": "세션",
+	"statusBar.orphans": "고아 프로세스",
+	"statusBar.kill": "고아 종료",
+	"statusBar.killTitle": "고아 프로세스 트리를 종료할까요?",
+	"statusBar.killLead": "이 프로세스 트리는 AO가 더 이상 추적하지 않는 세션에 속합니다. {{count}}개를 종료하면 약 {{rss}}가 확보됩니다.",
+	"statusBar.killConfirm": "트리 종료",
+	"statusBar.killFailed": "종료에 실패했습니다. 다시 시도하세요.",
+	"statusBar.moreTrees": "외 {{count}}개…",
+	"statusBar.footprintTitle": "AO 프로세스 총 사용량"
 }

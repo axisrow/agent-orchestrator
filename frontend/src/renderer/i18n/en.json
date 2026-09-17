@@ -2028,5 +2028,14 @@
 	"home.newStandaloneAgent": "New standalone agent",
 	"createProject.standaloneDesc": "Start an agent without a project, repository, or workspace.",
 	"newTask.standaloneDescription": "Start a worker without attaching it to a project or repository.",
-	"settings.harness.summary": "{{installed}} of {{total}} installed"
+	"settings.harness.summary": "{{installed}} of {{total}} installed",
+	"statusBar.sessions": "sessions",
+	"statusBar.orphans": "orphans",
+	"statusBar.kill": "Kill orphans",
+	"statusBar.killTitle": "Kill orphaned process trees?",
+	"statusBar.killLead": "These process trees belong to sessions AO no longer tracks. Killing {{count}} frees about {{rss}}.",
+	"statusBar.killConfirm": "Kill trees",
+	"statusBar.killFailed": "Killing failed. Try again.",
+	"statusBar.moreTrees": "and {{count}} more…",
+	"statusBar.footprintTitle": "Total AO process footprint"
 }

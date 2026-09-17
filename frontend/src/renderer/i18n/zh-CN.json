@@ -2029,5 +2029,14 @@
 	"chat.draftDiscard.leaveAnyway": "仍然离开",
 	"chat.edit.abandonRecovery": "放弃编辑恢复",
 	"settings.harness.summary": "{{installed}} of {{total}} installed",
-	"shell.goHome": "返回主页"
+	"shell.goHome": "返回主页",
+	"statusBar.sessions": "会话",
+	"statusBar.orphans": "孤儿进程",
+	"statusBar.kill": "终止孤儿进程",
+	"statusBar.killTitle": "终止孤儿进程树？",
+	"statusBar.killLead": "这些进程树属于 AO 已不再跟踪的会话。终止 {{count}} 个可释放约 {{rss}}。",
+	"statusBar.killConfirm": "终止进程树",
+	"statusBar.killFailed": "终止失败，请重试。",
+	"statusBar.moreTrees": "以及另外 {{count}} 个…",
+	"statusBar.footprintTitle": "AO 进程总占用"
 }

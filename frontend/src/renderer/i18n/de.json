@@ -2047,5 +2047,14 @@
 	"chat.draftDiscard.leaveAnyway": "Trotzdem verlassen",
 	"chat.edit.abandonRecovery": "Bearbeitungswiederherstellung aufgeben",
 	"settings.harness.summary": "{{installed}} of {{total}} installed",
-	"shell.goHome": "Zur Startseite"
+	"shell.goHome": "Zur Startseite",
+	"statusBar.sessions": "Sitzungen",
+	"statusBar.orphans": "Verwaiste Prozesse",
+	"statusBar.kill": "Verwaiste beenden",
+	"statusBar.killTitle": "Verwaiste Prozessbäume beenden?",
+	"statusBar.killLead": "Diese Prozessbäume gehören zu Sitzungen, die AO nicht mehr verwaltet. Das Beenden von {{count}} gibt etwa {{rss}} frei.",
+	"statusBar.killConfirm": "Bäume beenden",
+	"statusBar.killFailed": "Beenden fehlgeschlagen. Bitte erneut versuchen.",
+	"statusBar.moreTrees": "und {{count}} weitere…",
+	"statusBar.footprintTitle": "Gesamt-Fußabdruck der AO-Prozesse"
 }

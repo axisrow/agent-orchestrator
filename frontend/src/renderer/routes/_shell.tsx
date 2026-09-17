@@ -6,6 +6,7 @@ import { memo, type CSSProperties, useCallback, useEffect, useMemo, useRef, useS
 import { FolderPlus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { CommandPalette } from "../components/CommandPalette";
+import { StatusBar } from "../components/StatusBar";
 import { CenterPanelShell } from "../components/CenterPanelShell";
 import { DaemonFailureBanner } from "../components/DaemonFailureBanner";
 import { DaemonStartupLoader } from "../components/DaemonStartupLoader";
@@ -1096,6 +1097,7 @@ function ShellLayout() {
 					workspaces={workspaces}
 				/>
 					<CommandPalette />
+					<StatusBar />
 				</div>
 				</TerminalCacheProvider>
 			</SessionTopbarProvider>

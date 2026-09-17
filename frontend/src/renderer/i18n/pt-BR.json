@@ -2076,5 +2076,14 @@
 	"chat.draftDiscard.leaveAnyway": "Sair mesmo assim",
 	"chat.edit.abandonRecovery": "Abandonar recuperação da edição",
 	"settings.harness.summary": "{{installed}} of {{total}} installed",
-	"shell.goHome": "Ir para o início"
+	"shell.goHome": "Ir para o início",
+	"statusBar.sessions": "sessões",
+	"statusBar.orphans": "órfãos",
+	"statusBar.kill": "Encerrar órfãos",
+	"statusBar.killTitle": "Encerrar árvores de processos órfãs?",
+	"statusBar.killLead": "Essas árvores de processos pertencem a sessões que o AO não rastreia mais. Encerrar {{count}} libera cerca de {{rss}}.",
+	"statusBar.killConfirm": "Encerrar árvores",
+	"statusBar.killFailed": "Falha ao encerrar. Tente novamente.",
+	"statusBar.moreTrees": "e mais {{count}}…",
+	"statusBar.footprintTitle": "Footprint total de processos do AO"
 }

@@ -2047,5 +2047,14 @@
 	"chat.draftDiscard.leaveAnyway": "離れる",
 	"chat.edit.abandonRecovery": "編集の復旧を中止",
 	"settings.harness.summary": "{{installed}} of {{total}} installed",
-	"shell.goHome": "ホームに移動"
+	"shell.goHome": "ホームに移動",
+	"statusBar.sessions": "セッション",
+	"statusBar.orphans": "孤立プロセス",
+	"statusBar.kill": "孤立を終了",
+	"statusBar.killTitle": "孤立したプロセスツリーを終了しますか？",
+	"statusBar.killLead": "これらのプロセスツリーは、AO が追跡していないセッションに属しています。{{count}} 件を終了すると約 {{rss}} を解放します。",
+	"statusBar.killConfirm": "ツリーを終了",
+	"statusBar.killFailed": "終了できませんでした。再試行してください。",
+	"statusBar.moreTrees": "他 {{count}} 件…",
+	"statusBar.footprintTitle": "AO プロセスの合計フットプリント"
 }

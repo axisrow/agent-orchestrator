@@ -2076,5 +2076,14 @@
 	"chat.draftDiscard.leaveAnyway": "Quitter quand même",
 	"chat.edit.abandonRecovery": "Abandonner la récupération de la modification",
 	"settings.harness.summary": "{{installed}} of {{total}} installed",
-	"shell.goHome": "Aller à l’accueil"
+	"shell.goHome": "Aller à l’accueil",
+	"statusBar.sessions": "sessions",
+	"statusBar.orphans": "orphelins",
+	"statusBar.kill": "Tuer les orphelins",
+	"statusBar.killTitle": "Tuer les arbres de processus orphelins ?",
+	"statusBar.killLead": "Ces arbres de processus appartiennent à des sessions qu'AO ne suit plus. Tuer {{count}} libère environ {{rss}}.",
+	"statusBar.killConfirm": "Tuer les arbres",
+	"statusBar.killFailed": "Échec de la suppression. Réessayez.",
+	"statusBar.moreTrees": "et {{count}} de plus…",
+	"statusBar.footprintTitle": "Empreinte totale des processus AO"
 }
