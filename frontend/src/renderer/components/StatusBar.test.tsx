@@ -100,6 +100,31 @@ function renderStatusBar(inventoryData: ProcessInventory | null) {
 }
 
 describe("StatusBar", () => {
+	it("groups orphan trees by project and posts the whole group on its kill button", async () => {
+		const user = userEvent.setup();
+		const secondOrphan: ProcessTreeRow = { ...orphanTree, sessionId: "legacy-x-2", rootPid: 8124 };
+		postMock.mockResolvedValue({
+			data: { results: [{ sessionId: "legacy-x", status: "killed" }, { sessionId: "legacy-x-2", status: "killed" }] },
+			error: undefined,
+		});
+		renderStatusBar(inventory({ trees: [ownedTree, orphanTree, secondOrphan] }));
+
+		await user.click(screen.getByTestId("status-bar-memory"));
+		expect(screen.getByText("legacy-x")).toBeInTheDocument();
+
+		await user.click(screen.getByRole("button", { name: "Kill 2 orphaned trees of project legacy-x" }));
+		await waitFor(() => {
+			expect(postMock).toHaveBeenCalledWith("/api/v1/system/processes/kill", {
+				body: {
+					targets: [
+						{ sessionId: "legacy-x", rootPid: 8123, rootLstart: "Mon Sep 14 00:13:02 2026" },
+						{ sessionId: "legacy-x-2", rootPid: 8124, rootLstart: "Mon Sep 14 00:13:02 2026" },
+					],
+				},
+			});
+		});
+	});
+
 	it("renders compact host memory segments with binary-formatted sizes", () => {
 		renderStatusBar(inventory());
 		expect(screen.getByTestId("status-bar-memory")).toHaveTextContent("20.4 GB / 24 GB");
@@ -136,10 +161,10 @@ describe("StatusBar", () => {
 		expect(screen.getByText("Host memory")).toBeInTheDocument();
 		expect(screen.getByText("AO process trees")).toBeInTheDocument();
 
-		const orphanRow = screen.getByText("legacy-x · 8123 · 1.1 GB");
+		const orphanRow = screen.getByText("legacy-x · pid 8123 · 1.1 GB");
 		expect(orphanRow).toBeInTheDocument();
 		// The owned tree is listed read-only — no kill button on its row.
-		expect(screen.getByText("web-api-3 · 90111 · 831 KB")).toBeInTheDocument();
+		expect(screen.getByText("web-api-3 · pid 90111 · 831 KB")).toBeInTheDocument();
 
 		await user.click(screen.getByRole("button", { name: "Kill orphan legacy-x" }));
 		await waitFor(() => {

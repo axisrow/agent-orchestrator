@@ -13,26 +13,51 @@ type MemoryPopoverProps = {
 	/** sessionId whose kill is currently in flight, if any. */
 	pendingSessionId?: string;
 	killError: string | null;
-	onKillTree: (target: ProcessKillTarget) => void;
+	onKillTrees: (targets: ProcessKillTarget[]) => void;
 	onBatchKill: () => void;
 };
 
+// Session ids are "<projectId>-<per-project counter>" (domain.CreateSession);
+// stripping the trailing counter groups a project's workers together. Good
+// enough for display grouping — the kill targets stay the exact trees.
+function projectGroupOf(sessionId: string): string {
+	const match = sessionId.match(/^(.*)-\d+$/);
+	return match ? match[1] : sessionId;
+}
+
+function toKillTarget(tree: ProcessTreeRow): ProcessKillTarget {
+	return { sessionId: tree.sessionId, rootPid: tree.rootPid, rootLstart: tree.rootLstart };
+}
+
 // The status bar's RAM/Swap segment: a hover tooltip names the AO footprint
 // (basic stats), a click opens the extended popover — full host memory
-// breakdown plus every AO process tree, with individual kill buttons for
-// orphaned trees. Radix tooltip + popover both asChild onto one button (the
-// NotificationCenter composition); the tooltip suppresses itself while the
-// popover is open so they never stack.
-export function MemoryPopover({ host, trees, totals, pendingSessionId, killError, onKillTree, onBatchKill }: MemoryPopoverProps) {
+// breakdown plus every AO process tree, orphaned ones grouped by project with
+// per-group and per-tree kill buttons. Radix tooltip + popover both asChild
+// onto one button (the NotificationCenter composition); the tooltip
+// suppresses itself while the popover is open so they never stack.
+export function MemoryPopover({ host, trees, totals, pendingSessionId, killError, onKillTrees, onBatchKill }: MemoryPopoverProps) {
 	const { t } = useTranslation();
 	const [tooltipOpen, setTooltipOpen] = useState(false);
 	const [popoverOpen, setPopoverOpen] = useState(false);
 	const orphans = trees.filter((tree) => tree.state === "orphan");
+	const others = trees.filter((tree) => tree.state !== "orphan");
 	const pressureFreePercent = host.pressureFreePercent;
 	// darwin-only kinds arrive as optional in the generated schema (omitempty).
 	const wiredBytes = host.wiredBytes ?? 0;
 	const appBytes = host.appBytes ?? 0;
 	const compressedBytes = host.compressedBytes ?? 0;
+
+	const orphanGroups = new Map<string, ProcessTreeRow[]>();
+	for (const tree of orphans) {
+		const group = projectGroupOf(tree.sessionId);
+		const list = orphanGroups.get(group);
+		if (list) {
+			list.push(tree);
+		} else {
+			orphanGroups.set(group, [tree]);
+		}
+	}
+	const sortedGroups = [...orphanGroups.entries()].sort(([a], [b]) => a.localeCompare(b));
 
 	return (
 		<Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
@@ -116,7 +141,7 @@ export function MemoryPopover({ host, trees, totals, pendingSessionId, killError
 				<div>
 					<div className="flex items-center justify-between gap-2">
 						<p className="font-medium text-foreground">{t("statusBar.treesTitle")}</p>
-						{orphans.length > 0 && (
+						{orphans.length > 1 && (
 							<button
 								type="button"
 								data-testid="status-bar-kill-all"
@@ -132,37 +157,64 @@ export function MemoryPopover({ host, trees, totals, pendingSessionId, killError
 							{killError}
 						</p>
 					)}
-					<ul className="mt-1 max-h-48 space-y-0.5 overflow-y-auto">
-						{trees.map((tree) => (
-							<li key={`${tree.sessionId}-${tree.rootPid}`} className="flex items-center justify-between gap-2">
-								<span className="truncate tabular-nums">
-									{tree.sessionId} · {tree.rootPid} · {formatBytes(tree.rssBytes)}
-								</span>
-								{tree.state === "orphan" ? (
+					<div className="mt-1 max-h-64 space-y-2 overflow-y-auto">
+						{sortedGroups.map(([project, groupTrees]) => (
+							<div key={project}>
+								<div className="flex items-center justify-between gap-2">
+									<span className="truncate font-medium text-foreground">{project}</span>
 									<button
 										type="button"
-										aria-label={t("statusBar.killTreeAria", { session: tree.sessionId })}
-										disabled={pendingSessionId === tree.sessionId}
+										aria-label={t("statusBar.killGroupAria", { project, count: groupTrees.length })}
+										disabled={pendingSessionId !== undefined}
 										className="shrink-0 text-caption text-destructive hover:underline disabled:pointer-events-none disabled:opacity-50"
-										onClick={() =>
-											onKillTree({ sessionId: tree.sessionId, rootPid: tree.rootPid, rootLstart: tree.rootLstart })
-										}
+										onClick={() => onKillTrees(groupTrees.map(toKillTarget))}
 									>
-										{pendingSessionId === tree.sessionId ? "…" : t("statusBar.killTree")}
+										{t("statusBar.killGroup", { count: groupTrees.length })}
 									</button>
-								) : (
-									<Badge variant={tree.state === "owned" ? "neutral" : "outline"} className="shrink-0">
-										{tree.state === "owned" && !tree.attached
-											? `${t("statusBar.stateOwned")} · ${t("statusBar.stateAdopted")}`
-											: tree.state === "foreign"
-												? t("statusBar.stateForeign")
-												: t("statusBar.stateOwned")}
-									</Badge>
-								)}
-							</li>
+								</div>
+								<ul className="space-y-0.5">
+									{groupTrees.map((tree) => (
+										<li key={`${tree.sessionId}-${tree.rootPid}`} className="flex items-center justify-between gap-2">
+											<span className="truncate tabular-nums">
+												{t("statusBar.treeRow", { session: tree.sessionId, pid: tree.rootPid, rss: formatBytes(tree.rssBytes) })}
+											</span>
+											<button
+												type="button"
+												aria-label={t("statusBar.killTreeAria", { session: tree.sessionId })}
+												disabled={pendingSessionId === tree.sessionId}
+												className="shrink-0 text-caption text-destructive hover:underline disabled:pointer-events-none disabled:opacity-50"
+												onClick={() => onKillTrees([toKillTarget(tree)])}
+											>
+												{pendingSessionId === tree.sessionId ? "…" : t("statusBar.killTree")}
+											</button>
+										</li>
+									))}
+								</ul>
+							</div>
 						))}
-						{trees.length === 0 && <li className="text-muted-foreground">{t("statusBar.noTrees")}</li>}
-					</ul>
+						{others.length > 0 && (
+							<div>
+								<p className="font-medium text-muted-foreground">{t("statusBar.otherTrees")}</p>
+								<ul className="space-y-0.5">
+									{others.map((tree) => (
+										<li key={`${tree.sessionId}-${tree.rootPid}`} className="flex items-center justify-between gap-2">
+											<span className="truncate tabular-nums">
+												{t("statusBar.treeRow", { session: tree.sessionId, pid: tree.rootPid, rss: formatBytes(tree.rssBytes) })}
+											</span>
+											<Badge variant={tree.state === "owned" ? "neutral" : "outline"} className="shrink-0">
+												{tree.state === "owned" && !tree.attached
+													? `${t("statusBar.stateOwned")} · ${t("statusBar.stateAdopted")}`
+													: tree.state === "foreign"
+														? t("statusBar.stateForeign")
+														: t("statusBar.stateOwned")}
+											</Badge>
+										</li>
+									))}
+								</ul>
+							</div>
+						)}
+						{trees.length === 0 && <p className="text-muted-foreground">{t("statusBar.noTrees")}</p>}
+					</div>
 				</div>
 			</PopoverContent>
 		</Popover>

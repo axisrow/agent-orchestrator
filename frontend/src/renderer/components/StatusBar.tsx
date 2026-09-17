@@ -16,7 +16,9 @@ import { MemoryPopover } from "./MemoryPopover";
 // App-wide bottom strip, kept minimal: host RAM/Swap (the MemoryPopover
 // segment) plus the orphan count with the batch kill entry point. Renders
 // nothing while the inventory is unavailable, and hides entirely when the
-// daemon provides neither a host snapshot nor orphans.
+// daemon provides neither a host snapshot nor orphans. The left padding
+// clears the fixed sidebar via the same CSS variable the sidebar publishes
+// on :root (--ao-sidebar-w), so its content never paints underneath it.
 export function StatusBar() {
 	const { t } = useTranslation();
 	const queryClient = useQueryClient();
@@ -52,7 +54,7 @@ export function StatusBar() {
 		<>
 			<div
 				data-testid="status-bar"
-				className="flex h-7 shrink-0 items-center gap-3 border-t border-border/60 bg-sidebar px-3 text-caption text-muted-foreground"
+				className="flex h-7 shrink-0 items-center gap-3 border-t border-border/60 bg-sidebar pl-(--ao-sidebar-w,var(--size-sidebar-default)) pr-3 text-caption text-muted-foreground"
 			>
 				{data.host && (
 					<MemoryPopover
@@ -61,9 +63,9 @@ export function StatusBar() {
 						totals={data.totals}
 						pendingSessionId={pendingSessionId}
 						killError={killError}
-						onKillTree={(target) => {
+						onKillTrees={(targets) => {
 							setKillError(null);
-							killMutation.mutate([target]);
+							killMutation.mutate(targets);
 						}}
 						onBatchKill={() => {
 							setKillError(null);
@@ -101,7 +103,7 @@ export function StatusBar() {
 						<ul className="mt-2 space-y-0.5">
 							{orphans.slice(0, 8).map((tree) => (
 								<li key={tree.sessionId} className="tabular-nums">
-									{tree.sessionId} · pid {tree.rootPid} · {formatBytes(tree.rssBytes)}
+									{t("statusBar.treeRow", { session: tree.sessionId, pid: tree.rootPid, rss: formatBytes(tree.rssBytes) })}
 								</li>
 							))}
 							{orphans.length > 8 && <li>{t("statusBar.moreTrees", { count: orphans.length - 8 })}</li>}
