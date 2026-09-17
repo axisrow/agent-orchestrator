@@ -1326,7 +1326,7 @@ const ProjectItem = memo(function ProjectItem({
 		    gap-1.5 matches SessionRow's dot-to-title spacing (the row itself uses gap-2). */}
 									<span className="sidebar-expanded-chrome flex min-w-0 flex-1 items-center gap-1.5 translate-y-px group-data-[collapsible=icon]:hidden">
 										{orchestratorStatus ? <OrchestratorStatusDot session={orchestratorStatus} /> : null}
-										<span className="min-w-0 flex-1 truncate" data-project-label="">
+										<span className="relative z-[1] min-w-0 flex-1 truncate" data-project-label="">
 											{workspace.name}
 										</span>
 									</span>
