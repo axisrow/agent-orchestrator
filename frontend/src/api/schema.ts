@@ -4069,6 +4069,11 @@ export interface components {
             latestUserPrompt?: string;
             /** @description AO process generation that produced the signal. */
             launchId?: string;
+            /**
+             * Format: date-time
+             * @description Time the local hook process observed the event, before delivery to the daemon.
+             */
+            observedAt?: string;
             /** @description Native main-turn identity reported by the hook, when supported. */
             providerTurnId?: string;
             /**
@@ -4209,6 +4214,7 @@ export interface components {
             /** @enum {string} */
             mode?: "chat" | "tui";
             model?: string;
+            parentSessionId?: string;
             projectId?: string;
             prompt?: string;
             /** @enum {string} */
