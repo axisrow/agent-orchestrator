@@ -3811,8 +3811,11 @@ export interface components {
             tmuxRssBytes: number;
         };
         ProcessTree: {
+            activityState?: string;
             attached: boolean;
             kind: string;
+            /** Format: date-time */
+            lastActivityAt: string;
             pidCount: number;
             rootLstart: string;
             rootPid: number;

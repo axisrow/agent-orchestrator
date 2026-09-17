@@ -11,15 +11,19 @@ type MemoryPopoverProps = {
 	trees: ProcessTreeRow[];
 	totals: ProcessInventory["totals"];
 	/** sessionId whose kill is currently in flight, if any. */
-	pendingSessionId?: string;
+	pendingKillSessionId?: string;
+	/** sessionId whose stop is currently in flight, if any. */
+	pendingStopSessionId?: string;
 	killError: string | null;
+	stopError: string | null;
 	onKillTrees: (targets: ProcessKillTarget[]) => void;
+	onStopSessions: (sessionIds: string[]) => void;
 	onBatchKill: () => void;
 };
 
 // Session ids are "<projectId>-<per-project counter>" (domain.CreateSession);
 // stripping the trailing counter groups a project's workers together. Good
-// enough for display grouping — the kill targets stay the exact trees.
+// enough for display grouping — the kill/stop targets stay the exact trees.
 function projectGroupOf(sessionId: string): string {
 	const match = sessionId.match(/^(.*)-\d+$/);
 	return match ? match[1] : sessionId;
@@ -31,12 +35,23 @@ function toKillTarget(tree: ProcessTreeRow): ProcessKillTarget {
 
 // The status bar's RAM/Swap segment: a hover tooltip names the AO footprint
 // (basic stats), a click opens the extended popover — full host memory
-// breakdown plus every AO process tree grouped by project, with per-group
-// and per-tree kill buttons for orphaned trees (owned/foreign groups are
-// read-only). Radix tooltip + popover both asChild onto one button (the
-// NotificationCenter composition); the tooltip suppresses itself while the
-// popover is open so they never stack.
-export function MemoryPopover({ host, trees, totals, pendingSessionId, killError, onKillTrees, onBatchKill }: MemoryPopoverProps) {
+// breakdown plus every AO process tree grouped by project. Orphaned trees
+// carry kill buttons (processes/kill), idle owned sessions carry Stop buttons
+// (sessions/{id}/kill — the board's Kill; the session stays resumable).
+// Radix tooltip + popover both asChild onto one button (the NotificationCenter
+// composition); the tooltip suppresses itself while the popover is open.
+export function MemoryPopover({
+	host,
+	trees,
+	totals,
+	pendingKillSessionId,
+	pendingStopSessionId,
+	killError,
+	stopError,
+	onKillTrees,
+	onStopSessions,
+	onBatchKill,
+}: MemoryPopoverProps) {
 	const { t } = useTranslation();
 	const [tooltipOpen, setTooltipOpen] = useState(false);
 	const [popoverOpen, setPopoverOpen] = useState(false);
@@ -47,9 +62,6 @@ export function MemoryPopover({ host, trees, totals, pendingSessionId, killError
 	const appBytes = host.appBytes ?? 0;
 	const compressedBytes = host.compressedBytes ?? 0;
 
-	// Every tree is grouped under its project; a group's kill button appears
-	// only when the group holds orphans — owned/foreign groups are read-only
-	// by design (the backend re-validates and would skip them anyway).
 	const projectGroups = new Map<string, ProcessTreeRow[]>();
 	for (const tree of trees) {
 		const group = projectGroupOf(tree.sessionId);
@@ -166,9 +178,17 @@ export function MemoryPopover({ host, trees, totals, pendingSessionId, killError
 							{killError}
 						</p>
 					)}
+					{stopError && (
+						<p role="alert" className="mt-1 text-error">
+							{stopError}
+						</p>
+					)}
 					<div className="mt-1 max-h-64 space-y-2 overflow-y-auto">
 						{sortedGroups.map(({ project, groupTrees, rssBytes }) => {
 							const groupOrphans = groupTrees.filter((tree) => tree.state === "orphan");
+							const groupIdle = groupTrees.filter(
+								(tree) => tree.state === "owned" && tree.activityState !== undefined && tree.activityState !== "active",
+							);
 							return (
 								<div key={project}>
 									<div className="flex items-center justify-between gap-2">
@@ -179,11 +199,22 @@ export function MemoryPopover({ host, trees, totals, pendingSessionId, killError
 											<button
 												type="button"
 												aria-label={t("statusBar.killGroupAria", { project, count: groupOrphans.length })}
-												disabled={pendingSessionId !== undefined}
+												disabled={pendingKillSessionId !== undefined || pendingStopSessionId !== undefined}
 												className="shrink-0 text-caption text-destructive hover:underline disabled:pointer-events-none disabled:opacity-50"
 												onClick={() => onKillTrees(groupOrphans.map(toKillTarget))}
 											>
 												{t("statusBar.killGroup", { count: groupOrphans.length })}
+											</button>
+										)}
+										{groupIdle.length > 0 && (
+											<button
+												type="button"
+												aria-label={t("statusBar.stopGroupAria", { project, count: groupIdle.length })}
+												disabled={pendingStopSessionId !== undefined || pendingKillSessionId !== undefined}
+												className="shrink-0 text-caption text-destructive hover:underline disabled:pointer-events-none disabled:opacity-50"
+												onClick={() => onStopSessions(groupIdle.map((tree) => tree.sessionId))}
+											>
+												{t("statusBar.stopGroup", { count: groupIdle.length })}
 											</button>
 										)}
 									</div>
@@ -197,19 +228,29 @@ export function MemoryPopover({ host, trees, totals, pendingSessionId, killError
 													<button
 														type="button"
 														aria-label={t("statusBar.killTreeAria", { session: tree.sessionId })}
-														disabled={pendingSessionId === tree.sessionId}
+														disabled={pendingKillSessionId === tree.sessionId}
 														className="shrink-0 text-caption text-destructive hover:underline disabled:pointer-events-none disabled:opacity-50"
 														onClick={() => onKillTrees([toKillTarget(tree)])}
 													>
-														{pendingSessionId === tree.sessionId ? "…" : t("statusBar.killTree")}
+														{pendingKillSessionId === tree.sessionId ? "…" : t("statusBar.killTree")}
+													</button>
+												) : tree.state === "owned" && tree.activityState !== undefined && tree.activityState !== "active" ? (
+													<button
+														type="button"
+														aria-label={t("statusBar.stopTreeAria", { session: tree.sessionId })}
+														disabled={pendingStopSessionId === tree.sessionId}
+														className="shrink-0 text-caption text-destructive hover:underline disabled:pointer-events-none disabled:opacity-50"
+														onClick={() => onStopSessions([tree.sessionId])}
+													>
+														{pendingStopSessionId === tree.sessionId ? "…" : t("statusBar.stopTree")}
 													</button>
 												) : (
 													<Badge variant={tree.state === "owned" ? "neutral" : "outline"} className="shrink-0">
-														{tree.state === "owned" && !tree.attached
-															? `${t("statusBar.stateOwned")} · ${t("statusBar.stateAdopted")}`
-															: tree.state === "foreign"
-																? t("statusBar.stateForeign")
-																: t("statusBar.stateOwned")}
+														{tree.state === "owned"
+															? tree.attached
+																? t("statusBar.stateOwned")
+																: `${t("statusBar.stateOwned")} · ${t("statusBar.stateAdopted")}`
+															: t("statusBar.stateForeign")}
 													</Badge>
 												)}
 											</li>

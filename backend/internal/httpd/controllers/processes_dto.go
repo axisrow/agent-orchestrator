@@ -26,6 +26,11 @@ type ProcessTreeDTO struct {
 	// Attached reports whether the root's parent is this daemon; an owned tree
 	// with attached=false was adopted after a daemon restart.
 	Attached bool `json:"attached"`
+	// ActivityState is the live session's tracked activity ("active", "idle",
+	// "waiting_input", "blocked", "exited"); empty for orphan/foreign trees.
+	ActivityState string `json:"activityState,omitempty"`
+	// LastActivityAt is when that activity was last observed.
+	LastActivityAt time.Time `json:"lastActivityAt"`
 }
 
 type ProcessRemnantDTO struct {

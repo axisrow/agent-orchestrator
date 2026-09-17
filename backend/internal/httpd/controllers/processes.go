@@ -43,14 +43,16 @@ func processInventoryDTO(inv procinventory.Inventory) ProcessInventoryResponse {
 	trees := make([]ProcessTreeDTO, 0, len(treesDTO))
 	for _, tree := range treesDTO {
 		trees = append(trees, ProcessTreeDTO{
-			SessionID:  tree.SessionID,
-			RootPID:    tree.RootPID,
-			RootLstart: tree.RootLstart,
-			PIDCount:   tree.PIDCount,
-			RSSBytes:   tree.RSSBytes,
-			Kind:       tree.Kind,
-			State:      tree.State,
-			Attached:   tree.Attached,
+			SessionID:      tree.SessionID,
+			RootPID:        tree.RootPID,
+			RootLstart:     tree.RootLstart,
+			PIDCount:       tree.PIDCount,
+			RSSBytes:       tree.RSSBytes,
+			Kind:           tree.Kind,
+			State:          tree.State,
+			Attached:       tree.Attached,
+			ActivityState:  tree.ActivityState,
+			LastActivityAt: tree.LastActivityAt,
 		})
 	}
 	remnants := make([]ProcessRemnantDTO, 0, len(inv.Remnants))

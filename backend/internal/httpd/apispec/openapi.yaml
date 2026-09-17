@@ -10744,9 +10744,14 @@ components:
       type: object
     ProcessTree:
       properties:
+        activityState:
+          type: string
         attached:
           type: boolean
         kind:
+          type: string
+        lastActivityAt:
+          format: date-time
           type: string
         pidCount:
           type: integer
@@ -10770,6 +10775,7 @@ components:
       - kind
       - state
       - attached
+      - lastActivityAt
       type: object
     Project:
       properties:

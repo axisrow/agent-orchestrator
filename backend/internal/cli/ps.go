@@ -21,14 +21,16 @@ type processGroupSummaryDTO struct {
 }
 
 type processTreeDTO struct {
-	SessionID  string `json:"sessionId"`
-	RootPID    int    `json:"rootPid"`
-	RootLstart string `json:"rootLstart"`
-	PIDCount   int    `json:"pidCount"`
-	RSSBytes   int64  `json:"rssBytes"`
-	Kind       string `json:"kind"`
-	State      string `json:"state"`
-	Attached   bool   `json:"attached"`
+	SessionID      string `json:"sessionId"`
+	RootPID        int    `json:"rootPid"`
+	RootLstart     string `json:"rootLstart"`
+	PIDCount       int    `json:"pidCount"`
+	RSSBytes       int64  `json:"rssBytes"`
+	Kind           string `json:"kind"`
+	State          string `json:"state"`
+	Attached       bool   `json:"attached"`
+	ActivityState  string `json:"activityState,omitempty"`
+	LastActivityAt string `json:"lastActivityAt"`
 }
 
 type processRemnantDTO struct {
@@ -157,7 +159,7 @@ func writeTreeTable(table *tabwriter.Writer, trees []processTreeDTO) error {
 		_, err := fmt.Fprintln(table, "  (none)")
 		return err
 	}
-	if _, err := fmt.Fprintln(table, "  SESSION\tROOT PID\tPROCS\tRSS\tKIND\tSTATE"); err != nil {
+	if _, err := fmt.Fprintln(table, "  SESSION\tROOT PID\tPROCS\tRSS\tKIND\tSTATE\tACTIVITY"); err != nil {
 		return err
 	}
 	for _, tree := range trees {
@@ -165,7 +167,11 @@ func writeTreeTable(table *tabwriter.Writer, trees []processTreeDTO) error {
 		if tree.State == "owned" && !tree.Attached {
 			attached = " (adopted)"
 		}
-		line := fmt.Sprintf("  %s\t%d\t%d\t%s\t%s\t%s%s", tree.SessionID, tree.RootPID, tree.PIDCount, formatBytesCLI(tree.RSSBytes), emptyDash(tree.Kind), tree.State, attached)
+		activity := emptyDash(tree.ActivityState)
+		if tree.ActivityState == "active" {
+			activity = "active"
+		}
+		line := fmt.Sprintf("  %s\t%d\t%d\t%s\t%s\t%s%s\t%s", tree.SessionID, tree.RootPID, tree.PIDCount, formatBytesCLI(tree.RSSBytes), emptyDash(tree.Kind), tree.State, attached, activity)
 		if _, err := fmt.Fprintln(table, line); err != nil {
 			return err
 		}

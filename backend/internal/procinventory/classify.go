@@ -35,6 +35,11 @@ type Tree struct {
 	// whose root has PPID 1 was adopted after a daemon restart — owned either
 	// way, and never killable.
 	Attached bool
+	// Activity is the live session's tracked activity state ("active", "idle",
+	// "waiting_input", "blocked", "exited") and its last-activity timestamp;
+	// both zero for orphan/foreign trees that have no live row.
+	ActivityState  string
+	LastActivityAt time.Time
 }
 
 // Remnant is a supervise/agent chain whose pty-host root (the process-group
@@ -181,6 +186,8 @@ func BuildInventory(entries []Entry, live map[domain.SessionID]domain.SessionRec
 			tree.State = StateOwned
 			tree.Kind = string(row.Kind)
 			tree.Attached = entry.PPID == daemonPID
+			tree.ActivityState = string(row.Activity.State)
+			tree.LastActivityAt = row.Activity.LastActivityAt
 		} else {
 			_, parentInSnapshot := byPID[entry.PPID]
 			switch {
