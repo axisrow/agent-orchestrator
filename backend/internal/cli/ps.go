@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -120,6 +121,8 @@ func writeProcessInventory(cmd *cobra.Command, res processInventoryResponse) err
 
 	table := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	owned, orphans, foreign := splitTrees(res.Trees)
+	sortByRSS(owned)
+	sortByRSS(orphans)
 	if _, err := fmt.Fprintf(table, "sessions (%d, %s)\n", res.Totals.SessionsCount, formatBytesCLI(res.Totals.SessionsRSSBytes)); err != nil {
 		return err
 	}
@@ -182,6 +185,11 @@ func splitTrees(trees []processTreeDTO) (owned, orphans, foreign []processTreeDT
 		}
 	}
 	return owned, orphans, foreign
+}
+
+// sortByRSS orders trees heaviest-first: the eater is the first row.
+func sortByRSS(trees []processTreeDTO) {
+	sort.SliceStable(trees, func(i, j int) bool { return trees[i].RSSBytes > trees[j].RSSBytes })
 }
 
 // formatBytesCLI renders a byte count the way the desktop status bar does:

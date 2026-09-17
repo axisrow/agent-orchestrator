@@ -60,7 +60,13 @@ export function MemoryPopover({ host, trees, totals, pendingSessionId, killError
 			projectGroups.set(group, [tree]);
 		}
 	}
-	const sortedGroups = [...projectGroups.entries()].sort(([a], [b]) => a.localeCompare(b));
+	const sortedGroups = [...projectGroups.entries()]
+		.map(([project, groupTrees]) => ({
+			project,
+			groupTrees: [...groupTrees].sort((a, b) => b.rssBytes - a.rssBytes),
+			rssBytes: groupTrees.reduce((sum, tree) => sum + tree.rssBytes, 0),
+		}))
+		.sort((a, b) => b.rssBytes - a.rssBytes);
 
 	return (
 		<Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
@@ -161,12 +167,14 @@ export function MemoryPopover({ host, trees, totals, pendingSessionId, killError
 						</p>
 					)}
 					<div className="mt-1 max-h-64 space-y-2 overflow-y-auto">
-						{sortedGroups.map(([project, groupTrees]) => {
+						{sortedGroups.map(({ project, groupTrees, rssBytes }) => {
 							const groupOrphans = groupTrees.filter((tree) => tree.state === "orphan");
 							return (
 								<div key={project}>
 									<div className="flex items-center justify-between gap-2">
-										<span className="truncate font-medium text-foreground">{project}</span>
+										<span className="truncate font-medium text-foreground">
+											{project} <span className="tabular-nums text-muted-foreground">{formatBytes(rssBytes)}</span>
+										</span>
 										{groupOrphans.length > 0 && (
 											<button
 												type="button"
