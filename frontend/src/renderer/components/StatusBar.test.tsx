@@ -48,6 +48,8 @@ const ownedTree: ProcessTreeRow = {
 	kind: "worker",
 	state: "owned",
 	attached: true,
+	activityState: "active",
+	lastActivityAt: "2026-09-17T12:00:00Z",
 };
 
 const orphanTree: ProcessTreeRow = {
@@ -59,6 +61,8 @@ const orphanTree: ProcessTreeRow = {
 	kind: "worker",
 	state: "orphan",
 	attached: false,
+	activityState: undefined,
+	lastActivityAt: "0001-01-01T00:00:00Z",
 };
 
 function inventory(overrides: Partial<ProcessInventory> = {}): ProcessInventory {
@@ -135,10 +139,10 @@ describe("StatusBar", () => {
 		expect(screen.queryByText("sessions")).toBeNull();
 	});
 
-	it("shows the orphan badge and kill entry when orphans exist", () => {
+	it("shows the orphan badge and stop entry when orphans exist", () => {
 		renderStatusBar(inventory());
 		expect(screen.getByText("orphans")).toBeInTheDocument();
-		expect(screen.getByTestId("status-bar-kill")).toBeInTheDocument();
+		expect(screen.getByTestId("status-bar-stop")).toBeInTheDocument();
 	});
 
 	it("renders nothing when the inventory has no host section and no orphans", () => {
@@ -176,7 +180,7 @@ describe("StatusBar", () => {
 		});
 	});
 
-	it("routes the batch kill through the confirm dialog", async () => {
+	it("routes the batch stop through the confirm dialog", async () => {
 		const user = userEvent.setup();
 		postMock.mockResolvedValue({
 			data: { results: [{ sessionId: "legacy-x", rootPid: 8123, status: "killed" }] },
@@ -184,11 +188,11 @@ describe("StatusBar", () => {
 		});
 		renderStatusBar(inventory());
 
-		await user.click(screen.getByTestId("status-bar-kill"));
-		expect(screen.getByText("Kill orphaned process trees?")).toBeInTheDocument();
+		await user.click(screen.getByTestId("status-bar-stop"));
+		expect(screen.getByText("Stop idle sessions?")).toBeInTheDocument();
 		expect(screen.getByText("legacy-x · pid 8123 · 1.1 GB")).toBeInTheDocument();
 
-		await user.click(screen.getByRole("button", { name: "Kill trees" }));
+		await user.click(screen.getByRole("button", { name: "Stop sessions" }));
 		await waitFor(() => {
 			expect(postMock).toHaveBeenCalledWith("/api/v1/system/processes/kill", {
 				body: {
