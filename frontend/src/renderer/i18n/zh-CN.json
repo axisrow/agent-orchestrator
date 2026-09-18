@@ -2041,6 +2041,8 @@
 	"statusBar.killGroup": "终止 {{count}} 个",
 	"statusBar.killGroupAria": "终止项目 {{project}} 的 {{count}} 棵孤儿进程树",
 	"statusBar.treeRow": "{{session}} · pid {{pid}} · {{rss}}",
+	"statusBar.aoShort": "AO",
+	"statusBar.agentsCount": "代理",
 	"statusBar.idleBadge": "空闲 worker",
 	"statusBar.stopAll": "全部停止",
 	"statusBar.activityIdle": "空闲",

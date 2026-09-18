@@ -2088,6 +2088,8 @@
 	"statusBar.killGroup": "Encerrar {{count}}",
 	"statusBar.killGroupAria": "Encerrar {{count}} árvores órfãs de {{project}}",
 	"statusBar.treeRow": "{{session}} · pid {{pid}} · {{rss}}",
+	"statusBar.aoShort": "AO",
+	"statusBar.agentsCount": "agentes",
 	"statusBar.idleBadge": "workers ociosos",
 	"statusBar.stopAll": "Encerrar tudo",
 	"statusBar.activityIdle": "ociosa",

@@ -2088,6 +2088,8 @@
 	"statusBar.killGroup": "Eliminar {{count}}",
 	"statusBar.killGroupAria": "Eliminar {{count}} árboles huérfanos de {{project}}",
 	"statusBar.treeRow": "{{session}} · pid {{pid}} · {{rss}}",
+	"statusBar.aoShort": "AO",
+	"statusBar.agentsCount": "agentes",
 	"statusBar.idleBadge": "workers inactivos",
 	"statusBar.stopAll": "Detener todo",
 	"statusBar.activityIdle": "inactiva",

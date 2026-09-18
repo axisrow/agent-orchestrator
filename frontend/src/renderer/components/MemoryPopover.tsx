@@ -91,6 +91,15 @@ export function MemoryPopover({
 							className="flex items-center gap-2 rounded-md px-1 py-0.5 text-caption text-muted-foreground hover:bg-interactive-hover hover:text-foreground"
 						>
 							<span>
+								{t("statusBar.aoShort")}{" "}
+								<span className="tabular-nums text-foreground">
+									{formatBytes(
+										totals.daemonRssBytes + totals.tmuxRssBytes + totals.sessionsRssBytes + totals.orphansRssBytes,
+									)}
+								</span>
+							</span>
+							<span aria-hidden="true">·</span>
+							<span>
 								{t("statusBar.ramLabel")}{" "}
 								<span className="tabular-nums">
 									{formatBytes(host.usedBytes)} / {formatBytes(host.totalBytes)}

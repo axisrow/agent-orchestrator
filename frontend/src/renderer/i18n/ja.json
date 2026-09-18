@@ -2059,6 +2059,8 @@
 	"statusBar.killGroup": "{{count}} 件を終了",
 	"statusBar.killGroupAria": "{{project}} の孤立ツリー {{count}} 件を終了",
 	"statusBar.treeRow": "{{session}} · pid {{pid}} · {{rss}}",
+	"statusBar.aoShort": "AO",
+	"statusBar.agentsCount": "エージェント",
 	"statusBar.idleBadge": "アイドル worker",
 	"statusBar.stopAll": "すべて停止",
 	"statusBar.activityIdle": "アイドル",

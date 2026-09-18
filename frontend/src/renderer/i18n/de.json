@@ -2059,6 +2059,8 @@
 	"statusBar.killGroup": "{{count}} beenden",
 	"statusBar.killGroupAria": "{{count}} verwaiste Bäume von {{project}} beenden",
 	"statusBar.treeRow": "{{session}} · pid {{pid}} · {{rss}}",
+	"statusBar.aoShort": "AO",
+	"statusBar.agentsCount": "Agents",
 	"statusBar.idleBadge": "Inaktive Worker",
 	"statusBar.stopAll": "Alle stoppen",
 	"statusBar.activityIdle": "inaktiv",

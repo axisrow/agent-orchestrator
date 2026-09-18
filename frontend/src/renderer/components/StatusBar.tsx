@@ -123,6 +123,9 @@ export function StatusBar() {
 						<span className="tabular-nums">{idleOwned.length}</span>
 					</Badge>
 				)}
+				<span>
+					{t("statusBar.agentsCount")} <span className="tabular-nums">{data.trees.length}</span>
+				</span>
 				{orphans.length > 0 && (
 					<Badge variant="warning">
 						{t("statusBar.orphans")}

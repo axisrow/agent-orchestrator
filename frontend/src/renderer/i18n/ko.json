@@ -2059,6 +2059,8 @@
 	"statusBar.killGroup": "{{count}}개 종료",
 	"statusBar.killGroupAria": "{{project}}의 고아 트리 {{count}}개 종료",
 	"statusBar.treeRow": "{{session}} · pid {{pid}} · {{rss}}",
+	"statusBar.aoShort": "AO",
+	"statusBar.agentsCount": "에이전트",
 	"statusBar.idleBadge": "유휴 worker",
 	"statusBar.stopAll": "모두 중지",
 	"statusBar.activityIdle": "유휴",

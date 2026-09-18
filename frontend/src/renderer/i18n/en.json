@@ -2040,6 +2040,8 @@
 	"statusBar.killGroup": "Kill {{count}}",
 	"statusBar.killGroupAria": "Kill {{count}} orphaned trees of project {{project}}",
 	"statusBar.treeRow": "{{session}} · pid {{pid}} · {{rss}}",
+	"statusBar.aoShort": "AO",
+	"statusBar.agentsCount": "agents",
 	"statusBar.idleBadge": "idle workers",
 	"statusBar.stopAll": "Stop all",
 	"statusBar.activityIdle": "idle",

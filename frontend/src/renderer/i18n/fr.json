@@ -2088,6 +2088,8 @@
 	"statusBar.killGroup": "Tuer {{count}}",
 	"statusBar.killGroupAria": "Tuer {{count}} arbres orphelins de {{project}}",
 	"statusBar.treeRow": "{{session}} · pid {{pid}} · {{rss}}",
+	"statusBar.aoShort": "AO",
+	"statusBar.agentsCount": "agents",
 	"statusBar.idleBadge": "workers inactifs",
 	"statusBar.stopAll": "Tout arrêter",
 	"statusBar.activityIdle": "inactive",
