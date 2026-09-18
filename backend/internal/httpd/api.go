@@ -53,9 +53,6 @@ type APIDeps struct {
 	PreviewServer       controllers.ManagedPreviewServer
 	SessionCapabilities controllers.SessionCapabilityValidator
 	SystemChecks        controllers.SystemChecker
-	// Processes exposes the process-footprint inventory and orphan kill; nil
-	// answers 501 like every other optional surface.
-	Processes controllers.ProcessService
 	// HostID is this machine's stable, machine-bound identity, served by the
 	// unauthenticated GET /api/v1/identity probe so a phone can confirm which
 	// machine answered before presenting a credential.
@@ -131,7 +128,6 @@ type API struct {
 	dev           *controllers.DevController
 	browser       *controllers.BrowserController
 	system        *controllers.SystemController
-	processes     *controllers.ProcessController
 	identity      *controllers.IdentityController
 	endpoints     *controllers.EndpointsController
 	systemInstall *controllers.SystemInstallController
@@ -177,7 +173,6 @@ func NewAPI(cfg config.Config, deps APIDeps) *API {
 		dev:           &controllers.DevController{Import: deps.DevImport},
 		browser:       &controllers.BrowserController{Svc: deps.Browser},
 		system:        &controllers.SystemController{Checks: deps.SystemChecks},
-		processes:     &controllers.ProcessController{Processes: deps.Processes},
 		identity:      &controllers.IdentityController{HostID: deps.HostID},
 		endpoints:     &controllers.EndpointsController{Source: deps.Endpoints},
 		systemInstall: &controllers.SystemInstallController{Installer: deps.Installer},
@@ -218,7 +213,6 @@ func (a *API) Register(root chi.Router) {
 			a.dev.Register(r)
 			a.browser.Register(r)
 			a.system.Register(r)
-			a.processes.Register(r)
 			a.identity.Register(r)
 			a.endpoints.Register(r)
 			a.systemInstall.Register(r)

@@ -222,10 +222,9 @@ func NewRootCommand(deps Deps) *cobra.Command {
 	root.AddCommand(newReviewCommand(ctx))
 	root.AddCommand(newCompletionCommand())
 	root.AddCommand(newVersionCommand())
-	// Fork-only commands, kept last to minimize rebase conflicts with upstream's
+	// Fork-only command, kept last to minimize rebase conflicts with upstream's
 	// insertions into this list (see docs/adr/0002-user-scope-config.md).
 	root.AddCommand(newUserConfigCommand(ctx))
-	root.AddCommand(newPsCommand(ctx))
 
 	return root
 }
