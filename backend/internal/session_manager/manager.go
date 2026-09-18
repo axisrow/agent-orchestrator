@@ -4259,7 +4259,9 @@ func (m *Manager) buildSystemPrompt(ctx context.Context, kind domain.SessionKind
 			cfg.AdditionalSections = append(cfg.AdditionalSections, workspacePrompt)
 		}
 	}
-	if rolePrompt := strings.TrimSpace(effectiveAgentConfig(kind, project.Config).SystemPrompt); rolePrompt != "" {
+	// The empty harness is deliberate: SystemPrompt merges harness-neutrally,
+	// and harness only gates Model/Effort/Mode, which this call never reads.
+	if rolePrompt := strings.TrimSpace(effectiveAgentConfig(domain.AgentHarness(""), kind, project.Config).SystemPrompt); rolePrompt != "" {
 		cfg.RolePrompt = rolePrompt
 	}
 	if pointer := strings.TrimSpace(m.aoSkillPointer()); pointer != "" {

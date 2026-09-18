@@ -1434,7 +1434,7 @@ func TestSpawn_ResolvesProjectConfig(t *testing.T) {
 	if _, _, _, err := m.Spawn(ctx, ports.SpawnConfig{ProjectID: "bare", Kind: domain.KindWorker, Harness: domain.HarnessCodex}); err != nil {
 		t.Fatal(err)
 	}
-	if agent.lastConfig != (ports.AgentConfig{Permissions: ports.PermissionModeAuto}) {
+	if !reflect.DeepEqual(agent.lastConfig, ports.AgentConfig{Permissions: ports.PermissionModeAuto}) {
 		t.Fatalf("launch config = %#v, want Auto permissions for project without config", agent.lastConfig)
 	}
 	if got := ws.lastCfg.BaseBranch; got != "" {
@@ -9560,7 +9560,7 @@ func TestEffectiveAgentConfig_MergesProfileFields(t *testing.T) {
 		}},
 	}
 
-	got := effectiveAgentConfig(domain.KindWorker, cfg)
+	got := effectiveAgentConfig(domain.HarnessClaudeCode, domain.KindWorker, cfg)
 
 	if got.Model != "worker-model" {
 		t.Fatalf("Model = %q, want worker-model", got.Model)
@@ -9599,8 +9599,8 @@ func TestEffectiveAgentConfig_DoesNotMutateProjectEnv(t *testing.T) {
 		}},
 	}
 
-	_ = effectiveAgentConfig(domain.KindWorker, cfg)
-	_ = effectiveAgentConfig(domain.KindWorker, cfg) // a second call surfaces cross-call leakage
+	_ = effectiveAgentConfig(domain.HarnessClaudeCode, domain.KindWorker, cfg)
+	_ = effectiveAgentConfig(domain.HarnessClaudeCode, domain.KindWorker, cfg) // a second call surfaces cross-call leakage
 
 	if _, leaked := cfg.AgentConfig.Env["ROLE_ONLY"]; leaked {
 		t.Fatalf("role-only env leaked into project config after merge: %#v", cfg.AgentConfig.Env)
@@ -9617,10 +9617,10 @@ func TestEffectiveAgentConfig_OrchestratorRoleUsesOrchestratorOverride(t *testin
 		Worker:       domain.RoleOverride{AgentConfig: domain.AgentConfig{SystemPrompt: "w"}},
 		Orchestrator: domain.RoleOverride{AgentConfig: domain.AgentConfig{SystemPrompt: "o"}},
 	}
-	if got := effectiveAgentConfig(domain.KindWorker, cfg); got.SystemPrompt != "w" {
+	if got := effectiveAgentConfig(domain.HarnessClaudeCode, domain.KindWorker, cfg); got.SystemPrompt != "w" {
 		t.Fatalf("worker prompt = %q, want w", got.SystemPrompt)
 	}
-	if got := effectiveAgentConfig(domain.KindOrchestrator, cfg); got.SystemPrompt != "o" {
+	if got := effectiveAgentConfig(domain.HarnessClaudeCode, domain.KindOrchestrator, cfg); got.SystemPrompt != "o" {
 		t.Fatalf("orchestrator prompt = %q, want o", got.SystemPrompt)
 	}
 }

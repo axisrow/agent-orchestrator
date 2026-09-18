@@ -1848,7 +1848,7 @@ func TestActivity_OldRuntimeGenerationCannotReplaceConversationCheckpoint(t *tes
 	}); err != nil {
 		t.Fatalf("ApplyActivitySignal: %v", err)
 	}
-	if got := store.sessions[rec.ID]; got != rec {
+	if got := store.sessions[rec.ID]; !reflect.DeepEqual(got, rec) {
 		t.Fatalf("old generation mutated current checkpoint: got %+v, want %+v", got, rec)
 	}
 }
@@ -1876,7 +1876,7 @@ func TestActivity_UntaggedTUIHookCannotMutateLaunchedRuntime(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("ApplyActivitySignal: %v", err)
 	}
-	if got := store.sessions[rec.ID]; got != rec {
+	if got := store.sessions[rec.ID]; !reflect.DeepEqual(got, rec) {
 		t.Fatalf("untagged callback mutated launched runtime: got %+v, want %+v", got, rec)
 	}
 }
@@ -1902,7 +1902,7 @@ func TestActivity_LaunchTaggedTUIStopAfterChatEpochCannotMutateSession(t *testin
 	}); err != nil {
 		t.Fatalf("ApplyActivitySignal: %v", err)
 	}
-	if got := store.sessions[rec.ID]; got != rec {
+	if got := store.sessions[rec.ID]; !reflect.DeepEqual(got, rec) {
 		t.Fatalf("late TUI Stop mutated Chat owner: got %+v, want %+v", got, rec)
 	}
 }
@@ -1929,7 +1929,7 @@ func TestActivity_UntaggedTUIStopAfterChatEpochCannotMutateSession(t *testing.T)
 	}); err != nil {
 		t.Fatalf("ApplyActivitySignal: %v", err)
 	}
-	if got := store.sessions[rec.ID]; got != rec {
+	if got := store.sessions[rec.ID]; !reflect.DeepEqual(got, rec) {
 		t.Fatalf("untagged late TUI Stop mutated Chat owner: got %+v, want %+v", got, rec)
 	}
 }
