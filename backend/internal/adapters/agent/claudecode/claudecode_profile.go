@@ -101,29 +101,28 @@ func isPluginURL(s string) bool {
 // circuits restoreArgv's fresh-launch fallback (session_manager/manager.go),
 // the session is stranded rather than relaunched.
 //
-// The transcript is located by scanning every project directory under
-// ~/.claude/projects for <sessionID>.jsonl instead of deriving the directory
-// name from the workspace path. Claude Code encodes ALL non-alphanumeric
-// characters of the path (underscores and dots included) into that name; a
-// probe that mirrored only "/" and "." computed a different directory for
-// underscore workspaces, misdiagnosed the conversation as missing, and routed
-// restore into the fresh-launch fallback — whose deterministic --session-id
-// is create-only and collides with the existing transcript, leaving claude
-// dead with "Session ID ... is already in use". The scan matches claude's own
-// --resume lookup (which searches beyond the cwd's project directory) and
-// survives future encoding changes; it mirrors NativeConversationExists in
-// claudecode.go. If we can't tell (empty workspace path, or a read error
-// other than "not found"), we don't block — only a confirmed absence should
-// force a fallback.
+// The transcript is located by scanning every project directory under the
+// Claude config dir's projects/ for <sessionID>.jsonl instead of deriving the
+// directory name from the workspace path. Claude Code encodes ALL
+// non-alphanumeric characters of the path (underscores and dots included) into
+// that name; a probe that mirrored only "/" and "." computed a different
+// directory for underscore workspaces, misdiagnosed the conversation as
+// missing, and routed restore into the fresh-launch fallback — whose
+// deterministic --session-id is create-only and collides with the existing
+// transcript, leaving claude dead with "Session ID ... is already in use".
+// The scan matches claude's own --resume lookup (which searches beyond the
+// cwd's project directory) and survives future encoding changes; it mirrors
+// NativeConversationExists in claudecode.go. If we can't tell (empty workspace
+// path, or a read error other than "not found"), we don't block — only a
+// confirmed absence should force a fallback.
 func claudeTranscriptExists(workspacePath, sessionID string) bool {
 	if workspacePath == "" {
 		return true
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
+	projectsDir, ok := claudeProjectsDir()
+	if !ok {
 		return true
 	}
-	projectsDir := filepath.Join(home, ".claude", "projects")
 	projects, err := os.ReadDir(projectsDir)
 	if os.IsNotExist(err) {
 		// No projects directory at all is a confirmed absence, not an
@@ -143,4 +142,21 @@ func claudeTranscriptExists(workspacePath, sessionID string) bool {
 		}
 	}
 	return false
+}
+
+// claudeProjectsDir resolves the transcript root the same way
+// NativeConversationExists does: CLAUDE_CONFIG_DIR first, then ~/.claude. The
+// session's resolved env is not reachable here (ports.RestoreConfig carries no
+// env), so a CLAUDE_CONFIG_DIR delivered only through per-project session env
+// is invisible to this probe — the daemon-process variable and the default
+// location are what it can see.
+func claudeProjectsDir() (string, bool) {
+	if dir := strings.TrimSpace(os.Getenv("CLAUDE_CONFIG_DIR")); dir != "" {
+		return filepath.Join(dir, "projects"), true
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", false
+	}
+	return filepath.Join(home, ".claude", "projects"), true
 }
