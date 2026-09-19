@@ -20,6 +20,9 @@ export function GlobalSettingsForm({
 	// One section per page means the dialog header already names it, so a
 	// leading in-page heading would just repeat that title.
 	const titleHidden = !all;
+	// Fork: user-scope prompt override ("Agent Defaults") stays a standalone
+	// panel ahead of the catalog's general section, preserving the original
+	// section order on both the "all" and "general" pages.
 
 	return (
 		<>
@@ -28,9 +31,6 @@ export function GlobalSettingsForm({
 			className="flex w-full flex-col gap-(--size-settings-section-gap)"
 			data-testid="settings-page"
 		>
-			// Fork: user-scope prompt override ("Agent Defaults") stays a standalone
-			// panel ahead of the catalog's general section, preserving the original
-			// section order on both the "all" and "general" pages.
 			{(all || section === "general") && (
 				<SettingsSection title={t("settings.agentDefaults")} titleHidden={titleHidden}>
 					<button
