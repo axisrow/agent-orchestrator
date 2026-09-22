@@ -27,6 +27,8 @@ export interface Settings {
 	cloudEnabled: boolean;
 	/** Cloud control plane base URL; empty when cloud is not configured. */
 	cloudControlPlaneUrl: string;
+	/** The user's process-footprint toggle (status bar, orphan kill, `ao ps`). */
+	processInventoryEnabled: boolean;
 }
 
 export function useSettings() {
@@ -52,6 +54,9 @@ export function useSettings() {
 				cloudOffering: data?.cloudOffering ?? false,
 				cloudEnabled: data?.cloudEnabled ?? false,
 				cloudControlPlaneUrl: data?.cloudControlPlaneUrl ?? "",
+				// Fail open like localEnabled: a daemon that predates the toggle
+				// always served the process surface.
+				processInventoryEnabled: data?.processInventoryEnabled ?? true,
 			};
 		},
 	});
@@ -90,6 +95,28 @@ export function useUpdateCloudOffering() {
 	const mutation = useMutation({
 		mutationFn: async (enabled: boolean) => {
 			const { data, error } = await apiClient.PATCH("/api/v1/settings/cloud-offering", {
+				body: { enabled },
+			});
+			if (error) throw error;
+			return data;
+		},
+		// Refetch rather than writing the value in locally: the daemon is the source
+		// of truth, and the control must not claim a change it did not persist.
+		onSuccess: () => queryClient.invalidateQueries({ queryKey: settingsQueryKey }),
+	});
+
+	return {
+		update: (enabled: boolean) => mutation.mutate(enabled),
+		saving: mutation.isPending,
+		error: mutation.error ? apiErrorMessage(mutation.error) : undefined,
+	};
+}
+
+export function useUpdateProcessInventory() {
+	const queryClient = useQueryClient();
+	const mutation = useMutation({
+		mutationFn: async (enabled: boolean) => {
+			const { data, error } = await apiClient.PATCH("/api/v1/settings/process-inventory", {
 				body: { enabled },
 			});
 			if (error) throw error;

@@ -29,6 +29,7 @@ import { WindowTitlebar } from "../components/WindowTitlebar";
 import { TerminalCacheProvider } from "../components/TerminalPane";
 import { agentModelsQueryOptions } from "../hooks/useAgentModelsQuery";
 import { useDaemonStatus } from "../hooks/useDaemonStatus";
+import { useSettings } from "../hooks/useSettings";
 import { useOpenShellTerminal } from "../hooks/useShellTerminals";
 import { useWindowFullScreen } from "../hooks/useWindowFullScreen";
 import { cloudProjectsQueryKey, cloudSessionsQueryKey, useWorkspaceQuery, workspaceQueryKey, workspaceQueryOptions } from "../hooks/useWorkspaceQuery";
@@ -185,6 +186,10 @@ function ShellLayout() {
 	const workspacesRef = useRef(workspaces);
 	workspacesRef.current = workspaces;
 	const daemonStatus = useDaemonStatus(queryClient);
+	// The process-footprint toggle gates the status bar itself: off means no
+	// widget and no background polling, not an empty one.
+	const { settings } = useSettings();
+	const processInventoryEnabled = settings?.processInventoryEnabled !== false;
 	const [workspaceStartupState, setWorkspaceStartupState] = useState<"loading" | "ready" | "error">("loading");
 	const workspaceStartupBaselineRef = useRef(0);
 	const sidebarDragStripRef = useRef<HTMLDivElement>(null);
@@ -1098,7 +1103,7 @@ function ShellLayout() {
 								selfFramedCenterPanel={selfFramedCenterPanel}
 							/>
 						</div>
-						<StatusBar />
+						{processInventoryEnabled && <StatusBar />}
 						</main>
 					</div>
 					<DaemonFailureBanner status={daemonStatus} />

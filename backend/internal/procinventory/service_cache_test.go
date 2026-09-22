@@ -2,6 +2,7 @@ package procinventory
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 )
@@ -40,5 +41,32 @@ func TestServiceInventory_ServesStaleOnScanOverrun(t *testing.T) {
 	}
 	if stale.Totals.DaemonRSSBytes != first.Totals.DaemonRSSBytes {
 		t.Fatalf("stale inventory differs from last good")
+	}
+}
+
+// The Settings toggle gates the whole surface at runtime: both Inventory and
+// Kill answer ErrDisabled without touching a single process.
+func TestServiceDisabled(t *testing.T) {
+	scans := 0
+	svc := New(Deps{
+		Scan: func(context.Context) ([]Entry, error) {
+			scans++
+			return nil, nil
+		},
+		Enabled: func(context.Context) bool { return false },
+	})
+
+	if _, err := svc.Inventory(context.Background()); !errors.Is(err, ErrDisabled) {
+		t.Fatalf("Inventory err = %v, want ErrDisabled", err)
+	}
+	report, err := svc.Kill(context.Background(), []KillTarget{{SessionID: "s", RootPID: 1}})
+	if !errors.Is(err, ErrDisabled) {
+		t.Fatalf("Kill err = %v, want ErrDisabled", err)
+	}
+	if len(report.Results) != 0 {
+		t.Fatalf("kill results = %+v, want empty", report.Results)
+	}
+	if scans != 0 {
+		t.Fatalf("scan ran %d times while disabled, want 0", scans)
 	}
 }

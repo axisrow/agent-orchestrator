@@ -2,12 +2,17 @@ package procinventory
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 	"time"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 )
+
+// ErrDisabled reports that the process-footprint surface is turned off by the
+// user's Settings toggle.
+var ErrDisabled = errors.New("procinventory: disabled in settings")
 
 // Signal identifies the signal the kill path delivers to a process group.
 type Signal int
@@ -69,6 +74,10 @@ type Deps struct {
 	Now func() time.Time
 	// Log receives kill outcomes; default slog.Default().
 	Log *slog.Logger
+	// Enabled reports whether the surface is on (the Settings toggle). The
+	// daemon re-reads the preference per request, so a flip lands without a
+	// restart. Nil means always enabled.
+	Enabled func(ctx context.Context) bool
 }
 
 // New wires a Service with defaults for unset dependencies.
@@ -108,6 +117,12 @@ func New(deps Deps) *Service {
 	return &Service{deps: deps, killMu: make(chan struct{}, 1)}
 }
 
+// enabled resolves the runtime gate: an unset dependency means the surface is
+// always on.
+func (s *Service) enabled(ctx context.Context) bool {
+	return s.deps.Enabled == nil || s.deps.Enabled(ctx)
+}
+
 // Inventory snapshots and classifies the current process table. A host
 // memory fetch failure is not an error: the inventory is returned without
 // its host section (the status bar hides that section on nil).
@@ -119,6 +134,9 @@ func New(deps Deps) *Service {
 // rather than an error — a thrashing machine degrades to stale numbers, not
 // to a dead status bar.
 func (s *Service) Inventory(ctx context.Context) (Inventory, error) {
+	if !s.enabled(ctx) {
+		return Inventory{}, ErrDisabled
+	}
 	s.invMu.Lock()
 	defer s.invMu.Unlock()
 

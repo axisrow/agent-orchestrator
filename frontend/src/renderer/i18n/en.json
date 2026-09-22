@@ -2124,5 +2124,8 @@
 	"statusBar.stateOwned": "owned",
 	"statusBar.stateAdopted": "adopted",
 	"statusBar.stateOrphan": "orphan",
-	"statusBar.stateForeign": "foreign"
+	"statusBar.stateForeign": "foreign",
+
+	"settings.processInventory.label": "Process inventory",
+	"settings.processInventory.description": "Show the status bar with AO's process footprint, host memory, and orphan kill. Turn off to stop the background process scans."
 }

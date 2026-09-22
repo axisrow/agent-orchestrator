@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/httpd/controllers"
+	"github.com/aoagents/agent-orchestrator/backend/internal/httpd/envelope"
 	"github.com/aoagents/agent-orchestrator/backend/internal/procinventory"
 )
 
@@ -153,6 +154,39 @@ func TestProcessKill_ConcurrentIs409(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusConflict {
 		t.Fatalf("status = %d, want 409", resp.StatusCode)
+	}
+}
+
+// The Settings toggle turns the whole surface off; the daemon must answer with
+// the dedicated disabled code (not a 500) so clients hide the widget instead of
+// reporting a failure.
+func TestProcessRoutes_DisabledIs503(t *testing.T) {
+	svc := &fakeProcessService{invErr: procinventory.ErrDisabled, killErr: procinventory.ErrDisabled}
+	srv := processServer(t, svc)
+
+	resp, err := http.Get(srv.URL + "/api/v1/system/processes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("GET status = %d, want 503", resp.StatusCode)
+	}
+	var body envelope.APIError
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Code != "PROCESS_INVENTORY_DISABLED" {
+		t.Fatalf("code = %q, want PROCESS_INVENTORY_DISABLED", body.Code)
+	}
+
+	resp, err = http.Post(srv.URL+"/api/v1/system/processes/kill", "application/json", bytes.NewReader([]byte(`{"targets":[]}`)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("POST status = %d, want 503", resp.StatusCode)
 	}
 }
 

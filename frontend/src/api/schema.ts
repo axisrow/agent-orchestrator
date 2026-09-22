@@ -2369,6 +2369,23 @@ export interface paths {
         patch: operations["updateCloudOffering"];
         trace?: never;
     };
+    "/api/v1/settings/process-inventory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Turn the process-footprint surface (status bar, orphan kill, ao ps) on or off */
+        patch: operations["updateProcessInventory"];
+        trace?: never;
+    };
     "/api/v1/settings/session-interface": {
         parameters: {
             query?: never;
@@ -3114,6 +3131,9 @@ export interface components {
             enabled: boolean;
         };
         ControllersUpdateCloudOfferingRequest: {
+            enabled: null | boolean;
+        };
+        ControllersUpdateProcessInventoryRequest: {
             enabled: null | boolean;
         };
         ConversationAccountPayload: {
@@ -4426,6 +4446,7 @@ export interface components {
             /** @enum {string} */
             defaultSessionMode: "chat" | "tui";
             localEnabled: boolean;
+            processInventoryEnabled: boolean;
         };
         ShellTerminalEnvelope: {
             shellTerminal: components["schemas"]["ShellTerminalResponse"];
@@ -13464,6 +13485,57 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ControllersUpdateCloudOfferingRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    updateProcessInventory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ControllersUpdateProcessInventoryRequest"];
             };
         };
         responses: {

@@ -20,6 +20,7 @@ type Store interface {
 	GetAppSettings(ctx context.Context) (Snapshot, error)
 	SetDefaultSessionMode(ctx context.Context, mode domain.SessionMode, now time.Time) error
 	SetCloudOffering(ctx context.Context, enabled bool, now time.Time) error
+	SetProcessInventory(ctx context.Context, enabled bool, now time.Time) error
 }
 
 // Snapshot is the current preference set.
@@ -27,7 +28,10 @@ type Snapshot struct {
 	DefaultSessionMode domain.SessionMode
 	// CloudOffering is the user's cloud toggle (Settings, Developer Mode).
 	CloudOffering bool
-	UpdatedAt     time.Time
+	// ProcessInventory is the user's process-footprint toggle (status bar,
+	// orphan kill, `ao ps`).
+	ProcessInventory bool
+	UpdatedAt        time.Time
 }
 
 // Offering reports which AO offerings this daemon exposes to clients. It is
@@ -128,6 +132,16 @@ func (s *Service) SetDefaultSessionMode(ctx context.Context, mode domain.Session
 // new reads; nothing about running sessions changes.
 func (s *Service) SetCloudOffering(ctx context.Context, enabled bool) (Snapshot, error) {
 	if err := s.store.SetCloudOffering(ctx, enabled, s.now()); err != nil {
+		return Snapshot{}, err
+	}
+	return s.store.GetAppSettings(ctx)
+}
+
+// SetProcessInventory flips the user's process-footprint toggle. The effect is
+// immediate for new reads: the daemon re-checks the preference per request, so
+// the status bar, orphan kill, and `ao ps` turn off without a restart.
+func (s *Service) SetProcessInventory(ctx context.Context, enabled bool) (Snapshot, error) {
+	if err := s.store.SetProcessInventory(ctx, enabled, s.now()); err != nil {
 		return Snapshot{}, err
 	}
 	return s.store.GetAppSettings(ctx)

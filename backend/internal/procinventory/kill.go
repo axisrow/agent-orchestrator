@@ -44,6 +44,9 @@ type KillReport struct {
 // semantics stay out of this path entirely. One batch at a time; concurrent
 // calls fail with ErrKillInProgress.
 func (s *Service) Kill(ctx context.Context, targets []KillTarget) (KillReport, error) {
+	if !s.enabled(ctx) {
+		return KillReport{}, ErrDisabled
+	}
 	select {
 	case s.killMu <- struct{}{}:
 		defer func() { <-s.killMu }()

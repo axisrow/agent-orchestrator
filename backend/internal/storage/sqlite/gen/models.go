@@ -147,6 +147,7 @@ type AppSetting struct {
 	DefaultSessionMode domain.SessionMode
 	UpdatedAt          time.Time
 	CloudOffering      bool
+	ProcessInventory   bool
 }
 
 type ChangeLog struct {

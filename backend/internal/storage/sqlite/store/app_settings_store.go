@@ -25,7 +25,11 @@ type AppSettings struct {
 	// CloudOffering is the user's cloud toggle (Settings, Developer Mode). The
 	// daemon gate combines it with the deployment's control-plane URL.
 	CloudOffering bool
-	UpdatedAt     time.Time
+	// ProcessInventory is the user's process-footprint toggle (status bar,
+	// orphan kill, `ao ps`). Off means the daemon answers the process surface
+	// with a disabled error and the UI hides it.
+	ProcessInventory bool
+	UpdatedAt        time.Time
 }
 
 // GetAppSettings reads the preference row.
@@ -39,6 +43,7 @@ func (s *Store) GetAppSettings(ctx context.Context) (AppSettings, error) {
 		// one does not must still resolve to something dispatchable.
 		DefaultSessionMode: domain.NormalizeSessionMode(row.DefaultSessionMode),
 		CloudOffering:      row.CloudOffering,
+		ProcessInventory:   row.ProcessInventory,
 		UpdatedAt:          row.UpdatedAt,
 	}, nil
 }
@@ -68,6 +73,19 @@ func (s *Store) SetCloudOffering(ctx context.Context, enabled bool, now time.Tim
 		UpdatedAt:     now,
 	}); err != nil {
 		return fmt.Errorf("set cloud offering: %w", err)
+	}
+	return nil
+}
+
+// SetProcessInventory persists the user's process-footprint toggle.
+func (s *Store) SetProcessInventory(ctx context.Context, enabled bool, now time.Time) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	if err := s.qw.SetProcessInventory(ctx, gen.SetProcessInventoryParams{
+		ProcessInventory: enabled,
+		UpdatedAt:        now,
+	}); err != nil {
+		return fmt.Errorf("set process inventory: %w", err)
 	}
 	return nil
 }

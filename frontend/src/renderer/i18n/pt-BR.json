@@ -2174,5 +2174,8 @@
 	"statusBar.stateOwned": "própria",
 	"statusBar.stateAdopted": "adotada",
 	"statusBar.stateOrphan": "órfã",
-	"statusBar.stateForeign": "alheia"
+	"statusBar.stateForeign": "alheia",
+
+	"settings.processInventory.label": "Inventário de processos",
+	"settings.processInventory.description": "Mostra a barra de status com a pegada de processos do AO, a memória do host e a eliminação de processos órfãos. Desligue para interromper as varreduras em segundo plano."
 }

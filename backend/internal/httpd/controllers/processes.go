@@ -113,6 +113,10 @@ func (c *ProcessController) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	inv, err := c.Processes.Inventory(r.Context())
+	if errors.Is(err, procinventory.ErrDisabled) {
+		envelope.WriteAPIError(w, r, http.StatusServiceUnavailable, "disabled", "PROCESS_INVENTORY_DISABLED", "Process inventory is turned off in settings", nil)
+		return
+	}
 	if err != nil {
 		envelope.WriteAPIError(w, r, http.StatusInternalServerError, "internal", "PROCESS_SCAN_FAILED", "Process table scan failed", nil)
 		return
@@ -139,6 +143,10 @@ func (c *ProcessController) kill(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	report, err := c.Processes.Kill(r.Context(), targets)
+	if errors.Is(err, procinventory.ErrDisabled) {
+		envelope.WriteAPIError(w, r, http.StatusServiceUnavailable, "disabled", "PROCESS_INVENTORY_DISABLED", "Process inventory is turned off in settings", nil)
+		return
+	}
 	if errors.Is(err, procinventory.ErrKillInProgress) {
 		envelope.WriteAPIError(w, r, http.StatusConflict, "conflict", "KILL_IN_PROGRESS", "Another kill is already running", nil)
 		return

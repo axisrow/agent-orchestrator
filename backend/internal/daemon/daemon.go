@@ -834,6 +834,13 @@ func Run() error {
 		TmuxSocketName: os.Getenv("AO_TMUX_SOCKET_NAME"),
 		Unregister:     ptyregistry.Unregister,
 		Log:            log,
+		// The Settings toggle gates the whole surface at runtime. A preference
+		// read failure keeps it on: the feature's historical default should not
+		// be flipped by a transient DB error.
+		Enabled: func(ctx context.Context) bool {
+			snap, err := settingsSvc.Get(ctx)
+			return err != nil || snap.ProcessInventory
+		},
 	})
 
 	srv, err := httpd.NewWithDeps(cfg, log, termMgr, httpd.APIDeps{

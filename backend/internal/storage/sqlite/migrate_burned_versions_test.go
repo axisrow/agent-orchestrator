@@ -157,6 +157,7 @@ var shippedMigrations = map[int64]string{
 	// can never renumber them onto a number upstream will claim. See
 	// migrate_fork_reserved_range_test.go for why.
 	9001: "9001_add_user_config.sql",
+	9002: "9002_app_settings_process_inventory.sql",
 }
 
 // burnedVersion reports version numbers that must never be (re)used: they

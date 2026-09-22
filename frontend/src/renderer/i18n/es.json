@@ -2174,5 +2174,8 @@
 	"statusBar.stateOwned": "propia",
 	"statusBar.stateAdopted": "adoptada",
 	"statusBar.stateOrphan": "huérfana",
-	"statusBar.stateForeign": "ajena"
+	"statusBar.stateForeign": "ajena",
+
+	"settings.processInventory.label": "Inventario de procesos",
+	"settings.processInventory.description": "Muestra la barra de estado con la huella de procesos de AO, la memoria del sistema y la eliminación de procesos huérfanos. Desactívalo para detener los escaneos en segundo plano."
 }

@@ -2144,5 +2144,8 @@
 	"statusBar.stateOwned": "管理中",
 	"statusBar.stateAdopted": "引き継ぎ済み",
 	"statusBar.stateOrphan": "孤立",
-	"statusBar.stateForeign": "他デーモン"
+	"statusBar.stateForeign": "他デーモン",
+
+	"settings.processInventory.label": "プロセスインベントリ",
+	"settings.processInventory.description": "AOのプロセスフットプリント、ホストメモリ、孤立プロセスの削除を表示するステータスバーを表示します。オフにするとバックグラウンドのプロセススキャンが停止します。"
 }

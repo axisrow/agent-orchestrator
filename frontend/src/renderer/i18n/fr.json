@@ -2174,5 +2174,8 @@
 	"statusBar.stateOwned": "propre",
 	"statusBar.stateAdopted": "adopté",
 	"statusBar.stateOrphan": "orphelin",
-	"statusBar.stateForeign": "étranger"
+	"statusBar.stateForeign": "étranger",
+
+	"settings.processInventory.label": "Inventaire des processus",
+	"settings.processInventory.description": "Affiche la barre d'état avec l'empreinte des processus d'AO, la mémoire de l'hôte et la suppression des processus orphelins. Désactivez pour arrêter les analyses en arrière-plan."
 }

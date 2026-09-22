@@ -13,7 +13,7 @@ import { SettingsInputRow, SettingsRow } from "./SettingsRow";
 import { SettingsSection } from "./SettingsSection";
 import { Switch } from "../ui/switch";
 import { cn } from "../../lib/utils";
-import { useSettings, useUpdateCloudOffering, useUpdateSessionInterface } from "../../hooks/useSettings";
+import { useSettings, useUpdateCloudOffering, useUpdateProcessInventory, useUpdateSessionInterface } from "../../hooks/useSettings";
 import type { SessionMode } from "../../types/workspace";
 import type { TerminalShellKind } from "../../../shared/ui-locale";
 import { isWindowsPlatform } from "../../lib/platform";
@@ -244,6 +244,7 @@ export function GeneralSettingsSection({
 					/>
 				</SettingsRow>
 				{developerMode && <CloudOfferingRow />}
+				<ProcessInventoryRow />
 			</SettingsSection>
 		</>
 	);
@@ -273,6 +274,36 @@ function TelemetryEventsRow() {
 			{t(status ? `settings.telemetryEvents.${status}` : "settings.telemetryEvents.description")}
 		</p>
 	</div>;
+}
+
+/**
+ * The process-footprint toggle (Settings, Advanced). Persisted daemon-side like
+ * every preference: the daemon re-reads it per request, so turning it off stops
+ * the background process scans and hides the status bar without a restart or a
+ * rebuild.
+ */
+function ProcessInventoryRow() {
+	const { t } = useTranslation();
+	const { settings, isLoading } = useSettings();
+	const { update, saving, error } = useUpdateProcessInventory();
+	return (
+		<div className="flex w-full flex-col">
+			<SettingsRow label={t("settings.processInventory.label")}>
+				<Switch
+					aria-label={t("settings.processInventory.label")}
+					checked={settings?.processInventoryEnabled ?? true}
+					disabled={isLoading || saving}
+					onCheckedChange={(enabled) => update(enabled)}
+				/>
+			</SettingsRow>
+			<p className="px-3 pb-2 text-xs leading-relaxed text-muted-foreground">{t("settings.processInventory.description")}</p>
+			{error ? (
+				<p role="alert" className="px-3 pb-2 text-caption leading-4 text-error">
+					{error}
+				</p>
+			) : null}
+		</div>
+	);
 }
 
 /**

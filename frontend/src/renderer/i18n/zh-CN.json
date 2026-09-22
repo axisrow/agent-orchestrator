@@ -2126,5 +2126,8 @@
 	"statusBar.stateOwned": "自有",
 	"statusBar.stateAdopted": "已接管",
 	"statusBar.stateOrphan": "孤儿",
-	"statusBar.stateForeign": "外部"
+	"statusBar.stateForeign": "外部",
+
+	"settings.processInventory.label": "进程清单",
+	"settings.processInventory.description": "显示状态栏，包括 AO 的进程占用、主机内存和孤儿进程清理。关闭后将停止后台进程扫描。"
 }

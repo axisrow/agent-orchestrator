@@ -2580,6 +2580,10 @@ type SettingsResponse struct {
 	// CloudControlPlaneURL is the cloud control plane base URL; empty when no
 	// control plane is configured.
 	CloudControlPlaneURL string `json:"cloudControlPlaneUrl"`
+	// ProcessInventoryEnabled is the user's process-footprint toggle (status
+	// bar, orphan kill, `ao ps`). Off means clients hide the surface and the
+	// daemon answers its routes with a disabled error.
+	ProcessInventoryEnabled bool `json:"processInventoryEnabled"`
 }
 
 // AgentInstallerCatalogResponse is the body of GET /api/v1/agents/installers.
@@ -2595,6 +2599,13 @@ type UpdateSessionInterfaceRequest struct {
 // UpdateCloudOfferingRequest flips the user's cloud toggle.
 type UpdateCloudOfferingRequest struct {
 	// Enabled turns the cloud offering on or off for this machine's user.
+	Enabled *bool `json:"enabled"`
+}
+
+// UpdateProcessInventoryRequest flips the user's process-footprint toggle.
+type UpdateProcessInventoryRequest struct {
+	// Enabled turns the process-footprint surface on or off for this machine's
+	// user.
 	Enabled *bool `json:"enabled"`
 }
 

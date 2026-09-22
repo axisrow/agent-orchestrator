@@ -2144,5 +2144,8 @@
 	"statusBar.stateOwned": "eigen",
 	"statusBar.stateAdopted": "adoptiert",
 	"statusBar.stateOrphan": "verwaist",
-	"statusBar.stateForeign": "fremd"
+	"statusBar.stateForeign": "fremd",
+
+	"settings.processInventory.label": "Prozessinventar",
+	"settings.processInventory.description": "Statusleiste mit AO-Prozess-Fußabdruck, Host-Speicher und dem Entfernen verwaister Prozesse anzeigen. Ausschalten beendet die Hintergrund-Prozessscans."
 }

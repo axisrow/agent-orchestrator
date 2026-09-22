@@ -2144,5 +2144,8 @@
 	"statusBar.stateOwned": "소유",
 	"statusBar.stateAdopted": "재연결됨",
 	"statusBar.stateOrphan": "고아",
-	"statusBar.stateForeign": "외부"
+	"statusBar.stateForeign": "외부",
+
+	"settings.processInventory.label": "프로세스 인벤토리",
+	"settings.processInventory.description": "AO 프로세스 사용량, 호스트 메모리, 고아 프로세스 정리를 표시하는 상태 표시줄을 표시합니다. 끄면 백그라운드 프로세스 스캔이 중지됩니다."
 }

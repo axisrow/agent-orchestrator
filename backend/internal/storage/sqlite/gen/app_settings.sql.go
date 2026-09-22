@@ -14,7 +14,7 @@ import (
 
 const getAppSettings = `-- name: GetAppSettings :one
 
-SELECT id, default_session_mode, updated_at, cloud_offering FROM app_settings WHERE id = 1
+SELECT id, default_session_mode, updated_at, cloud_offering, process_inventory FROM app_settings WHERE id = 1
 `
 
 // Daemon-owned user preferences. One row, seeded by migration 0042, so a read
@@ -27,6 +27,7 @@ func (q *Queries) GetAppSettings(ctx context.Context) (AppSetting, error) {
 		&i.DefaultSessionMode,
 		&i.UpdatedAt,
 		&i.CloudOffering,
+		&i.ProcessInventory,
 	)
 	return i, err
 }
@@ -56,5 +57,19 @@ type SetDefaultSessionModeParams struct {
 
 func (q *Queries) SetDefaultSessionMode(ctx context.Context, arg SetDefaultSessionModeParams) error {
 	_, err := q.db.ExecContext(ctx, setDefaultSessionMode, arg.DefaultSessionMode, arg.UpdatedAt)
+	return err
+}
+
+const setProcessInventory = `-- name: SetProcessInventory :exec
+UPDATE app_settings SET process_inventory = ?, updated_at = ? WHERE id = 1
+`
+
+type SetProcessInventoryParams struct {
+	ProcessInventory bool
+	UpdatedAt        time.Time
+}
+
+func (q *Queries) SetProcessInventory(ctx context.Context, arg SetProcessInventoryParams) error {
+	_, err := q.db.ExecContext(ctx, setProcessInventory, arg.ProcessInventory, arg.UpdatedAt)
 	return err
 }
