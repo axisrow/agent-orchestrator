@@ -360,6 +360,12 @@ type Store interface {
 	DeleteSessionWorktrees(ctx context.Context, id domain.SessionID) error
 }
 
+// UserConfigSource is the narrow read surface for global prompt overrides.
+// A nil source preserves the historical hardcoded baseline.
+type UserConfigSource interface {
+	GetUserConfig(ctx context.Context) (domain.AgentConfig, bool, error)
+}
+
 // conversationSettingsStore is the narrow optional read boundary for deriving
 // a chat orchestrator's current approval mode during a worker spawn. Older
 // embedders without chat persistence retain project-config-only behavior.
@@ -485,6 +491,7 @@ type Manager struct {
 	// user-paced waits reported through the activity boundary remain unbounded.
 	interfaceTransition interfaceTransitionConfig
 	logger              *slog.Logger
+	userConfig          UserConfigSource
 
 	// shellTerminalsMu guards shellTerminals: it is late-bound (see
 	// ShellTerminalCloser) after Manager already exists, so a setter mutates it
@@ -755,6 +762,9 @@ type Deps struct {
 	// Logger receives spawn-time diagnostics (e.g. when the session PATH
 	// cannot be pinned to the daemon binary). Nil defaults to slog.Default().
 	Logger *slog.Logger
+	// UserConfig supplies global prompt overrides from the user-config singleton.
+	// Nil preserves the historical hardcoded baseline.
+	UserConfig UserConfigSource
 }
 
 // New builds a Session Manager from its dependencies, defaulting the clock to
@@ -813,6 +823,7 @@ func New(d Deps) *Manager {
 			staleIdleLimit: interfaceTransitionStaleIdleLimit,
 		},
 		logger:         d.Logger,
+		userConfig:     d.UserConfig,
 		workspaceGates: make(map[domain.ProjectID]*sync.Mutex),
 	}
 	if m.clock == nil {
@@ -1041,7 +1052,7 @@ func (m *Manager) Spawn(ctx context.Context, cfg ports.SpawnConfig) (domain.Sess
 		return domain.SessionRecord{}, 0, 0, fmt.Errorf("spawn %s: %w: no agent adapter for harness %q", id, ErrUnknownHarness, cfg.Harness)
 	}
 	var env map[string]string
-	rec, env, err = m.prepareWorkerLaunchEnv(ctx, rec, project.Config.Env)
+	rec, env, err = m.prepareWorkerLaunchEnv(ctx, rec, mergeEnv(project.Config.Env, agentConfig.Env))
 	if err != nil {
 		m.rollbackSeedSpawnWorkspace(ctx, rec, ws, workspaceProject, true)
 		return domain.SessionRecord{}, 0, 0, wrapSpawnStage(id, ErrSpawnBrowser, err)
@@ -1632,6 +1643,31 @@ func effectiveAgentConfig(harness domain.AgentHarness, kind domain.SessionKind, 
 	}
 	if override.Permissions != "" {
 		merged.Permissions = override.Permissions
+	}
+	if override.SystemPrompt != "" {
+		merged.SystemPrompt = override.SystemPrompt
+	}
+	// mergeEnv returns a fresh map (deep copy) so the role override cannot
+	// mutate the project's base Env — an inline write would alias it (Go copies
+	// the map header by value on struct copy), leaking role env into every later
+	// session of the project. Guard both inputs empty so a project with no config
+	// still resolves to a zero AgentConfig.
+	if len(override.Env) > 0 || len(cfg.AgentConfig.Env) > 0 {
+		merged.Env = mergeEnv(cfg.AgentConfig.Env, override.Env)
+	}
+	if override.MCP != nil {
+		// Copy the MCPConfig (and its Configs slice) rather than aliasing the
+		// override pointer — same defense-in-depth as Env: the merged config
+		// flows to adapters, and a future adapter/hook that mutated it would
+		// otherwise corrupt the stored project config for the daemon's lifetime.
+		cp := *override.MCP
+		if len(cp.Configs) > 0 {
+			cp.Configs = append([]string(nil), cp.Configs...)
+		}
+		merged.MCP = &cp
+	}
+	if len(override.PluginDirs) > 0 {
+		merged.PluginDirs = append([]string(nil), override.PluginDirs...)
 	}
 	return merged
 }
@@ -2503,7 +2539,7 @@ func (m *Manager) relaunchSessionWithPolicyAndGeneration(ctx context.Context, op
 		agentConfig.Permissions = rec.Metadata.Permissions
 	}
 	var env map[string]string
-	rec, env, err = m.prepareWorkerLaunchEnv(ctx, rec, project.Config.Env)
+	rec, env, err = m.prepareWorkerLaunchEnv(ctx, rec, mergeEnv(project.Config.Env, agentConfig.Env))
 	if err != nil {
 		return RestoreResult{}, fmt.Errorf("%s %s: browser capability: %w", operation, rec.ID, err)
 	}
@@ -4366,10 +4402,17 @@ func (m *Manager) buildSystemPrompt(ctx context.Context, kind domain.SessionKind
 		Standalone: projectID == "",
 		Project:    promptProjectContext(projectID, project),
 	}
+	if m.userConfig != nil {
+		if userCfg, _, err := m.userConfig.GetUserConfig(ctx); err == nil {
+			cfg.GlobalWorkerPromptOverride = userCfg.WorkerPromptOverride
+			cfg.GlobalOrchestratorPromptOverride = userCfg.OrchestratorPromptOverride
+		}
+	}
 
 	switch kind {
 	case domain.KindOrchestrator:
 		cfg.OrchestratorRules = project.Config.OrchestratorRules
+		cfg.OrchestratorPromptOverride = project.Config.OrchestratorPromptOverride
 	case domain.KindWorker:
 		if projectID != "" {
 			orchestratorID, ok, err := m.activeOrchestratorSessionID(ctx, projectID)
@@ -4389,6 +4432,7 @@ func (m *Manager) buildSystemPrompt(ctx context.Context, kind domain.SessionKind
 			return "", err
 		}
 		cfg.ProjectRules = rules
+		cfg.WorkerPromptOverride = project.Config.WorkerPromptOverride
 	default:
 		return "", nil
 	}
@@ -4401,6 +4445,11 @@ func (m *Manager) buildSystemPrompt(ctx context.Context, kind domain.SessionKind
 		if workspacePrompt != "" {
 			cfg.AdditionalSections = append(cfg.AdditionalSections, workspacePrompt)
 		}
+	}
+	// The empty harness is deliberate: SystemPrompt merges harness-neutrally,
+	// and harness only gates Model/Effort/Mode, which this call never reads.
+	if rolePrompt := strings.TrimSpace(effectiveAgentConfig(domain.AgentHarness(""), kind, project.Config).SystemPrompt); rolePrompt != "" {
+		cfg.RolePrompt = rolePrompt
 	}
 	if pointer := strings.TrimSpace(m.aoSkillPointer()); pointer != "" {
 		cfg.AdditionalSections = append(cfg.AdditionalSections, pointer)
@@ -4551,6 +4600,22 @@ func workspaceRepoList(repos []domain.WorkspaceRepoRecord) string {
 		lines = append(lines, fmt.Sprintf("- %s: %s", repo.Name, repo.RelativePath))
 	}
 	return strings.Join(lines, "\n")
+}
+
+// mergeEnv overlays roleEnv on top of projectEnv so a per-role value wins on
+// key collision, mirroring the effectiveAgentConfig merge for Env. nil inputs
+// are handled (range over a nil map is a no-op). The result is always a fresh
+// map so the caller can mutate it without affecting either input — the project
+// config in particular must never be mutated through a role override.
+func mergeEnv(projectEnv, roleEnv map[string]string) map[string]string {
+	out := make(map[string]string, len(projectEnv)+len(roleEnv))
+	for k, v := range projectEnv {
+		out[k] = v
+	}
+	for k, v := range roleEnv {
+		out[k] = v
+	}
+	return out
 }
 
 // spawnEnv builds the runtime environment: the per-project env vars first, then

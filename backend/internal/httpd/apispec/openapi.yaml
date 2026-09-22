@@ -4982,196 +4982,6 @@ paths:
       summary: List pull requests owned by a session
       tags:
       - sessions
-  /api/v1/sessions/{sessionId}/pr/{prNumber}/file:
-    get:
-      operationId: getSessionPRFile
-      parameters:
-      - description: Session identifier, e.g. project-1.
-        in: path
-        name: sessionId
-        required: true
-        schema:
-          description: Session identifier, e.g. project-1.
-          type: string
-      - description: Associated pull request number.
-        in: path
-        name: prNumber
-        required: true
-        schema:
-          description: Associated pull request number.
-          minimum: 1
-          type: integer
-      - description: Repository-relative file path.
-        in: query
-        name: path
-        required: true
-        schema:
-          description: Repository-relative file path.
-          type: string
-      - description: Previous repository-relative path supplied by the selected PR
-          file summary for rename detection.
-        in: query
-        name: previousPath
-        schema:
-          description: Previous repository-relative path supplied by the selected
-            PR file summary for rename detection.
-          type: string
-      - description: Stable URL of the selected associated pull request.
-        in: query
-        name: sourceUrl
-        schema:
-          description: Stable URL of the selected associated pull request.
-          type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WorkspaceFileResponse'
-          description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIError'
-          description: Bad Request
-        "404":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIError'
-          description: Not Found
-        "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIError'
-          description: Internal Server Error
-      summary: Read one file from an associated pull request base-to-head diff
-      tags:
-      - sessions
-  /api/v1/sessions/{sessionId}/pr/{prNumber}/file/revision:
-    get:
-      operationId: getSessionPRFileRevision
-      parameters:
-      - description: Session identifier, e.g. project-1.
-        in: path
-        name: sessionId
-        required: true
-        schema:
-          description: Session identifier, e.g. project-1.
-          type: string
-      - description: Associated pull request number.
-        in: path
-        name: prNumber
-        required: true
-        schema:
-          description: Associated pull request number.
-          minimum: 1
-          type: integer
-      - description: Repository-relative file path.
-        in: query
-        name: path
-        required: true
-        schema:
-          description: Repository-relative file path.
-          type: string
-      - description: Comparison side. Defaults to after.
-        in: query
-        name: side
-        schema:
-          description: Comparison side. Defaults to after.
-          enum:
-          - before
-          - after
-          type: string
-      - description: Stable URL of the selected associated pull request.
-        in: query
-        name: sourceUrl
-        schema:
-          description: Stable URL of the selected associated pull request.
-          type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WorkspaceFileRevisionResponse'
-          description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIError'
-          description: Bad Request
-        "404":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIError'
-          description: Not Found
-        "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIError'
-          description: Internal Server Error
-      summary: Read one text-capable side of a pull request comparison
-      tags:
-      - sessions
-  /api/v1/sessions/{sessionId}/pr/{prNumber}/files:
-    get:
-      operationId: listSessionPRFiles
-      parameters:
-      - description: Session identifier, e.g. project-1.
-        in: path
-        name: sessionId
-        required: true
-        schema:
-          description: Session identifier, e.g. project-1.
-          type: string
-      - description: Associated pull request number.
-        in: path
-        name: prNumber
-        required: true
-        schema:
-          description: Associated pull request number.
-          minimum: 1
-          type: integer
-      - description: Stable URL of the selected associated pull request.
-        in: query
-        name: sourceUrl
-        schema:
-          description: Stable URL of the selected associated pull request.
-          type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ListPRFilesResponse'
-          description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIError'
-          description: Bad Request
-        "404":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIError'
-          description: Not Found
-        "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIError'
-          description: Internal Server Error
-      summary: List the exact base-to-head changed files for an associated pull request
-      tags:
-      - sessions
   /api/v1/sessions/{sessionId}/pr/claim:
     post:
       operationId: claimSessionPR
@@ -7388,6 +7198,57 @@ paths:
       summary: Get detailed token and estimated cost usage for one session
       tags:
       - usage
+  /api/v1/user-config:
+    get:
+      operationId: getUserConfig
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserConfigResponse'
+          description: OK
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+      summary: Get the user-scoped agent config (the lowest-precedence scope above
+        projects)
+      tags:
+      - config
+    put:
+      operationId: setUserConfig
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetUserConfigInput'
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserConfigResponse'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Bad Request
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+      summary: Replace the user-scoped agent config wholesale (a zero agentConfig
+        clears it)
+      tags:
+      - config
 components:
   schemas:
     APIError:
@@ -7523,11 +7384,27 @@ components:
       properties:
         effort:
           type: string
+        env:
+          additionalProperties:
+            type: string
+          type: object
+        mcp:
+          $ref: '#/components/schemas/MCPConfig'
         mode:
           type: string
         model:
           type: string
+        orchestratorPromptOverride:
+          type: string
         permissions:
+          type: string
+        pluginDirs:
+          items:
+            type: string
+          type: array
+        systemPrompt:
+          type: string
+        workerPromptOverride:
           type: string
       type: object
     AgentInfo:
@@ -10244,24 +10121,6 @@ components:
       - unreadCount
       - unresolvedCount
       type: object
-    ListPRFilesResponse:
-      properties:
-        files:
-          items:
-            $ref: '#/components/schemas/WorkspaceFileSummary'
-          type: array
-        sessionId:
-          type: string
-        summary:
-          $ref: '#/components/schemas/WorkspaceSummary'
-        truncated:
-          type: boolean
-      required:
-      - sessionId
-      - files
-      - truncated
-      - summary
-      type: object
     ListProjectsResponse:
       properties:
         projects:
@@ -10391,6 +10250,15 @@ components:
       - path
       - entries
       - truncated
+      type: object
+    MCPConfig:
+      properties:
+        configs:
+          items:
+            type: string
+          type: array
+        strict:
+          type: boolean
       type: object
     MarkAllNotificationsReadRequest:
       properties:
@@ -10838,6 +10706,8 @@ components:
           type: object
         orchestrator:
           $ref: '#/components/schemas/RoleOverride'
+        orchestratorPromptOverride:
+          type: string
         orchestratorRules:
           type: string
         postCreate:
@@ -10858,9 +10728,15 @@ components:
           $ref: '#/components/schemas/TrackerIntakeConfig'
         worker:
           $ref: '#/components/schemas/RoleOverride'
+        workerPromptOverride:
+          type: string
       type: object
     ProjectGetResponse:
       properties:
+        defaultOrchestratorPrompt:
+          type: string
+        defaultWorkerPrompt:
+          type: string
         project:
           $ref: '#/components/schemas/ProjectOrDegraded'
         status:
@@ -10995,7 +10871,6 @@ components:
     RenameSessionRequest:
       properties:
         displayName:
-          maxLength: 100
           minLength: 1
           type: string
       required:
@@ -12010,6 +11885,13 @@ components:
           - autohand
           type: string
       type: object
+    SetUserConfigInput:
+      properties:
+        agentConfig:
+          $ref: '#/components/schemas/AgentConfig'
+      required:
+      - agentConfig
+      type: object
     SettingsResponse:
       properties:
         chatHarnesses:
@@ -12105,7 +11987,7 @@ components:
         branch:
           type: string
         displayName:
-          maxLength: 100
+          maxLength: 20
           type: string
         harness:
           enum:
@@ -12535,7 +12417,7 @@ components:
         config:
           $ref: '#/components/schemas/ProjectConfig'
         displayName:
-          maxLength: 100
+          maxLength: 20
           minLength: 1
           type: string
       required:
@@ -12675,6 +12557,17 @@ components:
       - processedTokens
       - cacheReadTokens
       - estimatedCost
+      type: object
+    UserConfigResponse:
+      properties:
+        agentConfig:
+          $ref: '#/components/schemas/AgentConfig'
+        defaultOrchestratorPrompt:
+          type: string
+        defaultWorkerPrompt:
+          type: string
+      required:
+      - agentConfig
       type: object
     WorkspaceCommitSummary:
       properties:

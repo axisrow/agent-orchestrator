@@ -2080,6 +2080,49 @@ describe("SessionInspector summary reviews", () => {
     expect(trigger).not.toHaveTextContent("claude-code");
   });
 
+  it("falls back to claude-code when the worker harness is not an inherited reviewer", async () => {
+    getMock.mockImplementation(async (path: string) => {
+      if (path === "/api/v1/agents") {
+        const agents = ["claude-code", "codex", "opencode"].map((id) => ({
+          id,
+          label: id,
+        }));
+        return {
+          data: { supported: agents, installed: agents, authorized: agents },
+        };
+      }
+      if (path === "/api/v1/sessions/{sessionId}/reviews") {
+        return { data: { reviewerHandleId: "", reviews: [] } };
+      }
+      if (path === "/api/v1/projects/{id}") {
+        return {
+          data: {
+            status: "ok",
+            project: {
+              id: "ws-1",
+              kind: "git",
+              name: "my-app",
+              path: "/repo",
+              repo: "my-app",
+              defaultBranch: "main",
+              config: {},
+            },
+          },
+        };
+      }
+      return { data: undefined };
+    });
+
+    renderWithQuery(
+      <SessionInspector session={sessionWithProvider([pr(3, "open")], "amp")} />,
+    );
+    await openReviewsSection();
+
+    expect(
+      await screen.findByRole("button", { name: /Select reviewer agent/ }),
+    ).toHaveTextContent("Claude Code");
+  });
+
   it("opens Harness from the reviewer menu for its unavailable selection", async () => {
     const responder = commonGetsResponder();
     getMock.mockImplementation(async (path: string) => {

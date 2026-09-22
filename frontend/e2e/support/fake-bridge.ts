@@ -112,6 +112,7 @@ export async function installFakeBridge(page: Page, opts: FakeBridgeOptions = {}
 					onMaximized: () => () => undefined,
 					isFullScreen: async () => false,
 					onFullScreen: () => () => undefined,
+					onRemeasure: () => () => undefined,
 				},
 				theme: {
 					set: async () => undefined,
@@ -679,6 +680,7 @@ export async function installFakeAgent(page: Page, opts: FakeAgentOptions = {}):
 					onMaximized: () => () => undefined,
 					isFullScreen: async () => false,
 					onFullScreen: () => () => undefined,
+					onRemeasure: () => () => undefined,
 				},
 				theme: {
 					set: async () => undefined,
