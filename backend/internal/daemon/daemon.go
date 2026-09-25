@@ -66,6 +66,7 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/service/systemcheck"
 	"github.com/aoagents/agent-orchestrator/backend/internal/service/systeminstall"
 	usagesvc "github.com/aoagents/agent-orchestrator/backend/internal/service/usage"
+	userconfigsvc "github.com/aoagents/agent-orchestrator/backend/internal/service/userconfig"
 	sessionmanager "github.com/aoagents/agent-orchestrator/backend/internal/session_manager"
 	"github.com/aoagents/agent-orchestrator/backend/internal/skillassets"
 	"github.com/aoagents/agent-orchestrator/backend/internal/storage/sqlite"
@@ -590,6 +591,16 @@ func Run() error {
 	}()
 	lcStack.trackerDone = startTrackerIntake(ctx, store, sessionSvc, tracker, log)
 
+	// The agent catalog is the preflight dependency of ao spawn. A failure here
+	// must not be swallowed into a WARN nothing else reads: mark the daemon
+	// degraded so /readyz stops reporting ready until the catalog recovers.
+	readiness := httpd.NewReadiness()
+	go func() {
+		if _, err := agentSvc.Refresh(ctx); err != nil {
+			log.Warn("initial agent catalog refresh failed", "err", err)
+			readiness.SetDegraded("agent catalog refresh failed: " + err.Error())
+		}
+	}()
 	hostCommands := systemexec.New(cfg.DataDir)
 	systemChecks := systemcheck.NewWithCommandRunner(agentSvc, hostCommands, hostCommands)
 	systemInstall := systeminstall.NewWithDeps(hostCommands, hostCommands, systeminstall.Deps{
@@ -628,6 +639,11 @@ func Run() error {
 	// HostID is assigned below, once the identity file has been read.
 	mc := &controllers.MobileController{Bridge: bs}
 	browserService := browsersvc.New(sessionSvc, browserBroker, browserAuthority)
+
+	// User-scope agent config: the lowest-precedence scope above projects. Backed
+	// by the singleton user_config row; has no effect on workers until the merge
+	// layer (#2999) wires it into effectiveAgentConfig.
+	userConfigSvc := userconfigsvc.New(store)
 
 	// Standalone shell terminals: user-opened shells with no agent session
 	// behind them. They reuse the same runtime adapter (and therefore the same
@@ -847,6 +863,7 @@ func Run() error {
 		Projects:           projectSvc,
 		HostID:             hostIdentity.HostID,
 		Endpoints:          bs,
+		UserConfig:         userConfigSvc,
 		Agents:             agentSvc,
 		CodexAccounts:      agentSvc,
 		SystemChecks:       systemChecks,
@@ -888,6 +905,7 @@ func Run() error {
 		PreviewServer:       managedPreview,
 		SessionCapabilities: browserAuthority,
 		AgentSwitchPolicy:   policyCoordinator,
+		Readiness:           readiness,
 	})
 	if err != nil {
 		stop()
