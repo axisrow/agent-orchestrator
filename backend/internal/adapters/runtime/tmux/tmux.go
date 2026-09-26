@@ -1017,7 +1017,7 @@ func (r *Runtime) socketForSession(ctx context.Context, id string) (string, erro
 	}
 	if r.legacyBinary == "" {
 		return "", fmt.Errorf(
-			"%w: cannot inspect legacy default-socket session %s because system tmux is unavailable",
+			"%w: cannot inspect legacy system-socket session %s because system tmux is unavailable",
 			ports.ErrRuntimeProbeInconclusive,
 			id,
 		)
@@ -1055,7 +1055,7 @@ func (r *Runtime) socketForSession(ctx context.Context, id string) (string, erro
 		return r.socketName, nil
 	}
 	return "", fmt.Errorf(
-		"%w: system tmux %q could not inspect legacy default-socket session %s: %w",
+		"%w: system tmux %q could not inspect legacy system-socket session %s: %w",
 		ports.ErrRuntimeProbeInconclusive,
 		r.legacyBinary,
 		id,
