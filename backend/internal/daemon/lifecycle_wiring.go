@@ -187,6 +187,7 @@ type sessionLifecycle interface {
 	Reconcile(ctx context.Context) error
 	ReconcileStartupSafety(ctx context.Context) error
 	ReconcileBackground(ctx context.Context) error
+	ReconcileOrphanedPtyHosts(ctx context.Context) error
 	RestoreAll(ctx context.Context) error
 	WaitBackgroundWorkers(ctx context.Context) error
 	WaitAgentSwitchWorkers(ctx context.Context) error
@@ -296,6 +297,9 @@ func startSession(ctx context.Context, cfg config.Config, runtime runtimeselect.
 		Logger:              log,
 		ReconcileWorkers:    startupReconcileWorkers,
 		CodexOperationGate:  codexOperationGate,
+		// UserConfig supplies global prompt overrides; unset config falls through
+		// to project overrides or hardcoded defaults.
+		UserConfig: store,
 	})
 	mgr.SetAgentReadiness(agentReadiness)
 	scmProvider := newMultiSCMProvider(cfg.GitLab, log)
@@ -325,8 +329,8 @@ func startSession(ctx context.Context, cfg config.Config, runtime runtimeselect.
 	})
 	// Triggering a review spawns a reviewer over the worker's worktree, resolved
 	// from the reviewer registry (distinct from the worker agent set). The
-	// reviewer posts its review to the PR itself, so the service needs no SCM
-	// writer.
+	// reviewer submits its result to AO; the daemon publishes the provider
+	// review itself (issue #5701), so the service needs the SCM publisher.
 	reviewers, err := reviewer.NewResolver()
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("reviewer resolver: %w", err)
@@ -351,10 +355,12 @@ func startSession(ctx context.Context, cfg config.Config, runtime runtimeselect.
 		reviewOpts = append(reviewOpts,
 			reviewsvc.WithReviewRequester(scmProvider),
 			reviewsvc.WithReviewResolver(scmProvider),
+			reviewsvc.WithReviewPublisher(scmProvider),
 		)
 	}
 	reviewSvc := reviewsvc.New(reviewEngine, store, reviewOpts...)
 	mgr.SetReviewerTerminator(reviewSvc)
+	lcm.SetReviewerTeardown(reviewSvc) // #5948: lifecycle terminal writes also tear down the reviewer pane
 	return sessionSvc, reviewSvc, mgr, nil
 }
 

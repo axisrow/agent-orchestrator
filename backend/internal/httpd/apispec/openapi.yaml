@@ -3333,6 +3333,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/APIError'
           description: Not Implemented
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Service Unavailable
       summary: Squash-merge a pull request
       tags:
       - prs
@@ -8642,6 +8648,57 @@ paths:
       summary: Get detailed token and estimated cost usage for one session
       tags:
       - usage
+  /api/v1/user-config:
+    get:
+      operationId: getUserConfig
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserConfigResponse'
+          description: OK
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+      summary: Get the user-scoped agent config (the lowest-precedence scope above
+        projects)
+      tags:
+      - config
+    put:
+      operationId: setUserConfig
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetUserConfigInput'
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserConfigResponse'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Bad Request
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+      summary: Replace the user-scoped agent config wholesale (a zero agentConfig
+        clears it)
+      tags:
+      - config
 components:
   schemas:
     APIError:
@@ -8778,11 +8835,27 @@ components:
       properties:
         effort:
           type: string
+        env:
+          additionalProperties:
+            type: string
+          type: object
+        mcp:
+          $ref: '#/components/schemas/MCPConfig'
         mode:
           type: string
         model:
           type: string
+        orchestratorPromptOverride:
+          type: string
         permissions:
+          type: string
+        pluginDirs:
+          items:
+            type: string
+          type: array
+        systemPrompt:
+          type: string
+        workerPromptOverride:
           type: string
       type: object
     AgentInfo:
@@ -10318,6 +10391,23 @@ components:
       required:
       - enabled
       type: object
+    ControllersSubmitReviewComment:
+      properties:
+        body:
+          description: Single-line finding body. Multi-line prose belongs in the review
+            body.
+          type: string
+        line:
+          description: Line in the file's diff the finding anchors to.
+          type: integer
+        path:
+          description: Repository path the finding anchors to.
+          type: string
+      required:
+      - path
+      - line
+      - body
+      type: object
     ControllersUpdateCloudOfferingRequest:
       properties:
         enabled:
@@ -11284,6 +11374,19 @@ components:
       - state
       - lastActivityAt
       type: object
+    DomainReviewFinding:
+      properties:
+        body:
+          type: string
+        line:
+          type: integer
+        path:
+          type: string
+      required:
+      - path
+      - line
+      - body
+      type: object
     DomainReviewerConfig:
       properties:
         agentConfig:
@@ -12180,6 +12283,15 @@ components:
       - entries
       - truncated
       type: object
+    MCPConfig:
+      properties:
+        configs:
+          items:
+            type: string
+          type: array
+        strict:
+          type: boolean
+      type: object
     MarkAllNotificationsReadRequest:
       properties:
         ids:
@@ -12638,6 +12750,8 @@ components:
           type: object
         orchestrator:
           $ref: '#/components/schemas/RoleOverride'
+        orchestratorPromptOverride:
+          type: string
         orchestratorRules:
           type: string
         postCreate:
@@ -12658,9 +12772,15 @@ components:
           $ref: '#/components/schemas/TrackerIntakeConfig'
         worker:
           $ref: '#/components/schemas/RoleOverride'
+        workerPromptOverride:
+          type: string
       type: object
     ProjectGetResponse:
       properties:
+        defaultOrchestratorPrompt:
+          type: string
+        defaultWorkerPrompt:
+          type: string
         project:
           $ref: '#/components/schemas/ProjectOrDegraded'
         status:
@@ -13050,6 +13170,10 @@ components:
           type:
           - "null"
           - string
+        findings:
+          items:
+            $ref: '#/components/schemas/DomainReviewFinding'
+          type: array
         githubReviewId:
           type: string
         harness:
@@ -13057,6 +13181,10 @@ components:
         id:
           type: string
         prUrl:
+          type: string
+        publishError:
+          type: string
+        publishState:
           type: string
         reviewId:
           type: string
@@ -13086,6 +13214,7 @@ components:
       - verdict
       - body
       - githubReviewId
+      - publishState
       - createdAt
       - autoInjectReview
       type: object
@@ -13618,13 +13747,26 @@ components:
           type: boolean
         sessionId:
           type: string
+        tokensPerSecond:
+          exclusiveMinimum: 0
+          type:
+          - "null"
+          - number
         totals:
           $ref: '#/components/schemas/UsageTotalsResponse'
+        turns:
+          description: Assistant responses observed in the transcripts (one usage
+            event per turn).
+          format: int64
+          minimum: 0
+          type: integer
       required:
       - sessionId
       - incomplete
       - totals
       - harnesses
+      - turns
+      - tokensPerSecond
       type: object
     SetActivityRequest:
       properties:
@@ -13889,6 +14031,13 @@ components:
           - cline
           - autohand
           type: string
+      type: object
+    SetUserConfigInput:
+      properties:
+        agentConfig:
+          $ref: '#/components/schemas/AgentConfig'
+      required:
+      - agentConfig
       type: object
     SettingsResponse:
       properties:
@@ -14250,15 +14399,13 @@ components:
     SubmitReviewInput:
       properties:
         body:
-          description: Review body recorded by AO. Required for changes_requested.
+          description: Review body recorded by AO and published to the provider. Required
+            for changes_requested.
           type: string
-        githubReviewId:
-          description: Id of the GitHub PR review the reviewer posted, if any.
-          type: string
-        reviews:
-          description: Batched review results recorded by one reviewer CLI command.
+        comments:
+          description: Inline findings published as the review's anchored comments.
           items:
-            $ref: '#/components/schemas/SubmitReviewItem'
+            $ref: '#/components/schemas/ControllersSubmitReviewComment'
           type: array
         runId:
           description: Review run id being completed.
@@ -14266,24 +14413,6 @@ components:
         verdict:
           description: 'Review verdict: approved or changes_requested.'
           type: string
-      type: object
-    SubmitReviewItem:
-      properties:
-        body:
-          description: Review body recorded by AO. Required for changes_requested.
-          type: string
-        githubReviewId:
-          description: Id of the GitHub PR review the reviewer posted, if any.
-          type: string
-        runId:
-          description: Review run id being completed.
-          type: string
-        verdict:
-          description: 'Review verdict: approved or changes_requested.'
-          type: string
-      required:
-      - runId
-      - verdict
       type: object
     SwitchAgentRequest:
       properties:
@@ -14613,6 +14742,17 @@ components:
       - processedTokens
       - cacheReadTokens
       - estimatedCost
+      type: object
+    UserConfigResponse:
+      properties:
+        agentConfig:
+          $ref: '#/components/schemas/AgentConfig'
+        defaultOrchestratorPrompt:
+          type: string
+        defaultWorkerPrompt:
+          type: string
+      required:
+      - agentConfig
       type: object
     WorkspaceCommitSummary:
       properties:
