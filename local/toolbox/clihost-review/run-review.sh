@@ -21,7 +21,15 @@ git -C repo fetch -q origin main && git -C repo reset -q --hard FETCH_HEAD
 CAND=$(gh pr list -R "$REPO" --state open --limit 100 --json number,author,additions,deletions \
   --jq '.[] | select(.additions + .deletions <= 500 and ((.author.login | test("ronishrohan|illegalcall|Annieeeee11|AgentWrapper|Pulkit7070|Vaibhaav-Tiwari|cursor|copilot|dependabot|^axisrow$")) | not)) | .number' | sort -rn)
 PICK=""
-for n in $CAND; do grep -qx "$n" reviewed.txt || { PICK=$n; break; }; done
+if [ -n "${1:-}" ]; then
+  # Ручной запуск: номер PR аргументом — рецензируем его независимо от леджера и denylist.
+  case "$1" in
+    ''|*[!0-9]*) LOG "аргумент должен быть номером PR, получено: $1"; exit 1 ;;
+  esac
+  PICK=$1
+else
+  for n in $CAND; do grep -qx "$n" reviewed.txt || { PICK=$n; break; }; done
+fi
 [ -n "$PICK" ] || { LOG "кандидатов нет — очередь пуста"; exit 0; }
 LOG "ревью PR #$PICK"
 gh pr diff "$PICK" -R "$REPO" > diff.patch
