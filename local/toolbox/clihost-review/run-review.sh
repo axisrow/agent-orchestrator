@@ -13,7 +13,11 @@ cd "$DIR"
 exec >> "$DIR/cron.log" 2>&1
 LOG() { echo "$(date -Is) $*"; }
 [ -s /home/hapi/.claude/settings.json ] || { LOG "нет claude-авторизации (settings.json) — выхожу"; exit 0; }
-[ -n "${GH_TOKEN:-}" ] || { LOG "нет GH_TOKEN — выхожу"; exit 0; }
+# Токен: env GH_TOKEN (dokku config) как оверрайд, иначе gh-логин юзера hapi
+# (hosts.yml на томе; cron работает от root, поэтому runuser). Модель токен
+# не видит — claude запускается ниже с env -u GH_TOKEN.
+GH_TOKEN="${GH_TOKEN:-$(runuser -u hapi -- gh auth token 2>/dev/null || true)}"
+[ -n "${GH_TOKEN:-}" ] || { LOG "нет gh-токена (ни env, ни hapi hosts.yml) — выхожу"; exit 0; }
 export GH_TOKEN
 touch reviewed.txt
 [ -d repo/.git ] || git clone -q --depth 1 "https://github.com/$REPO.git" repo || { LOG "clone failed"; exit 1; }
