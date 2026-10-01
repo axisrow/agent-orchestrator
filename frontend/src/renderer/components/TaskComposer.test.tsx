@@ -481,6 +481,54 @@ describe("TaskComposer", () => {
 		);
 	});
 
+	// A seeded gateway catalog advertises defaultEffort ("max" for glm-) that
+	// differs from the agent's own runtime default (claude-code picks low).
+	// Omitting the flag because "it matches the catalog default" silently
+	// downgrades the spawn to the agent default.
+	it("sends an effort that matches the catalog default instead of omitting it", async () => {
+		h.agentCatalog = { agents: [agentReadiness("claude-code", "Claude Code")] };
+		h.get.mockImplementation(async (path: string) => {
+			if (path.includes("/models")) {
+				return {
+					data: {
+						agent: "claude-code",
+						selectionMode: "text",
+						models: [{
+							id: "glm-5.3-flash",
+							label: "GLM-5.3-Flash",
+							isDefault: true,
+							efforts: ["low", "medium", "high", "xhigh", "max"],
+							defaultEffort: "max",
+							effortsSeeded: true,
+						}],
+						allowCustom: true,
+						refreshRecommended: false,
+					},
+				};
+			}
+			return { data: { status: "ok", project: { config: {} } } };
+		});
+		h.post.mockResolvedValueOnce({ data: { session: { id: "standalone-1" } } });
+
+		render(
+			<Wrap>
+				<TaskComposer projectId="__standalone__" onCreated={vi.fn()} />
+			</Wrap>,
+		);
+
+		const effort = await screen.findByRole("button", { name: "Effort" });
+		await userEvent.click(effort);
+		await userEvent.click(screen.getByRole("menuitem", { name: "Max" }));
+		fireEvent.click(screen.getByText("Start task"));
+
+		await waitFor(() =>
+			expect(h.post).toHaveBeenCalledWith(
+				"/api/v1/sessions",
+				expect.objectContaining({ body: expect.objectContaining({ effort: "max" }) }),
+			),
+		);
+	});
+
 	it("does not run provider readiness before Start", async () => {
 		render(
 			<Wrap>

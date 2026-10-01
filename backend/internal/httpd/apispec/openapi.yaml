@@ -9014,6 +9014,8 @@ components:
           items:
             type: string
           type: array
+        effortsSeeded:
+          type: boolean
         id:
           type: string
         isDefault:
