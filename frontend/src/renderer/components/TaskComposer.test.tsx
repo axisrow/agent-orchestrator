@@ -529,6 +529,55 @@ describe("TaskComposer", () => {
 		);
 	});
 
+	// The picker displays the seeded catalog default (e.g. "Max" for glm-) as the
+	// current value even when the user never opened it. Sending nothing would let
+	// Claude Code fall back to its own default (low for an unrecognized model),
+	// so the spawn must carry the displayed default on its own.
+	it("sends the displayed seeded default when the effort picker is left untouched", async () => {
+		h.agentCatalog = { agents: [agentReadiness("claude-code", "Claude Code")] };
+		h.get.mockImplementation(async (path: string) => {
+			if (path.includes("/models")) {
+				return {
+					data: {
+						agent: "claude-code",
+						selectionMode: "text",
+						models: [{
+							id: "glm-5.3-flash",
+							label: "GLM-5.3-Flash",
+							isDefault: true,
+							efforts: ["low", "medium", "high", "xhigh", "max"],
+							defaultEffort: "max",
+							effortsSeeded: true,
+						}],
+						allowCustom: true,
+						refreshRecommended: false,
+					},
+				};
+			}
+			return { data: { status: "ok", project: { config: {} } } };
+		});
+		h.post.mockResolvedValueOnce({ data: { session: { id: "standalone-1" } } });
+
+		render(
+			<Wrap>
+				<TaskComposer projectId="__standalone__" onCreated={vi.fn()} />
+			</Wrap>,
+		);
+
+		await screen.findByLabelText("Task");
+		// Rendered = catalog loaded; the chip displays the seeded default ("Max")
+		// while the picker itself is never opened.
+		await screen.findByRole("button", { name: "Effort" });
+		fireEvent.click(screen.getByText("Start task"));
+
+		await waitFor(() =>
+			expect(h.post).toHaveBeenCalledWith(
+				"/api/v1/sessions",
+				expect.objectContaining({ body: expect.objectContaining({ effort: "max" }) }),
+			),
+		);
+	});
+
 	it("does not run provider readiness before Start", async () => {
 		render(
 			<Wrap>
