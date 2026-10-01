@@ -30,6 +30,7 @@ import { ProductExternalLink } from "./ProductExternalLink";
 import { ReviewerSelect, reviewerTrustWarning } from "./ReviewerSelect";
 import { AgentModelCombobox } from "./settings/AgentModelCombobox";
 import { SettingsOptionMenu } from "./settings/SettingsOptionMenu";
+import { PromptOverrideDialog } from "./settings/PromptOverrideDialog";
 import { Switch } from "./ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 
@@ -163,6 +164,7 @@ function SettingsBody({
 	const [showSaving, setShowSaving] = useState(false);
 	const [replacementError, setReplacementError] = useState<string | null>(null);
 	const [validationError, setValidationError] = useState<string | null>(null);
+	const [promptOverrideOpen, setPromptOverrideOpen] = useState(false);
 	const [tuningValidity, setTuningValidity] = useState({
 		worker: true,
 		orchestrator: true,
@@ -570,7 +572,8 @@ function SettingsBody({
 			)}
 
 			{section === "agents" && (
-				<ProjectSettingsSection title={t("settings.project.agents")} titleHidden grouped>
+				<>
+					<ProjectSettingsSection title={t("settings.project.agents")} titleHidden grouped>
 					<div className="grid grid-cols-[6rem_minmax(0,0.85fr)_minmax(0,1.25fr)] gap-3 py-2 text-xs font-medium text-settings-muted">
 						<span />
 						<span>{t("settings.project.agent")}</span>
@@ -736,6 +739,24 @@ function SettingsBody({
 						</p>
 					)}
 				</ProjectSettingsSection>
+				<ProjectSettingsSection title={t("settings.project.agentDefaults")} grouped>
+					<button
+						type="button"
+						className="w-full rounded-md bg-[var(--color-bg-settings-row)] px-4 py-3 text-left"
+						onClick={() => setPromptOverrideOpen(true)}
+					>
+						{t("settings.project.promptOverride")}
+					</button>
+				</ProjectSettingsSection>
+				{promptOverrideOpen && (
+					<PromptOverrideDialog
+						open={promptOverrideOpen}
+						onOpenChange={setPromptOverrideOpen}
+						scope="project"
+						projectId={projectId}
+					/>
+				)}
+				</>
 			)}
 		</ProjectSettingsFormView>
 	);
