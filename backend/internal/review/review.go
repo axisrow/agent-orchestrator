@@ -12,6 +12,7 @@ import (
 	stdctx "context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -28,6 +29,13 @@ var (
 	ErrNotFound = errors.New("review: not found")
 )
 
+// agentConfigsEqual compares two agent configs. AgentConfig carries the Env
+// map (per-role env profile), so it is not comparable with ==; DeepEqual is
+// the map-safe equivalent for the "did the effective config change" checks.
+func agentConfigsEqual(a, b domain.AgentConfig) bool {
+	return reflect.DeepEqual(a, b)
+}
+
 // Store is the persistence surface the engine needs. *sqlite.Store satisfies it
 // in production; tests use a fake.
 type Store interface {
@@ -40,7 +48,7 @@ type Store interface {
 	ListReviewsBySession(ctx stdctx.Context, id domain.SessionID) ([]domain.Review, error)
 	ClearReviewerHandleByHarness(ctx stdctx.Context, id domain.SessionID, harness domain.ReviewerHarness) error
 	InsertReviewRun(ctx stdctx.Context, r domain.ReviewRun) error
-	UpdateReviewRunResult(ctx stdctx.Context, id string, status domain.ReviewRunStatus, verdict domain.ReviewVerdict, body, githubReviewID string, autoInjectReview bool) (bool, error)
+	UpdateReviewRunResult(ctx stdctx.Context, id string, status domain.ReviewRunStatus, verdict domain.ReviewVerdict, body, findingsJSON, githubReviewID string, autoInjectReview bool) (bool, error)
 	UpdateReviewAgentSessionID(ctx stdctx.Context, id, agentSessionID string) (bool, error)
 	SupersedeStaleRunningReviewRuns(ctx stdctx.Context, sessionID domain.SessionID, prURL, targetSHA, body string) (int64, error)
 	CancelRunningReviewRunsBySession(ctx stdctx.Context, sessionID domain.SessionID, body string) (int64, error)
@@ -270,7 +278,7 @@ func (e *Engine) TriggerWithSource(ctx stdctx.Context, workerID domain.SessionID
 		harness = override
 		if override == resolvedHarness {
 			config = mergeReviewerAgentConfig(resolvedConfig, overrideConfig)
-			hasConfigOverride = config != resolvedConfig
+			hasConfigOverride = !agentConfigsEqual(config, resolvedConfig)
 		} else if !overrideConfig.IsZero() {
 			config = mergeReviewerAgentConfig(domain.AgentConfig{}, overrideConfig)
 		} else {
@@ -278,7 +286,7 @@ func (e *Engine) TriggerWithSource(ctx stdctx.Context, workerID domain.SessionID
 		}
 	} else if !overrideConfig.IsZero() {
 		config = mergeReviewerAgentConfig(config, overrideConfig)
-		hasConfigOverride = config != resolvedConfig
+		hasConfigOverride = !agentConfigsEqual(config, resolvedConfig)
 	}
 	reviewRows, err := e.store.ListReviewsBySession(ctx, workerID)
 	if err != nil {
@@ -394,7 +402,7 @@ func (e *Engine) TriggerWithSource(ctx stdctx.Context, workerID domain.SessionID
 
 	failRuns := func(start int, err error) error {
 		for _, run := range created[start:] {
-			if _, updateErr := e.store.UpdateReviewRunResult(ctx, run.ID, domain.ReviewRunFailed, domain.VerdictNone, err.Error(), "", run.AutoInjectReview); updateErr != nil {
+			if _, updateErr := e.store.UpdateReviewRunResult(ctx, run.ID, domain.ReviewRunFailed, domain.VerdictNone, err.Error(), "", "", run.AutoInjectReview); updateErr != nil {
 				return updateErr
 			}
 		}
@@ -564,7 +572,7 @@ func (e *Engine) SwitchReviewer(
 	if err := e.destroyOtherReviewerHandles(ctx, workerID, selected, reviewRows); err != nil {
 		return SessionReviews{}, err
 	}
-	if previousSelected == selected && previousConfig != selectedConfig {
+	if previousSelected == selected && !agentConfigsEqual(previousConfig, selectedConfig) {
 		if err := e.resetReviewerRuntimeLocked(ctx, workerID, selected); err != nil {
 			return SessionReviews{}, err
 		}
@@ -832,7 +840,7 @@ func (e *Engine) failRunningRestoredRuns(ctx stdctx.Context, runs []domain.Revie
 		if run.Status != domain.ReviewRunRunning {
 			continue
 		}
-		if _, err := e.store.UpdateReviewRunResult(ctx, run.ID, domain.ReviewRunFailed, domain.VerdictNone, body, "", run.AutoInjectReview); err != nil {
+		if _, err := e.store.UpdateReviewRunResult(ctx, run.ID, domain.ReviewRunFailed, domain.VerdictNone, body, "", "", run.AutoInjectReview); err != nil {
 			return fmt.Errorf("fail review run %q after reviewer restore: %w", run.ID, err)
 		}
 	}
@@ -1084,8 +1092,20 @@ func (e *Engine) listLocked(ctx stdctx.Context, workerID domain.SessionID, selec
 	if err != nil {
 		return SessionReviews{}, err
 	}
+	handle := legacyReviewerHandle(reviewRow)
+	// Same cleared-handle gap as in TerminateReviewer: the DB handle can be
+	// gone while the deterministic terminal pane is still alive. Report the
+	// stable id when it probes alive, so the inspector's kill control stays
+	// visible and reviews/kill can reach the orphaned pane. Chat-mode handles
+	// are session-scoped and cannot be reconstructed from the worker id, so
+	// they keep the DB-only behavior (#6064).
+	if handle == "" && (reviewRow.ID == "" || reviewRow.InterfaceMode != domain.ReviewerInterfaceChat) {
+		if alive, err := e.launcher.Alive(ctx, reviewerHandleID(workerID), ""); err == nil && alive {
+			handle = reviewerHandleID(workerID)
+		}
+	}
 	return SessionReviews{
-		ReviewerHandleID:      legacyReviewerHandle(reviewRow),
+		ReviewerHandleID:      handle,
 		ReviewerHarness:       reviewerHarness,
 		ReviewerActivityState: reviewRow.ReviewerActivityState,
 		Runs:                  runs,
@@ -1125,7 +1145,7 @@ func (e *Engine) reconcileExitedReviewer(ctx stdctx.Context, review *domain.Revi
 		if run.ReviewID != review.ID || run.Status != domain.ReviewRunRunning {
 			continue
 		}
-		if _, err := e.store.UpdateReviewRunResult(ctx, run.ID, domain.ReviewRunFailed, domain.VerdictNone, reviewerExitedBeforeSubmission, "", run.AutoInjectReview); err != nil {
+		if _, err := e.store.UpdateReviewRunResult(ctx, run.ID, domain.ReviewRunFailed, domain.VerdictNone, reviewerExitedBeforeSubmission, "", "", run.AutoInjectReview); err != nil {
 			return false, err
 		}
 	}
@@ -1305,6 +1325,17 @@ func (e *Engine) TerminateReviewer(ctx stdctx.Context, workerID domain.SessionID
 		if destroyedHandle == "" {
 			destroyedHandle = review.ReviewerHandleID
 		}
+	}
+	// A cleared DB handle does not mean a dead pane: teardown paths clear
+	// ReviewerHandleID on terminal-state writes while the deterministic
+	// terminal pane (stable per worker, launcher.go reviewerHandleID) can
+	// still be running. Destroy it by its stable id — Destroy on an absent
+	// pane is a no-op. Sessions with no review history at all stay a no-op.
+	if destroyedHandle == "" && len(reviews) > 0 {
+		if err := e.launcher.Destroy(ctx, reviewerHandleID(workerID)); err != nil {
+			return TerminateResult{}, err
+		}
+		destroyedHandle = reviewerHandleID(workerID)
 	}
 	if len(reviews) > 0 {
 		if err := e.store.ClearReviewerHandle(ctx, workerID); err != nil {
