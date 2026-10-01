@@ -394,6 +394,7 @@ func SeedEfforts(models []ports.AgentModelInfo) []ports.AgentModelInfo {
 			if strings.HasPrefix(strings.ToLower(models[i].ID), seed.prefix) {
 				models[i].Efforts = append([]string(nil), seed.efforts...)
 				models[i].DefaultEffort = seed.def
+				models[i].EffortsSeeded = true
 				break
 			}
 		}

@@ -477,7 +477,16 @@ export function TaskComposer({
 	});
 	const { options: effortOptions } = effortChoices(effortModel, isConcreteModelID(selectedModel));
 	const inheritedEffort = selectedAgent === configuredProjectAgent ? defaultWorkerEffort : "";
-	const implicitEffort = inheritedEffort || effortModel?.defaultEffort || "";
+	// A choice equal to the inherited worker effort is redundant by construction
+	// (the spawn falls back to the same role value), and one equal to a
+	// provider-advertised default is redundant because the agent's runtime
+	// default matches the catalog. A seeded default (AO's gateway seed table,
+	// e.g. max for glm-) need not match the agent's own runtime default
+	// (claude-code picks low), so an explicit choice equal to it must be sent —
+	// omitting the flag silently downgrades the spawn.
+	const implicitEffort = inheritedEffort
+		|| (effortModel?.effortsSeeded ? "" : effortModel?.defaultEffort)
+		|| "";
 	const requestedEffort = effortTouched || rememberedEffortIsExplicit
 		? effort === implicitEffort ? undefined : effort
 		: undefined;

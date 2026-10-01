@@ -22,6 +22,12 @@ func TestSeedEffortsAnnotatesKnownGatewayFamilies(t *testing.T) {
 	if got := seeded[0]; !slices.Equal(got.Efforts, []string{"low", "medium", "high", "xhigh", "max"}) || got.DefaultEffort != "max" {
 		t.Fatalf("glm-4.7 = %+v, want full ladder defaulting max", got)
 	}
+	if !seeded[0].EffortsSeeded {
+		t.Fatalf("glm-4.7 EffortsSeeded = false, want true: %+v", seeded[0])
+	}
+	if seeded[4].EffortsSeeded {
+		t.Fatalf("non-gateway model marked seeded: %+v", seeded[4])
+	}
 	if got := seeded[1]; !slices.Equal(got.Efforts, []string{"low", "medium", "high", "xhigh", "max"}) {
 		t.Fatalf("GLM-5 = %+v, want case-insensitive prefix match", got)
 	}

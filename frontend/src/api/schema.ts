@@ -3004,6 +3004,7 @@ export interface components {
         AgentModelInfo: {
             defaultEffort?: string;
             efforts?: string[];
+            effortsSeeded?: boolean;
             id: string;
             isDefault?: boolean;
             label: string;
