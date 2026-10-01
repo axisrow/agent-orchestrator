@@ -1315,9 +1315,12 @@ func handleID(handle ports.RuntimeHandle) (string, error) {
 // per-session death let a single server outage archive every session on the
 // board (issue #3475).
 func sessionMissingOutput(out string) bool {
+	// tmux >= ~3.5 reworded the missing-session error from "can't find session"
+	// to "no such session: <target>" (verified on 3.6b, issue #6099).
 	s := strings.ToLower(out)
 	return strings.Contains(s, "can't find session") ||
-		strings.Contains(s, "session not found")
+		strings.Contains(s, "session not found") ||
+		strings.Contains(s, "no such session")
 }
 
 func serverNotRunningOutput(out string) bool {

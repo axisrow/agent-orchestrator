@@ -438,6 +438,9 @@ func writeReviewError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, ports.ErrChatAuthRequired):
 		envelope.WriteAPIError(w, r, http.StatusConflict, "conflict", "REVIEWER_AUTH_REQUIRED", "The reviewer agent is installed but not authenticated", nil)
 	default:
-		envelope.WriteAPIError(w, r, http.StatusInternalServerError, "internal", "REVIEW_OPERATION_FAILED", "Review operation failed", nil)
+		// The trigger error text is already persisted in review_run.body; repeating
+		// it here keeps the UI toast diagnosable without a DB query (issue #6099
+		// shipped as an opaque "Review operation failed" for exactly this reason).
+		envelope.WriteAPIError(w, r, http.StatusInternalServerError, "internal", "REVIEW_OPERATION_FAILED", "Review operation failed", map[string]any{"detail": err.Error()})
 	}
 }

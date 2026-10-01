@@ -1037,6 +1037,41 @@ func TestDestroyIsIdempotentWhenSessionMissing(t *testing.T) {
 	}
 }
 
+// tmux >= ~3.5 wording: "no such session: <target>" (with the = exact-match
+// prefix tmux echoes back), issue #6099. Must read as absent, not as a hard
+// failure — this exact string is what failed every auto review on tmux 3.6b.
+func TestSessionMissingOutputRecognizesModernWording(t *testing.T) {
+	cases := map[string]bool{
+		"no such session: =review-x:":                      true,
+		"can't find session: sess-1":                       true,
+		"session not found":                                true,
+		"no server running on /tmp/tmux-0/default":         false,
+		"error connecting ... (No such file or directory)": false,
+	}
+	for out, want := range cases {
+		if got := sessionMissingOutput(out); got != want {
+			t.Errorf("sessionMissingOutput(%q) = %v, want %v", out, got, want)
+		}
+	}
+}
+
+func TestDestroyIsIdempotentWhenSessionMissingModernWording(t *testing.T) {
+	r, fr := newTestRuntime(0)
+	fr.outputs = [][]byte{
+		nil,
+		[]byte("no such session: =sess-1:"),
+		[]byte("no such session: =sess-1:"),
+	}
+	fr.err = &exec.ExitError{}
+
+	if err := r.Destroy(context.Background(), ports.RuntimeHandle{ID: "sess-1"}); err != nil {
+		t.Fatalf("Destroy modern wording: %v", err)
+	}
+	if len(fr.calls) != 3 || fr.calls[1].args[0] != "set-option" || fr.calls[2].args[0] != "kill-session" {
+		t.Fatalf("calls = %#v, want list-panes, set-option, then kill-session", fr.calls)
+	}
+}
+
 func TestDestroyIsIdempotentWhenNoServer(t *testing.T) {
 	r, fr := newTestRuntime(0)
 	fr.outputs = [][]byte{nil, []byte("no server running on /tmp/tmux-1000/default"), []byte("no server running on /tmp/tmux-1000/default")}
