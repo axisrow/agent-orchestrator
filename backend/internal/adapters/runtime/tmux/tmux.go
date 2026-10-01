@@ -76,6 +76,8 @@ type Runtime struct {
 	reapSessions   func(ctx context.Context, pids []int, grace time.Duration)
 	socketMu       sync.RWMutex
 	sessionSockets map[string]string
+	versionMu      sync.Mutex
+	versionText    map[string]string // binary -> cached `tmux -V` output
 }
 
 var _ ports.Runtime = (*Runtime)(nil)
@@ -1120,7 +1122,11 @@ func (r *Runtime) runCommand(ctx context.Context, name string, args ...string) (
 		return out, cmdCtx.Err()
 	}
 	if err != nil {
-		return out, commandError{err: err, output: strings.TrimSpace(string(out))}
+		return out, commandError{
+			err:     err,
+			output:  strings.TrimSpace(string(out)),
+			version: r.tmuxVersionFor(ctx, name),
+		}
 	}
 	return out, nil
 }
@@ -1347,7 +1353,9 @@ func handleID(handle ports.RuntimeHandle) (string, error) {
 func sessionMissingOutput(out string) bool {
 	s := strings.ToLower(out)
 	return strings.Contains(s, "can't find session") ||
-		strings.Contains(s, "session not found")
+		strings.Contains(s, "session not found") ||
+		// tmux ≥ 3.5 reworded the absent-session error (issue #6099).
+		strings.Contains(s, "no such session")
 }
 
 func serverNotRunningOutput(out string) bool {
@@ -1611,15 +1619,48 @@ func sameDirectory(a, b string) bool {
 // -- error type --
 
 type commandError struct {
-	err    error
-	output string
+	err     error
+	output  string
+	version string // cached `tmux -V` output; empty when it cannot be determined
 }
 
 func (e commandError) Error() string {
-	if e.output == "" {
-		return e.err.Error()
+	prefix := e.err.Error()
+	if e.version != "" {
+		prefix += " (" + e.version + ")"
 	}
-	return e.err.Error() + ": " + e.output
+	if e.output == "" {
+		return prefix
+	}
+	return prefix + ": " + e.output
 }
 
 func (e commandError) Unwrap() error { return e.err }
+
+// resolveVersion runs `binary -V` and returns its trimmed output. It is a
+// package var so tests can stub the shell-out.
+var resolveVersion = func(ctx context.Context, binary string) (string, error) {
+	cmdCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), defaultTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(cmdCtx, binary, "-V").Output()
+	return strings.TrimSpace(string(out)), err
+}
+
+// tmuxVersionFor returns the `tmux -V` output for binary, resolved once per
+// binary per process and cached; "" when it cannot be determined. tmux's error
+// vocabulary drifts across versions (issue #6099), so command errors carry the
+// version for diagnosability. Resolution shells out only after a command has
+// already failed — never on the hot path.
+func (r *Runtime) tmuxVersionFor(ctx context.Context, binary string) string {
+	r.versionMu.Lock()
+	defer r.versionMu.Unlock()
+	if r.versionText == nil {
+		r.versionText = map[string]string{}
+	}
+	if v, ok := r.versionText[binary]; ok {
+		return v
+	}
+	v, _ := resolveVersion(ctx, binary)
+	r.versionText[binary] = v
+	return v
+}

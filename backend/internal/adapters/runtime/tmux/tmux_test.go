@@ -996,6 +996,97 @@ func TestDestroyIsIdempotentWhenSessionMissing(t *testing.T) {
 	}
 }
 
+// tmux ≥ 3.5 reworded the absent-session error to "no such session" (issue
+// #6099). The idempotent stale-reviewer-pane path must treat it as "already
+// gone": Destroy is a no-op success on the exact string from the report.
+func TestDestroyIsIdempotentWhenNoSuchSession(t *testing.T) {
+	r, fr := newTestRuntime(0)
+	absent := []byte("no such session: =review-ccstatusline-28:")
+	fr.outputs = [][]byte{nil, absent, absent}
+	fr.err = &exec.ExitError{}
+
+	if err := r.Destroy(context.Background(), ports.RuntimeHandle{ID: "review-ccstatusline-28"}); err != nil {
+		t.Fatalf("Destroy: %v", err)
+	}
+	if len(fr.calls) != 3 || fr.calls[0].args[0] != "list-panes" || fr.calls[1].args[0] != "set-option" || fr.calls[2].args[0] != "kill-session" {
+		t.Fatalf("calls = %#v, want list-panes, set-option, then kill-session", fr.calls)
+	}
+}
+
+// "no such session" is per-session evidence only; a transient server failure
+// on either teardown step must still fail closed (issue #4223 semantics).
+func TestDestroyFailsClosedWhenKillSessionTransientAfterNoSuchSession(t *testing.T) {
+	r, fr := newTestRuntime(0)
+	fr.outputs = [][]byte{
+		nil,
+		[]byte("no such session: =review-x:"), // set-option: gone
+		[]byte("error connecting to /tmp/x: refused"), // kill-session: transient
+	}
+	fr.err = &exec.ExitError{}
+
+	if err := r.Destroy(context.Background(), ports.RuntimeHandle{ID: "review-x"}); err == nil {
+		t.Fatal("Destroy: got nil, want transient kill-session failure to fail closed")
+	}
+}
+
+func TestSessionMissingOutputVocabulary(t *testing.T) {
+	yes := []string{
+		"can't find session: =review-x:",
+		"session not found: review-x",
+		"no such session: =review-x:", // tmux ≥ 3.5
+		"NO SUCH SESSION: =review-x:", // matching is case-insensitive
+	}
+	no := []string{
+		"",
+		"no server running on /tmp/tmux-1000/default",
+		"error connecting to /tmp/tmux-1000/default (No such file or directory)",
+		"error connecting to /tmp/tmux-1000/default: Connection refused",
+		"protocol version mismatch",
+		"server exited unexpectedly",
+	}
+	for _, out := range yes {
+		if !sessionMissingOutput(out) {
+			t.Errorf("sessionMissingOutput(%q) = false, want true", out)
+		}
+	}
+	for _, out := range no {
+		if sessionMissingOutput(out) {
+			t.Errorf("sessionMissingOutput(%q) = true, want false", out)
+		}
+	}
+}
+
+func TestCommandErrorCarriesTmuxVersion(t *testing.T) {
+	original := resolveVersion
+	resolveVersion = func(context.Context, string) (string, error) { return "tmux 3.6b", nil }
+	t.Cleanup(func() { resolveVersion = original })
+
+	r, fr := newTestRuntime(0)
+	fr.err = func() error { return exec.Command("false").Run() }()
+
+	_, err := r.runCommand(context.Background(), "tmux-test", "has-session", "=x:")
+	if err == nil {
+		t.Fatal("runCommand: got nil, want error")
+	}
+	want := "exit status 1 (tmux 3.6b)"
+	if !strings.Contains(err.Error(), want) {
+		t.Fatalf("error %q, want it to contain %q", err.Error(), want)
+	}
+	// The version is cached: a second failed command reuses it without
+	// resolving again (asserted via the counter below).
+	resolutions := 0
+	resolveVersion = func(context.Context, string) (string, error) {
+		resolutions++
+		return "tmux 3.6b", nil
+	}
+	if _, err := r.runCommand(context.Background(), "tmux-test", "has-session", "=x:"); err == nil {
+		t.Fatal("second runCommand: got nil, want error")
+	}
+	if resolutions != 0 {
+		t.Fatalf("resolveVersion calls after cache = %d, want 0", resolutions)
+	}
+}
+
 func TestDestroyIsIdempotentWhenNoServer(t *testing.T) {
 	r, fr := newTestRuntime(0)
 	fr.outputs = [][]byte{nil, []byte("no server running on /tmp/tmux-1000/default"), []byte("no server running on /tmp/tmux-1000/default")}
