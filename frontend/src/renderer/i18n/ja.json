@@ -2250,6 +2250,7 @@
 	"settings.models.useAgentMode": "エージェントのモードを使用",
 	"settings.models.useAgentEffort": "エージェントの推論量を使用",
 	"settings.models.effortNotReported": "推論量は報告されていません",
+	"settings.models.effortUnverified": "プロバイダーはエフォートレベルを報告していないため、この一覧は参考値です",
 	"settings.models.modeNotReported": "モードは報告されていません",
 	"standalone.archive.heading_one": "{{count}} 件のアーカイブ済みセッション",
 	"standalone.archive.heading_other": "{{count}} 件のアーカイブ済みセッション",

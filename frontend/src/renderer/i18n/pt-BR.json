@@ -2280,6 +2280,7 @@
 	"settings.models.useAgentMode": "Usar modo do agente",
 	"settings.models.useAgentEffort": "Usar esforço do agente",
 	"settings.models.effortNotReported": "Esforço não informado",
+	"settings.models.effortUnverified": "O provedor não informou níveis de esforço; esta lista é aproximada",
 	"settings.models.modeNotReported": "Modo não informado",
 	"standalone.archive.heading_one": "{{count}} sessão arquivada",
 	"standalone.archive.heading_many": "{{count}} sessões arquivadas",

@@ -2250,6 +2250,7 @@
 	"settings.models.useAgentMode": "에이전트 모드 사용",
 	"settings.models.useAgentEffort": "에이전트 추론 수준 사용",
 	"settings.models.effortNotReported": "추론 수준 정보가 제공되지 않음",
+	"settings.models.effortUnverified": "공급자가 노력 수준을 보고하지 않아 이 목록은 참고용입니다",
 	"settings.models.modeNotReported": "모드 정보가 제공되지 않음",
 	"standalone.archive.heading_one": "보관된 세션 {{count}}개",
 	"standalone.archive.heading_other": "보관된 세션 {{count}}개",

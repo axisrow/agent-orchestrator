@@ -2230,6 +2230,7 @@
 	"settings.models.useAgentMode": "Use agent mode",
 	"settings.models.useAgentEffort": "Use agent effort",
 	"settings.models.effortNotReported": "Effort not reported",
+	"settings.models.effortUnverified": "Provider did not report effort levels; these are a best guess",
 	"settings.models.modeNotReported": "Mode not reported",
 	"standalone.archive.heading_one": "{{count}} Archived Session",
 	"standalone.archive.heading_other": "{{count}} Archived Sessions",

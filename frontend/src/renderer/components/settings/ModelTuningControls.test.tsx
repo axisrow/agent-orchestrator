@@ -15,6 +15,7 @@ const models: Model[] = [
 		defaultEffort: "low",
 	},
 	{ id: "plain", label: "Plain", efforts: ["low"] },
+	{ id: "gateway", label: "Gateway", efforts: [] },
 ];
 
 describe("ModelTuningControls", () => {
@@ -81,5 +82,61 @@ describe("ModelTuningControls", () => {
 
 		expect(screen.getByRole("alert")).toHaveTextContent("Reviewer model tuning is no longer supported");
 		expect(onValidityChange).toHaveBeenCalledWith(false);
+	});
+
+	it("falls back to the common ladder when the provider reports no efforts", async () => {
+		const onEffortChange = vi.fn();
+		render(
+			<ModelTuningControls
+				models={models}
+				model="gateway"
+				effort=""
+				onEffortChange={onEffortChange}
+				variant="settings"
+				roleLabel="Worker"
+			/>,
+		);
+
+		await userEvent.click(screen.getByRole("button", { name: "Worker Effort" }));
+		await userEvent.click(await screen.findByRole("menuitem", { name: "medium" }));
+		expect(onEffortChange).toHaveBeenCalledWith("medium");
+		expect(screen.getByText(/best guess/i)).toBeInTheDocument();
+	});
+
+	it("keeps a saved effort for a gateway model instead of flagging it invalid", () => {
+		const onValidityChange = vi.fn();
+		const onEffortReset = vi.fn();
+		render(
+			<ModelTuningControls
+				models={models}
+				model="gateway"
+				effort="high"
+				onEffortChange={vi.fn()}
+				onEffortReset={onEffortReset}
+				onValidityChange={onValidityChange}
+				variant="settings"
+			/>,
+		);
+
+		expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+		expect(onValidityChange).toHaveBeenCalledWith(true);
+		expect(onEffortReset).not.toHaveBeenCalled();
+	});
+
+	it("falls back to the ladder for an off-catalog model", async () => {
+		const onEffortChange = vi.fn();
+		render(
+			<ModelTuningControls
+				models={models}
+				model="custom-off-catalog"
+				effort=""
+				onEffortChange={onEffortChange}
+				variant="settings"
+			/>,
+		);
+
+		await userEvent.click(screen.getByRole("button", { name: "Effort" }));
+		await userEvent.click(await screen.findByRole("menuitem", { name: "low" }));
+		expect(onEffortChange).toHaveBeenCalledWith("low");
 	});
 });

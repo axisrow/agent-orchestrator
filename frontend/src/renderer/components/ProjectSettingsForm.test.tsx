@@ -826,6 +826,9 @@ describe("ProjectSettingsForm", () => {
 		expect(screen.queryByRole("menuitem", { name: "Enter model ID…" })).not.toBeInTheDocument();
 		await userEvent.click(screen.getByRole("menuitem", { name: /GPT-5\.4/ }));
 		expect(workerModel).toHaveTextContent("GPT-5.4");
+		// Models without reported efforts now open the fallback effort submenu; dismiss it.
+		await userEvent.keyboard("{Escape}");
+		await userEvent.keyboard("{Escape}");
 
 		await userEvent.click(workerModel);
 		expect(await screen.findByRole("menuitem", { name: /GPT-5\.6 Sol/ })).toBeInTheDocument();
@@ -994,6 +997,9 @@ describe("ProjectSettingsForm", () => {
 		await userEvent.click(codexOption!);
 		await userEvent.click(await screen.findByRole("button", { name: "Reviewer model" }));
 		await userEvent.click(await screen.findByRole("menuitem", { name: /GPT-5 Mini/i }));
+		// Dismiss the fallback effort submenu that now opens for models without reported efforts.
+		await userEvent.keyboard("{Escape}");
+		await userEvent.keyboard("{Escape}");
 		expect(reviewer).toHaveTextContent("Codex");
 		expect(screen.getByRole("button", { name: "Reviewer model" })).toHaveTextContent("GPT-5 Mini");
 

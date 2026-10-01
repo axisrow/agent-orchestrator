@@ -2250,6 +2250,7 @@
 	"settings.models.useAgentMode": "Agentenmodus verwenden",
 	"settings.models.useAgentEffort": "Denkaufwand des Agenten verwenden",
 	"settings.models.effortNotReported": "Aufwand nicht gemeldet",
+	"settings.models.effortUnverified": "Der Anbieter hat keine Effort-Stufen gemeldet; diese Liste ist ein Richtwert",
 	"settings.models.modeNotReported": "Modus nicht gemeldet",
 	"standalone.archive.heading_one": "{{count}} archivierte Sitzung",
 	"standalone.archive.heading_other": "{{count}} archivierte Sitzungen",

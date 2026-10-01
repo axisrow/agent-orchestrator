@@ -2232,6 +2232,7 @@
 	"settings.models.useAgentMode": "使用智能体模式",
 	"settings.models.useAgentEffort": "使用智能体推理强度",
 	"settings.models.effortNotReported": "未报告推理强度",
+	"settings.models.effortUnverified": "提供商未报告推理力度等级，此列表仅供参考",
 	"settings.models.modeNotReported": "未报告模式",
 	"standalone.archive.heading_one": "{{count}} 个已归档会话",
 	"standalone.archive.heading_other": "{{count}} 个已归档会话",
