@@ -877,6 +877,7 @@ func (s *Service) publishOne(ctx context.Context, workerID domain.SessionID, run
 	if current.GithubReviewID != "" {
 		run.GithubReviewID = current.GithubReviewID
 	}
+	}
 	switch run.PublishState {
 	case domain.ReviewPublishPublished:
 		// The provider already holds this run's review; its id is recorded.
