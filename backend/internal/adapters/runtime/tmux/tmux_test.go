@@ -1072,6 +1072,41 @@ func TestDestroyIsIdempotentWhenSessionMissingModernWording(t *testing.T) {
 	}
 }
 
+// tmux's error vocabulary drifts across versions (#6099), so commandError
+// carries the resolved `tmux -V` output: "exit status 1 (tmux 3.6b): no such
+// session: =review-x:". The version resolves once per binary and only after a
+// command has already failed — never on the hot path.
+func TestCommandErrorCarriesTmuxVersion(t *testing.T) {
+	original := resolveVersion
+	resolveVersion = func(context.Context, string) (string, error) { return "tmux 3.6b", nil }
+	t.Cleanup(func() { resolveVersion = original })
+
+	r, fr := newTestRuntime(0)
+	fr.err = func() error { return exec.Command("false").Run() }()
+
+	_, err := r.runCommand(context.Background(), "tmux-test", "has-session", "=x:")
+	if err == nil {
+		t.Fatal("runCommand: got nil, want error")
+	}
+	want := "exit status 1 (tmux 3.6b)"
+	if !strings.Contains(err.Error(), want) {
+		t.Fatalf("error %q, want it to contain %q", err.Error(), want)
+	}
+	// The version is cached: a second failed command reuses it without
+	// resolving again (asserted via the counter below).
+	resolutions := 0
+	resolveVersion = func(context.Context, string) (string, error) {
+		resolutions++
+		return "tmux 3.6b", nil
+	}
+	if _, err := r.runCommand(context.Background(), "tmux-test", "has-session", "=x:"); err == nil {
+		t.Fatal("second runCommand: got nil, want error")
+	}
+	if resolutions != 0 {
+		t.Fatalf("resolveVersion calls after cache = %d, want 0", resolutions)
+	}
+}
+
 func TestDestroyIsIdempotentWhenNoServer(t *testing.T) {
 	r, fr := newTestRuntime(0)
 	fr.outputs = [][]byte{nil, []byte("no server running on /tmp/tmux-1000/default"), []byte("no server running on /tmp/tmux-1000/default")}
