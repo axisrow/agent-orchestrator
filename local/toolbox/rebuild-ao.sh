@@ -83,8 +83,13 @@ sleep 1
 # 1. Собрать .app + демон (prepackage сам соберёт Go-демона в бандл).
 echo "==> стамп версии (на время сборки): $STAMP_VERSION"
 (cd "$REPO_ROOT/frontend" && npm version --no-git-tag-version "$STAMP_VERSION" >/dev/null)
-echo "==> npm run package (сборка .app + Go-демона)..."
-(cd "$REPO_ROOT/frontend" && npm run package)
+echo "==> npm run package (сборка .app + Go-демона; таймаут 3 мин)..."
+# Forge не имеет внутренних таймаутов и умеет вечно висеть в "Finalizing
+# package" на затыке локального прокси (наблюдалось 2026-10-01: соединение
+# к 127.0.0.1:8118 принято, апстрим молчит, 0% CPU бесконечно). Тёплая
+# сборка ~40с, холодная после большого синка до 5 мин — при сработавшем
+# лимите просто перезапустить (кэши Forge частично выживают).
+(cd "$REPO_ROOT/frontend" && timeout --kill-after=15 180 npm run package)
 
 # 2. ditto в /Applications (без rm -rf, без sudo — пользователь владелец).
 echo "==> ditto → /Applications..."
