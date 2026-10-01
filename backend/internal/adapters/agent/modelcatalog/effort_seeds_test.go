@@ -19,10 +19,10 @@ func TestSeedEffortsAnnotatesKnownGatewayFamilies(t *testing.T) {
 		{ID: "glm-5", Efforts: []string{"minimal", "high"}, DefaultEffort: "high"},
 	}
 	seeded := SeedEfforts(models)
-	if got := seeded[0]; !slices.Equal(got.Efforts, []string{"low", "medium", "high"}) || got.DefaultEffort != "high" {
-		t.Fatalf("glm-4.7 = %+v, want low/medium/high defaulting high", got)
+	if got := seeded[0]; !slices.Equal(got.Efforts, []string{"low", "medium", "high", "xhigh", "max"}) || got.DefaultEffort != "max" {
+		t.Fatalf("glm-4.7 = %+v, want full ladder defaulting max", got)
 	}
-	if got := seeded[1]; !slices.Equal(got.Efforts, []string{"low", "medium", "high"}) {
+	if got := seeded[1]; !slices.Equal(got.Efforts, []string{"low", "medium", "high", "xhigh", "max"}) {
 		t.Fatalf("GLM-5 = %+v, want case-insensitive prefix match", got)
 	}
 	for _, index := range []int{2, 3} {
@@ -52,7 +52,7 @@ func TestDiscoverClaudeCatalogSeedsProviderModels(t *testing.T) {
 	for _, model := range catalog.Models {
 		switch model.ID {
 		case "glm-4.7":
-			if !slices.Equal(model.Efforts, []string{"low", "medium", "high"}) || model.DefaultEffort != "high" {
+			if !slices.Equal(model.Efforts, []string{"low", "medium", "high", "xhigh", "max"}) || model.DefaultEffort != "max" {
 				t.Fatalf("provider glm-4.7 = %+v, want seeded efforts", model)
 			}
 		case "claude-opus-4-5":
@@ -93,7 +93,7 @@ func TestClaudeFallbackSeedsConfiguredGatewayModels(t *testing.T) {
 		if model.ID != "glm-5.3" {
 			continue
 		}
-		if !slices.Equal(model.Efforts, []string{"low", "medium", "high"}) || model.DefaultEffort != "high" {
+		if !slices.Equal(model.Efforts, []string{"low", "medium", "high", "xhigh", "max"}) || model.DefaultEffort != "max" {
 			t.Fatalf("configured glm-5.3 = %+v, want seeded efforts", model)
 		}
 		return
