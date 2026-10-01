@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"strings"
 	"sync"
@@ -90,10 +91,15 @@ type Service struct {
 	clock              func() time.Time
 	telemetry          ports.EventSink
 	codexOperationGate ports.CodexOperationGate
+	notifications      reviewNotificationSink
 	// engineTrigger indirects the engine's source-tagged trigger so the
 	// instrumented path can be exercised without standing up a full engine and
 	// its eighteen-method store. Defaulted in New; only tests replace it.
 	engineTrigger func(context.Context, domain.SessionID, domain.ReviewerHarness, domain.AgentConfig, domain.ReviewTriggerSource) (reviewcore.TriggerResult, error)
+}
+
+type reviewNotificationSink interface {
+	Notify(context.Context, ports.NotificationIntent) error
 }
 
 var _ Manager = (*Service)(nil)
@@ -163,6 +169,12 @@ func WithReviewPublisher(publisher ports.SCMReviewPublisher) Option {
 // is how every existing test constructs it.
 func WithTelemetry(sink ports.EventSink) Option {
 	return func(s *Service) { s.telemetry = sink }
+}
+
+// WithNotificationSink publishes durable review results after their run has
+// reached complete. The run id is the dedupe key, so submit retries are safe.
+func WithNotificationSink(sink reviewNotificationSink) Option {
+	return func(s *Service) { s.notifications = sink }
 }
 
 // WithCodexAccountOperationGate prevents new Codex reviewer controllers from
@@ -809,6 +821,7 @@ func (s *Service) submitOne(ctx context.Context, workerID domain.SessionID, revi
 	default:
 		return domain.ReviewRun{}, false, fmt.Errorf("%w: review run %q is not running", errRunSuperseded, runID)
 	}
+	s.emitReviewNotification(ctx, run)
 	return run, fresh, nil
 }
 
@@ -936,6 +949,38 @@ func (s *Service) publishTarget(ctx context.Context, workerID domain.SessionID, 
 		return domain.PullRequest{}, false
 	}
 	return selectRereviewPR(prs, prURL)
+}
+
+func (s *Service) emitReviewNotification(ctx context.Context, run domain.ReviewRun) {
+	if s.notifications == nil {
+		return
+	}
+	session, ok, err := s.store.GetSession(ctx, run.SessionID)
+	if err != nil || !ok {
+		slog.Default().WarnContext(ctx, "review notification session lookup failed", "session", run.SessionID, "run", run.ID, "err", err)
+		return
+	}
+	intent := ports.NotificationIntent{
+		SessionID: session.ID, ProjectID: session.ProjectID, PRURL: run.PRURL,
+		SessionDisplayName: session.DisplayName, CreatedAt: s.clock(), SourceKey: "review_run:" + run.ID,
+	}
+	if run.Verdict == domain.VerdictChangesRequested {
+		intent.Type = domain.NotificationReviewChangesRequested
+	} else {
+		intent.Type = domain.NotificationReviewCompleted
+	}
+	prs, listErr := s.store.ListPRsBySession(ctx, run.SessionID)
+	if listErr == nil {
+		for _, pr := range prs {
+			if pr.URL == run.PRURL || pr.HTMLURL == run.PRURL {
+				intent.PRNumber, intent.PRTitle = pr.Number, pr.Title
+				break
+			}
+		}
+	}
+	if err := s.notifications.Notify(ctx, intent); err != nil {
+		slog.Default().WarnContext(ctx, "review notification failed", "session", run.SessionID, "run", run.ID, "err", err)
+	}
 }
 
 func (s *Service) deliverSubmitted(ctx context.Context, workerID domain.SessionID, runs []domain.ReviewRun) ([]domain.ReviewRun, error) {
