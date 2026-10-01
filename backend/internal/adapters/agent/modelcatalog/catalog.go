@@ -358,7 +358,7 @@ func discoverClaudeCatalog(
 // effortSeedsVersion feeds the claude-code discovery fingerprint so catalogs
 // cached before a seed change refresh instead of staying dark. Var only so a
 // test can prove the fingerprint moves with it; treat it as const.
-var effortSeedsVersion = "1"
+var effortSeedsVersion = "2"
 
 // gatewayEffortSeeds records the reasoning levels known for common
 // Anthropic-compatible gateway model families. Gateways omit
@@ -373,7 +373,11 @@ var gatewayEffortSeeds = []struct {
 	efforts []string
 	def     string
 }{
-	{"glm-", []string{"low", "medium", "high"}, "high"},
+	// glm-: z.ai docs (glm-5.3, read 2026-10-01) list low/high/max with max as
+	// the coding default; medium is not advertised but is kept so sessions or
+	// roles already pinned to it stay valid (the gateway snaps it), and xhigh
+	// is accepted by Claude Code-compatible layers as an alias for max.
+	{"glm-", []string{"low", "medium", "high", "xhigh", "max"}, "max"},
 	{"deepseek-", []string{"low", "medium", "high"}, "medium"},
 	{"qwen", []string{"low", "medium", "high"}, "medium"},
 }
