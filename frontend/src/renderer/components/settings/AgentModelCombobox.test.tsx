@@ -93,7 +93,7 @@ describe("AgentModelCombobox", () => {
 		expect(effortTrigger).toHaveFocus();
 	});
 
-	it("closes immediately after selecting a model without effort choices", async () => {
+	it("opens the fallback effort ladder after selecting a model without reported efforts", async () => {
 		function Picker() {
 			const [model, setModel] = useState("");
 			const [effort, setEffort] = useState("");
@@ -107,7 +107,9 @@ describe("AgentModelCombobox", () => {
 		await userEvent.click(picker);
 		await userEvent.click(screen.getByRole("menuitem", { name: "Plain" }));
 
+		await userEvent.click(await screen.findByRole("menuitemradio", { name: "High" }));
 		expect(picker).toHaveTextContent("Plain");
+		expect(picker).toHaveTextContent("High");
 		expect(screen.queryByRole("menuitem", { name: "Plain" })).not.toBeInTheDocument();
 	});
 

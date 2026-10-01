@@ -41,7 +41,7 @@ import {
 } from "../hooks/useAgentModelsQuery";
 import { STANDALONE_WORKSPACE_ID } from "../types/workspace";
 import { AgentModelCombobox } from "./settings/AgentModelCombobox";
-import { useModelTuning } from "./settings/ModelTuningControls";
+import { effortChoices, useModelTuning } from "./settings/ModelTuningControls";
 import { SettingsOptionMenu } from "./settings/SettingsOptionMenu";
 import {
 	readTaskComposerPreferences,
@@ -475,7 +475,7 @@ export function TaskComposer({
 		onEffortChange: setEffort,
 		onEffortReset: setEffort,
 	});
-	const effortOptions = effortModel?.efforts?.filter((option) => option && option.toLowerCase() !== "default") ?? [];
+	const { options: effortOptions } = effortChoices(effortModel, isConcreteModelID(selectedModel));
 	const inheritedEffort = selectedAgent === configuredProjectAgent ? defaultWorkerEffort : "";
 	const implicitEffort = inheritedEffort || effortModel?.defaultEffort || "";
 	const requestedEffort = effortTouched || rememberedEffortIsExplicit
