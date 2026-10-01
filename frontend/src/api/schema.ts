@@ -2683,6 +2683,41 @@ export interface paths {
         patch: operations["updateCloudOffering"];
         trace?: never;
     };
+    "/api/v1/settings/gateway": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the Anthropic-compatible gateway configuration per scope */
+        get: operations["getGatewayConfig"];
+        /** Write the Anthropic-compatible gateway entry for one scope */
+        put: operations["updateGatewayConfig"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/gateway/probe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Validate a gateway base URL and token without saving them */
+        post: operations["probeGateway"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings/session-interface": {
         parameters: {
             query?: never;
@@ -3378,6 +3413,21 @@ export interface components {
         ContainerReapConfig: {
             disabled?: boolean;
         };
+        ControllersGatewayConfigResponse: {
+            app: components["schemas"]["GatewayScopeValue"];
+            effective: components["schemas"]["GatewayEffective"];
+            project?: components["schemas"]["GatewayScopeValue"];
+        };
+        ControllersGatewayProbeRequest: {
+            baseUrl: string;
+            token: string;
+        };
+        ControllersGatewayProbeResponse: {
+            detail?: string;
+            models?: components["schemas"]["GatewayModel"][];
+            /** @enum {string} */
+            state: "valid" | "invalid" | "unknown";
+        };
         ControllersKeepAwakeStatus: {
             active: boolean;
             enabled: boolean;
@@ -3472,6 +3522,14 @@ export interface components {
         };
         ControllersUpdateCloudOfferingRequest: {
             enabled: null | boolean;
+        };
+        ControllersUpdateGatewayConfigRequest: {
+            baseUrl?: string;
+            model?: string;
+            projectId?: string;
+            /** @enum {string} */
+            scope: "app" | "project";
+            token?: null | string;
         };
         ConversationAccountPayload: {
             authMode?: string;
@@ -3902,6 +3960,20 @@ export interface components {
             name: string;
             /** @description Absolute path of the directory on the daemon host. */
             path: string;
+        };
+        GatewayEffective: {
+            baseUrl?: string;
+            model?: string;
+            source?: string;
+        };
+        GatewayModel: {
+            displayName?: string;
+            id: string;
+        };
+        GatewayScopeValue: {
+            baseUrl?: string;
+            model?: string;
+            tokenSet: boolean;
         };
         GitHubRepo: {
             clone_url: string;
@@ -15469,6 +15541,140 @@ export interface operations {
             };
             /** @description Internal Server Error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    getGatewayConfig: {
+        parameters: {
+            query?: {
+                /** @description Project id; when omitted, only the app scope is reported. */
+                projectId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControllersGatewayConfigResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    updateGatewayConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ControllersUpdateGatewayConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControllersGatewayConfigResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    probeGateway: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ControllersGatewayProbeRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControllersGatewayProbeResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };

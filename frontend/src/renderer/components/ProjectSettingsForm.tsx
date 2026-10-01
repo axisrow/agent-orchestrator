@@ -16,6 +16,7 @@ import { agentModelsQueryKey, agentModelsQueryOptions, refreshAgentModels, reval
 import { useAgentReadinessQuery, useEnsureAgentReadiness } from "../hooks/useAgentReadinessQuery";
 import { useWorkspaceQuery, workspaceQueryKey } from "../hooks/useWorkspaceQuery";
 import { apiClient, apiErrorMessage } from "../lib/api-client";
+import { GatewayProvidersSection } from "./settings/GatewayProvidersSection";
 import { isConcreteModelID, modelChoiceLabel } from "../lib/agent-model-choices";
 import { WORKER_DEFAULT_REVIEWERS } from "../lib/reviewer-harnesses";
 import { captureOrchestratorReplacementFailure } from "../lib/orchestrator-replacement-telemetry";
@@ -50,7 +51,7 @@ type SettingsSaveResult = {
 	spawnError: unknown;
 };
 
-export type ProjectSettingsSection = "general" | "agents";
+export type ProjectSettingsSection = "general" | "agents" | "gateway";
 export type ProjectSettingsSaveState = {
 	phase: "idle" | "pending" | "saving" | "saved" | "failed";
 	dirty?: boolean;
@@ -568,6 +569,8 @@ function SettingsBody({
 					)}
 				</>
 			)}
+
+			{section === "gateway" && <GatewayProvidersSection projectId={projectId} />}
 
 			{section === "agents" && (
 				<ProjectSettingsSection title={t("settings.project.agents")} titleHidden grouped>

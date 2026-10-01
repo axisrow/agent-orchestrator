@@ -12,6 +12,7 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 	agentsvc "github.com/aoagents/agent-orchestrator/backend/internal/service/agent"
 	"github.com/aoagents/agent-orchestrator/backend/internal/service/agentauth"
+	"github.com/aoagents/agent-orchestrator/backend/internal/service/gateway"
 	projectsvc "github.com/aoagents/agent-orchestrator/backend/internal/service/project"
 	sessionsvc "github.com/aoagents/agent-orchestrator/backend/internal/service/session"
 	"github.com/aoagents/agent-orchestrator/backend/internal/service/systemcheck"
@@ -2865,6 +2866,51 @@ type UpdateSessionInterfaceRequest struct {
 type UpdateCloudOfferingRequest struct {
 	// Enabled turns the cloud offering on or off for this machine's user.
 	Enabled *bool `json:"enabled"`
+}
+
+// GatewayScopeValue is one scope's stored Anthropic-compatible gateway entry.
+// The token is never returned, only whether one is stored.
+type GatewayScopeValue struct {
+	BaseURL  string `json:"baseUrl,omitempty"`
+	TokenSet bool   `json:"tokenSet"`
+	Model    string `json:"model,omitempty"`
+}
+
+// GatewayConfigResponse is the body of GET /api/v1/settings/gateway.
+type GatewayConfigResponse struct {
+	App       gateway.ScopeValue  `json:"app"`
+	Project   *gateway.ScopeValue `json:"project,omitempty"`
+	Effective gateway.Effective   `json:"effective"`
+}
+
+// UpdateGatewayConfigRequest is the body of PUT /api/v1/settings/gateway.
+// Scope selects app or project; an empty BaseURL or Model clears that key, a
+// nil Token leaves the stored token untouched, an empty one clears it.
+type UpdateGatewayConfigRequest struct {
+	Scope     string  `json:"scope" enum:"app,project"`
+	ProjectID string  `json:"projectId,omitempty"`
+	BaseURL   string  `json:"baseUrl,omitempty"`
+	Token     *string `json:"token,omitempty"`
+	Model     string  `json:"model,omitempty"`
+}
+
+// GatewayProbeRequest is the body of POST /api/v1/settings/gateway/probe.
+type GatewayProbeRequest struct {
+	BaseURL string `json:"baseUrl"`
+	Token   string `json:"token"`
+}
+
+// GatewayProbeResponse reports the probe verdict and the gateway's own model
+// list, so the settings screen can offer real model IDs.
+type GatewayProbeResponse struct {
+	State  string          `json:"state" enum:"valid,invalid,unknown"`
+	Detail string          `json:"detail,omitempty"`
+	Models []gateway.Model `json:"models,omitempty"`
+}
+
+// GatewayConfigQuery scopes the GET to one project's override entry.
+type GatewayConfigQuery struct {
+	ProjectID string `query:"projectId,omitempty" description:"Project id; when omitted, only the app scope is reported."`
 }
 
 // capabilityNames lists the abilities a provider has, sorted so a client sees a

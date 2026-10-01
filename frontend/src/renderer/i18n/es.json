@@ -2298,5 +2298,19 @@
 	"standalone.archive.heading_other": "{{count}} sesiones archivadas",
 	"standalone.archive.newAgent": "Nuevo agente",
 	"standalone.archive.empty.title": "No hay agentes independientes archivados",
-	"standalone.archive.empty.body": "Los agentes independientes que archives desde el Bloc de notas aparecerán aquí. Los agentes independientes activos permanecen en la lista del Bloc de notas."
+	"standalone.archive.empty.body": "Los agentes independientes que archives desde el Bloc de notas aparecerán aquí. Los agentes independientes activos permanecen en la lista del Bloc de notas.",
+	"settings.gateway.title": "Proveedores de pasarela",
+	"settings.gateway.baseUrl": "URL base",
+	"settings.gateway.baseUrlHint": "Endpoint compatible con Anthropic, p. ej. https://gateway.example.com",
+	"settings.gateway.token": "Token de autenticación",
+	"settings.gateway.tokenStored": "Hay un token guardado; escribe uno nuevo para reemplazarlo",
+	"settings.gateway.tokenHint": "Se envía como ANTHROPIC_AUTH_TOKEN; deja vacío para conservar el valor guardado",
+	"settings.gateway.model": "Modelo predeterminado",
+	"settings.gateway.modelHint": "Opcional; usa un ID de modelo que la pasarela informe (prueba para listarlos)",
+	"settings.gateway.probe": "Probar conexión",
+	"settings.gateway.probeOk": "Funciona",
+	"settings.gateway.probeFailed": "Rechazado",
+	"settings.gateway.save": "Guardar",
+	"settings.gateway.effectiveOn": "Pasarela activa: {{baseUrl}} ({{source}})",
+	"settings.gateway.effectiveOff": "Sin pasarela configurada; las solicitudes van directamente a Anthropic"
 }

@@ -3,12 +3,14 @@ package controllers
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 	"github.com/aoagents/agent-orchestrator/backend/internal/httpd/apispec"
 	"github.com/aoagents/agent-orchestrator/backend/internal/httpd/envelope"
+	"github.com/aoagents/agent-orchestrator/backend/internal/service/gateway"
 	settingssvc "github.com/aoagents/agent-orchestrator/backend/internal/service/settings"
 )
 
@@ -21,6 +23,13 @@ type SettingsService interface {
 	Offering() settingssvc.Offering
 }
 
+// GatewayService is the controller-facing gateway-configuration contract.
+type GatewayService interface {
+	Get(ctx context.Context, projectID string) (gateway.Config, error)
+	Set(ctx context.Context, in gateway.SetInput) (gateway.Config, error)
+	Probe(ctx context.Context, baseURL, token string) (gateway.ProbeResult, error)
+}
+
 // SettingsController owns the daemon-owned preference routes.
 //
 // These are daemon-owned rather than renderer-owned on purpose: desktop, mobile,
@@ -28,6 +37,9 @@ type SettingsService interface {
 // disagree with the others.
 type SettingsController struct {
 	Svc SettingsService
+	// Gateway backs the Anthropic-compatible gateway routes; nil keeps them
+	// answering 501 like every other unwired service.
+	Gateway GatewayService
 }
 
 // Register mounts the settings routes.
@@ -35,6 +47,69 @@ func (c *SettingsController) Register(r chi.Router) {
 	r.Get("/settings", c.get)
 	r.Patch("/settings/session-interface", c.setSessionInterface)
 	r.Patch("/settings/cloud-offering", c.setCloudOffering)
+	r.Get("/settings/gateway", c.getGateway)
+	r.Put("/settings/gateway", c.setGateway)
+	r.Post("/settings/gateway/probe", c.probeGateway)
+}
+
+func (c *SettingsController) getGateway(w http.ResponseWriter, r *http.Request) {
+	if c.Gateway == nil {
+		apispec.NotImplemented(w, r, http.MethodGet, "/api/v1/settings/gateway")
+		return
+	}
+	config, err := c.Gateway.Get(r.Context(), r.URL.Query().Get("projectId"))
+	if err != nil {
+		envelope.WriteError(w, r, err)
+		return
+	}
+	envelope.WriteJSON(w, http.StatusOK, GatewayConfigResponse(config))
+}
+
+func (c *SettingsController) setGateway(w http.ResponseWriter, r *http.Request) {
+	if c.Gateway == nil {
+		apispec.NotImplemented(w, r, http.MethodPut, "/api/v1/settings/gateway")
+		return
+	}
+	var req UpdateGatewayConfigRequest
+	if !decodeConversationBody(w, r, &req) {
+		return
+	}
+	scope := gateway.Scope(strings.TrimSpace(req.Scope))
+	if scope != gateway.ScopeApp && scope != gateway.ScopeProject {
+		envelope.WriteAPIError(w, r, http.StatusBadRequest, "validation",
+			"GATEWAY_SCOPE_INVALID", `scope must be "app" or "project"`, nil)
+		return
+	}
+	config, err := c.Gateway.Set(r.Context(), gateway.SetInput{
+		Scope:     scope,
+		ProjectID: strings.TrimSpace(req.ProjectID),
+		BaseURL:   req.BaseURL,
+		Token:     req.Token,
+		Model:     req.Model,
+	})
+	if err != nil {
+		envelope.WriteError(w, r, err)
+		return
+	}
+	envelope.WriteJSON(w, http.StatusOK, GatewayConfigResponse(config))
+}
+
+func (c *SettingsController) probeGateway(w http.ResponseWriter, r *http.Request) {
+	if c.Gateway == nil {
+		apispec.NotImplemented(w, r, http.MethodPost, "/api/v1/settings/gateway/probe")
+		return
+	}
+	var req GatewayProbeRequest
+	if !decodeConversationBody(w, r, &req) {
+		return
+	}
+	result, err := c.Gateway.Probe(r.Context(), req.BaseURL, req.Token)
+	if err != nil {
+		envelope.WriteAPIError(w, r, http.StatusBadRequest, "validation",
+			"GATEWAY_PROBE_INVALID", err.Error(), nil)
+		return
+	}
+	envelope.WriteJSON(w, http.StatusOK, GatewayProbeResponse(result))
 }
 
 func (c *SettingsController) get(w http.ResponseWriter, r *http.Request) {

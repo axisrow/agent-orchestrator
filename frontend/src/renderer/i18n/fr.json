@@ -2298,5 +2298,19 @@
 	"standalone.archive.heading_other": "{{count}} sessions archivées",
 	"standalone.archive.newAgent": "Nouvel agent",
 	"standalone.archive.empty.title": "Aucun agent autonome archivé",
-	"standalone.archive.empty.body": "Les agents autonomes que vous archivez depuis le bloc-notes apparaîtront ici. Les agents autonomes actifs restent dans la liste du bloc-notes."
+	"standalone.archive.empty.body": "Les agents autonomes que vous archivez depuis le bloc-notes apparaîtront ici. Les agents autonomes actifs restent dans la liste du bloc-notes.",
+	"settings.gateway.title": "Fournisseurs de passerelle",
+	"settings.gateway.baseUrl": "URL de base",
+	"settings.gateway.baseUrlHint": "Point de terminaison compatible Anthropic, ex. https://gateway.example.com",
+	"settings.gateway.token": "Jeton d'authentification",
+	"settings.gateway.tokenStored": "Un jeton est enregistré ; saisissez-en un nouveau pour le remplacer",
+	"settings.gateway.tokenHint": "Envoyé via ANTHROPIC_AUTH_TOKEN ; laisser vide pour conserver la valeur enregistrée",
+	"settings.gateway.model": "Modèle par défaut",
+	"settings.gateway.modelHint": "Facultatif ; utilisez un ID de modèle signalé par la passerelle (tester pour les lister)",
+	"settings.gateway.probe": "Tester la connexion",
+	"settings.gateway.probeOk": "Fonctionne",
+	"settings.gateway.probeFailed": "Rejeté",
+	"settings.gateway.save": "Enregistrer",
+	"settings.gateway.effectiveOn": "Passerelle active : {{baseUrl}} ({{source}})",
+	"settings.gateway.effectiveOff": "Aucune passerelle configurée ; les requêtes vont directement à Anthropic"
 }

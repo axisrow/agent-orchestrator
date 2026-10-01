@@ -2247,5 +2247,19 @@
 	"standalone.archive.heading_other": "{{count}} Archived Sessions",
 	"standalone.archive.newAgent": "New agent",
 	"standalone.archive.empty.title": "No archived standalone agents",
-	"standalone.archive.empty.body": "Standalone agents you archive from Scratchpad will appear here. Active standalone agents stay in the Scratchpad list."
+	"standalone.archive.empty.body": "Standalone agents you archive from Scratchpad will appear here. Active standalone agents stay in the Scratchpad list.",
+	"settings.gateway.title": "Gateway providers",
+	"settings.gateway.baseUrl": "Base URL",
+	"settings.gateway.baseUrlHint": "Anthropic-compatible endpoint, e.g. https://gateway.example.com",
+	"settings.gateway.token": "Auth token",
+	"settings.gateway.tokenStored": "A token is stored; type a new one to replace it",
+	"settings.gateway.tokenHint": "Sent as ANTHROPIC_AUTH_TOKEN; leave empty to keep any stored value",
+	"settings.gateway.model": "Default model",
+	"settings.gateway.modelHint": "Optional; use a model ID the gateway reports (probe to list them)",
+	"settings.gateway.probe": "Test connection",
+	"settings.gateway.probeOk": "Works",
+	"settings.gateway.probeFailed": "Rejected",
+	"settings.gateway.save": "Save",
+	"settings.gateway.effectiveOn": "Active gateway: {{baseUrl}} ({{source}})",
+	"settings.gateway.effectiveOff": "No gateway configured; requests go to Anthropic directly"
 }

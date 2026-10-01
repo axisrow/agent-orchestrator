@@ -2267,5 +2267,19 @@
 	"standalone.archive.heading_other": "{{count}} 件のアーカイブ済みセッション",
 	"standalone.archive.newAgent": "新しいエージェント",
 	"standalone.archive.empty.title": "アーカイブ済みのスタンドアロンエージェントはありません",
-	"standalone.archive.empty.body": "スクラッチパッドからアーカイブしたスタンドアロンエージェントがここに表示されます。アクティブなスタンドアロンエージェントはスクラッチパッドの一覧に残ります。"
+	"standalone.archive.empty.body": "スクラッチパッドからアーカイブしたスタンドアロンエージェントがここに表示されます。アクティブなスタンドアロンエージェントはスクラッチパッドの一覧に残ります。",
+	"settings.gateway.title": "ゲートウェイプロバイダー",
+	"settings.gateway.baseUrl": "ベース URL",
+	"settings.gateway.baseUrlHint": "Anthropic 互換エンドポイント(例: https://gateway.example.com)",
+	"settings.gateway.token": "認証トークン",
+	"settings.gateway.tokenStored": "トークンが保存されています。置き換えるには新しく入力してください",
+	"settings.gateway.tokenHint": "ANTHROPIC_AUTH_TOKEN として送信されます。空のまま保存値を維持します",
+	"settings.gateway.model": "既定のモデル",
+	"settings.gateway.modelHint": "任意。ゲートウェイが報告するモデル ID を使用(接続テストで一覧を取得)",
+	"settings.gateway.probe": "接続をテスト",
+	"settings.gateway.probeOk": "動作しています",
+	"settings.gateway.probeFailed": "拒否されました",
+	"settings.gateway.save": "保存",
+	"settings.gateway.effectiveOn": "アクティブなゲートウェイ: {{baseUrl}} ({{source}})",
+	"settings.gateway.effectiveOff": "ゲートウェイ未設定。リクエストは Anthropic に直接送られます"
 }
