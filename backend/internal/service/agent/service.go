@@ -944,7 +944,7 @@ func applyEffortOverrides(models []ports.AgentModelInfo, overrides map[string]st
 
 func containsEffort(efforts []string, effort string) bool {
 	for _, candidate := range efforts {
-		if candidate == effort {
+		if strings.EqualFold(candidate, effort) {
 			return true
 		}
 	}

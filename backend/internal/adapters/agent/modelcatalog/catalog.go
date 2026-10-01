@@ -356,8 +356,6 @@ func discoverClaudeCatalog(
 }
 
 // effortSeedsVersion feeds the claude-code discovery fingerprint so catalogs
-// cached before a seed change refresh instead of staying dark.
-// effortSeedsVersion feeds the claude-code discovery fingerprint so catalogs
 // cached before a seed change refresh instead of staying dark. Var only so a
 // test can prove the fingerprint moves with it; treat it as const.
 var effortSeedsVersion = "1"
