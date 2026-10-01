@@ -746,6 +746,14 @@ func (s *Service) loadModels(ctx context.Context, agentID, projectID string, mod
 	discovered.LastSuccessAt = &now
 	discovered.InputFingerprint = version
 	discovered.Metadata = catalogMetadata(request)
+	// A refresh replaces metadata wholesale; carry user-set effort overrides
+	// across so they keep annotating the freshly discovered models.
+	if overrides := effortOverrides(cached.Catalog); len(overrides) > 0 {
+		if raw, err := json.Marshal(overrides); err == nil {
+			discovered.Metadata[effortOverridesMetadataKey] = string(raw)
+		}
+		discovered.Models = applyEffortOverrides(discovered.Models, overrides)
+	}
 	discovered.RefreshState = "idle"
 	discovered.RefreshError = ""
 	discovered.RetryAt = nil
@@ -835,6 +843,10 @@ func (s *Service) cachedCatalog(ctx context.Context, agentID, projectID string) 
 	if catalog.Models == nil {
 		catalog.Models = []ports.AgentModelInfo{}
 	}
+	// Per-model effort overrides live in the catalog metadata and reapply on
+	// every read, so a user-tuned effort on an off-seed or custom model
+	// survives catalog refreshes without mutating stored discovery output.
+	catalog.Models = applyEffortOverrides(catalog.Models, effortOverrides(catalog))
 	if catalog.LastSuccessAt == nil || catalog.LastSuccessAt.IsZero() {
 		lastSuccess := record.LastSuccessAt
 		if lastSuccess.IsZero() {
@@ -893,6 +905,97 @@ func catalogMetadata(request ports.AgentModelDiscoveryRequest) map[string]string
 		metadata["binary"] = request.Binary
 	}
 	return metadata
+}
+
+// effortOverridesMetadataKey stores user-set per-model effort overrides inside
+// the cached catalog's metadata as a JSON map of model id to effort, so they
+// survive catalog refreshes (issue #6098).
+const effortOverridesMetadataKey = "effortOverrides"
+
+// effortOverrides decodes the catalog's persisted effort overrides. A missing
+// or malformed entry yields nil.
+func effortOverrides(catalog ports.AgentModelCatalog) map[string]string {
+	raw := catalog.Metadata[effortOverridesMetadataKey]
+	if raw == "" {
+		return nil
+	}
+	var overrides map[string]string
+	if json.Unmarshal([]byte(raw), &overrides) != nil {
+		return nil
+	}
+	return overrides
+}
+
+// applyEffortOverrides annotates models with user-set efforts they do not
+// already advertise. It never removes a provider-advertised level.
+func applyEffortOverrides(models []ports.AgentModelInfo, overrides map[string]string) []ports.AgentModelInfo {
+	if len(overrides) == 0 {
+		return models
+	}
+	for i := range models {
+		effort := strings.TrimSpace(overrides[models[i].ID])
+		if effort == "" || containsEffort(models[i].Efforts, effort) {
+			continue
+		}
+		models[i].Efforts = append(models[i].Efforts, effort)
+	}
+	return models
+}
+
+func containsEffort(efforts []string, effort string) bool {
+	for _, candidate := range efforts {
+		if candidate == effort {
+			return true
+		}
+	}
+	return false
+}
+
+// SetModelEffortOverride records a user-set reasoning effort for one model in
+// the cached catalog, keeping off-seed and custom models tunable across
+// refreshes. An empty effort clears the override. The override only annotates
+// the picker and spawn validation; choosing the level per role or per turn
+// stays with the existing model/effort settings.
+func (s *Service) SetModelEffortOverride(ctx context.Context, agentID, projectID, modelID, effort string) error {
+	if s.discoverer == nil {
+		return apierr.Internal("MODEL_DISCOVERY_UNAVAILABLE", "Model discovery is unavailable")
+	}
+	var err error
+	projectID, err = s.modelCatalogScope(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	modelID = strings.TrimSpace(modelID)
+	effort = strings.TrimSpace(effort)
+	if modelID == "" {
+		return apierr.Invalid("MODEL_ID_REQUIRED", "A model id is required", nil)
+	}
+	cached, ok, err := s.cachedCatalog(ctx, agentID, projectID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return apierr.NotFound("MODEL_CATALOG_NOT_FOUND", "No cached model catalog to override")
+	}
+	overrides := effortOverrides(cached.Catalog)
+	if overrides == nil {
+		overrides = map[string]string{}
+	}
+	if effort == "" {
+		delete(overrides, modelID)
+	} else {
+		overrides[modelID] = effort
+	}
+	if cached.Catalog.Metadata == nil {
+		cached.Catalog.Metadata = map[string]string{}
+	}
+	if len(overrides) == 0 {
+		delete(cached.Catalog.Metadata, effortOverridesMetadataKey)
+	} else if raw, err := json.Marshal(overrides); err == nil {
+		cached.Catalog.Metadata[effortOverridesMetadataKey] = string(raw)
+	}
+	cached.Catalog.Models = applyEffortOverrides(cached.Catalog.Models, overrides)
+	return s.saveCatalog(ctx, projectID, cached.Catalog, cached.Generation, cached.RetryCount)
 }
 
 func (s *Service) persistCatalogState(ctx context.Context, cached decodedCatalog, hasCached bool, state, message string, retryAt time.Time, generation int64) error {
