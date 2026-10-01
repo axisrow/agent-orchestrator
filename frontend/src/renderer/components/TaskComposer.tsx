@@ -489,7 +489,14 @@ export function TaskComposer({
 		|| "";
 	const requestedEffort = effortTouched || rememberedEffortIsExplicit
 		? effort === implicitEffort ? undefined : effort
-		: undefined;
+		// Untouched, the picker still displays the seeded catalog default; a
+		// spawn that sends nothing would fall back to the agent's own default
+		// (low for an unrecognized model), contradicting what the user sees.
+		// Role-inherited effort already reaches the spawn through the role
+		// override, so it stays unpinned.
+		: !inheritedEffort && effortModel?.effortsSeeded
+			? effortModel?.defaultEffort || undefined
+			: undefined;
 
 	const selectedAgentLabel = agentCatalog?.agents.find((item) => item.id === selectedAgent)?.label || selectedAgent;
 	const requiresTuiFallback =
