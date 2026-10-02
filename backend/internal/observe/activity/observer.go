@@ -119,9 +119,15 @@ func (o *Observer) reconcile(ctx context.Context, session domain.SessionRecord, 
 	if session.IsTerminated {
 		return
 	}
-	if o.demoteQuietActive(ctx, session, now) {
-		return
-	}
+	o.reconcileTerminal(ctx, session, now)
+	// The fallback runs after terminal reconciliation, never instead of it: a
+	// chat session proves nothing from terminal output but must still lose a
+	// quiet stale-active state, while a TUI session keeps its per-tick
+	// stale-after check regardless of whether the fallback applied.
+	o.demoteQuietActive(ctx, session, now)
+}
+
+func (o *Observer) reconcileTerminal(ctx context.Context, session domain.SessionRecord, now time.Time) {
 	if session.Metadata.RuntimeHandleID == "" || o.agents == nil {
 		return
 	}
@@ -184,10 +190,10 @@ func (o *Observer) reconcile(ctx context.Context, session domain.SessionRecord, 
 // demote active to idle. Only active is touched: blocked and waiting_input
 // need the user, so an hour of quiet is not evidence against them. The next
 // hook event flips the state back if the demotion was wrong.
-func (o *Observer) demoteQuietActive(ctx context.Context, session domain.SessionRecord, now time.Time) bool {
+func (o *Observer) demoteQuietActive(ctx context.Context, session domain.SessionRecord, now time.Time) {
 	if session.Activity.State != domain.ActivityActive || session.Activity.LastActivityAt.IsZero() ||
 		now.Sub(session.Activity.LastActivityAt) < o.staleActiveTo {
-		return false
+		return
 	}
 	err := o.sink.ApplyActivitySignal(ctx, session.ID, ports.ActivitySignal{
 		Valid:            true,
@@ -196,9 +202,13 @@ func (o *Observer) demoteQuietActive(ctx context.Context, session domain.Session
 		ExpectedRevision: &session.Revision,
 		Event:            "stale-active-idle",
 		LaunchID:         session.Metadata.RuntimeLaunchID,
+		// Chat fencing: lifecycle drops untagged signals for chat sessions
+		// (lifecycle/manager.go currentChatController). Carrying the
+		// generation observed with this record fences the fallback to the
+		// same controller snapshot the revision fence uses.
+		ControllerGeneration: session.Metadata.ControllerGeneration,
 	})
 	if err != nil {
 		o.logger.Error("activity observer: stale-active demotion failed", "session", session.ID, "err", err)
 	}
-	return true
 }

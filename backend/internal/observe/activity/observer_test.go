@@ -332,6 +332,7 @@ func TestPollDemotesQuietActiveWithoutTerminalProof(t *testing.T) {
 	now := time.Unix(500, 0).UTC()
 	session := activeSession(now, domain.HarnessClaudeCode)
 	session.Activity.LastActivityAt = now.Add(-2 * time.Hour)
+	session.Metadata.ControllerGeneration = "gen-7"
 	sink := &fakeSink{}
 	runtime := &fakeRuntime{output: "unparseable surface"}
 	observer := New(
@@ -355,8 +356,13 @@ func TestPollDemotesQuietActiveWithoutTerminalProof(t *testing.T) {
 	if signal.ExpectedRevision == nil || *signal.ExpectedRevision != session.Revision || signal.LaunchID != "launch-1" {
 		t.Fatalf("demotion fence = %+v, want revision=%d launch=launch-1", signal, session.Revision)
 	}
-	if runtime.calls != 0 {
-		t.Fatalf("fallback read terminal output %d times, want 0", runtime.calls)
+	// Chat fencing: lifecycle silently drops untagged signals for chat
+	// sessions, so the fallback must carry the observed controller generation.
+	if signal.ControllerGeneration != "gen-7" {
+		t.Fatalf("demotion controller generation = %q, want gen-7", signal.ControllerGeneration)
+	}
+	if runtime.calls != 1 {
+		t.Fatalf("terminal reconciliation calls = %d, want 1 before fallback", runtime.calls)
 	}
 }
 
