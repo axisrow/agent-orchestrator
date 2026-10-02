@@ -55,7 +55,8 @@ export function historicalReviewStatesFrom(runs: ReviewRunFacts[], known: PRRevi
 	const byURL = new Map<string, ReviewRunFacts[]>();
 	for (const run of runs) {
 		if (knownURLs.has(run.prUrl)) continue;
-		if (run.status !== "complete" && run.status !== "delivered") continue;
+		// Same bar as runsByPRFrom: only runs with rendered content become sections.
+		if ((run.status !== "complete" && run.status !== "delivered") || !run.body?.trim()) continue;
 		byURL.set(run.prUrl, [...(byURL.get(run.prUrl) ?? []), run]);
 	}
 	return [...byURL.entries()].map(([prUrl, prRuns]) => {
