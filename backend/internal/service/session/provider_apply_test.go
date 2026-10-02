@@ -238,6 +238,23 @@ func TestApplyProviderSwitchUnknownSessionFails(t *testing.T) {
 	}
 }
 
+func TestApplyProviderSwitchDeduplicatesSessionIDs(t *testing.T) {
+	f := newProviderApplyFixture()
+	f.session("mer-1", "/ws/1", providerStamp{baseURL: "https://old.example"})
+	f.resolved["/ws/1"] = providerStamp{}
+
+	results, err := f.svc.ApplyProviderSwitch(context.Background(), []domain.SessionID{"mer-1", "mer-1", "mer-1"})
+	if err != nil {
+		t.Fatalf("ApplyProviderSwitch: %v", err)
+	}
+	if len(results) != 1 || results[0].State != providerApplyApplied {
+		t.Fatalf("expected a single applied result, got %+v", results)
+	}
+	if len(f.commander.exited) != 1 || len(f.commander.resumed) != 1 {
+		t.Fatalf("duplicate ids must run one exit+resume cycle, got exit=%v resume=%v", f.commander.exited, f.commander.resumed)
+	}
+}
+
 func TestApplyProviderSwitchBatchOrderPreservedAndIsolated(t *testing.T) {
 	f := newProviderApplyFixture()
 	f.session("mer-1", "/ws/1", providerStamp{baseURL: "https://old.example"})

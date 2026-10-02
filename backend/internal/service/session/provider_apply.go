@@ -63,7 +63,9 @@ func (s *Service) ProviderStaleness(ctx context.Context) ([]ProviderStaleness, e
 	if err != nil {
 		return nil, fmt.Errorf("provider staleness: %w", err)
 	}
-	var out []ProviderStaleness
+	// Non-nil so an empty result serializes as [] not null (the response
+	// schema promises an array).
+	out := []ProviderStaleness{}
 	for _, rec := range records {
 		stamp, current, ok, err := s.compareProviderStamp(ctx, rec)
 		if err != nil {
@@ -155,6 +157,18 @@ func (s *Service) ApplyProviderSwitch(ctx context.Context, sessionIDs []domain.S
 		for _, item := range stale {
 			targets = append(targets, item.SessionID)
 		}
+	} else {
+		// Dedup keeping first-occurrence order: a duplicated ID would
+		// otherwise run two concurrent exit+resume cycles on one session.
+		seen := make(map[domain.SessionID]bool, len(targets))
+		unique := make([]domain.SessionID, 0, len(targets))
+		for _, id := range targets {
+			if !seen[id] {
+				seen[id] = true
+				unique = append(unique, id)
+			}
+		}
+		targets = unique
 	}
 	results := make([]ProviderApplyResult, len(targets))
 	type indexed struct {
