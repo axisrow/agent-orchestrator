@@ -21,6 +21,10 @@ let daemonLogStream: WriteStream | undefined;
 let daemonLogBytes = 0;
 let daemonLogTarget: string | undefined;
 let daemonLogMaxBytes = DAEMON_LOG_MAX_BYTES;
+// Flush of a stream a rotation already replaced; closeDaemonLog waits for it
+// too, so a close-then-read (tests, quit hooks) never races the old stream's
+// last write to disk.
+let daemonLogFlush: Promise<void> = Promise.resolve();
 
 export function openDaemonLog(logPath: string, maxBytes: number = DAEMON_LOG_MAX_BYTES): void {
 	void closeDaemonLog();
@@ -67,8 +71,16 @@ export function closeDaemonLog(): Promise<void> {
 	const stream = daemonLogStream;
 	daemonLogStream = undefined;
 	daemonLogBytes = 0;
-	if (!stream) return Promise.resolve();
-	return new Promise((resolve) => stream.end(() => resolve()));
+	const previous = daemonLogFlush;
+	if (!stream) return previous;
+	const ended = new Promise<void>((resolve) => {
+		stream.end(() => resolve());
+	});
+	daemonLogFlush = ended;
+	return ended.then(() => {
+		if (daemonLogFlush === ended) daemonLogFlush = Promise.resolve();
+		return previous;
+	});
 }
 
 export function writeDaemonLog(text: string): void {
