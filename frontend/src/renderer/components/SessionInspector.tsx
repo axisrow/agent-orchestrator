@@ -93,6 +93,7 @@ import {
 	reviewSessionRunAction,
 	sessionReviewsQueryOptions,
 	type PRReviewState,
+	historicalReviewStatesFrom,
 	type ReviewRunFacts,
 } from "../lib/session-reviews";
 
@@ -1837,8 +1838,11 @@ function MergedReviewsSection({
 	const queryClient = useQueryClient();
 	const openInAOBrowser = useSessionBrowserLink(session);
 	const openReviewStates = openReviewStatesFor(session, reviewStates);
-	const runsByPR = runsByPRFrom(openReviewStates, runs);
-	const aoStates = triggeredReviewStatesFrom(openReviewStates, runs);
+	// Merged/closed PRs from earlier in this session keep their runs but no live
+	// state — synthesize one per PR so the Reviews tab covers the whole history.
+	const reviewStatesForView = [...openReviewStates, ...historicalReviewStatesFrom(runs, openReviewStates)];
+	const runsByPR = runsByPRFrom(reviewStatesForView, runs);
+	const aoStates = triggeredReviewStatesFrom(reviewStatesForView, runs);
 
 	// Union by PR number, newest PR first. A PR can appear on either side alone.
 	const byNumber = new Map<number, { ao?: PRReviewState; github?: SessionPRSummary }>();
