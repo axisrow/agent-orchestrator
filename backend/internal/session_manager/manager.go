@@ -1329,6 +1329,7 @@ func (m *Manager) Spawn(ctx context.Context, cfg ports.SpawnConfig) (domain.Sess
 		Model:  resolvedModelForMetadata(cfg.Harness, agentConfig, adapterConfig),
 		Effort: agentConfig.Effort,
 	}
+	metadata.ProviderBaseURL, metadata.ProviderModel = stampSessionProvider(ctx, ws.Path, env)
 	if prompt != "" {
 		metadata.LatestUserPromptAt = m.clock()
 	}
@@ -2984,6 +2985,7 @@ func (m *Manager) relaunchSessionWithPolicyAndGeneration(ctx context.Context, op
 		Prompt:                    rec.Metadata.Prompt,
 		BrowserCapabilityVerifier: rec.Metadata.BrowserCapabilityVerifier,
 	}
+	metadata.ProviderBaseURL, metadata.ProviderModel = stampSessionProvider(ctx, ws.Path, env)
 	// Bind an exact native resume to the target launch immediately. Passive Codex
 	// resumes do not necessarily emit SessionStart until the next user turn, and
 	// Claude emits SessionStart after its resume process is already running, but

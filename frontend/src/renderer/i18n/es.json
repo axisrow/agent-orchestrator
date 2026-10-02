@@ -2346,5 +2346,14 @@
 	"settings.gateway.save": "Guardar",
 	"settings.gateway.effectiveOn": "Pasarela activa: {{baseUrl}} ({{source}})",
 	"settings.gateway.effectiveOff": "Sin pasarela configurada; las solicitudes van directamente a Anthropic",
-	"settings.gateway.effectiveSourceOnly": "Anulación de pasarela activa en el ámbito {{source}} (solo token/modelo, sin URL base)"
+	"settings.gateway.effectiveSourceOnly": "Anulación de pasarela activa en el ámbito {{source}} (solo token/modelo, sin URL base)",
+	"settings.gateway.applyTitle": "¿Aplicar el nuevo proveedor a las sesiones en ejecución?",
+	"settings.gateway.applyDescription": "Estas sesiones en ejecución todavía usan el proveedor anterior. Al aplicar, cada sesión se reinicia en su lugar; las transcripciones y el contexto se conservan.",
+	"settings.gateway.applySessionItem": "{{name}} ({{mode}})",
+	"settings.gateway.applyNow": "Aplicar ahora",
+	"settings.gateway.applyAppliedToast_one": "Proveedor aplicado a {{count}} sesión",
+	"settings.gateway.applyAppliedToast_other": "Proveedor aplicado a {{count}} sesiones",
+	"settings.gateway.applyAppliedToast_many": "Proveedor aplicado a {{count}} sesiones",
+	"settings.gateway.applySkippedToast": "{{name}} ya usa el nuevo proveedor",
+	"settings.gateway.applyFailedToast": "No se pudo cambiar {{name}}"
 }

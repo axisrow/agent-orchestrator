@@ -2295,5 +2295,13 @@
 	"settings.gateway.save": "Save",
 	"settings.gateway.effectiveOn": "Active gateway: {{baseUrl}} ({{source}})",
 	"settings.gateway.effectiveOff": "No gateway configured; requests go to Anthropic directly",
-	"settings.gateway.effectiveSourceOnly": "Gateway override active at the {{source}} scope (token/model only, no base URL)"
+	"settings.gateway.effectiveSourceOnly": "Gateway override active at the {{source}} scope (token/model only, no base URL)",
+	"settings.gateway.applyTitle": "Apply the new provider to running sessions?",
+	"settings.gateway.applyDescription": "These running sessions still use the previous provider. Applying restarts each session in place — transcripts and context are preserved.",
+	"settings.gateway.applySessionItem": "{{name}} ({{mode}})",
+	"settings.gateway.applyNow": "Apply now",
+	"settings.gateway.applyAppliedToast_one": "Provider applied to {{count}} session",
+	"settings.gateway.applyAppliedToast_other": "Provider applied to {{count}} sessions",
+	"settings.gateway.applySkippedToast": "{{name}} already uses the new provider",
+	"settings.gateway.applyFailedToast": "Could not switch {{name}}"
 }

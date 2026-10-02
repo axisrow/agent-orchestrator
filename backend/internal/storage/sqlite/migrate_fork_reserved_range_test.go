@@ -52,6 +52,7 @@ const forkReservedFloor int64 = 9000
 var forkLocalMigrations = []string{
 	"add_user_config",
 	"review_run_publication",
+	"session_provider_stamp",
 }
 
 func TestForkMigrationsUseReservedRange(t *testing.T) {

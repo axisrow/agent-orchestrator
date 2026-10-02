@@ -2315,5 +2315,13 @@
 	"settings.gateway.save": "저장",
 	"settings.gateway.effectiveOn": "활성 게이트웨이: {{baseUrl}} ({{source}})",
 	"settings.gateway.effectiveOff": "게이트웨이가 구성되지 않았습니다. 요청이 Anthropic으로 직접 전송됩니다",
-	"settings.gateway.effectiveSourceOnly": "{{source}} 범위에서 게이트웨이 재정의 활성(토큰/모델만, 기본 URL 없음)"
+	"settings.gateway.effectiveSourceOnly": "{{source}} 범위에서 게이트웨이 재정의 활성(토큰/모델만, 기본 URL 없음)",
+	"settings.gateway.applyTitle": "실행 중인 세션에 새 공급자를 적용할까요?",
+	"settings.gateway.applyDescription": "이 실행 중인 세션들은 이전 공급자를 여전히 사용 중입니다. 적용하면 각 세션이 그 자리에서 다시 시작되며 — 대화 기록과 컨텍스트는 유지됩니다.",
+	"settings.gateway.applySessionItem": "{{name}} ({{mode}})",
+	"settings.gateway.applyNow": "지금 적용",
+	"settings.gateway.applyAppliedToast_one": "{{count}}개 세션에 공급자를 적용했습니다",
+	"settings.gateway.applyAppliedToast_other": "{{count}}개 세션에 공급자를 적용했습니다",
+	"settings.gateway.applySkippedToast": "{{name}}은(는) 이미 새 공급자를 사용 중입니다",
+	"settings.gateway.applyFailedToast": "{{name}} 전환 실패"
 }

@@ -2315,5 +2315,13 @@
 	"settings.gateway.save": "Speichern",
 	"settings.gateway.effectiveOn": "Aktives Gateway: {{baseUrl}} ({{source}})",
 	"settings.gateway.effectiveOff": "Kein Gateway konfiguriert; Anfragen gehen direkt an Anthropic",
-	"settings.gateway.effectiveSourceOnly": "Gateway-Override aktiv im {{source}}-Scope (nur Token/Modell, keine Basis-URL)"
+	"settings.gateway.effectiveSourceOnly": "Gateway-Override aktiv im {{source}}-Scope (nur Token/Modell, keine Basis-URL)",
+	"settings.gateway.applyTitle": "Neuen Anbieter auf laufende Sitzungen anwenden?",
+	"settings.gateway.applyDescription": "Diese laufenden Sitzungen verwenden noch den vorherigen Anbieter. Beim Anwenden wird jede Sitzung an Ort und Stelle neu gestartet — Transkripte und Kontext bleiben erhalten.",
+	"settings.gateway.applySessionItem": "{{name}} ({{mode}})",
+	"settings.gateway.applyNow": "Jetzt anwenden",
+	"settings.gateway.applyAppliedToast_one": "Anbieter auf {{count}} Sitzung angewendet",
+	"settings.gateway.applyAppliedToast_other": "Anbieter auf {{count}} Sitzungen angewendet",
+	"settings.gateway.applySkippedToast": "{{name}} verwendet bereits den neuen Anbieter",
+	"settings.gateway.applyFailedToast": "{{name}} konnte nicht gewechselt werden"
 }

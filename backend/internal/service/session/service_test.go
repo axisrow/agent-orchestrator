@@ -2550,6 +2550,9 @@ type fakeCommander struct {
 	killsAtSpawn     int
 	restoreErr       error
 	restoreResult    sessionmanager.RestoreResult
+	exitErr          error
+	exitErrFunc      func(domain.SessionID) error
+	resumeErr        error
 	readyErr         error
 	backgroundResult string
 	backgroundErr    error
@@ -2608,14 +2611,29 @@ func (f *fakeCommander) RestoreWithMode(context.Context, domain.SessionID) (sess
 	return f.restoreResult, nil
 }
 func (f *fakeCommander) ResumeAgentWithMode(_ context.Context, id domain.SessionID) (sessionmanager.RestoreResult, error) {
+	f.killMu.Lock()
 	f.resumed = append(f.resumed, id)
+	f.killMu.Unlock()
+	if f.resumeErr != nil {
+		return sessionmanager.RestoreResult{}, f.resumeErr
+	}
 	if f.restoreErr != nil {
 		return sessionmanager.RestoreResult{}, f.restoreErr
 	}
 	return f.restoreResult, nil
 }
 func (f *fakeCommander) ExitAgent(_ context.Context, id domain.SessionID) (domain.SessionRecord, error) {
+	f.killMu.Lock()
 	f.exited = append(f.exited, id)
+	f.killMu.Unlock()
+	if f.exitErrFunc != nil {
+		if err := f.exitErrFunc(id); err != nil {
+			return domain.SessionRecord{}, err
+		}
+	}
+	if f.exitErr != nil {
+		return domain.SessionRecord{}, f.exitErr
+	}
 	if f.restoreErr != nil {
 		return domain.SessionRecord{}, f.restoreErr
 	}

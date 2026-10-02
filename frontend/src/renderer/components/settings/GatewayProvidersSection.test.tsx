@@ -126,4 +126,65 @@ describe("GatewayProvidersSection", () => {
 			params: { query: { projectId: "p1" } },
 		});
 	});
+
+	it("offers the apply dialog after a save when sessions are stale", async () => {
+		apiClient.PUT.mockResolvedValue({ data: appConfig, error: undefined });
+		apiClient.GET.mockImplementation((url: string) => {
+			if (url === "/api/v1/sessions/provider-staleness") {
+				return Promise.resolve({
+					data: {
+						sessions: [
+							{
+								sessionId: "mer-1",
+								displayName: "mer-1",
+								mode: "tui",
+								stampBaseUrl: "https://old.example",
+							},
+						],
+					},
+					error: undefined,
+				});
+			}
+			return Promise.resolve({ data: appConfig, error: undefined });
+		});
+		const user = userEvent.setup();
+		renderSection();
+		await screen.findByDisplayValue("https://gw.example.com");
+		await user.type(screen.getByLabelText("Auth token"), "new-token");
+		await user.click(screen.getByRole("button", { name: "Save" }));
+		expect(await screen.findByRole("button", { name: "Apply now" })).toBeInTheDocument();
+		expect(screen.getByText(/apply the new provider/i)).toBeInTheDocument();
+		expect(screen.getByText(/mer-1 \(tui\)/)).toBeInTheDocument();
+	});
+
+	it("shows no apply dialog when no running session is stale", async () => {
+		apiClient.PUT.mockResolvedValue({ data: appConfig, error: undefined });
+		apiClient.GET.mockImplementation((url: string) => {
+			if (url === "/api/v1/sessions/provider-staleness") {
+				return Promise.resolve({ data: { sessions: [] }, error: undefined });
+			}
+			return Promise.resolve({ data: appConfig, error: undefined });
+		});
+		const user = userEvent.setup();
+		renderSection();
+		await screen.findByDisplayValue("https://gw.example.com");
+		await user.type(screen.getByLabelText("Auth token"), "new-token");
+		await user.click(screen.getByRole("button", { name: "Save" }));
+		await waitFor(() =>
+			expect(apiClient.GET).toHaveBeenCalledWith("/api/v1/sessions/provider-staleness"),
+		);
+		expect(screen.queryByRole("button", { name: "Apply now" })).toBeNull();
+	});
+
+	it("skips the staleness check when the save itself fails", async () => {
+		apiClient.PUT.mockResolvedValue({ data: undefined, error: "boom" });
+		const user = userEvent.setup();
+		renderSection();
+		await screen.findByDisplayValue("https://gw.example.com");
+		await user.type(screen.getByLabelText("Auth token"), "new-token");
+		await user.click(screen.getByRole("button", { name: "Save" }));
+		await waitFor(() => expect(apiClient.PUT).toHaveBeenCalledTimes(1));
+		expect(apiClient.GET).not.toHaveBeenCalledWith("/api/v1/sessions/provider-staleness");
+		expect(screen.queryByRole("button", { name: "Apply now" })).toBeNull();
+	});
 });

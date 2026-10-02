@@ -2315,5 +2315,13 @@
 	"settings.gateway.save": "保存",
 	"settings.gateway.effectiveOn": "アクティブなゲートウェイ: {{baseUrl}} ({{source}})",
 	"settings.gateway.effectiveOff": "ゲートウェイ未設定。リクエストは Anthropic に直接送られます",
-	"settings.gateway.effectiveSourceOnly": "{{source}} スコープでゲートウェイ上書きが有効(トークン/モデルのみ、ベース URL なし)"
+	"settings.gateway.effectiveSourceOnly": "{{source}} スコープでゲートウェイ上書きが有効(トークン/モデルのみ、ベース URL なし)",
+	"settings.gateway.applyTitle": "新しいプロバイダーを実行中のセッションに適用しますか?",
+	"settings.gateway.applyDescription": "これらの実行中のセッションは以前のプロバイダーを使い続けています。適用すると各セッションがその場で再起動されます — 会話の履歴とコンテキストは保持されます。",
+	"settings.gateway.applySessionItem": "{{name}}({{mode}})",
+	"settings.gateway.applyNow": "今すぐ適用",
+	"settings.gateway.applyAppliedToast_one": "{{count}} 個のセッションにプロバイダーを適用しました",
+	"settings.gateway.applyAppliedToast_other": "{{count}} 個のセッションにプロバイダーを適用しました",
+	"settings.gateway.applySkippedToast": "{{name}} は既に新しいプロバイダーを使用しています",
+	"settings.gateway.applyFailedToast": "{{name}} を切り替えられませんでした"
 }

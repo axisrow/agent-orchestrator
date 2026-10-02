@@ -2346,5 +2346,14 @@
 	"settings.gateway.save": "Salvar",
 	"settings.gateway.effectiveOn": "Gateway ativo: {{baseUrl}} ({{source}})",
 	"settings.gateway.effectiveOff": "Nenhum gateway configurado; as solicitações vão direto para a Anthropic",
-	"settings.gateway.effectiveSourceOnly": "Substituição de gateway ativa no escopo {{source}} (apenas token/modelo, sem URL base)"
+	"settings.gateway.effectiveSourceOnly": "Substituição de gateway ativa no escopo {{source}} (apenas token/modelo, sem URL base)",
+	"settings.gateway.applyTitle": "Aplicar o novo provedor às sessões em execução?",
+	"settings.gateway.applyDescription": "Estas sessões em execução ainda usam o provedor anterior. Ao aplicar, cada sessão é reiniciada no próprio lugar — transcrições e contexto são preservados.",
+	"settings.gateway.applySessionItem": "{{name}} ({{mode}})",
+	"settings.gateway.applyNow": "Aplicar agora",
+	"settings.gateway.applyAppliedToast_one": "Provedor aplicado a {{count}} sessão",
+	"settings.gateway.applyAppliedToast_other": "Provedor aplicado a {{count}} sessões",
+	"settings.gateway.applyAppliedToast_many": "Provedor aplicado a {{count}} sessões",
+	"settings.gateway.applySkippedToast": "{{name}} já usa o novo provedor",
+	"settings.gateway.applyFailedToast": "Não foi possível alternar {{name}}"
 }

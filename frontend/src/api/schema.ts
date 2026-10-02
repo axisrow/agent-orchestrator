@@ -2632,6 +2632,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sessions/apply-provider": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Relaunch running claude-code sessions on the effective provider, preserving context */
+        post: operations["applyProviderSwitch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sessions/cleanup": {
         parameters: {
             query?: never;
@@ -2643,6 +2660,23 @@ export interface paths {
         put?: never;
         /** Clean up terminated session workspaces */
         post: operations["cleanupSessions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sessions/provider-staleness": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List running claude-code sessions whose provider differs from the effective gateway config */
+        get: operations["listStaleProviderSessions"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3111,6 +3145,13 @@ export interface components {
         };
         AgentSwitchResponse: {
             switch: components["schemas"]["AgentSwitch"];
+        };
+        ApplyProviderRequest: {
+            sessionIds?: string[];
+        };
+        ApplyProviderResponse: {
+            ok: boolean;
+            results: components["schemas"]["SessionProviderApplyResult"][];
         };
         AttachmentInput: {
             data: string;
@@ -4497,6 +4538,9 @@ export interface components {
             providerTurnId: string;
             sourceTurnId: string;
         };
+        ProviderStalenessResponse: {
+            sessions: components["schemas"]["SessionProviderStaleness"][];
+        };
         PushDeviceEnvelope: {
             device: components["schemas"]["PushDeviceResponse"];
         };
@@ -4836,6 +4880,21 @@ export interface components {
             entry?: string;
             previewUrl?: string;
             sessionId: string;
+        };
+        SessionProviderApplyResult: {
+            error?: string;
+            sessionId: string;
+            /** @enum {string} */
+            state: "applied" | "skipped" | "failed";
+        };
+        SessionProviderStaleness: {
+            currentBaseUrl?: string;
+            currentModel?: string;
+            displayName?: string;
+            mode: string;
+            sessionId: string;
+            stampBaseUrl?: string;
+            stampModel?: string;
         };
         SessionResponse: {
             session: components["schemas"]["ControllersSessionView"];
@@ -15491,6 +15550,66 @@ export interface operations {
             };
         };
     };
+    applyProviderSwitch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ApplyProviderRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplyProviderResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
     cleanupSessions: {
         parameters: {
             query?: {
@@ -15510,6 +15629,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CleanupSessionsResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    listStaleProviderSessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderStalenessResponse"];
                 };
             };
             /** @description Internal Server Error */

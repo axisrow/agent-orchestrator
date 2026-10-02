@@ -180,6 +180,7 @@ var shippedMigrations = map[int64]string{
 	// migrate_fork_reserved_range_test.go for why.
 	9001: "9001_add_user_config.sql",
 	9004: "9004_review_run_publication.sql",
+	9005: "9005_session_provider_stamp.sql",
 }
 
 // burnedVersion reports version numbers that must never be (re)used: they

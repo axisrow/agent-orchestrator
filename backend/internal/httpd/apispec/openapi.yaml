@@ -8076,6 +8076,49 @@ paths:
         decorated
       tags:
       - sessions
+  /api/v1/sessions/apply-provider:
+    post:
+      operationId: applyProviderSwitch
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplyProviderRequest'
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApplyProviderResponse'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Bad Request
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Conflict
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: Relaunch running claude-code sessions on the effective provider, preserving
+        context
+      tags:
+      - sessions
   /api/v1/sessions/cleanup:
     post:
       operationId: cleanupSessions
@@ -8108,6 +8151,32 @@ paths:
                 $ref: '#/components/schemas/APIError'
           description: Not Implemented
       summary: Clean up terminated session workspaces
+      tags:
+      - sessions
+  /api/v1/sessions/provider-staleness:
+    get:
+      operationId: listStaleProviderSessions
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderStalenessResponse'
+          description: OK
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: List running claude-code sessions whose provider differs from the effective
+        gateway config
       tags:
       - sessions
   /api/v1/settings:
@@ -9328,6 +9397,25 @@ components:
           $ref: '#/components/schemas/AgentSwitch'
       required:
       - switch
+      type: object
+    ApplyProviderRequest:
+      properties:
+        sessionIds:
+          items:
+            type: string
+          type: array
+      type: object
+    ApplyProviderResponse:
+      properties:
+        ok:
+          type: boolean
+        results:
+          items:
+            $ref: '#/components/schemas/SessionProviderApplyResult'
+          type: array
+      required:
+      - ok
+      - results
       type: object
     AttachmentInput:
       properties:
@@ -13047,6 +13135,15 @@ components:
       - providerTurnId
       - activityId
       type: object
+    ProviderStalenessResponse:
+      properties:
+        sessions:
+          items:
+            $ref: '#/components/schemas/SessionProviderStaleness'
+          type: array
+      required:
+      - sessions
+      type: object
     PushDeviceEnvelope:
       properties:
         device:
@@ -13951,6 +14048,42 @@ components:
           type: string
       required:
       - sessionId
+      type: object
+    SessionProviderApplyResult:
+      properties:
+        error:
+          type: string
+        sessionId:
+          type: string
+        state:
+          enum:
+          - applied
+          - skipped
+          - failed
+          type: string
+      required:
+      - sessionId
+      - state
+      type: object
+    SessionProviderStaleness:
+      properties:
+        currentBaseUrl:
+          type: string
+        currentModel:
+          type: string
+        displayName:
+          type: string
+        mode:
+          type: string
+        sessionId:
+          type: string
+        stampBaseUrl:
+          type: string
+        stampModel:
+          type: string
+      required:
+      - sessionId
+      - mode
       type: object
     SessionResponse:
       properties:

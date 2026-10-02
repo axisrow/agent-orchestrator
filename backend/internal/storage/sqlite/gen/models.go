@@ -677,6 +677,8 @@ type Session struct {
 	IsTaskPreparation                bool
 	AutomationRunID                  *domain.AutomationRunID
 	AutomationLaunchCompleted        bool
+	ProviderBaseURL                  string
+	ProviderModel                    string
 }
 
 type SessionCleanupFact struct {

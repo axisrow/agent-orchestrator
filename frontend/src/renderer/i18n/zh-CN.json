@@ -2297,5 +2297,13 @@
 	"settings.gateway.save": "保存",
 	"settings.gateway.effectiveOn": "当前网关:{{baseUrl}}({{source}})",
 	"settings.gateway.effectiveOff": "未配置网关;请求直接发送到 Anthropic",
-	"settings.gateway.effectiveSourceOnly": "{{source}} 范围的网关覆盖生效(仅令牌/模型,无基础 URL)"
+	"settings.gateway.effectiveSourceOnly": "{{source}} 范围的网关覆盖生效(仅令牌/模型,无基础 URL)",
+	"settings.gateway.applyTitle": "将新提供方应用到运行中的会话?",
+	"settings.gateway.applyDescription": "以下运行中的会话仍在使用旧提供方。应用后将就地重启每个会话——对话记录和上下文会完整保留。",
+	"settings.gateway.applySessionItem": "{{name}}({{mode}})",
+	"settings.gateway.applyNow": "立即应用",
+	"settings.gateway.applyAppliedToast_one": "已将提供方应用到 {{count}} 个会话",
+	"settings.gateway.applyAppliedToast_other": "已将提供方应用到 {{count}} 个会话",
+	"settings.gateway.applySkippedToast": "{{name}} 已在使用新提供方",
+	"settings.gateway.applyFailedToast": "无法切换 {{name}}"
 }

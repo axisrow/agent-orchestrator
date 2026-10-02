@@ -210,6 +210,9 @@ type Service struct {
 	titleRefinementSlots   chan struct{}
 	titleRefinementMu      sync.Mutex
 	titleRefinementCancels map[domain.SessionID]context.CancelFunc
+	// resolveStampOverride injects provider-stamp resolution for tests so
+	// staleness never reads the developer's real ~/.claude. nil uses agentcreds.
+	resolveStampOverride func(ctx context.Context, workingDir string, projectEnv map[string]string) (string, string)
 }
 
 // SetChatProviderPreserver wires the live Chat lifetime observation after both

@@ -900,6 +900,24 @@ type ResumeAgentResponse struct {
 	Session    SessionView                `json:"session"`
 }
 
+// ProviderStalenessResponse is the body of GET /api/v1/sessions/provider-staleness.
+type ProviderStalenessResponse struct {
+	Sessions []sessionsvc.ProviderStaleness `json:"sessions"`
+}
+
+// ApplyProviderRequest is the body of POST /api/v1/sessions/apply-provider.
+// Empty sessionIds applies to every stale running claude-code session.
+type ApplyProviderRequest struct {
+	SessionIds []string `json:"sessionIds,omitempty"`
+}
+
+// ApplyProviderResponse is the body of POST /api/v1/sessions/apply-provider.
+// The request never fails at batch level; each session reports its own outcome.
+type ApplyProviderResponse struct {
+	OK      bool                             `json:"ok"`
+	Results []sessionsvc.ProviderApplyResult `json:"results"`
+}
+
 // StartSessionInterfaceTransitionRequest is the body of POST
 // /api/v1/sessions/{sessionId}/interface-transition.
 type StartSessionInterfaceTransitionRequest struct {

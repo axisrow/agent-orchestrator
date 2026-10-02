@@ -6,12 +6,14 @@ import type { components } from "../../../api/schema";
 import { apiClient, apiErrorMessage } from "../../lib/api-client";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { GatewayApplySessionsDialog } from "./GatewayApplySessionsDialog";
 import { SettingsRow } from "./SettingsRow";
 import { SettingsSection } from "./SettingsSection";
 
 type GatewayConfig = components["schemas"]["ControllersGatewayConfigResponse"];
 type GatewayProbeResponse =
 	components["schemas"]["ControllersGatewayProbeResponse"];
+type Staleness = components["schemas"]["SessionProviderStaleness"];
 
 export const gatewayConfigQueryKey = (projectId?: string) =>
 	["settings", "gateway", projectId ?? "app"] as const;
@@ -53,6 +55,7 @@ export function GatewayProvidersSection({
 		result?: GatewayProbeResponse;
 		error?: string;
 	} | null>(null);
+	const [stale, setStale] = useState<Staleness[] | null>(null);
 
 	const configQuery = useQuery({
 		queryKey: gatewayConfigQueryKey(projectId),
@@ -100,7 +103,18 @@ export function GatewayProvidersSection({
 			});
 			if (error) throw new Error(apiErrorMessage(error));
 		},
-		onSuccess: () => void refresh(),
+		onSuccess: () => {
+			void refresh();
+			// Fetch-on-save: no query-cache entry for staleness, the dialog is
+			// driven entirely by this one response. ponytail: if another surface
+			// needs staleness, promote it to a useQuery with this key.
+			void apiClient
+				.GET("/api/v1/sessions/provider-staleness")
+				.then(({ data }) => {
+					if (data && data.sessions.length > 0) setStale(data.sessions);
+				})
+				.catch(() => undefined);
+		},
 	});
 
 	const runProbe = useMutation({
@@ -267,6 +281,9 @@ export function GatewayProvidersSection({
 			</p>
 			{scopeEditor("app", app, setAppForm)}
 			{projectId ? scopeEditor("project", project, setProjectForm) : null}
+			{stale ? (
+				<GatewayApplySessionsDialog sessions={stale} onClose={() => setStale(null)} />
+			) : null}
 		</SettingsSection>
 	);
 }

@@ -269,6 +269,9 @@ var schemaNames = map[string]string{ //nolint:gosec // Public OpenAPI type names
 	"ControllersRestoreSessionResponse":                   "RestoreSessionResponse",
 	"ControllersExitAgentResponse":                        "ExitAgentResponse",
 	"ControllersResumeAgentResponse":                      "ResumeAgentResponse",
+	"ControllersProviderStalenessResponse":                "ProviderStalenessResponse",
+	"ControllersApplyProviderRequest":                     "ApplyProviderRequest",
+	"ControllersApplyProviderResponse":                    "ApplyProviderResponse",
 	"ControllersSwitchAgentRequest":                       "SwitchAgentRequest",
 	"ControllersAgentSwitchView":                          "AgentSwitch",
 	"ControllersAgentSwitchResponse":                      "AgentSwitchResponse",
@@ -2649,6 +2652,28 @@ func sessionOperations() []operation {
 			resps: []respUnit{
 				{http.StatusOK, controllers.ResumeAgentResponse{}},
 				{http.StatusNotFound, envelope.APIError{}},
+				{http.StatusConflict, envelope.APIError{}},
+				{http.StatusInternalServerError, envelope.APIError{}},
+				{http.StatusNotImplemented, envelope.APIError{}},
+			},
+		},
+		{
+			method: http.MethodGet, path: "/api/v1/sessions/provider-staleness", id: "listStaleProviderSessions", tag: "sessions",
+			summary: "List running claude-code sessions whose provider differs from the effective gateway config",
+			resps: []respUnit{
+				{http.StatusOK, controllers.ProviderStalenessResponse{}},
+				{http.StatusInternalServerError, envelope.APIError{}},
+				{http.StatusNotImplemented, envelope.APIError{}},
+			},
+		},
+		{
+			method: http.MethodPost, path: "/api/v1/sessions/apply-provider", id: "applyProviderSwitch", tag: "sessions",
+			summary:         "Relaunch running claude-code sessions on the effective provider, preserving context",
+			reqBody:         controllers.ApplyProviderRequest{},
+			optionalReqBody: true,
+			resps: []respUnit{
+				{http.StatusOK, controllers.ApplyProviderResponse{}},
+				{http.StatusBadRequest, envelope.APIError{}},
 				{http.StatusConflict, envelope.APIError{}},
 				{http.StatusInternalServerError, envelope.APIError{}},
 				{http.StatusNotImplemented, envelope.APIError{}},

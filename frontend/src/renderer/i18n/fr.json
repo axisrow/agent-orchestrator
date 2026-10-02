@@ -2346,5 +2346,14 @@
 	"settings.gateway.save": "Enregistrer",
 	"settings.gateway.effectiveOn": "Passerelle active : {{baseUrl}} ({{source}})",
 	"settings.gateway.effectiveOff": "Aucune passerelle configurée ; les requêtes vont directement à Anthropic",
-	"settings.gateway.effectiveSourceOnly": "Surcharge de passerelle active à la portée {{source}} (jeton/modèle uniquement, sans URL de base)"
+	"settings.gateway.effectiveSourceOnly": "Surcharge de passerelle active à la portée {{source}} (jeton/modèle uniquement, sans URL de base)",
+	"settings.gateway.applyTitle": "Appliquer le nouveau fournisseur aux sessions en cours ?",
+	"settings.gateway.applyDescription": "Ces sessions en cours utilisent encore le fournisseur précédent. En appliquant, chaque session redémarre sur place — les transcriptions et le contexte sont conservés.",
+	"settings.gateway.applySessionItem": "{{name}} ({{mode}})",
+	"settings.gateway.applyNow": "Appliquer maintenant",
+	"settings.gateway.applyAppliedToast_one": "Fournisseur appliqué à {{count}} session",
+	"settings.gateway.applyAppliedToast_other": "Fournisseur appliqué à {{count}} sessions",
+	"settings.gateway.applyAppliedToast_many": "Fournisseur appliqué à {{count}} sessions",
+	"settings.gateway.applySkippedToast": "{{name}} utilise déjà le nouveau fournisseur",
+	"settings.gateway.applyFailedToast": "Impossible de basculer {{name}}"
 }
