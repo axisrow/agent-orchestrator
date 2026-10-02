@@ -20,6 +20,7 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/service/githubpat"
 	importsvc "github.com/aoagents/agent-orchestrator/backend/internal/service/importer"
 	projectsvc "github.com/aoagents/agent-orchestrator/backend/internal/service/project"
+	userconfigsvc "github.com/aoagents/agent-orchestrator/backend/internal/service/userconfig"
 )
 
 // Build reflects the Go contract types and the operation registry below into
@@ -230,6 +231,7 @@ var schemaNames = map[string]string{ //nolint:gosec // Public OpenAPI type names
 	"DomainContainerReapConfig":       "ContainerReapConfig",
 	"DomainAgentConfig":               "AgentConfig",
 	"DomainRoleOverride":              "RoleOverride",
+	"DomainMCPConfig":                 "MCPConfig",
 	// httpd/controllers (wire envelopes)
 	"ControllersListProjectsResponse":                     "ListProjectsResponse",
 	"ControllersProjectResponse":                          "ProjectResponse",
@@ -503,6 +505,9 @@ var schemaNames = map[string]string{ //nolint:gosec // Public OpenAPI type names
 	"ProjectUpdateSettingsInput":        "UpdateProjectSettingsInput",
 	"ProjectWorkspaceRepo":              "WorkspaceRepo",
 	"SessionWorkspaceFileStatus":        "WorkspaceFileStatus",
+	// service/userconfig + controller wire envelopes
+	"UserconfigSetUserConfigInput":  "SetUserConfigInput",
+	"ControllersUserConfigResponse": "UserConfigResponse",
 	// httpd/controllers: GitHub PAT wire envelopes
 	"ControllersPutGitHubPATRequest": "PutGitHubPATRequest",
 	"GithubpatRepo":                  "GitHubRepo",
@@ -600,6 +605,7 @@ func operations() []operation {
 	ops := append([]operation{}, eventOperations()...)
 	ops = append(ops, agentOperations()...)
 	ops = append(ops, projectOperations()...)
+	ops = append(ops, userConfigOperations()...)
 	ops = append(ops, sessionOperations()...)
 	ops = append(ops, automationOperations()...)
 	ops = append(ops, prOperations()...)
@@ -874,6 +880,37 @@ func shellTerminalOperations() []operation {
 				{http.StatusOK, controllers.SettingsResponse{}},
 				{http.StatusBadRequest, envelope.APIError{}},
 				{http.StatusInternalServerError, envelope.APIError{}},
+				{http.StatusNotImplemented, envelope.APIError{}},
+			},
+		},
+		{
+			method: http.MethodGet, path: "/api/v1/settings/gateway", id: "getGatewayConfig", tag: "settings",
+			summary:    "Read the Anthropic-compatible gateway configuration per scope",
+			pathParams: []any{controllers.GatewayConfigQuery{}},
+			resps: []respUnit{
+				{http.StatusOK, controllers.GatewayConfigResponse{}},
+				{http.StatusInternalServerError, envelope.APIError{}},
+				{http.StatusNotImplemented, envelope.APIError{}},
+			},
+		},
+		{
+			method: http.MethodPut, path: "/api/v1/settings/gateway", id: "updateGatewayConfig", tag: "settings",
+			summary: "Write the Anthropic-compatible gateway entry for one scope",
+			reqBody: controllers.UpdateGatewayConfigRequest{},
+			resps: []respUnit{
+				{http.StatusOK, controllers.GatewayConfigResponse{}},
+				{http.StatusBadRequest, envelope.APIError{}},
+				{http.StatusInternalServerError, envelope.APIError{}},
+				{http.StatusNotImplemented, envelope.APIError{}},
+			},
+		},
+		{
+			method: http.MethodPost, path: "/api/v1/settings/gateway/probe", id: "probeGateway", tag: "settings",
+			summary: "Validate a gateway base URL and token without saving them",
+			reqBody: controllers.GatewayProbeRequest{},
+			resps: []respUnit{
+				{http.StatusOK, controllers.GatewayProbeResponse{}},
+				{http.StatusBadRequest, envelope.APIError{}},
 				{http.StatusNotImplemented, envelope.APIError{}},
 			},
 		},
@@ -2000,6 +2037,32 @@ func eventOperations() []operation {
 	}
 }
 
+// userConfigOperations declares the singleton /user-config surface. The set must
+// stay 1:1 with the routes UserConfigController.Register mounts —
+// TestRouteSpecParity fails the build otherwise.
+func userConfigOperations() []operation {
+	return []operation{
+		{
+			method: http.MethodGet, path: "/api/v1/user-config", id: "getUserConfig", tag: "config",
+			summary: "Get the user-scoped agent config (the lowest-precedence scope above projects)",
+			resps: []respUnit{
+				{http.StatusOK, controllers.UserConfigResponse{}},
+				{http.StatusInternalServerError, envelope.APIError{}},
+			},
+		},
+		{
+			method: http.MethodPut, path: "/api/v1/user-config", id: "setUserConfig", tag: "config",
+			summary: "Replace the user-scoped agent config wholesale (a zero agentConfig clears it)",
+			reqBody: userconfigsvc.SetUserConfigInput{},
+			resps: []respUnit{
+				{http.StatusOK, controllers.UserConfigResponse{}},
+				{http.StatusBadRequest, envelope.APIError{}},
+				{http.StatusInternalServerError, envelope.APIError{}},
+			},
+		},
+	}
+}
+
 // projectOperations declares the canonical /projects operations. The set must
 // stay 1:1 with the routes ProjectsController.Register mounts —
 // TestRouteSpecParity fails the build otherwise.
@@ -2841,6 +2904,7 @@ func prOperations() []operation {
 				{http.StatusNotFound, envelope.APIError{}},
 				{http.StatusConflict, envelope.APIError{}},
 				{http.StatusUnprocessableEntity, envelope.APIError{}},
+				{http.StatusServiceUnavailable, envelope.APIError{}},
 				{http.StatusNotImplemented, envelope.APIError{}},
 			},
 		},

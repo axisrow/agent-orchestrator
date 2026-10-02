@@ -612,6 +612,9 @@ type ReviewRun struct {
 	BatchID          string
 	AutoInjectReview bool
 	TriggerSource    domain.ReviewTriggerSource
+	Findings         string
+	PublishState     string
+	PublishError     string
 }
 
 type Session struct {
@@ -795,6 +798,11 @@ type UsageSource struct {
 	NextRetryAt     sql.NullTime
 	LastErrorCode   string
 	UpdatedAt       time.Time
+}
+
+type UserConfig struct {
+	ID     int64
+	Config sql.NullString
 }
 
 type WorkspaceRepo struct {

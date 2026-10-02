@@ -228,6 +228,47 @@ func TestExecRunnerFallsBackWhenTempDirMissing(t *testing.T) {
 	}
 }
 
+// TestExecRunnerDropsParentSessionMarkers is the direct regression test for
+// the CLAUDE_CODE_CHILD_SESSION leak: execRunner.Run unconditionally does
+// `cmd.Env = append(os.Environ(), env...)`, and the first call auto-starts
+// tmux's persistent server, which keeps that environment for its entire
+// lifetime. If the daemon was itself launched from inside a Claude Code
+// session (rebuild-ao.sh run from an agent terminal, or the desktop app
+// opened from one), every worker session's tmux pane — and the claude-code
+// process running inside it — inherits that unrelated parent session's
+// identity markers, misidentifying itself as a child session ("Transcript
+// saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker"). This runs
+// the real execRunner (not fakeRunner), so it is the only test that would
+// catch a regression here.
+func TestExecRunnerDropsParentSessionMarkers(t *testing.T) {
+	t.Setenv("CLAUDE_CODE_CHILD_SESSION", "1")
+	t.Setenv("CLAUDECODE", "1")
+	t.Setenv("AO_EXECRUNNER_MARKER_TEST_KEEP", "kept")
+
+	out, err := (execRunner{}).Run(context.Background(), nil, "sh", "-c", "env")
+	if err != nil {
+		t.Fatalf("execRunner.Run: %v", err)
+	}
+	env := strings.Split(strings.TrimSpace(string(out)), "\n")
+
+	for _, blocked := range []string{"CLAUDE_CODE_CHILD_SESSION", "CLAUDECODE"} {
+		for _, line := range env {
+			if strings.HasPrefix(line, blocked+"=") {
+				t.Errorf("execRunner leaked parent-session marker into child process: %q", line)
+			}
+		}
+	}
+	found := false
+	for _, line := range env {
+		if line == "AO_EXECRUNNER_MARKER_TEST_KEEP=kept" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("execRunner dropped an unrelated env var along with the markers")
+	}
+}
+
 // -- command builder tests --
 
 func TestCommandBuilders(t *testing.T) {
@@ -312,7 +353,7 @@ func TestSessionNameSanitizesSpecialChars(t *testing.T) {
 }
 
 func TestSessionNamePassesThroughShortConforming(t *testing.T) {
-	if got := SessionName("myproj-1"); got != "myproj-1" {
+	if got := domain.RuntimeHandleName("myproj-1"); got != "myproj-1" {
 		t.Fatalf("SessionName = %q, want unchanged", got)
 	}
 }
@@ -323,10 +364,10 @@ func TestSessionNameMatchesCreateNaming(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tmuxSessionName: %v", err)
 	}
-	if got := SessionName(string(long)); got != viaCreate {
+	if got := domain.RuntimeHandleName(string(long)); got != viaCreate {
 		t.Fatalf("SessionName = %q, but Create uses %q", got, viaCreate)
 	}
-	if SessionName(string(long)) == string(long) {
+	if domain.RuntimeHandleName(string(long)) == string(long) {
 		t.Fatal("expected long id to be sanitised to a different name")
 	}
 }
@@ -992,6 +1033,41 @@ func TestDestroyIsIdempotentWhenSessionMissing(t *testing.T) {
 		t.Fatalf("Destroy: %v", err)
 	}
 	if len(fr.calls) != 3 || fr.calls[0].args[0] != "list-panes" || fr.calls[1].args[0] != "set-option" || fr.calls[2].args[0] != "kill-session" {
+		t.Fatalf("calls = %#v, want list-panes, set-option, then kill-session", fr.calls)
+	}
+}
+
+// tmux >= ~3.5 wording: "no such session: <target>" (with the = exact-match
+// prefix tmux echoes back), issue #6099. Must read as absent, not as a hard
+// failure — this exact string is what failed every auto review on tmux 3.6b.
+func TestSessionMissingOutputRecognizesModernWording(t *testing.T) {
+	cases := map[string]bool{
+		"no such session: =review-x:":                      true,
+		"can't find session: sess-1":                       true,
+		"session not found":                                true,
+		"no server running on /tmp/tmux-0/default":         false,
+		"error connecting ... (No such file or directory)": false,
+	}
+	for out, want := range cases {
+		if got := sessionMissingOutput(out); got != want {
+			t.Errorf("sessionMissingOutput(%q) = %v, want %v", out, got, want)
+		}
+	}
+}
+
+func TestDestroyIsIdempotentWhenSessionMissingModernWording(t *testing.T) {
+	r, fr := newTestRuntime(0)
+	fr.outputs = [][]byte{
+		nil,
+		[]byte("no such session: =sess-1:"),
+		[]byte("no such session: =sess-1:"),
+	}
+	fr.err = &exec.ExitError{}
+
+	if err := r.Destroy(context.Background(), ports.RuntimeHandle{ID: "sess-1"}); err != nil {
+		t.Fatalf("Destroy modern wording: %v", err)
+	}
+	if len(fr.calls) != 3 || fr.calls[1].args[0] != "set-option" || fr.calls[2].args[0] != "kill-session" {
 		t.Fatalf("calls = %#v, want list-panes, set-option, then kill-session", fr.calls)
 	}
 }
