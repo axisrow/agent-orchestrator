@@ -2361,5 +2361,6 @@
 	"settings.project.providerDefault": "Passerelle par défaut",
 	"settings.project.providerDirect": "Anthropic en direct",
 	"settings.project.providerScopeApp": "app",
-	"settings.project.providerScopeProject": "projet"
+	"settings.project.providerScopeProject": "projet",
+	"settings.project.providerUnknown": "Fournisseur inconnu"
 }

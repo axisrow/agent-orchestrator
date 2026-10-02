@@ -2329,5 +2329,6 @@
 	"settings.project.providerDefault": "게이트웨이 기본값",
 	"settings.project.providerDirect": "직접 Anthropic",
 	"settings.project.providerScopeApp": "앱",
-	"settings.project.providerScopeProject": "프로젝트"
+	"settings.project.providerScopeProject": "프로젝트",
+	"settings.project.providerUnknown": "알 수 없는 공급자"
 }

@@ -49,6 +49,31 @@ func TestProviderPinEnvMatchesConfiguredEntry(t *testing.T) {
 	}
 }
 
+// Keys the matched entry does not set must be omitted, not emptied: the pin
+// overlay runs after the project env, and an empty value would clear a
+// project-configured model or credential the entry never had.
+func TestProviderPinEnvOmitsUnsetEntryKeys(t *testing.T) {
+	home := t.TempDir()
+	claudeDir := filepath.Join(home, ".claude")
+	t.Setenv("CLAUDE_CONFIG_DIR", claudeDir)
+	if err := os.MkdirAll(claudeDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	settings := `{"env":{"ANTHROPIC_BASE_URL":"https://bare.example"}}`
+	if err := os.WriteFile(filepath.Join(claudeDir, "settings.json"), []byte(settings), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got := ProviderPinEnv(context.Background(), t.TempDir(), "https://bare.example")
+	if got["ANTHROPIC_BASE_URL"] != "https://bare.example" {
+		t.Fatalf("pin = %v, want the base URL set", got)
+	}
+	for _, key := range []string{"ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "ANTHROPIC_SMALL_FAST_MODEL"} {
+		if value, ok := got[key]; ok {
+			t.Fatalf("pin carries %s=%q, want the key omitted", key, value)
+		}
+	}
+}
+
 func TestProviderPinEnvProjectScopeWins(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(home, ".claude"))

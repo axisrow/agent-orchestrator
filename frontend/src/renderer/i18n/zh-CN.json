@@ -2311,5 +2311,6 @@
 	"settings.project.providerDefault": "网关默认",
 	"settings.project.providerDirect": "直连 Anthropic",
 	"settings.project.providerScopeApp": "应用",
-	"settings.project.providerScopeProject": "项目"
+	"settings.project.providerScopeProject": "项目",
+	"settings.project.providerUnknown": "未知提供商"
 }

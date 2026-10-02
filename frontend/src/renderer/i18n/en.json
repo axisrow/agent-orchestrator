@@ -2309,5 +2309,6 @@
 	"settings.project.providerDefault": "Gateway default",
 	"settings.project.providerDirect": "Direct Anthropic",
 	"settings.project.providerScopeApp": "app",
-	"settings.project.providerScopeProject": "project"
+	"settings.project.providerScopeProject": "project",
+	"settings.project.providerUnknown": "Unknown provider"
 }

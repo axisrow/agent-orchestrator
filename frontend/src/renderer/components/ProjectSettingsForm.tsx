@@ -1039,11 +1039,17 @@ function gatewayProviderOptions(config: GatewayConfigResponse | undefined, t: TF
 }
 
 function RoleProviderSelect({ ariaLabel, value, options, onChange }: { ariaLabel: string; value: string; options: { value: string; label: string }[]; onChange: (value: string) => void }) {
+	const { t } = useTranslation();
+	// A persisted pin that no longer matches a configured gateway must stay
+	// visible as its own "unknown" state, not masquerade as the default.
+	const all = value !== "" && !options.some((option) => option.value === value)
+		? [...options, { value, label: t("settings.project.providerUnknown") }]
+		: options;
 	return (
 		<SettingsOptionMenu
 			aria-label={ariaLabel}
-			value={options.some((option) => option.value === value) ? value : ""}
-			options={options}
+			value={value}
+			options={all}
 			triggerClassName="w-full justify-between"
 			onChange={onChange}
 		/>

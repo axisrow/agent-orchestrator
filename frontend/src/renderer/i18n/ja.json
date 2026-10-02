@@ -2329,5 +2329,6 @@
 	"settings.project.providerDefault": "ゲートウェイのデフォルト",
 	"settings.project.providerDirect": "直接 Anthropic",
 	"settings.project.providerScopeApp": "アプリ",
-	"settings.project.providerScopeProject": "プロジェクト"
+	"settings.project.providerScopeProject": "プロジェクト",
+	"settings.project.providerUnknown": "不明なプロバイダー"
 }

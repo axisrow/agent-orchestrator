@@ -49,7 +49,9 @@ func ProviderPinEnv(ctx context.Context, projectDir, pin string) map[string]stri
 	}
 	// A pinned URL must name a configured entry; its credentials travel with
 	// the entry. Project scope wins over app scope, mirroring the resolver's
-	// user < project ordering.
+	// user < project ordering. Only keys the entry actually sets are returned:
+	// the pin overlay runs after the project env, and an empty value would
+	// clear an explicitly configured model or credential the entry never had.
 	paths := make([]string, 0, 2)
 	if dir := strings.TrimSpace(projectDir); dir != "" {
 		paths = append(paths, filepath.Join(dir, ".claude", "settings.json"))
@@ -62,13 +64,17 @@ func ProviderPinEnv(ctx context.Context, projectDir, pin string) map[string]stri
 		if settings.Env["ANTHROPIC_BASE_URL"] != pin {
 			continue
 		}
-		return map[string]string{
-			"ANTHROPIC_BASE_URL":         pin,
-			"ANTHROPIC_AUTH_TOKEN":       settings.Env["ANTHROPIC_AUTH_TOKEN"],
-			"ANTHROPIC_API_KEY":          settings.Env["ANTHROPIC_API_KEY"],
-			"ANTHROPIC_MODEL":            settings.Env["ANTHROPIC_MODEL"],
-			"ANTHROPIC_SMALL_FAST_MODEL": settings.Env["ANTHROPIC_SMALL_FAST_MODEL"],
+		env := make(map[string]string, len(providerPinShadowKeys))
+		for _, key := range []string{
+			"ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY",
+			"ANTHROPIC_MODEL", "ANTHROPIC_SMALL_FAST_MODEL",
+		} {
+			if value := settings.Env[key]; value != "" {
+				env[key] = value
+			}
 		}
+		env["ANTHROPIC_BASE_URL"] = pin
+		return env
 	}
 	return nil
 }

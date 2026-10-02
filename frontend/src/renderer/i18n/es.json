@@ -2361,5 +2361,6 @@
 	"settings.project.providerDefault": "Predeterminado de la pasarela",
 	"settings.project.providerDirect": "Anthropic directo",
 	"settings.project.providerScopeApp": "app",
-	"settings.project.providerScopeProject": "proyecto"
+	"settings.project.providerScopeProject": "proyecto",
+	"settings.project.providerUnknown": "Proveedor desconocido"
 }

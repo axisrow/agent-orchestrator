@@ -101,9 +101,11 @@ func (c *AgentsController) writeModels(w http.ResponseWriter, r *http.Request, r
 	if role := strings.TrimSpace(r.URL.Query().Get("role")); role != "" {
 		switch role {
 		case "worker", "orchestrator", "reviewer":
-			if projectID != "" {
-				projectID = projectID + "@role:" + role
+			if projectID == "" {
+				envelope.WriteAPIError(w, r, http.StatusBadRequest, "bad_request", "PROJECT_REQUIRED", "role requires projectId", nil)
+				return
 			}
+			projectID = projectID + "@role:" + role
 		default:
 			envelope.WriteAPIError(w, r, http.StatusBadRequest, "bad_request", "INVALID_ROLE", "role must be worker, orchestrator, or reviewer", nil)
 			return
