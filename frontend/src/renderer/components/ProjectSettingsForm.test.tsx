@@ -620,6 +620,73 @@ describe("ProjectSettingsForm", () => {
 		expect(await screen.findByRole("button", { name: "Worker mode" })).toHaveTextContent("Low");
 	});
 
+	it("saves a per-role provider pin and scopes the model catalog to the role", async () => {
+		let lastModelsQuery: string | undefined;
+		getMock.mockImplementation(async (path: string, init?: { params?: { query?: Record<string, string> } }) => {
+			if (path === "/api/v1/agents/readiness") return agentCatalogResponse;
+			if (path === "/api/v1/settings/gateway") {
+				return {
+					data: {
+						app: { baseUrl: "https://gw.example", tokenSet: true, model: "" },
+						effective: { baseUrl: "https://gw.example", source: "app" },
+					},
+					error: undefined,
+				};
+			}
+			if (path === "/api/v1/agents/{agent}/models") {
+				lastModelsQuery = init?.params?.query?.role;
+				return {
+					data: {
+						agentId: "test-agent",
+						selectionMode: "text",
+						models: [],
+						allowCustom: true,
+						source: "manual",
+						fetchedAt: "2026-07-31T00:00:00Z",
+						stale: false,
+					},
+					error: undefined,
+				};
+			}
+			return {
+				data: {
+					status: "ok",
+					project: {
+						id: "proj-1",
+						name: "Project One",
+						kind: "single_repo",
+						path: "/repo/project-one",
+						repo: "git@github.com:acme/project-one.git",
+						defaultBranch: "main",
+						config: {
+							worker: { agent: "claude-code" },
+							orchestrator: { agent: "claude-code" },
+						},
+					},
+				},
+				error: undefined,
+			};
+		});
+
+		renderSettings("proj-1", undefined, "agents");
+
+		expect(await screen.findByText("Provider")).toBeInTheDocument();
+		const providerSelects = screen.getAllByRole("button", { name: "Provider" });
+		expect(providerSelects).toHaveLength(3);
+		expect(providerSelects[0]).toHaveTextContent("Gateway default");
+
+		// The gateway entry is offered with its effective source and, once the
+		// worker pins it, the model catalog is queried for the worker role.
+		await chooseOption(providerSelects[0], "gw.example (app)");
+		await waitFor(() => expect(lastModelsQuery).toBe("worker"));
+
+		submitSettings();
+		await waitFor(() => expect(putMock).toHaveBeenCalledTimes(1));
+		const config = putMock.mock.calls[0][1].body.config;
+		expect(config.worker).toMatchObject({ agent: "claude-code", provider: "https://gw.example" });
+		expect(config.orchestrator.provider).toBeUndefined();
+	}, 20_000);
+
 	it("loads agents fields and saves without dropping hidden workflow config", async () => {
 		mockProject({
 			id: "proj-1",

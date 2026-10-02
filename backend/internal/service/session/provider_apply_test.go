@@ -289,3 +289,43 @@ func TestApplyProviderSwitchBatchOrderPreservedAndIsolated(t *testing.T) {
 		t.Fatalf("expected only mer-3 resumed, got %v", f.commander.resumed)
 	}
 }
+
+// A role provider pin changes what a relaunch resolves: the direct pin shadows
+// the gateway, so a session still running on the gateway must be flagged stale
+// and a relaunch pick up the pin (issue #6156).
+func TestProviderStalenessFoldsRolePinIntoCurrentResolution(t *testing.T) {
+	f := newProviderApplyFixture()
+	f.session("mer-1", "/ws/1", providerStamp{baseURL: "https://gw.example", model: "m-1"})
+	f.store.projects["mer"] = domain.ProjectRecord{
+		ID:   "mer",
+		Path: "/proj",
+		Config: domain.ProjectConfig{
+			Worker: domain.RoleOverride{Provider: domain.ProviderDirect},
+		},
+	}
+	f.svc.resolveStampOverride = func(_ context.Context, _ string, env map[string]string) (string, string) {
+		// Mirror the resolver: an explicit empty value shadows the settings.
+		if base, ok := env["ANTHROPIC_BASE_URL"]; ok && base == "" {
+			return "", ""
+		}
+		return "https://gw.example", "m-1"
+	}
+
+	stale, err := f.svc.ProviderStaleness(context.Background())
+	if err != nil {
+		t.Fatalf("ProviderStaleness: %v", err)
+	}
+	if len(stale) != 1 || stale[0].SessionID != "mer-1" {
+		t.Fatalf("expected mer-1 stale under a direct role pin, got %+v", stale)
+	}
+
+	// Removing the pin restores the gateway resolution: no staleness.
+	f.store.projects["mer"] = domain.ProjectRecord{ID: "mer", Path: "/proj"}
+	stale, err = f.svc.ProviderStaleness(context.Background())
+	if err != nil {
+		t.Fatalf("ProviderStaleness: %v", err)
+	}
+	if len(stale) != 0 {
+		t.Fatalf("expected no stale sessions without the pin, got %+v", stale)
+	}
+}

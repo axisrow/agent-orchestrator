@@ -1,6 +1,9 @@
 package domain
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestProjectConfigValidate(t *testing.T) {
 	tests := []struct {
@@ -222,5 +225,36 @@ func TestProjectConfigIsZero(t *testing.T) {
 	}
 	if (ProjectConfig{AutoReview: true}).IsZero() {
 		t.Fatal("config with autoReview enabled should not be zero")
+	}
+}
+
+func TestValidateProviderPin(t *testing.T) {
+	for pin, want := range map[string]bool{
+		"":                      true,
+		ProviderDirect:          true,
+		"https://gw.example":    true,
+		"http://localhost:8080": true,
+		"gw.example":            false,
+		"ftp://gw.example":      false,
+		"https://":              false,
+		"direct ":               false,
+	} {
+		if err := ValidateProviderPin(pin); (err == nil) != want {
+			t.Errorf("ValidateProviderPin(%q) error = %v, want valid=%v", pin, err, want)
+		}
+	}
+}
+
+func TestProjectConfigValidateRejectsBadRoleProvider(t *testing.T) {
+	cfg := ProjectConfig{Worker: RoleOverride{Provider: "not-a-url"}}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "worker.provider") {
+		t.Fatalf("Validate() = %v, want worker.provider error", err)
+	}
+	cfg = ProjectConfig{Reviewers: []ReviewerConfig{{Harness: ReviewerClaudeCode, Provider: "javascript:alert(1)"}}}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "reviewers[0].provider") {
+		t.Fatalf("Validate() = %v, want reviewers[0].provider error", err)
+	}
+	if err := (ProjectConfig{Orchestrator: RoleOverride{Provider: ProviderDirect}}).Validate(); err != nil {
+		t.Fatalf("Validate() with direct pin = %v", err)
 	}
 }

@@ -2324,5 +2324,11 @@
 	"settings.gateway.applyAppliedToast_one": "{{count}}개 세션에 공급자를 적용했습니다",
 	"settings.gateway.applyAppliedToast_other": "{{count}}개 세션에 공급자를 적용했습니다",
 	"settings.gateway.applySkippedToast": "{{name}}은(는) 이미 새 공급자를 사용 중입니다",
-	"settings.gateway.applyFailedToast": "{{name}} 전환 실패"
+	"settings.gateway.applyFailedToast": "{{name}} 전환 실패",
+	"settings.project.providerLabel": "공급자",
+	"settings.project.providerDefault": "게이트웨이 기본값",
+	"settings.project.providerDirect": "직접 Anthropic",
+	"settings.project.providerScopeApp": "앱",
+	"settings.project.providerScopeProject": "프로젝트",
+	"settings.project.providerUnknown": "알 수 없는 공급자"
 }

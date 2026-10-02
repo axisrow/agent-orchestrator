@@ -17,6 +17,7 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 	"github.com/aoagents/agent-orchestrator/backend/internal/httpd/apierr"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
+	"github.com/aoagents/agent-orchestrator/backend/pkg/agentcreds"
 )
 
 var (
@@ -420,23 +421,44 @@ func credentialTypeFromScope(scope string) (string, bool) {
 	return rest, true
 }
 
+// roleScopeMarker marks the role suffix of a model-catalog scope:
+// "<projectID>@role:<role>". A role-scoped catalog resolves the role's
+// provider pin into the discovery env, so a pinned role's picker shows the
+// pinned provider's models. '@' and ':' cannot appear in a real project ID,
+// so the namespaces never collide (same argument as credentialScopePrefix).
+const roleScopeMarker = "@role:"
+
+// roleScopeParts splits a role-scoped catalog scope. ok is false for plain
+// project (or credential) scopes.
+func roleScopeParts(scope string) (projectID, role string, ok bool) {
+	project, rolePart, has := strings.Cut(scope, roleScopeMarker)
+	if !has || project == "" || rolePart == "" || strings.Contains(rolePart, roleScopeMarker) {
+		return "", "", false
+	}
+	return project, rolePart, true
+}
+
 func (s *Service) modelCatalogScope(ctx context.Context, projectID string) (string, error) {
 	// A credential scope has no backing project; keep it verbatim so its catalog
 	// caches under its own key instead of collapsing to the device-global scope.
 	if _, ok := credentialTypeFromScope(projectID); ok {
 		return projectID, nil
 	}
+	// A role scope backs onto its project; keep it verbatim for the same
+	// per-role cache-key reason once the project itself is real.
+	scope := projectID
+	if id, _, ok := roleScopeParts(projectID); ok {
+		projectID = id
+	}
 	if strings.TrimSpace(projectID) == "" || s.projects == nil {
 		return "", nil
 	}
-	_, ok, err := s.projects.GetProject(ctx, projectID)
-	if err != nil {
+	if _, ok, err := s.projects.GetProject(ctx, projectID); err != nil {
 		return "", fmt.Errorf("resolve model catalog project %s: %w", projectID, err)
-	}
-	if !ok {
+	} else if !ok {
 		return "", nil
 	}
-	return projectID, nil
+	return scope, nil
 }
 
 func (s *Service) modelDiscoveryRequest(ctx context.Context, agentID, projectID, binary string) (ports.AgentModelDiscoveryRequest, error) {
@@ -447,6 +469,18 @@ func (s *Service) modelDiscoveryRequest(ctx context.Context, agentID, projectID,
 	if credentialType, ok := credentialTypeFromScope(projectID); ok {
 		request.CredentialType = credentialType
 		return request, nil
+	}
+	// A role-scoped scope backs onto its project and folds the role's provider
+	// pin into the discovery env, mirroring what the launch path applies.
+	if id, role, ok := roleScopeParts(projectID); ok && s.projects != nil {
+		project, found, err := s.projects.GetProject(ctx, id)
+		if err != nil {
+			return ports.AgentModelDiscoveryRequest{}, fmt.Errorf("resolve model discovery project %s: %w", id, err)
+		}
+		if !found {
+			return s.globalModelDiscoveryRequest(request)
+		}
+		return s.rolePinnedDiscoveryRequest(ctx, request, project, role), nil
 	}
 	if strings.TrimSpace(projectID) == "" || s.projects == nil {
 		return s.globalModelDiscoveryRequest(request)
@@ -466,6 +500,36 @@ func (s *Service) modelDiscoveryRequest(ctx context.Context, agentID, projectID,
 		}
 	}
 	return request, nil
+}
+
+// rolePinnedDiscoveryRequest resolves project-scoped discovery with the role's
+// provider pin overlaid on the project env, exactly as the launch path applies
+// it. A pinless role (or a pin matching no configured gateway) yields the same
+// request the plain project scope would.
+func (s *Service) rolePinnedDiscoveryRequest(ctx context.Context, request ports.AgentModelDiscoveryRequest, project domain.ProjectRecord, role string) ports.AgentModelDiscoveryRequest {
+	request.WorkingDir = project.Path
+	env := make(map[string]string, len(project.Config.Env)+4)
+	for key, value := range project.Config.Env {
+		env[key] = value
+	}
+	var pin string
+	switch role {
+	case "orchestrator":
+		pin = project.Config.Orchestrator.Provider
+	case "reviewer":
+		if len(project.Config.Reviewers) > 0 {
+			pin = project.Config.Reviewers[0].Provider
+		}
+	default:
+		pin = project.Config.Worker.Provider
+	}
+	for key, value := range agentcreds.ProviderPinEnv(ctx, project.Path, pin) {
+		env[key] = value
+	}
+	if len(env) > 0 {
+		request.Env = env
+	}
+	return request
 }
 
 func (s *Service) globalModelDiscoveryRequest(request ports.AgentModelDiscoveryRequest) (ports.AgentModelDiscoveryRequest, error) {

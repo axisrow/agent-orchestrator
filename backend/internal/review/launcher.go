@@ -648,6 +648,12 @@ func (l *agentLauncher) runtimeEnv(ctx context.Context, spec LaunchSpec, argv []
 	for k, v := range base {
 		env[k] = v
 	}
+	// The reviewer's resolved agent config may carry a per-role provider pin
+	// (issue #6156): explicit env wins over settings files, same transport as
+	// the session launch path. The overlay is last so a pin cannot be undone.
+	for k, v := range spec.AgentConfig.Env {
+		env[k] = v
+	}
 	delete(env, sessionmanager.EnvSessionID)
 	env["AO_REVIEW_SESSION_ID"] = spec.ReviewSessionID
 	env["AO_REVIEW_WORKER_SESSION_ID"] = string(spec.WorkerID)

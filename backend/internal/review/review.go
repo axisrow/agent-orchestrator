@@ -21,6 +21,7 @@ import (
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
+	"github.com/aoagents/agent-orchestrator/backend/pkg/agentcreds"
 )
 
 // ErrInvalid and ErrNotFound let the transport layer map failures to 422/404.
@@ -1425,15 +1426,33 @@ func (e *Engine) projectReviewerSelection(
 	worker domain.SessionRecord,
 ) (domain.ReviewerHarness, domain.AgentConfig, error) {
 	var cfg domain.ProjectConfig
+	var projectPath string
 	if e.projects != nil {
 		if proj, ok, err := e.projects.GetProject(ctx, string(worker.ProjectID)); err != nil {
 			return "", domain.AgentConfig{}, err
 		} else if ok {
 			cfg = proj.Config
+			projectPath = proj.Path
 		}
 	}
 	if len(cfg.Reviewers) > 0 {
-		return cfg.Reviewers[0].Harness, cfg.Reviewers[0].AgentConfig, nil
+		config := cfg.Reviewers[0].AgentConfig
+		// A provider pin rides in AgentConfig.Env: the launcher merges that env
+		// into the reviewer process, same transport as the session launch path.
+		if cfg.Reviewers[0].Provider != "" {
+			pinEnv := agentcreds.ProviderPinEnv(ctx, projectPath, cfg.Reviewers[0].Provider)
+			if len(pinEnv) > 0 {
+				env := make(map[string]string, len(config.Env)+len(pinEnv))
+				for key, value := range config.Env {
+					env[key] = value
+				}
+				for key, value := range pinEnv {
+					env[key] = value
+				}
+				config.Env = env
+			}
+		}
+		return cfg.Reviewers[0].Harness, config, nil
 	}
 	return cfg.ResolveReviewerHarness(worker.Harness), domain.AgentConfig{}, nil
 }

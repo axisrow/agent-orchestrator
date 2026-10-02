@@ -6,6 +6,7 @@ import (
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 	"github.com/aoagents/agent-orchestrator/backend/internal/httpd/apierr"
+	sessionmanager "github.com/aoagents/agent-orchestrator/backend/internal/session_manager"
 	"github.com/aoagents/agent-orchestrator/backend/pkg/agentcreds"
 )
 
@@ -109,12 +110,27 @@ func (s *Service) compareProviderStamp(ctx context.Context, rec domain.SessionRe
 	if !eligibleProviderSwitchSession(rec) {
 		return stamp, current, false, nil
 	}
-	projectEnv, err := s.sessionProjectEnv(ctx, rec)
+	project, projectEnv, err := s.sessionProjectEnv(ctx, rec)
 	if err != nil {
 		return stamp, current, false, err
 	}
+	// A per-role provider pin changes what a relaunch would resolve, so it folds
+	// into the current-resolution env exactly as the launch path applies it —
+	// a role switch then flags the affected sessions stale like any gateway edit.
+	// The copy keeps the project env map unshared: the pin overlay must not leak
+	// into other comparisons of the same project.
+	env := projectEnv
+	if pinEnv := agentcreds.ProviderPinEnv(ctx, project.Path, sessionmanager.RoleProviderPin(rec.Kind, project.Config)); len(pinEnv) > 0 {
+		env = make(map[string]string, len(projectEnv)+len(pinEnv))
+		for key, value := range projectEnv {
+			env[key] = value
+		}
+		for key, value := range pinEnv {
+			env[key] = value
+		}
+	}
 	stamp = providerStamp{baseURL: rec.Metadata.ProviderBaseURL, model: rec.Metadata.ProviderModel}
-	currentBaseURL, currentModel := s.resolveCurrentStamp(ctx, rec.Metadata.WorkspacePath, projectEnv)
+	currentBaseURL, currentModel := s.resolveCurrentStamp(ctx, rec.Metadata.WorkspacePath, env)
 	current = providerStamp{baseURL: currentBaseURL, model: currentModel}
 	// A pre-feature session has an empty stamp; if a gateway resolves now it
 	// counts as stale — applying is harmless (exit+resume preserves context).
@@ -124,18 +140,18 @@ func (s *Service) compareProviderStamp(ctx context.Context, rec domain.SessionRe
 	return stamp, current, stale, nil
 }
 
-func (s *Service) sessionProjectEnv(ctx context.Context, rec domain.SessionRecord) (map[string]string, error) {
+func (s *Service) sessionProjectEnv(ctx context.Context, rec domain.SessionRecord) (domain.ProjectRecord, map[string]string, error) {
 	if rec.ProjectID == "" {
-		return nil, nil
+		return domain.ProjectRecord{}, nil, nil
 	}
 	project, ok, err := s.store.GetProject(ctx, string(rec.ProjectID))
 	if err != nil {
-		return nil, fmt.Errorf("provider staleness: project %s: %w", rec.ProjectID, err)
+		return domain.ProjectRecord{}, nil, fmt.Errorf("provider staleness: project %s: %w", rec.ProjectID, err)
 	}
 	if !ok {
-		return nil, nil
+		return domain.ProjectRecord{}, nil, nil
 	}
-	return project.Config.Env, nil
+	return project, project.Config.Env, nil
 }
 
 // ApplyProviderSwitch relaunches running claude-code sessions so they pick up
