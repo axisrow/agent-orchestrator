@@ -79,7 +79,7 @@ func (m *Manager) ApplyReviewBatch(ctx context.Context, workerID domain.SessionI
 		if r.GithubReviewID != "" {
 			safeReviewID := domain.SanitizeControlChars(r.GithubReviewID)
 			fmt.Fprintf(&msg, "\nGitHub review: %s", safeReviewID)
-			fmt.Fprintf(&msg, "\nOnce you have addressed it, reply on GitHub review %s with how you addressed it, then resolve the review comment threads you addressed.", safeReviewID)
+			fmt.Fprintf(&msg, "\nAddress the findings, reply on GitHub review %s with how you addressed it, and resolve the threads you addressed.", safeReviewID)
 		}
 		if r.Body != "" {
 			fmt.Fprintf(&msg, "\n\nReview body:\n%s\n", domain.SanitizeControlChars(r.Body))
@@ -278,26 +278,30 @@ func (m *Manager) ApplyPRObservation(ctx context.Context, id domain.SessionID, o
 		}
 
 		if hasUnresolvedComments(o.Comments) {
-			comments := unresolvedReviewComments(o.Comments)
-			for _, comment := range comments {
-				if !comment.AutoInjectReview {
-					continue
+			// One digest per PR, not one message per comment: every nudge carries
+			// the full preamble and closing boilerplate, so N comments meant N
+			// separate walls in the agent's chat (#60). All injectable comments
+			// ride in one message, so the #5640 attempt-budget starvation (a
+			// shared slot starving later comments) cannot happen either.
+			injectable := make([]ports.PRCommentObservation, 0, len(o.Comments))
+			for _, comment := range unresolvedReviewComments(o.Comments) {
+				if comment.AutoInjectReview {
+					injectable = append(injectable, comment)
 				}
-				commentSlice := []ports.PRCommentObservation{comment}
-				msg := formatReviewCommentsMessage(commentSlice)
+			}
+			if len(injectable) > 0 {
+				msg := formatReviewCommentsMessage(injectable)
 				if ident != "your PR" {
 					msg = strings.Replace(msg, "your PR", ident, 1)
 				}
 				if o.URL != "" {
 					msg += "\nPR: " + domain.SanitizeControlChars(o.URL)
 				}
-				sig := reviewCommentsSignature(commentSlice)
+				sig := reviewCommentsSignature(injectable)
 				if sig == "" {
 					sig = string(o.Review)
 				}
-				// Per comment, like the review loop below: a shared key is a
-				// shared signature slot and a shared attempt budget.
-				nudges = append(nudges, pendingNudge{key: commentNudgeKey(o.URL, comment), sig: sig, msg: msg, maxAttempts: reviewMaxNudge})
+				nudges = append(nudges, pendingNudge{key: "review-comments:" + o.URL, sig: sig, msg: msg, maxAttempts: reviewMaxNudge})
 			}
 		}
 
@@ -399,20 +403,6 @@ func (m *Manager) sessionComplete(ctx context.Context, id domain.SessionID) (boo
 		}
 	}
 	return merged, nil
-}
-
-// commentNudgeKey identifies one review comment's nudge. It must be unique per
-// comment, not per thread: the observer expands a thread into one comment row
-// each (observer.go), all sharing the thread id, so keying on the thread would
-// put several comments with several signatures back in one dedup slot -- the
-// rotation this key exists to prevent. A comment with no id falls back to its
-// thread, which is still better than colliding with every other comment.
-func commentNudgeKey(prURL string, comment ports.PRCommentObservation) string {
-	id := strings.TrimSpace(comment.ID)
-	if id == "" {
-		id = strings.TrimSpace(comment.ThreadID)
-	}
-	return "comment:" + prURL + ":" + id
 }
 
 // mergeConflictKey is the reaction-dedup key for a PR's merge-conflict nudge.
@@ -928,7 +918,7 @@ func formatReviewChangesRequestedMessage(review domain.PullRequestReview) string
 	if review.ID != "" {
 		fmt.Fprintf(&msg, "\nReview ID: %s", domain.SanitizeControlChars(review.ID))
 	}
-	msg.WriteString("\n\nAddress the requested changes and push. You should not need to re-fetch the review unless you need additional context beyond what AO has provided here.")
+	msg.WriteString("\n\nAddress the requested changes and push.")
 	return msg.String()
 }
 
@@ -937,7 +927,7 @@ func formatReviewCommentsMessage(comments []ports.PRCommentObservation) string {
 		return "A reviewer left feedback on your PR. Address it and push. Fetch the review details only if you need additional context beyond what AO has provided here."
 	}
 	var msg strings.Builder
-	fmt.Fprintf(&msg, "The following %d unresolved review comment(s) are on your PR as of just now. You should not need to re-fetch this data unless you need additional context.\n", len(comments))
+	fmt.Fprintf(&msg, "The following %d unresolved review comment(s) are on your PR:\n", len(comments))
 	for i, c := range comments {
 		location := "(general)"
 		if c.File != "" {
@@ -963,7 +953,7 @@ func formatReviewCommentsMessage(comments []ports.PRCommentObservation) string {
 		}
 		msg.WriteString("\n")
 	}
-	msg.WriteString("\nAddress each comment and push fixes. Use the thread ID to resolve each thread directly after pushing when available. You should not need to re-fetch review data unless you need additional context beyond what is provided here.")
+	msg.WriteString("\nAddress each comment and push fixes, then resolve the threads by their IDs.")
 	return msg.String()
 }
 
