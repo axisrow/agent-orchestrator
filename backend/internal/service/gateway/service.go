@@ -30,8 +30,9 @@ const (
 // The three keys a gateway entry is made of, as the resolver reads them.
 const (
 	keyBaseURL = "ANTHROPIC_BASE_URL"
-	keyToken   = "ANTHROPIC_AUTH_TOKEN"
-	keyModel   = "ANTHROPIC_MODEL"
+	// gosec: settings-file env key name, not a credential value.
+	keyToken = "ANTHROPIC_AUTH_TOKEN" //nolint:gosec
+	keyModel = "ANTHROPIC_MODEL"
 )
 
 // ScopeValue is one scope's stored gateway entry. The token is never
@@ -287,7 +288,7 @@ func writeEnvKeys(path string, updates map[string]string) error {
 		return err
 	}
 	encoded = append(encoded, '\n')
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return err
 	}
 	mode := os.FileMode(0o600) // the file may carry a token
