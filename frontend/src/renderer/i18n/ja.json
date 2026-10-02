@@ -2281,5 +2281,6 @@
 	"settings.gateway.probeFailed": "拒否されました",
 	"settings.gateway.save": "保存",
 	"settings.gateway.effectiveOn": "アクティブなゲートウェイ: {{baseUrl}} ({{source}})",
-	"settings.gateway.effectiveOff": "ゲートウェイ未設定。リクエストは Anthropic に直接送られます"
+	"settings.gateway.effectiveOff": "ゲートウェイ未設定。リクエストは Anthropic に直接送られます",
+	"settings.gateway.effectiveSourceOnly": "{{source}} スコープでゲートウェイ上書きが有効(トークン/モデルのみ、ベース URL なし)"
 }

@@ -52,10 +52,32 @@ func TestSetAppWritesThroughAndPreservesFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	token := "gw-token-1"
+	baseURL := "https://gw.example.com"
+	model := "glm-5"
 	if _, err := svc.Set(context.Background(), SetInput{
-		Scope: ScopeApp, BaseURL: "https://gw.example.com", Token: &token, Model: "glm-5",
+		Scope: ScopeApp, BaseURL: &baseURL, Token: &token, Model: &model,
 	}); err != nil {
 		t.Fatal(err)
+	}
+
+	// A nil key leaves the stored value: a token-only rotation must not wipe
+	// the entry's other keys.
+	token2 := "gw-token-2"
+	if _, err := svc.Set(context.Background(), SetInput{Scope: ScopeApp, Token: &token2}); err != nil {
+		t.Fatal(err)
+	}
+	var rotated struct {
+		Env map[string]string `json:"env"`
+	}
+	data2, err := os.ReadFile(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data2, &rotated); err != nil {
+		t.Fatal(err)
+	}
+	if rotated.Env[keyToken] != token2 || rotated.Env[keyBaseURL] != baseURL || rotated.Env[keyModel] != model {
+		t.Fatalf("nil keys must leave stored values: %+v", rotated.Env)
 	}
 	var stored struct {
 		Model string            `json:"model"`
@@ -71,7 +93,7 @@ func TestSetAppWritesThroughAndPreservesFile(t *testing.T) {
 	if stored.Model != "claude-opus-4-5" || stored.Env["OTHER"] != "keep" {
 		t.Fatalf("sibling fields lost: %+v", stored)
 	}
-	if stored.Env[keyBaseURL] != "https://gw.example.com" || stored.Env[keyToken] != token || stored.Env[keyModel] != "glm-5" {
+	if stored.Env[keyBaseURL] != baseURL || stored.Env[keyToken] != token2 || stored.Env[keyModel] != model {
 		t.Fatalf("gateway keys not written: %+v", stored.Env)
 	}
 
@@ -91,13 +113,15 @@ func TestSetClearsKeysOnEmptyValues(t *testing.T) {
 	svc, _ := testService(t)
 	token := "tok"
 	empty := ""
+	baseURL := "https://gw.example.com"
+	model := "glm-5"
 	if _, err := svc.Set(context.Background(), SetInput{
-		Scope: ScopeApp, BaseURL: "https://gw.example.com", Token: &token, Model: "glm-5",
+		Scope: ScopeApp, BaseURL: &baseURL, Token: &token, Model: &model,
 	}); err != nil {
 		t.Fatal(err)
 	}
-	// A nil Token leaves the stored one; an empty one clears it.
-	config, err := svc.Set(context.Background(), SetInput{Scope: ScopeApp})
+	// A nil key leaves the stored value; an empty one clears it.
+	config, err := svc.Set(context.Background(), SetInput{Scope: ScopeApp, BaseURL: &empty, Model: &empty})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,11 +142,14 @@ func TestSetClearsKeysOnEmptyValues(t *testing.T) {
 
 func TestProjectOverridesApp(t *testing.T) {
 	svc, _ := testService(t)
-	if _, err := svc.Set(context.Background(), SetInput{Scope: ScopeApp, BaseURL: "https://app.example.com"}); err != nil {
+	appURL := "https://app.example.com"
+	projectURL := "https://project.example.com"
+	model := "glm-5"
+	if _, err := svc.Set(context.Background(), SetInput{Scope: ScopeApp, BaseURL: &appURL}); err != nil {
 		t.Fatal(err)
 	}
 	config, err := svc.Set(context.Background(), SetInput{
-		Scope: ScopeProject, ProjectID: "p1", BaseURL: "https://project.example.com", Model: "glm-5",
+		Scope: ScopeProject, ProjectID: "p1", BaseURL: &projectURL, Model: &model,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -137,10 +164,11 @@ func TestProjectOverridesApp(t *testing.T) {
 
 func TestSetRejectsBadScopeAndURL(t *testing.T) {
 	svc, _ := testService(t)
-	if _, err := svc.Set(context.Background(), SetInput{Scope: "global", BaseURL: "https://x.example.com"}); err == nil {
+	badURL := "not a url"
+	if _, err := svc.Set(context.Background(), SetInput{Scope: "global"}); err == nil {
 		t.Fatal("expected unknown scope rejection")
 	}
-	if _, err := svc.Set(context.Background(), SetInput{Scope: ScopeApp, BaseURL: "not a url"}); err == nil {
+	if _, err := svc.Set(context.Background(), SetInput{Scope: ScopeApp, BaseURL: &badURL}); err == nil {
 		t.Fatal("expected invalid URL rejection")
 	}
 	if _, err := svc.Set(context.Background(), SetInput{Scope: ScopeProject}); err == nil {

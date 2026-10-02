@@ -2312,5 +2312,6 @@
 	"settings.gateway.probeFailed": "Rejeté",
 	"settings.gateway.save": "Enregistrer",
 	"settings.gateway.effectiveOn": "Passerelle active : {{baseUrl}} ({{source}})",
-	"settings.gateway.effectiveOff": "Aucune passerelle configurée ; les requêtes vont directement à Anthropic"
+	"settings.gateway.effectiveOff": "Aucune passerelle configurée ; les requêtes vont directement à Anthropic",
+	"settings.gateway.effectiveSourceOnly": "Surcharge de passerelle active à la portée {{source}} (jeton/modèle uniquement, sans URL de base)"
 }

@@ -2312,5 +2312,6 @@
 	"settings.gateway.probeFailed": "Rejeitado",
 	"settings.gateway.save": "Salvar",
 	"settings.gateway.effectiveOn": "Gateway ativo: {{baseUrl}} ({{source}})",
-	"settings.gateway.effectiveOff": "Nenhum gateway configurado; as solicitações vão direto para a Anthropic"
+	"settings.gateway.effectiveOff": "Nenhum gateway configurado; as solicitações vão direto para a Anthropic",
+	"settings.gateway.effectiveSourceOnly": "Substituição de gateway ativa no escopo {{source}} (apenas token/modelo, sem URL base)"
 }

@@ -2281,5 +2281,6 @@
 	"settings.gateway.probeFailed": "거부됨",
 	"settings.gateway.save": "저장",
 	"settings.gateway.effectiveOn": "활성 게이트웨이: {{baseUrl}} ({{source}})",
-	"settings.gateway.effectiveOff": "게이트웨이가 구성되지 않았습니다. 요청이 Anthropic으로 직접 전송됩니다"
+	"settings.gateway.effectiveOff": "게이트웨이가 구성되지 않았습니다. 요청이 Anthropic으로 직접 전송됩니다",
+	"settings.gateway.effectiveSourceOnly": "{{source}} 범위에서 게이트웨이 재정의 활성(토큰/모델만, 기본 URL 없음)"
 }

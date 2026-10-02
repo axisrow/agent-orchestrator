@@ -10468,9 +10468,13 @@ components:
     ControllersUpdateGatewayConfigRequest:
       properties:
         baseUrl:
-          type: string
+          type:
+          - "null"
+          - string
         model:
-          type: string
+          type:
+          - "null"
+          - string
         projectId:
           type: string
         scope:

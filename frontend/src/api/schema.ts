@@ -3524,8 +3524,8 @@ export interface components {
             enabled: null | boolean;
         };
         ControllersUpdateGatewayConfigRequest: {
-            baseUrl?: string;
-            model?: string;
+            baseUrl?: null | string;
+            model?: null | string;
             projectId?: string;
             /** @enum {string} */
             scope: "app" | "project";

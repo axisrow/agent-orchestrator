@@ -80,6 +80,11 @@ func (c *SettingsController) setGateway(w http.ResponseWriter, r *http.Request) 
 			"GATEWAY_SCOPE_INVALID", `scope must be "app" or "project"`, nil)
 		return
 	}
+	if scope == gateway.ScopeProject && strings.TrimSpace(req.ProjectID) == "" {
+		envelope.WriteAPIError(w, r, http.StatusBadRequest, "validation",
+			"GATEWAY_PROJECT_REQUIRED", "projectId is required for the project scope", nil)
+		return
+	}
 	config, err := c.Gateway.Set(r.Context(), gateway.SetInput{
 		Scope:     scope,
 		ProjectID: strings.TrimSpace(req.ProjectID),

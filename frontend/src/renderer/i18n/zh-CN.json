@@ -2263,5 +2263,6 @@
 	"settings.gateway.probeFailed": "被拒绝",
 	"settings.gateway.save": "保存",
 	"settings.gateway.effectiveOn": "当前网关:{{baseUrl}}({{source}})",
-	"settings.gateway.effectiveOff": "未配置网关;请求直接发送到 Anthropic"
+	"settings.gateway.effectiveOff": "未配置网关;请求直接发送到 Anthropic",
+	"settings.gateway.effectiveSourceOnly": "{{source}} 范围的网关覆盖生效(仅令牌/模型,无基础 URL)"
 }

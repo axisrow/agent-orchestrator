@@ -2312,5 +2312,6 @@
 	"settings.gateway.probeFailed": "Rechazado",
 	"settings.gateway.save": "Guardar",
 	"settings.gateway.effectiveOn": "Pasarela activa: {{baseUrl}} ({{source}})",
-	"settings.gateway.effectiveOff": "Sin pasarela configurada; las solicitudes van directamente a Anthropic"
+	"settings.gateway.effectiveOff": "Sin pasarela configurada; las solicitudes van directamente a Anthropic",
+	"settings.gateway.effectiveSourceOnly": "Anulación de pasarela activa en el ámbito {{source}} (solo token/modelo, sin URL base)"
 }

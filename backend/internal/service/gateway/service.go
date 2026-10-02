@@ -31,7 +31,7 @@ const (
 const (
 	keyBaseURL = "ANTHROPIC_BASE_URL"
 	// gosec: settings-file env key name, not a credential value.
-	keyToken = "ANTHROPIC_AUTH_TOKEN" //nolint:gosec
+	keyToken = "ANTHROPIC_AUTH_TOKEN" //nolint:gosec // env key name, not a credential value
 	keyModel = "ANTHROPIC_MODEL"
 )
 
@@ -60,14 +60,15 @@ type Config struct {
 	Effective Effective   `json:"effective"`
 }
 
-// SetInput is a PUT payload. Empty BaseURL/Model clear the key; a nil Token
-// leaves the stored token untouched, an empty one clears it.
+// SetInput is a PUT payload. Every key is tri-state: nil leaves the stored
+// value untouched, a pointer to "" clears the key, a pointer to a value
+// writes it. This is what makes a token-only rotation safe.
 type SetInput struct {
 	Scope     Scope
 	ProjectID string
-	BaseURL   string
+	BaseURL   *string
 	Token     *string
-	Model     string
+	Model     *string
 }
 
 // ProbeResult mirrors the validator's verdict plus the gateway's own model
@@ -165,15 +166,17 @@ func (s *Service) Set(ctx context.Context, in SetInput) (Config, error) {
 	if in.Scope != ScopeApp && in.Scope != ScopeProject {
 		return Config{}, fmt.Errorf("gateway: unknown scope %q", in.Scope)
 	}
-	if in.BaseURL != "" {
-		parsed, err := url.Parse(in.BaseURL)
+	if in.BaseURL != nil && strings.TrimSpace(*in.BaseURL) != "" {
+		parsed, err := url.Parse(strings.TrimSpace(*in.BaseURL))
 		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
 			return Config{}, fmt.Errorf("gateway: base URL must be an http(s) URL")
 		}
 	}
-	updates := map[string]string{keyBaseURL: strings.TrimSpace(in.BaseURL), keyModel: strings.TrimSpace(in.Model)}
-	if in.Token != nil {
-		updates[keyToken] = strings.TrimSpace(*in.Token)
+	updates := make(map[string]string, 3)
+	for key, value := range map[string]*string{keyBaseURL: in.BaseURL, keyToken: in.Token, keyModel: in.Model} {
+		if value != nil {
+			updates[key] = strings.TrimSpace(*value)
+		}
 	}
 	path, err := s.settingsPath(ctx, in)
 	if err != nil {

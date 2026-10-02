@@ -2884,14 +2884,14 @@ type GatewayConfigResponse struct {
 }
 
 // UpdateGatewayConfigRequest is the body of PUT /api/v1/settings/gateway.
-// Scope selects app or project; an empty BaseURL or Model clears that key, a
-// nil Token leaves the stored token untouched, an empty one clears it.
+// Every key is tri-state: omitted (nil) leaves the stored value untouched, an
+// empty string clears the key, a value writes it.
 type UpdateGatewayConfigRequest struct {
 	Scope     string  `json:"scope" enum:"app,project"`
 	ProjectID string  `json:"projectId,omitempty"`
-	BaseURL   string  `json:"baseUrl,omitempty"`
+	BaseURL   *string `json:"baseUrl,omitempty"`
 	Token     *string `json:"token,omitempty"`
-	Model     string  `json:"model,omitempty"`
+	Model     *string `json:"model,omitempty"`
 }
 
 // GatewayProbeRequest is the body of POST /api/v1/settings/gateway/probe.

@@ -2261,5 +2261,6 @@
 	"settings.gateway.probeFailed": "Rejected",
 	"settings.gateway.save": "Save",
 	"settings.gateway.effectiveOn": "Active gateway: {{baseUrl}} ({{source}})",
-	"settings.gateway.effectiveOff": "No gateway configured; requests go to Anthropic directly"
+	"settings.gateway.effectiveOff": "No gateway configured; requests go to Anthropic directly",
+	"settings.gateway.effectiveSourceOnly": "Gateway override active at the {{source}} scope (token/model only, no base URL)"
 }
