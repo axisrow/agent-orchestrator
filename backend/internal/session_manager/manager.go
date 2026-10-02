@@ -1403,7 +1403,10 @@ func (m *Manager) resolveAgentConfig(ctx context.Context, cfg ports.SpawnConfig,
 	}
 	modelID := strings.TrimSpace(resolved.Model)
 	validateClaudeModel := cfg.Harness == domain.HarnessClaudeCode && modelID != ""
-	if resolved.Effort == "" && !validateClaudeModel {
+	// Claude Code with no model override still runs the catalog's default
+	// model, which may be a seeded gateway model whose default effort is
+	// pinned below; only other harnesses can skip discovery entirely.
+	if resolved.Effort == "" && !validateClaudeModel && cfg.Harness != domain.HarnessClaudeCode {
 		return resolved, nil
 	}
 	if m.modelCatalog == nil {
@@ -1447,6 +1450,17 @@ func (m *Manager) resolveAgentConfig(ctx context.Context, cfg ports.SpawnConfig,
 		if selected == nil || !containsString(selected.Efforts, base.Effort) {
 			resolved.Effort = ""
 		}
+	}
+	// Seeded gateway catalogs (z.ai omits effort capabilities entirely) carry a
+	// default the UI displays, but an unset effort lets claude-code fall back
+	// to its own runtime default — low — silently downgrading every spawn that
+	// did not come from the composer, which pins the same default client-side
+	// (#49). An explicit empty choice (EffortOverride) and a stale catalog
+	// keep the launch unpinned.
+	if resolved.Effort == "" && !cfg.EffortOverride && !catalog.Stale &&
+		selected != nil && selected.EffortsSeeded && selected.DefaultEffort != "" &&
+		containsString(selected.Efforts, selected.DefaultEffort) {
+		resolved.Effort = selected.DefaultEffort
 	}
 	if resolved.Effort == "" {
 		return resolved, nil
