@@ -27,7 +27,7 @@ function renderCombobox(
 describe("AgentModelCombobox", () => {
 	beforeEach(() => window.localStorage.clear());
 
-	it("shows resolved effort beside the model and keeps effort in the menu", async () => {
+	it("keeps effort only in the menu, not on the trigger", async () => {
 		function Picker() {
 			const [model, setModel] = useState("capable");
 			const [effort, setEffort] = useState("high");
@@ -42,12 +42,13 @@ describe("AgentModelCombobox", () => {
 		render(<Picker />);
 		const picker = screen.getByRole("button", { name: "Worker model" });
 		expect(picker).toHaveTextContent("Capable");
-		expect(picker).toHaveTextContent("High");
+		expect(picker).not.toHaveTextContent("High");
 		await userEvent.click(picker);
 		expect(screen.getByRole("menuitem", { name: "Capable" })).toHaveAttribute("aria-current", "true");
 		expect(screen.getByRole("menuitem", { name: /Reasoning effort/ })).toBeInTheDocument();
 		await userEvent.click(screen.getByRole("menuitem", { name: "Plain" }));
-		expect(picker).toHaveTextContent("Plain · Low");
+		expect(picker).toHaveTextContent("Plain");
+		expect(picker).not.toHaveTextContent("Low");
 		expect(screen.queryByRole("menuitemradio", { name: "High" })).not.toBeInTheDocument();
 		expect(screen.queryByRole("menuitemradio", { name: "Provider default" })).not.toBeInTheDocument();
 		expect(screen.queryByRole("menuitemradio", { name: "Default" })).not.toBeInTheDocument();
@@ -57,13 +58,13 @@ describe("AgentModelCombobox", () => {
 		await userEvent.hover(screen.getByRole("menuitemradio", { name: "Low" }));
 		expect(screen.getByRole("menuitemradio", { name: "Low" })).toBeInTheDocument();
 		await userEvent.click(screen.getByRole("menuitemradio", { name: "Low" }));
-		expect(picker).toHaveTextContent("Plain · Low");
+		expect(picker).toHaveTextContent("Plain");
+		expect(picker).not.toHaveTextContent("·");
 		expect(screen.queryByRole("menuitem", { name: "Plain" })).not.toBeInTheDocument();
 		await userEvent.click(picker);
 		await userEvent.click(screen.getByRole("menuitem", { name: /Reasoning effort/ }));
 		await userEvent.click(screen.getByRole("menuitemradio", { name: "Low" }));
 		expect(picker).toHaveTextContent("Plain");
-		expect(picker).toHaveTextContent("Low");
 	});
 
 	it("closes only the effort submenu on Escape", async () => {
@@ -109,7 +110,7 @@ describe("AgentModelCombobox", () => {
 
 		await userEvent.click(await screen.findByRole("menuitemradio", { name: "High" }));
 		expect(picker).toHaveTextContent("Plain");
-		expect(picker).toHaveTextContent("High");
+		expect(picker).not.toHaveTextContent("·");
 		expect(screen.queryByRole("menuitem", { name: "Plain" })).not.toBeInTheDocument();
 	});
 
