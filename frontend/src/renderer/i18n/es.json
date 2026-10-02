@@ -2356,5 +2356,10 @@
 	"settings.gateway.applyAppliedToast_other": "Proveedor aplicado a {{count}} sesiones",
 	"settings.gateway.applyAppliedToast_many": "Proveedor aplicado a {{count}} sesiones",
 	"settings.gateway.applySkippedToast": "{{name}} ya usa el nuevo proveedor",
-	"settings.gateway.applyFailedToast": "No se pudo cambiar {{name}}"
+	"settings.gateway.applyFailedToast": "No se pudo cambiar {{name}}",
+	"settings.project.providerLabel": "Proveedor",
+	"settings.project.providerDefault": "Predeterminado de la pasarela",
+	"settings.project.providerDirect": "Anthropic directo",
+	"settings.project.providerScopeApp": "app",
+	"settings.project.providerScopeProject": "proyecto"
 }

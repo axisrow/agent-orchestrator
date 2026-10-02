@@ -2356,5 +2356,10 @@
 	"settings.gateway.applyAppliedToast_other": "Fournisseur appliqué à {{count}} sessions",
 	"settings.gateway.applyAppliedToast_many": "Fournisseur appliqué à {{count}} sessions",
 	"settings.gateway.applySkippedToast": "{{name}} utilise déjà le nouveau fournisseur",
-	"settings.gateway.applyFailedToast": "Impossible de basculer {{name}}"
+	"settings.gateway.applyFailedToast": "Impossible de basculer {{name}}",
+	"settings.project.providerLabel": "Fournisseur",
+	"settings.project.providerDefault": "Passerelle par défaut",
+	"settings.project.providerDirect": "Anthropic en direct",
+	"settings.project.providerScopeApp": "app",
+	"settings.project.providerScopeProject": "projet"
 }

@@ -2304,5 +2304,10 @@
 	"settings.gateway.applyAppliedToast_one": "Provider applied to {{count}} session",
 	"settings.gateway.applyAppliedToast_other": "Provider applied to {{count}} sessions",
 	"settings.gateway.applySkippedToast": "{{name}} already uses the new provider",
-	"settings.gateway.applyFailedToast": "Could not switch {{name}}"
+	"settings.gateway.applyFailedToast": "Could not switch {{name}}",
+	"settings.project.providerLabel": "Provider",
+	"settings.project.providerDefault": "Gateway default",
+	"settings.project.providerDirect": "Direct Anthropic",
+	"settings.project.providerScopeApp": "app",
+	"settings.project.providerScopeProject": "project"
 }

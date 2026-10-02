@@ -172,6 +172,14 @@ paths:
           description: Optional project identifier used as the model-catalog cache
             scope.
           type: string
+      - description: 'Optional role whose provider pin scopes the catalog: worker,
+          orchestrator, or reviewer. Requires projectId.'
+        in: query
+        name: role
+        schema:
+          description: 'Optional role whose provider pin scopes the catalog: worker,
+            orchestrator, or reviewer. Requires projectId.'
+          type: string
       responses:
         "200":
           content:
@@ -233,6 +241,14 @@ paths:
           description: When true, compare executable and config metadata before running
             discovery.
           type: boolean
+      - description: 'Optional role whose provider pin scopes the catalog: worker,
+          orchestrator, or reviewer. Requires projectId.'
+        in: query
+        name: role
+        schema:
+          description: 'Optional role whose provider pin scopes the catalog: worker,
+            orchestrator, or reviewer. Requires projectId.'
+          type: string
       responses:
         "200":
           content:
@@ -11645,6 +11661,8 @@ components:
           $ref: '#/components/schemas/AgentConfig'
         harness:
           type: string
+        provider:
+          type: string
       required:
       - harness
       type: object
@@ -13536,6 +13554,8 @@ components:
           type: string
         agentConfig:
           $ref: '#/components/schemas/AgentConfig'
+        provider:
+          type: string
       type: object
     RollbackConversationResponse:
       properties:

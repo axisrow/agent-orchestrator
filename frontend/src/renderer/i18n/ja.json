@@ -2324,5 +2324,10 @@
 	"settings.gateway.applyAppliedToast_one": "{{count}} 個のセッションにプロバイダーを適用しました",
 	"settings.gateway.applyAppliedToast_other": "{{count}} 個のセッションにプロバイダーを適用しました",
 	"settings.gateway.applySkippedToast": "{{name}} は既に新しいプロバイダーを使用しています",
-	"settings.gateway.applyFailedToast": "{{name}} を切り替えられませんでした"
+	"settings.gateway.applyFailedToast": "{{name}} を切り替えられませんでした",
+	"settings.project.providerLabel": "プロバイダー",
+	"settings.project.providerDefault": "ゲートウェイのデフォルト",
+	"settings.project.providerDirect": "直接 Anthropic",
+	"settings.project.providerScopeApp": "アプリ",
+	"settings.project.providerScopeProject": "プロジェクト"
 }

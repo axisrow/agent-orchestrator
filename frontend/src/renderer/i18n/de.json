@@ -2324,5 +2324,10 @@
 	"settings.gateway.applyAppliedToast_one": "Anbieter auf {{count}} Sitzung angewendet",
 	"settings.gateway.applyAppliedToast_other": "Anbieter auf {{count}} Sitzungen angewendet",
 	"settings.gateway.applySkippedToast": "{{name}} verwendet bereits den neuen Anbieter",
-	"settings.gateway.applyFailedToast": "{{name}} konnte nicht gewechselt werden"
+	"settings.gateway.applyFailedToast": "{{name}} konnte nicht gewechselt werden",
+	"settings.project.providerLabel": "Anbieter",
+	"settings.project.providerDefault": "Gateway-Standard",
+	"settings.project.providerDirect": "Direkt zu Anthropic",
+	"settings.project.providerScopeApp": "App",
+	"settings.project.providerScopeProject": "Projekt"
 }

@@ -1629,6 +1629,10 @@ type AgentAuthenticationObservation = domain.AgentAuthenticationObservation
 // configured per workspace.
 type AgentModelsQuery struct {
 	ProjectID string `query:"projectId,omitempty" description:"Optional project identifier used as the model-catalog cache scope."`
+	// Role scopes the catalog to one role's provider pin (worker,
+	// orchestrator, reviewer), so a pinned role is offered its own
+	// provider's models.
+	Role string `query:"role,omitempty" description:"Optional role whose provider pin scopes the catalog: worker, orchestrator, or reviewer. Requires projectId."`
 }
 
 // AgentModelsRefreshQuery controls forced refresh versus cheap background
@@ -1636,6 +1640,7 @@ type AgentModelsQuery struct {
 type AgentModelsRefreshQuery struct {
 	ProjectID  string `query:"projectId,omitempty" description:"Optional project identifier used as the model-catalog cache scope."`
 	Revalidate bool   `query:"revalidate,omitempty" description:"When true, compare executable and config metadata before running discovery."`
+	Role       string `query:"role,omitempty" description:"Optional role whose provider pin scopes the catalog: worker, orchestrator, or reviewer. Requires projectId."`
 }
 
 // AgentModelsResponse is the normalized model picker for one agent.

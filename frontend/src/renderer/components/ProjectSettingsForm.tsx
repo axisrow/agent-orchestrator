@@ -16,7 +16,7 @@ import { agentModelsQueryKey, agentModelsQueryOptions, refreshAgentModels, reval
 import { useAgentReadinessQuery, useEnsureAgentReadiness } from "../hooks/useAgentReadinessQuery";
 import { useWorkspaceQuery, workspaceQueryKey } from "../hooks/useWorkspaceQuery";
 import { apiClient, apiErrorMessage } from "../lib/api-client";
-import { GatewayProvidersSection } from "./settings/GatewayProvidersSection";
+import { GatewayProvidersSection, gatewayConfigQueryKey } from "./settings/GatewayProvidersSection";
 import { isConcreteModelID, modelChoiceLabel } from "../lib/agent-model-choices";
 import { WORKER_DEFAULT_REVIEWERS } from "../lib/reviewer-harnesses";
 import { captureOrchestratorReplacementFailure } from "../lib/orchestrator-replacement-telemetry";
@@ -139,6 +139,9 @@ function SettingsBody({
 		sessionPrefix: config.sessionPrefix ?? "",
 		workerAgent: config.worker?.agent ?? "",
 		orchestratorAgent: config.orchestrator?.agent ?? "",
+		workerProvider: config.worker?.provider ?? "",
+		orchestratorProvider: config.orchestrator?.provider ?? "",
+		reviewerProvider: config.reviewers?.[0]?.provider ?? "",
 		workerModel: config.worker?.agentConfig?.model ?? config.agentConfig?.model ?? "",
 		workerEffort: config.worker?.agentConfig?.effort ?? config.agentConfig?.effort ?? "",
 		workerPermissions: config.worker?.agentConfig?.permissions ?? config.agentConfig?.permissions ?? "",
@@ -180,6 +183,20 @@ function SettingsBody({
 	});
 	const agentCatalog = agentsQuery.data;
 
+	// Per-role provider pins (#6156) are chosen among the configured gateway
+	// entries; the same GET the Gateway section uses reports both scopes.
+	const gatewayQuery = useQuery({
+		queryKey: gatewayConfigQueryKey(projectId),
+		queryFn: async () => {
+			const { data, error } = await apiClient.GET("/api/v1/settings/gateway", {
+				params: projectId ? { query: { projectId } } : undefined,
+			});
+			if (error) throw new Error(apiErrorMessage(error));
+			return data;
+		},
+	});
+	const providerOptions = gatewayProviderOptions(gatewayQuery.data, t);
+
 	const intakeForm: IntakeForm = {
 		enabled: form.intakeEnabled,
 		repo: form.intakeRepo,
@@ -212,11 +229,13 @@ function SettingsBody({
 						worker: {
 							...config.worker,
 							agent: values.workerAgent,
+							provider: values.workerProvider || undefined,
 							agentConfig: buildRoleAgentConfig(config.worker?.agentConfig, values.workerModel, values.workerMode, values.workerEffort, values.workerPermissions),
 						},
 						orchestrator: {
 							...config.orchestrator,
 							agent: values.orchestratorAgent,
+							provider: values.orchestratorProvider || undefined,
 							agentConfig: buildRoleAgentConfig(
 								config.orchestrator?.agentConfig,
 								values.orchestratorModel,
@@ -237,11 +256,13 @@ function SettingsBody({
 						worker: {
 							...config.worker,
 							agent: values.workerAgent,
+							provider: values.workerProvider || undefined,
 							agentConfig: buildRoleAgentConfig(config.worker?.agentConfig, values.workerModel, values.workerMode, values.workerEffort, values.workerPermissions),
 						},
 						orchestrator: {
 							...config.orchestrator,
 							agent: values.orchestratorAgent,
+							provider: values.orchestratorProvider || undefined,
 							agentConfig: buildRoleAgentConfig(
 								config.orchestrator?.agentConfig,
 								values.orchestratorModel,
@@ -258,6 +279,7 @@ function SettingsBody({
 							? [
 									{
 										harness: values.reviewerHarness,
+										provider: values.reviewerProvider || undefined,
 										agentConfig: buildRoleAgentConfig(
 											existingReviewerAgentConfig,
 											values.reviewerModel,
@@ -577,10 +599,11 @@ function SettingsBody({
 			{section === "agents" && (
 				<>
 					<ProjectSettingsSection title={t("settings.project.agents")} titleHidden grouped>
-					<div className="grid grid-cols-[6rem_minmax(0,0.85fr)_minmax(0,1.25fr)] gap-3 py-2 text-xs font-medium text-settings-muted">
+					<div className="grid grid-cols-[6rem_minmax(0,0.75fr)_minmax(0,1.05fr)_minmax(0,0.8fr)] gap-3 py-2 text-xs font-medium text-settings-muted">
 						<span />
 						<span>{t("settings.project.agent")}</span>
 						<span>{t("settings.project.modelOverride")}</span>
+						<span>{t("settings.project.providerLabel")}</span>
 					</div>
 					<ProjectAgentRoleRow
 						label={t("settings.models.workerRole")}
@@ -610,6 +633,7 @@ function SettingsBody({
 								role="worker"
 								agentId={form.workerAgent}
 								projectId={projectId}
+								catalogRole={form.workerProvider ? "worker" : undefined}
 								model={form.workerModel}
 								mode={form.workerMode}
 								effort={form.workerEffort}
@@ -617,6 +641,22 @@ function SettingsBody({
 								onModeChange={(workerMode) => setForm((f) => ({ ...f, workerMode }))}
 								onEffortChange={(workerEffort) => setForm((f) => ({ ...f, workerEffort }))}
 								onValidityChange={(valid) => setTuningValidity((value) => ({ ...value, worker: valid }))}
+							/>
+						}
+						provider={
+							<RoleProviderSelect
+								ariaLabel={t("settings.project.providerLabel")}
+								value={form.workerProvider}
+								options={providerOptions}
+								onChange={(workerProvider) =>
+									setForm((f) => ({
+										...f,
+										workerProvider,
+										workerModel: "",
+										workerMode: "",
+										workerEffort: "",
+									}))
+								}
 							/>
 						}
 					/>
@@ -648,6 +688,7 @@ function SettingsBody({
 								role="orchestrator"
 								agentId={form.orchestratorAgent}
 								projectId={projectId}
+								catalogRole={form.orchestratorProvider ? "orchestrator" : undefined}
 								model={form.orchestratorModel}
 								mode={form.orchestratorMode}
 								effort={form.orchestratorEffort}
@@ -658,6 +699,22 @@ function SettingsBody({
 									setTuningValidity((value) => ({
 										...value,
 										orchestrator: valid,
+									}))
+								}
+							/>
+						}
+						provider={
+							<RoleProviderSelect
+								ariaLabel={t("settings.project.providerLabel")}
+								value={form.orchestratorProvider}
+								options={providerOptions}
+								onChange={(orchestratorProvider) =>
+									setForm((f) => ({
+										...f,
+										orchestratorProvider,
+										orchestratorModel: "",
+										orchestratorMode: "",
+										orchestratorEffort: "",
 									}))
 								}
 							/>
@@ -699,6 +756,7 @@ function SettingsBody({
 									role="reviewer"
 									agentId={form.reviewerHarness || defaultReviewerHarness}
 									projectId={projectId}
+									catalogRole={form.reviewerProvider ? "reviewer" : undefined}
 									model={form.reviewerModel}
 									mode={form.reviewerMode}
 									effort={form.reviewerEffort}
@@ -709,6 +767,22 @@ function SettingsBody({
 										setTuningValidity((value) => ({
 											...value,
 											reviewer: valid,
+										}))
+									}
+								/>
+							}
+							provider={
+								<RoleProviderSelect
+									ariaLabel={t("settings.project.providerLabel")}
+									value={form.reviewerProvider}
+									options={providerOptions}
+									onChange={(reviewerProvider) =>
+										setForm((f) => ({
+											...f,
+											reviewerProvider,
+											reviewerModel: "",
+											reviewerMode: "",
+											reviewerEffort: "",
 										}))
 									}
 								/>
@@ -769,6 +843,7 @@ function AgentModelField({
 	role,
 	agentId,
 	projectId,
+	catalogRole,
 	model,
 	mode,
 	effort,
@@ -780,6 +855,9 @@ function AgentModelField({
 	role: "worker" | "orchestrator" | "reviewer";
 	agentId: string;
 	projectId: string;
+	// When the role pins a provider, the catalog is scoped to that role so the
+	// picker resolves the pinned provider's models, not the default resolution.
+	catalogRole?: "worker" | "orchestrator" | "reviewer";
 	model: string;
 	mode: string;
 	effort: string;
@@ -790,20 +868,20 @@ function AgentModelField({
 }) {
 	const { t } = useTranslation();
 	const queryClient = useQueryClient();
-	const query = useQuery(agentModelsQueryOptions(agentId, projectId));
+	const query = useQuery(agentModelsQueryOptions(agentId, projectId, catalogRole));
 	const catalog: AgentModelCatalog | undefined = query.data;
 	const revalidationQuery = useQuery({
-		queryKey: ["agent-model-revalidation", agentId, projectId, catalog?.validatedAt ?? ""],
-		queryFn: () => revalidateAgentModels(agentId, projectId),
+		queryKey: ["agent-model-revalidation", agentId, projectId, catalogRole ?? "", catalog?.validatedAt ?? ""],
+		queryFn: () => revalidateAgentModels(agentId, projectId, catalogRole),
 		enabled: agentId !== "" && catalog?.refreshRecommended === true,
 		staleTime: Number.POSITIVE_INFINITY,
 		retry: false,
 	});
 	useEffect(() => {
 		if (revalidationQuery.data) {
-			queryClient.setQueryData(agentModelsQueryKey(agentId, projectId), revalidationQuery.data);
+			queryClient.setQueryData(agentModelsQueryKey(agentId, projectId, catalogRole), revalidationQuery.data);
 		}
-	}, [agentId, projectId, queryClient, revalidationQuery.data]);
+	}, [agentId, catalogRole, projectId, queryClient, revalidationQuery.data]);
 	const isMode = catalog?.selectionMode === "mode";
 	const label = t(`settings.models.${role}${isMode ? "Mode" : "Model"}`);
 	const warning =
@@ -854,8 +932,8 @@ function AgentModelField({
 
 	const customModelEntry = catalog?.customModelEntry ?? (catalog?.allowCustom ? "direct" : "none");
 	const refreshCatalog = async () => {
-		const refreshed = await refreshAgentModels(agentId, projectId);
-		queryClient.setQueryData(agentModelsQueryKey(agentId, projectId), refreshed);
+		const refreshed = await refreshAgentModels(agentId, projectId, catalogRole);
+		queryClient.setQueryData(agentModelsQueryKey(agentId, projectId, catalogRole), refreshed);
 	};
 	const selectCatalogModel = (value: string) => {
 		onModelChange(value);
@@ -899,12 +977,13 @@ function AgentModelField({
 	);
 }
 
-function ProjectAgentRoleRow({ label, agent, model }: { label: string; agent: ReactNode; model: ReactNode }) {
+function ProjectAgentRoleRow({ label, agent, model, provider }: { label: string; agent: ReactNode; model: ReactNode; provider?: ReactNode }) {
 	return (
-		<div className="grid min-h-16 grid-cols-[6rem_minmax(0,0.85fr)_minmax(0,1.25fr)] items-center gap-3 py-2">
+		<div className="grid min-h-16 grid-cols-[6rem_minmax(0,0.75fr)_minmax(0,1.05fr)_minmax(0,0.8fr)] items-center gap-3 py-2">
 			<span className="text-sm font-medium text-settings-label">{label}</span>
 			<div className="min-w-0">{agent}</div>
 			<div className="min-w-0">{model}</div>
+			<div className="min-w-0">{provider}</div>
 		</div>
 	);
 }
@@ -927,6 +1006,44 @@ function PermissionModeSelect({ ariaLabel, value, agentId, onChange }: { ariaLab
 			value={value === "default" && agentId === "codex" ? "bypass-permissions" : value || "auto"}
 			options={options}
 			placeholder={t("settings.project.permissionNotReported")}
+			triggerClassName="w-full justify-between"
+			onChange={onChange}
+		/>
+	);
+}
+
+type GatewayConfigResponse = components["schemas"]["ControllersGatewayConfigResponse"];
+
+// gatewayProviderOptions lists the per-role provider choices: follow the
+// gateway resolution, bypass every gateway, or pin one of the configured
+// entries. A pinned entry is labeled with the scope that wins the resolution
+// (project overrides app) so the effective source stays visible.
+function gatewayProviderOptions(config: GatewayConfigResponse | undefined, t: TFunction): { value: string; label: string }[] {
+	const options = [
+		{ value: "", label: t("settings.project.providerDefault") },
+		{ value: "direct", label: t("settings.project.providerDirect") },
+	];
+	const pushEntry = (baseUrl: string | undefined, scopeLabel: string) => {
+		if (!baseUrl) return;
+		let host = baseUrl;
+		try {
+			host = new URL(baseUrl).host;
+		} catch {
+			// Not a parseable URL — show it verbatim rather than hiding the entry.
+		}
+		options.push({ value: baseUrl, label: `${host} (${scopeLabel})` });
+	};
+	pushEntry(config?.project?.baseUrl, t("settings.project.providerScopeProject"));
+	pushEntry(config?.app?.baseUrl, t("settings.project.providerScopeApp"));
+	return options;
+}
+
+function RoleProviderSelect({ ariaLabel, value, options, onChange }: { ariaLabel: string; value: string; options: { value: string; label: string }[]; onChange: (value: string) => void }) {
+	return (
+		<SettingsOptionMenu
+			aria-label={ariaLabel}
+			value={options.some((option) => option.value === value) ? value : ""}
+			options={options}
 			triggerClassName="w-full justify-between"
 			onChange={onChange}
 		/>

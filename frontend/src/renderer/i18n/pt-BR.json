@@ -2356,5 +2356,10 @@
 	"settings.gateway.applyAppliedToast_other": "Provedor aplicado a {{count}} sessões",
 	"settings.gateway.applyAppliedToast_many": "Provedor aplicado a {{count}} sessões",
 	"settings.gateway.applySkippedToast": "{{name}} já usa o novo provedor",
-	"settings.gateway.applyFailedToast": "Não foi possível alternar {{name}}"
+	"settings.gateway.applyFailedToast": "Não foi possível alternar {{name}}",
+	"settings.project.providerLabel": "Provedor",
+	"settings.project.providerDefault": "Padrão do gateway",
+	"settings.project.providerDirect": "Anthropic direto",
+	"settings.project.providerScopeApp": "app",
+	"settings.project.providerScopeProject": "projeto"
 }

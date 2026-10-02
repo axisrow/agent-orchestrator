@@ -3968,6 +3968,7 @@ export interface components {
         DomainReviewerConfig: {
             agentConfig?: components["schemas"]["AgentConfig"];
             harness: string;
+            provider?: string;
         };
         DomainReviewerSurface: {
             controllerError?: string;
@@ -4695,6 +4696,7 @@ export interface components {
         RoleOverride: {
             agent?: string;
             agentConfig?: components["schemas"]["AgentConfig"];
+            provider?: string;
         };
         RollbackConversationResponse: {
             turnsDiscarded: number;
@@ -5645,6 +5647,8 @@ export interface operations {
             query?: {
                 /** @description Optional project identifier used as the model-catalog cache scope. */
                 projectId?: string;
+                /** @description Optional role whose provider pin scopes the catalog: worker, orchestrator, or reviewer. Requires projectId. */
+                role?: string;
             };
             header?: never;
             path: {
@@ -5709,6 +5713,8 @@ export interface operations {
                 projectId?: string;
                 /** @description When true, compare executable and config metadata before running discovery. */
                 revalidate?: boolean;
+                /** @description Optional role whose provider pin scopes the catalog: worker, orchestrator, or reviewer. Requires projectId. */
+                role?: string;
             };
             header?: never;
             path: {
