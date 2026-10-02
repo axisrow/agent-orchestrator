@@ -491,12 +491,13 @@ describe("ProjectSettingsForm", () => {
 		});
 		renderSettings("proj-1", undefined, "agents");
 		const picker = await screen.findByRole("button", { name: "Worker model" });
-		expect(picker).toHaveTextContent("GPT Test · High");
+		expect(picker).toHaveTextContent("GPT Test");
+		expect(picker).not.toHaveTextContent("High");
 		expect(screen.queryByRole("button", { name: "Worker Effort" })).not.toBeInTheDocument();
 		await userEvent.click(picker);
 		await userEvent.click(screen.getByRole("menuitem", { name: /Reasoning effort/ }));
 		await userEvent.click(screen.getByRole("menuitemradio", { name: "Low" }));
-		expect(picker).toHaveTextContent("GPT Test · Low");
+		expect(picker).toHaveTextContent("GPT Test");
 		submitSettings();
 		await waitFor(() => expect(putMock).toHaveBeenCalledTimes(1));
 		expect(putMock.mock.calls[0][1].body.config.worker.agentConfig).toEqual(
@@ -521,7 +522,8 @@ describe("ProjectSettingsForm", () => {
 		});
 		renderSettings("proj-1", undefined, "agents");
 		const picker = await screen.findByRole("button", { name: "Worker model" });
-		expect(picker).toHaveTextContent("Claude Opus · Effort not reported");
+		expect(picker).toHaveTextContent("Claude Opus");
+		expect(picker).not.toHaveTextContent("Effort not reported");
 		await userEvent.click(picker);
 		await userEvent.click(screen.getByRole("menuitem", { name: /Reasoning effort/ }));
 		await userEvent.click(screen.getByRole("menuitemradio", { name: "High" }));

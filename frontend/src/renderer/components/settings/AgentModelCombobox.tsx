@@ -260,7 +260,6 @@ export function AgentModelCombobox({
 					) : (
 						<span className="min-w-0 truncate">{currentLabel}</span>
 					)}
-					{showEffort && <span className="shrink-0 text-settings-muted"> · {currentEffortLabel}</span>}
 					<ChevronDown
 						className="size-icon-sm shrink-0 opacity-70 transition-transform duration-300 ease-out group-data-[state=open]/agent-model-trigger:rotate-180"
 						aria-hidden="true"
