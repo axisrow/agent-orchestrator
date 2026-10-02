@@ -522,9 +522,10 @@ describe("ProjectSettingsForm", () => {
 		});
 		renderSettings("proj-1", undefined, "agents");
 		const picker = await screen.findByRole("button", { name: "Worker model" });
-		expect(picker).toHaveTextContent("Claude Opus");
+		expect(picker).toHaveTextContent("Opus");
 		expect(picker).not.toHaveTextContent("Effort not reported");
 		await userEvent.click(picker);
+		expect(screen.getByRole("menuitem", { name: "Opus" })).toBeInTheDocument();
 		await userEvent.click(screen.getByRole("menuitem", { name: /Reasoning effort/ }));
 		await userEvent.click(screen.getByRole("menuitemradio", { name: "High" }));
 		submitSettings();

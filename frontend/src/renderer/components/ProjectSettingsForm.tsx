@@ -17,7 +17,7 @@ import { useAgentReadinessQuery, useEnsureAgentReadiness } from "../hooks/useAge
 import { useWorkspaceQuery, workspaceQueryKey } from "../hooks/useWorkspaceQuery";
 import { apiClient, apiErrorMessage } from "../lib/api-client";
 import { GatewayProvidersSection, gatewayConfigQueryKey } from "./settings/GatewayProvidersSection";
-import { isConcreteModelID, modelChoiceLabel } from "../lib/agent-model-choices";
+import { agentModelDisplayLabel, isConcreteModelID, modelChoiceLabel } from "../lib/agent-model-choices";
 import { WORKER_DEFAULT_REVIEWERS } from "../lib/reviewer-harnesses";
 import { captureOrchestratorReplacementFailure } from "../lib/orchestrator-replacement-telemetry";
 import { OrchestratorSpawnError, spawnOrchestrator } from "../lib/spawn-orchestrator";
@@ -904,7 +904,7 @@ function AgentModelField({
 		const selectedMode = isConcreteModelID(mode) ? mode : "";
 		const options = (catalog.models ?? []).filter((item) => isConcreteModelID(item.id)).map((item) => ({
 			value: item.id,
-			label: modelChoiceLabel(item),
+			label: agentModelDisplayLabel(agentId, modelChoiceLabel(item)),
 		}));
 		return (
 			<>
@@ -943,6 +943,10 @@ function AgentModelField({
 		onModelChange(value);
 		onModeChange("");
 	};
+	const displayModels = (catalog?.models ?? []).map((item) => ({
+		...item,
+		label: agentModelDisplayLabel(agentId, item.label),
+	}));
 	return (
 		<>
 			<div className="min-w-0">
@@ -950,7 +954,7 @@ function AgentModelField({
 					<AgentModelCombobox
 						aria-label={label}
 						value={model}
-						models={catalog?.models ?? []}
+						models={displayModels}
 						allowCustom={catalog?.allowCustom}
 						customModelEntry={customModelEntry}
 						agentLabel={agentId}
