@@ -12,6 +12,7 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 	agentsvc "github.com/aoagents/agent-orchestrator/backend/internal/service/agent"
 	"github.com/aoagents/agent-orchestrator/backend/internal/service/agentauth"
+	"github.com/aoagents/agent-orchestrator/backend/internal/service/gateway"
 	projectsvc "github.com/aoagents/agent-orchestrator/backend/internal/service/project"
 	sessionsvc "github.com/aoagents/agent-orchestrator/backend/internal/service/session"
 	"github.com/aoagents/agent-orchestrator/backend/internal/service/systemcheck"
@@ -139,11 +140,42 @@ type ProjectResponse struct {
 	Project projectsvc.Project `json:"project"`
 }
 
+// DefaultPromptsWire carries the assembled hardcoded system-prompt baselines
+// (static skeleton, no per-session data) so the UI's prompt-override editor can
+// prefill with the real text. Embedded by the GET responses that open the
+// editor (UserConfigResponse, GetProjectResponse); omitted on PUT responses.
+// The fields flatten to the top level of the embedding response (Go embedding
+// → flat JSON), and the OpenAPI reflector expands them the same way.
+type DefaultPromptsWire struct {
+	// DefaultWorkerPrompt is the assembled hardcoded worker system-prompt
+	// baseline. Surfaced so the UI can prefill the worker override editor.
+	DefaultWorkerPrompt string `json:"defaultWorkerPrompt,omitempty"`
+	// DefaultOrchestratorPrompt is the assembled hardcoded orchestrator
+	// system-prompt baseline.
+	DefaultOrchestratorPrompt string `json:"defaultOrchestratorPrompt,omitempty"`
+}
+
+// UserConfigResponse is the body of GET/PUT /api/v1/user-config: the whole
+// user-scope AgentConfig (model + permissions today; more fields land when
+// AgentConfig grows, picked up for free because the type is reused end to end),
+// plus the assembled hardcoded system-prompt baselines so the UI can prefill
+// its override editors with the real text. The default-prompt fields are omitted
+// on the PUT response (they only matter on GET, where the editor opens).
+type UserConfigResponse struct {
+	AgentConfig domain.AgentConfig `json:"agentConfig"`
+	DefaultPromptsWire
+}
+
 // GetProjectResponse is the { status, project } body of GET /projects/{id},
-// where project is oneOf Project|Degraded discriminated by status.
+// where project is oneOf Project|Degraded discriminated by status. The default
+// prompt baselines are surfaced alongside the project so the UI's prompt
+// override editor (the same dialog used by user-config) can prefill with the
+// real hardcoded text. They are populated only on GET; the PUT responses
+// (ProjectResponse) do not carry them.
 type GetProjectResponse struct {
 	Status  string            `json:"status" enum:"ok,degraded"`
 	Project ProjectOrDegraded `json:"project"`
+	DefaultPromptsWire
 }
 
 // ProjectOrDegraded is the discriminated `project` field: exactly one of
@@ -187,14 +219,21 @@ func (ProjectOrDegraded) JSONSchemaOneOf() []interface{} {
 // newGetProjectResponse maps the internal GetResult onto the wire envelope —
 // the explicit project→httpd boundary the result type exists for. It errors
 // when the result sets neither variant, so the handler can return a clean 500
-// BEFORE writing the 200 status rather than flushing a truncated body.
-func newGetProjectResponse(res projectsvc.GetResult) (GetProjectResponse, error) {
+// BEFORE writing the 200 status rather than flushing a truncated body. The
+// defaultWorker/defaultOrchestrator baselines are injected so the UI's
+// prompt-override editor can prefill with the real hardcoded text (mirrors
+// UserConfigResponse); they are static and never error to obtain.
+func newGetProjectResponse(res projectsvc.GetResult, defaults projectsvc.DefaultPrompts) (GetProjectResponse, error) {
 	if res.Project == nil && res.Degraded == nil {
 		return GetProjectResponse{}, errEmptyProjectOrDegraded
 	}
 	return GetProjectResponse{
 		Status:  res.Status,
 		Project: ProjectOrDegraded{Project: res.Project, Degraded: res.Degraded},
+		DefaultPromptsWire: DefaultPromptsWire{
+			DefaultWorkerPrompt:       defaults.Worker,
+			DefaultOrchestratorPrompt: defaults.Orchestrator,
+		},
 	}, nil
 }
 
@@ -859,6 +898,24 @@ type ResumeAgentResponse struct {
 	SessionID  domain.SessionID           `json:"sessionId"`
 	ResumeMode sessionsvc.RestoreModeView `json:"resumeMode" enum:"native,saved_prompt,fresh"`
 	Session    SessionView                `json:"session"`
+}
+
+// ProviderStalenessResponse is the body of GET /api/v1/sessions/provider-staleness.
+type ProviderStalenessResponse struct {
+	Sessions []sessionsvc.ProviderStaleness `json:"sessions"`
+}
+
+// ApplyProviderRequest is the body of POST /api/v1/sessions/apply-provider.
+// Empty sessionIds applies to every stale running claude-code session.
+type ApplyProviderRequest struct {
+	SessionIds []string `json:"sessionIds,omitempty"`
+}
+
+// ApplyProviderResponse is the body of POST /api/v1/sessions/apply-provider.
+// The request never fails at batch level; each session reports its own outcome.
+type ApplyProviderResponse struct {
+	OK      bool                             `json:"ok"`
+	Results []sessionsvc.ProviderApplyResult `json:"results"`
 }
 
 // StartSessionInterfaceTransitionRequest is the body of POST
@@ -1660,6 +1717,10 @@ type SessionUsageResponse struct {
 	Incomplete bool                   `json:"incomplete"`
 	Totals     UsageTotalsResponse    `json:"totals"`
 	Harnesses  []UsageHarnessResponse `json:"harnesses"`
+	Turns      int64                  `json:"turns" minimum:"0" description:"Assistant responses observed in the transcripts (one usage event per turn)."`
+	// Average output tokens per second over the transcript-timestamp span;
+	// null when output tokens or timestamps are incomplete.
+	TokensPerSecond *float64 `json:"tokensPerSecond" exclusiveMinimum:"0"`
 }
 
 // SystemRequirementsResponse is the body of GET /api/v1/system/requirements.
@@ -2867,6 +2928,51 @@ type UpdateCloudOfferingRequest struct {
 	Enabled *bool `json:"enabled"`
 }
 
+// GatewayScopeValue is one scope's stored Anthropic-compatible gateway entry.
+// The token is never returned, only whether one is stored.
+type GatewayScopeValue struct {
+	BaseURL  string `json:"baseUrl,omitempty"`
+	TokenSet bool   `json:"tokenSet"`
+	Model    string `json:"model,omitempty"`
+}
+
+// GatewayConfigResponse is the body of GET /api/v1/settings/gateway.
+type GatewayConfigResponse struct {
+	App       gateway.ScopeValue  `json:"app"`
+	Project   *gateway.ScopeValue `json:"project,omitempty"`
+	Effective gateway.Effective   `json:"effective"`
+}
+
+// UpdateGatewayConfigRequest is the body of PUT /api/v1/settings/gateway.
+// Every key is tri-state: omitted (nil) leaves the stored value untouched, an
+// empty string clears the key, a value writes it.
+type UpdateGatewayConfigRequest struct {
+	Scope     string  `json:"scope" enum:"app,project"`
+	ProjectID string  `json:"projectId,omitempty"`
+	BaseURL   *string `json:"baseUrl,omitempty"`
+	Token     *string `json:"token,omitempty"`
+	Model     *string `json:"model,omitempty"`
+}
+
+// GatewayProbeRequest is the body of POST /api/v1/settings/gateway/probe.
+type GatewayProbeRequest struct {
+	BaseURL string `json:"baseUrl"`
+	Token   string `json:"token"`
+}
+
+// GatewayProbeResponse reports the probe verdict and the gateway's own model
+// list, so the settings screen can offer real model IDs.
+type GatewayProbeResponse struct {
+	State  string          `json:"state" enum:"valid,invalid,unknown"`
+	Detail string          `json:"detail,omitempty"`
+	Models []gateway.Model `json:"models,omitempty"`
+}
+
+// GatewayConfigQuery scopes the GET to one project's override entry.
+type GatewayConfigQuery struct {
+	ProjectID string `query:"projectId,omitempty" description:"Project id; when omitted, only the app scope is reported."`
+}
+
 // capabilityNames lists the abilities a provider has, sorted so a client sees a
 // stable list rather than Go's map order. Only true entries are named: a
 // capability the driver reports as false is one it cannot do, which is the same
@@ -2896,6 +3002,7 @@ func capabilityNames(caps ports.ChatCapabilities) []string {
 type TriggerReviewRequest struct {
 	Harness     domain.ReviewerHarness `json:"harness,omitempty" enum:"claude-code,codex,copilot,cursor,kilocode,opencode,opencode-v2,kiro,pi,agy,devin,droid,kimi,kimchi,muse,amp,aider,grok,crush,auggie,cline,autohand"`
 	AgentConfig domain.AgentConfig     `json:"agentConfig,omitempty"`
+	PRURL       string                 `json:"prUrl,omitempty" description:"Restrict the pass to this pull request. Omit to review every eligible PR on the session."`
 }
 
 // ResolveReviewCommentRequest is the body of POST /api/v1/sessions/{sessionId}/reviews/comments/resolve.

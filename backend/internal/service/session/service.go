@@ -45,6 +45,7 @@ type Store interface {
 	ListPRFactsForSessions(ctx context.Context, ids []domain.SessionID) (map[domain.SessionID][]domain.PRFacts, error)
 	ListCurrentHeadReviewRunsForSession(ctx context.Context, id domain.SessionID) ([]domain.CurrentHeadReviewRun, error)
 	ListCurrentHeadReviewRunsForSessions(ctx context.Context, ids []domain.SessionID) (map[domain.SessionID][]domain.CurrentHeadReviewRun, error)
+	ListPublishedReviewGitHubIDsByPR(ctx context.Context, prURL string) ([]string, error)
 	ListPRsBySession(ctx context.Context, sessionID domain.SessionID) ([]domain.PullRequest, error)
 	ListReportedPRURLs(ctx context.Context, id domain.SessionID) ([]string, error)
 	ListSessionWorktrees(ctx context.Context, id domain.SessionID) ([]domain.SessionWorktreeRecord, error)
@@ -209,6 +210,9 @@ type Service struct {
 	titleRefinementSlots   chan struct{}
 	titleRefinementMu      sync.Mutex
 	titleRefinementCancels map[domain.SessionID]context.CancelFunc
+	// resolveStampOverride injects provider-stamp resolution for tests so
+	// staleness never reads the developer's real ~/.claude. nil uses agentcreds.
+	resolveStampOverride func(ctx context.Context, workingDir string, projectEnv map[string]string) (string, string)
 }
 
 // SetChatProviderPreserver wires the live Chat lifetime observation after both

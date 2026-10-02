@@ -264,6 +264,7 @@ func (m *Manager) launchChatController(ctx context.Context, in chatSpawn) (domai
 				Model:                     agentConfig.Model,
 				Effort:                    agentConfig.Effort,
 			}
+			metadata.ProviderBaseURL, metadata.ProviderModel = stampSessionProvider(ctx, in.workspace.Path, env)
 			committedConversation, commitErr := m.markChatControllerSpawned(
 				ctx, id, metadata, started.Conversation, started.ProviderBoundary,
 				started.CommitProviderHistory, nil, started.LiveReconnect,
@@ -509,6 +510,7 @@ func (m *Manager) resumeChatController(
 			// A fresh generation per launch: events still arriving from the
 			// controller this one replaced carry the old one and are rejected.
 			metadata.ControllerGeneration = started.ControllerGeneration
+			metadata.ProviderBaseURL, metadata.ProviderModel = stampSessionProvider(ctx, ws.Path, env)
 
 			committedConversation, commitErr := m.markChatControllerSpawned(
 				ctx, rec.ID, metadata, started.Conversation, started.ProviderBoundary,

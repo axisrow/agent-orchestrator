@@ -47,6 +47,32 @@ export function openReviewStatesFor(session: WorkspaceSession, reviewStates: PRR
 	return reviewStates.filter((reviewState) => openPRURLs.has(reviewState.prUrl));
 }
 
+/** Synthetic states for PRs that have finished runs but no live state — PRs
+ *  merged/closed earlier in the same session's history. Keeps their review runs
+ *  visible in the Reviews tab even though they can no longer be reviewed. */
+export function historicalReviewStatesFrom(runs: ReviewRunFacts[], known: PRReviewState[]): PRReviewState[] {
+	const knownURLs = new Set(known.map((state) => state.prUrl));
+	const byURL = new Map<string, ReviewRunFacts[]>();
+	for (const run of runs) {
+		if (knownURLs.has(run.prUrl)) continue;
+		// Same bar as runsByPRFrom: only runs with rendered content become sections.
+		if ((run.status !== "complete" && run.status !== "delivered") || !run.body?.trim()) continue;
+		byURL.set(run.prUrl, [...(byURL.get(run.prUrl) ?? []), run]);
+	}
+	return [...byURL.entries()].map(([prUrl, prRuns]) => {
+		const sorted = [...prRuns].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+		return {
+			latestRun: sorted[0],
+			previousRun: sorted[1],
+			prNumber: Number(prUrl.match(/(\d+)(?:\/.*)?$/)?.[1] ?? 0),
+			prUrl,
+			status: sorted[0]?.verdict === "changes_requested" ? "changes_requested" : "up_to_date",
+			targetSha: sorted[0]?.targetSha ?? "",
+			title: "",
+		} satisfies PRReviewState;
+	});
+}
+
 export function reviewIsRunning(openReviewStates: PRReviewState[]): boolean {
 	return openReviewStates.some((reviewState) => reviewState.status === "running");
 }
@@ -117,6 +143,7 @@ function mockReviewsResponse(session: WorkspaceSession): ReviewsResponse {
 						harness: "codex",
 						id: `demo-review-run-${pr.number}`,
 						prUrl: pr.url,
+						publishState: "published",
 						reviewId: `demo-review-${pr.number}`,
 						sessionId: session.id,
 						status: "delivered",
@@ -129,6 +156,7 @@ function mockReviewsResponse(session: WorkspaceSession): ReviewsResponse {
 		autoInjectReview: session.autoInjectReview ?? true,
 		batchId: `demo-batch-${session.id}`,
 		body: "",
+		publishState: "pending",
 		triggerSource: "manual" as const,
 			createdAt: reviewedAt,
 			githubReviewId: "",
@@ -162,6 +190,7 @@ function mockReviewsResponse(session: WorkspaceSession): ReviewsResponse {
 					status: "delivered",
 					verdict: "changes_requested",
 					githubReviewId: `${pr.number}09`,
+					publishState: "published",
 					body: "Demo review asked for a tighter activity sample before the last commit.",
 					targetSha: `${targetSha}-old`,
 				}),
@@ -195,6 +224,7 @@ function mockReviewsResponse(session: WorkspaceSession): ReviewsResponse {
 			autoInjectReview: session.autoInjectReview ?? true,
 			batchId: `demo-batch-${session.id}`,
 			githubReviewId: "",
+			publishState: "published",
 			prUrl: state.prUrl,
 			triggerSource: "manual" as const,
 			reviewId: `demo-review-${state.prNumber}`,
