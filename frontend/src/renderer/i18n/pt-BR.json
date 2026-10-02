@@ -2331,5 +2331,20 @@
 	"standalone.archive.heading_other": "{{count}} sessões arquivadas",
 	"standalone.archive.newAgent": "Novo agente",
 	"standalone.archive.empty.title": "Nenhum agente independente arquivado",
-	"standalone.archive.empty.body": "Os agentes independentes que você arquivar no Bloco de notas aparecerão aqui. Agentes independentes ativos permanecem na lista do Bloco de notas."
+	"standalone.archive.empty.body": "Os agentes independentes que você arquivar no Bloco de notas aparecerão aqui. Agentes independentes ativos permanecem na lista do Bloco de notas.",
+	"settings.gateway.title": "Provedores de gateway",
+	"settings.gateway.baseUrl": "URL base",
+	"settings.gateway.baseUrlHint": "Endpoint compatível com Anthropic, ex.: https://gateway.example.com",
+	"settings.gateway.token": "Token de autenticação",
+	"settings.gateway.tokenStored": "Há um token armazenado; digite um novo para substituí-lo",
+	"settings.gateway.tokenHint": "Enviado como ANTHROPIC_AUTH_TOKEN; deixe vazio para manter o valor armazenado",
+	"settings.gateway.model": "Modelo padrão",
+	"settings.gateway.modelHint": "Opcional; use um ID de modelo informado pelo gateway (teste para listá-los)",
+	"settings.gateway.probe": "Testar conexão",
+	"settings.gateway.probeOk": "Funciona",
+	"settings.gateway.probeFailed": "Rejeitado",
+	"settings.gateway.save": "Salvar",
+	"settings.gateway.effectiveOn": "Gateway ativo: {{baseUrl}} ({{source}})",
+	"settings.gateway.effectiveOff": "Nenhum gateway configurado; as solicitações vão direto para a Anthropic",
+	"settings.gateway.effectiveSourceOnly": "Substituição de gateway ativa no escopo {{source}} (apenas token/modelo, sem URL base)"
 }

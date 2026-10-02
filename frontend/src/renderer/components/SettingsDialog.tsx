@@ -1,4 +1,4 @@
-import { Bot, Disc3, Loader2, MonitorCog, TriangleAlert, X, type LucideIcon } from "lucide-react";
+import { Bot, Disc3, Loader2, MonitorCog, Network, TriangleAlert, X, type LucideIcon } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useEffect, useRef, useState } from "react";
@@ -64,6 +64,7 @@ function SettingsDialogLayer({ settingsModal }: { settingsModal: SettingsModal }
 	}> = [
 		{ id: "general", label: t("settings.project.general"), icon: MonitorCog },
 		{ id: "agents", label: t("settings.project.agents"), icon: Bot },
+		{ id: "gateway", label: t("settings.gateway.title"), icon: Network },
 		{ id: "cues", label: t("cues.title"), icon: Disc3 },
 	];
 

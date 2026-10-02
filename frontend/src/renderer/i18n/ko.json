@@ -2300,5 +2300,20 @@
 	"standalone.archive.heading_other": "보관된 세션 {{count}}개",
 	"standalone.archive.newAgent": "새 에이전트",
 	"standalone.archive.empty.title": "보관된 독립 실행형 에이전트가 없습니다",
-	"standalone.archive.empty.body": "스크래치패드에서 보관한 독립 실행형 에이전트가 여기에 표시됩니다. 활성 독립 실행형 에이전트는 스크래치패드 목록에 남아 있습니다."
+	"standalone.archive.empty.body": "스크래치패드에서 보관한 독립 실행형 에이전트가 여기에 표시됩니다. 활성 독립 실행형 에이전트는 스크래치패드 목록에 남아 있습니다.",
+	"settings.gateway.title": "게이트웨이 공급자",
+	"settings.gateway.baseUrl": "기본 URL",
+	"settings.gateway.baseUrlHint": "Anthropic 호환 엔드포인트(예: https://gateway.example.com)",
+	"settings.gateway.token": "인증 토큰",
+	"settings.gateway.tokenStored": "저장된 토큰이 있습니다. 바꾸려면 새로 입력하세요",
+	"settings.gateway.tokenHint": "ANTHROPIC_AUTH_TOKEN 으로 전송됩니다. 비워 두면 저장된 값을 유지합니다",
+	"settings.gateway.model": "기본 모델",
+	"settings.gateway.modelHint": "선택 사항. 게이트웨이가 보고한 모델 ID 사용(연결 테스트로 나열)",
+	"settings.gateway.probe": "연결 테스트",
+	"settings.gateway.probeOk": "작동함",
+	"settings.gateway.probeFailed": "거부됨",
+	"settings.gateway.save": "저장",
+	"settings.gateway.effectiveOn": "활성 게이트웨이: {{baseUrl}} ({{source}})",
+	"settings.gateway.effectiveOff": "게이트웨이가 구성되지 않았습니다. 요청이 Anthropic으로 직접 전송됩니다",
+	"settings.gateway.effectiveSourceOnly": "{{source}} 범위에서 게이트웨이 재정의 활성(토큰/모델만, 기본 URL 없음)"
 }
