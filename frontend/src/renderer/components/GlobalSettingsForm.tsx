@@ -9,11 +9,13 @@ export type GlobalSettingsSection = GlobalSettingsPage | "all";
 
 export function GlobalSettingsForm({
 	cloudEnabled = true,
+	is11x = false,
 	focusAgentId,
 	harnessView,
 	section = "all",
 }: {
 	cloudEnabled?: boolean;
+	is11x?: boolean;
 	focusAgentId?: string;
 	harnessView?: "local" | "cloud";
 	section?: GlobalSettingsSection;
@@ -46,9 +48,9 @@ export function GlobalSettingsForm({
 					</button>
 				</SettingsSection>
 			)}
-			{globalSettingsItemsFor(section, { cloudEnabled, focusAgentId, harnessView }).map((item) => (
+			{globalSettingsItemsFor(section, { cloudEnabled, is11x, focusAgentId, harnessView }).map((item) => (
 				<Fragment key={item.id}>
-					<Suspense fallback={null}>{item.render(t, titleHidden, { cloudEnabled, focusAgentId, harnessView })}</Suspense>
+					<Suspense fallback={null}>{item.render(t, titleHidden, { cloudEnabled, is11x, focusAgentId, harnessView })}</Suspense>
 				</Fragment>
 			))}
 		</div>
