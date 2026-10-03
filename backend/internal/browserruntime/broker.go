@@ -41,23 +41,47 @@ const (
 	maxRuntimeFrameBytes = 8 << 20
 )
 
+// tokenHandoffTimeout bounds the stdin token read: the desktop app writes the
+// token immediately after spawning the daemon, so a silent pipe means the
+// writer died before the handoff. Inherited descriptors can keep the pipe
+// open forever (worker processes inherit the supervisor's socketpair), so EOF
+// never arrives and an unbounded read parks the daemon before it can bind,
+// log, or be reaped. The reader goroutine left parked on timeout dies with
+// the process: the only caller fails startup and exits.
+var tokenHandoffTimeout = 10 * time.Second
+
 // ReadRuntimeToken reads the one-line token handoff used by the desktop app.
 // The token is never placed in a file, command line, or daemon environment, and
 // the daemon does not pass the consumed stdin handle to worker processes.
 func ReadRuntimeToken(r io.Reader) (string, error) {
 	const maxTokenBytes = 256
-	line, err := bufio.NewReader(io.LimitReader(r, maxTokenBytes+1)).ReadString('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
-		return "", fmt.Errorf("read browser runtime token: %w", err)
+	type handoff struct {
+		line string
+		err  error
 	}
-	token := strings.TrimSpace(line)
-	if token == "" {
-		return "", errors.New("browser runtime token handoff was empty")
+	done := make(chan handoff, 1)
+	go func() {
+		line, err := bufio.NewReader(io.LimitReader(r, maxTokenBytes+1)).ReadString('\n')
+		done <- handoff{line: line, err: err}
+	}()
+	timer := time.NewTimer(tokenHandoffTimeout)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return "", fmt.Errorf("browser runtime token handoff timed out after %s: the writer died before the handoff", tokenHandoffTimeout)
+	case res := <-done:
+		if res.err != nil && !errors.Is(res.err, io.EOF) {
+			return "", fmt.Errorf("read browser runtime token: %w", res.err)
+		}
+		token := strings.TrimSpace(res.line)
+		if token == "" {
+			return "", errors.New("browser runtime token handoff was empty")
+		}
+		if len(token) > maxTokenBytes {
+			return "", errors.New("browser runtime token handoff was too long")
+		}
+		return token, nil
 	}
-	if len(token) > maxTokenBytes {
-		return "", errors.New("browser runtime token handoff was too long")
-	}
-	return token, nil
 }
 
 // ErrUnavailable indicates that no Electron browser runtime can accept a command.
