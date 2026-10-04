@@ -1,6 +1,6 @@
 import { Fragment, Suspense, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { GlobalSettingsSection as GlobalSettingsPage } from "../stores/ui-store";
+import { type GlobalSettingsSection as GlobalSettingsPage, useUiStore } from "../stores/ui-store";
 import { globalSettingsItemsFor } from "./settings/settingsCatalog";
 import { PromptOverrideDialog } from "./settings/PromptOverrideDialog";
 import { SettingsSection } from "./settings/SettingsSection";
@@ -11,18 +11,22 @@ export function GlobalSettingsForm({
 	cloudEnabled = true,
 	is11x = false,
 	focusAgentId,
+	hostId,
 	harnessView,
 	section = "all",
 }: {
 	cloudEnabled?: boolean;
 	is11x?: boolean;
 	focusAgentId?: string;
+	hostId?: string;
 	harnessView?: "local" | "cloud";
 	section?: GlobalSettingsSection;
 }) {
 	const { t } = useTranslation();
 	const [agentDefaultsOpen, setAgentDefaultsOpen] = useState(false);
+	const developerMode = useUiStore((state) => state.developerMode);
 	const all = section === "all";
+	const context = { cloudEnabled, developerMode, is11x, focusAgentId, hostId, harnessView };
 	// One section per page means the dialog header already names it, so a
 	// leading in-page heading would just repeat that title.
 	const titleHidden = !all;
@@ -48,9 +52,9 @@ export function GlobalSettingsForm({
 					</button>
 				</SettingsSection>
 			)}
-			{globalSettingsItemsFor(section, { cloudEnabled, is11x, focusAgentId, harnessView }).map((item) => (
+			{globalSettingsItemsFor(section, context).map((item) => (
 				<Fragment key={item.id}>
-					<Suspense fallback={null}>{item.render(t, titleHidden, { cloudEnabled, is11x, focusAgentId, harnessView })}</Suspense>
+					<Suspense fallback={null}>{item.render(t, titleHidden, context)}</Suspense>
 				</Fragment>
 			))}
 		</div>

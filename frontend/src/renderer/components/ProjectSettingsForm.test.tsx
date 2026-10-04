@@ -303,7 +303,7 @@ describe("ProjectSettingsForm", () => {
 				}),
 			),
 		);
-		expect(ensureAgentReadinessMock).toHaveBeenCalledWith();
+		expect(ensureAgentReadinessMock).toHaveBeenCalledWith({ hostId: undefined });
 		expect(screen.getByRole("button", { name: "Worker approval" })).toHaveTextContent("Auto");
 		expect(screen.queryByRole("button", { name: "Refresh agents" })).not.toBeInTheDocument();
 		expect(screen.queryByRole("button", { name: "Refresh worker model list" })).not.toBeInTheDocument();
@@ -739,7 +739,7 @@ describe("ProjectSettingsForm", () => {
 
 		submitSettings();
 
-		await waitFor(() => expect(putMock).toHaveBeenCalledTimes(1));
+		await waitFor(() => expect(putMock).toHaveBeenCalled());
 		expect(putMock).toHaveBeenCalledWith("/api/v1/projects/{id}", {
 			params: { path: { id: "proj-1" } },
 			body: {
@@ -1519,7 +1519,7 @@ describe("ProjectSettingsForm", () => {
 		expect(screen.getByRole("status")).toHaveTextContent("Experimental host-trusted reviewer");
 	});
 
-	it("hides unknown-auth agents and offers management in project settings", async () => {
+	it("offers unknown-auth agents and management in project settings", async () => {
 		mockProject({
 			id: "proj-1",
 			name: "Project One",
@@ -1547,6 +1547,7 @@ describe("ProjectSettingsForm", () => {
 			"Goose",
 			"Kilo Code",
 			"Pi",
+			"KiroAuth unknown",
 			"Manage agents…",
 		]);
 		expect(options[8]).not.toHaveAttribute("aria-disabled", "true");

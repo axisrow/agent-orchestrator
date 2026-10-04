@@ -173,7 +173,7 @@ func (f *fakeStore) ListActiveAgentSwitches(context.Context) ([]domain.AgentSwit
 	return out, nil
 }
 
-func newWorkspaceRepo(t *testing.T) string {
+func newWorkspaceRepo(t testing.TB) string {
 	t.Helper()
 	dir := t.TempDir()
 	runGit(t, dir, "init")
@@ -187,7 +187,7 @@ func newWorkspaceRepo(t *testing.T) string {
 	return dir
 }
 
-func runGit(t *testing.T, dir string, args ...string) string {
+func runGit(t testing.TB, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
 	out, err := cmd.CombinedOutput()
@@ -197,7 +197,7 @@ func runGit(t *testing.T, dir string, args ...string) string {
 	return string(out)
 }
 
-func writeWorkspaceFile(t *testing.T, root, rel, content string) {
+func writeWorkspaceFile(t testing.TB, root, rel, content string) {
 	t.Helper()
 	path := filepath.Join(root, filepath.FromSlash(rel))
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -269,6 +269,15 @@ func (f *fakeStore) GetSession(_ context.Context, id domain.SessionID) (domain.S
 	}
 	r, ok := f.sessions[id]
 	return r, ok, nil
+}
+
+func (f *fakeStore) GetSessionByClientRequestID(_ context.Context, id string) (domain.SessionRecord, bool, error) {
+	for _, rec := range f.sessions {
+		if id != "" && rec.ClientRequestID == id {
+			return rec, true, nil
+		}
+	}
+	return domain.SessionRecord{}, false, nil
 }
 
 func (f *fakeStore) ListSessions(_ context.Context, p domain.ProjectID) ([]domain.SessionRecord, error) {
