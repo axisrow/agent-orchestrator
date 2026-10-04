@@ -175,6 +175,10 @@ var shippedMigrations = map[int64]string{
 	168: "0168_cues.sql",
 	169: "0169_reported_pr_cdc.sql",
 	170: "0170_review_result_notifications.sql",
+	171: "0171_shell_preview_capability.sql",
+	172: "0172_client_task_requests.sql",
+	173: "0173_chat_client_payload_hash.sql",
+	174: "0174_conversation_account_cdc.sql",
 	// Fork-local migrations live in the reserved 9000+ range so a sync rebase
 	// can never renumber them onto a number upstream will claim. See
 	// migrate_fork_reserved_range_test.go for why.
