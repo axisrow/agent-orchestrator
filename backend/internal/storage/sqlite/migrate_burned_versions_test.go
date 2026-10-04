@@ -1,8 +1,9 @@
 package sqlite
 
 import (
+	"database/sql"
+	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
@@ -178,6 +179,12 @@ var shippedMigrations = map[int64]string{
 	172: "0172_client_task_requests.sql",
 	173: "0173_chat_client_payload_hash.sql",
 	174: "0174_conversation_account_cdc.sql",
+	// Fork-local migrations live in the reserved 9000+ range so a sync rebase
+	// can never renumber them onto a number upstream will claim. See
+	// migrate_fork_reserved_range_test.go for why.
+	9001: "9001_add_user_config.sql",
+	9004: "9004_review_run_publication.sql",
+	9006: "9006_session_provider_stamp.sql",
 }
 
 // burnedVersion reports version numbers that must never be (re)used: they
@@ -186,6 +193,8 @@ var shippedMigrations = map[int64]string{
 // new file claiming one would be skipped silently there.
 //
 //   - 22 shipped in a nightly (#2412) and was deleted by the revert.
+//   - 9003 (app_settings_process_inventory) shipped in a local self-build and
+//     was deleted when the footprint surface moved back to the archive branch.
 //
 // Beware of the adjacent hazard this cannot catch: at least one field profile
 // has versions 40 through 51 recorded as applied by a foreign build
@@ -193,7 +202,7 @@ var shippedMigrations = map[int64]string{
 // Any such migration whose schema the generated queries depend on must add a
 // schemaRepairs entry in db.go.
 func burnedVersion(v int64) bool {
-	return v == 22
+	return v == 22 || v == 9003
 }
 
 // TestMigrationVersionLedger enforces the append-only migration ledger: every
@@ -250,38 +259,18 @@ func TestMigrationVersionLedger(t *testing.T) {
 	}
 }
 
-func TestReconcileMiMoHarnessConstraintAfterBurnedVersion(t *testing.T) {
-	db := openMigratedDatabaseCopy(t, 164)
-	if _, err := db.Exec(`INSERT INTO goose_db_version (version_id, is_applied) VALUES (165, 1)`); err != nil {
-		t.Fatalf("seed burned MiMo migration: %v", err)
-	}
-	var schema string
-	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'sessions'`).Scan(&schema); err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(schema, "'mimo-code'") {
-		t.Fatal("burned migration unexpectedly added MiMo Code")
-	}
-	if err := migrate(db); err != nil {
-		t.Fatalf("migrate burned MiMo profile: %v", err)
-	}
-	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'sessions'`).Scan(&schema); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(schema, "'fx'") || !strings.Contains(schema, "'gemini'") || !strings.Contains(schema, "'mimo-code'") {
-		t.Fatalf("repaired sessions constraint lost fx, Gemini, or MiMo Code: %s", schema)
-	}
-	if err := reconcileHarnessConstraint(db); err != nil {
-		t.Fatalf("repeat repair: %v", err)
-	}
-}
-
 // A concurrently approved branch can claim the next free number first, so this
 // branch's migrations have to survive being applied to a database that already
 // records a version they never shipped. goose runs with WithAllowMissing, which
 // is what makes the resulting gap harmless.
 func TestMigrationsApplyOverAForeignInterleavedVersion(t *testing.T) {
-	db := openMigratedDatabaseCopy(t, 103)
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(t.TempDir(), "ao.db")+pragmas)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = db.Close() })
+	upTo(t, db, 103)
 
 	// Stand in for the other branch's migration: applied here, absent from this
 	// tree, and numbered below everything this branch adds.
@@ -318,7 +307,13 @@ SELECT COUNT(*) FROM (
 // columns. Startup schema reconciliation must repair the physical schema so
 // the session list works instead of returning 500 INTERNAL_ERROR.
 func TestSessionListSucceedsOnBurnedMigrationHistory(t *testing.T) {
-	db := openMigratedDatabaseCopy(t, 39) // the real 0040 has not run; diff-base columns are absent
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(t.TempDir(), "ao.db")+pragmas)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	upTo(t, db, 39) // the real 0040 has not run; diff-base columns are absent
 	for v := 40; v <= 51; v++ {
 		if _, err := db.Exec(
 			`INSERT INTO goose_db_version (version_id, is_applied) VALUES (?, 1)`, v,

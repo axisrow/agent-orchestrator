@@ -661,6 +661,25 @@ describe("SessionInspector PR section", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  it("runs a review for the card's own PR", async () => {
+    renderWithQuery(
+      <SessionInspector session={session([pr(7, "open")])} />,
+      undefined,
+      (client) => {
+        seedPRSummaries(client, [prSummary(7, "open")]);
+      },
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Run review for PR #7" }));
+
+    await waitFor(() =>
+      expect(postMock).toHaveBeenCalledWith("/api/v1/sessions/{sessionId}/reviews/trigger", {
+        params: { path: { sessionId: "sess-1" } },
+        body: { prUrl: "https://api.github.com/repos/acme/repo/pulls/7" },
+      }),
+    );
+  });
+
   it("merges a ready cloud pull request through the control plane", async () => {
     const requests: Array<{ path: string; method: string; body?: string }> = [];
     const originalBridge = (window as unknown as { aoBridge?: unknown }).aoBridge;
@@ -2267,6 +2286,49 @@ describe("SessionInspector summary reviews", () => {
     expect(trigger).not.toHaveTextContent("claude-code");
   });
 
+  it("falls back to claude-code when the worker harness is not an inherited reviewer", async () => {
+    getMock.mockImplementation(async (path: string) => {
+      if (path === "/api/v1/agents") {
+        const agents = ["claude-code", "codex", "opencode"].map((id) => ({
+          id,
+          label: id,
+        }));
+        return {
+          data: { supported: agents, installed: agents, authorized: agents },
+        };
+      }
+      if (path === "/api/v1/sessions/{sessionId}/reviews") {
+        return { data: { reviewerHandleId: "", reviews: [] } };
+      }
+      if (path === "/api/v1/projects/{id}") {
+        return {
+          data: {
+            status: "ok",
+            project: {
+              id: "ws-1",
+              kind: "git",
+              name: "my-app",
+              path: "/repo",
+              repo: "my-app",
+              defaultBranch: "main",
+              config: {},
+            },
+          },
+        };
+      }
+      return { data: undefined };
+    });
+
+    renderWithQuery(
+      <SessionInspector session={sessionWithProvider([pr(3, "open")], "amp")} />,
+    );
+    await openReviewsSection();
+
+    expect(
+      await screen.findByRole("button", { name: /Select reviewer agent/ }),
+    ).toHaveTextContent("Claude Code");
+  });
+
   it("opens Harness from the reviewer menu for its unavailable selection", async () => {
     const responder = commonGetsResponder();
     getMock.mockImplementation(async (path: string) => {
@@ -2430,9 +2492,11 @@ describe("SessionInspector summary reviews", () => {
     expect(
       screen.getByRole("button", { name: "Stop review" }),
     ).toBeInTheDocument();
+    // Kill stays available with auto-review on: a hung reviewer must be
+    // killable, and the coordinator re-arms a fresh pass after the kill.
     expect(
       screen.getByRole("button", { name: "Kill review session" }),
-    ).toBeDisabled();
+    ).toBeEnabled();
     expect(
       screen.queryByRole("button", { name: "Re-run review" }),
     ).not.toBeInTheDocument();

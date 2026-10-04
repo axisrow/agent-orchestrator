@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"slices"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -774,7 +774,7 @@ func TestRuntimeObservation_ConfirmedDeathIsSuppressedDuringSessionMutation(t *t
 	if err := m.ApplyRuntimeObservation(ctx, "mer-1", ports.RuntimeFacts{Runtime: ports.ProbeDead, Workload: ports.ProbeFailed}); err != nil {
 		t.Fatal(err)
 	}
-	if got := st.sessions["mer-1"]; got != rec {
+	if got := st.sessions["mer-1"]; !reflect.DeepEqual(got, rec) {
 		t.Fatalf("runtime observation mutated session during exclusive operation: got %+v, want %+v", got, rec)
 	}
 }
@@ -786,7 +786,7 @@ func TestRuntimeObservation_FailedProbeDoesNotMutate(t *testing.T) {
 	if err := m.ApplyRuntimeObservation(ctx, "mer-1", ports.RuntimeFacts{Runtime: ports.ProbeFailed, Workload: ports.ProbeFailed}); err != nil {
 		t.Fatal(err)
 	}
-	if st.sessions["mer-1"] != before {
+	if !reflect.DeepEqual(st.sessions["mer-1"], before) {
 		t.Fatalf("failed probe should not persist a state, got %+v", st.sessions["mer-1"])
 	}
 }
@@ -820,7 +820,7 @@ func TestRuntimeObservation_AliveWorkloadCannotResurrectExitedSession(t *testing
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if st.sessions["mer-1"] != before {
+	if !reflect.DeepEqual(st.sessions["mer-1"], before) {
 		t.Fatalf("original supervisor observation resurrected exited session: %+v", st.sessions["mer-1"])
 	}
 }
@@ -834,7 +834,7 @@ func TestRuntimeObservation_StaleLaunchIsIgnored(t *testing.T) {
 	if err := m.ApplyRuntimeObservation(ctx, "mer-1", ports.RuntimeFacts{Runtime: ports.ProbeAlive, Workload: ports.ProbeDead, LaunchID: "launch-1"}); err != nil {
 		t.Fatal(err)
 	}
-	if st.sessions["mer-1"] != before {
+	if !reflect.DeepEqual(st.sessions["mer-1"], before) {
 		t.Fatalf("stale launch observation mutated session: %+v", st.sessions["mer-1"])
 	}
 }
@@ -846,7 +846,7 @@ func TestActivity_InvalidIsIgnored(t *testing.T) {
 	if err := m.ApplyActivitySignal(ctx, "mer-1", ports.ActivitySignal{Valid: false, State: domain.ActivityIdle}); err != nil {
 		t.Fatal(err)
 	}
-	if st.sessions["mer-1"] != before {
+	if !reflect.DeepEqual(st.sessions["mer-1"], before) {
 		t.Fatal("invalid signal must not mutate")
 	}
 }
@@ -1215,7 +1215,7 @@ func TestActivity_StaleUserPromptDoesNotResumeExitedWorkload(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if got := st.sessions["mer-1"]; got != rec {
+	if got := st.sessions["mer-1"]; !reflect.DeepEqual(got, rec) {
 		t.Fatalf("stale prompt resumed exited workload: %+v", got)
 	}
 }
@@ -1251,7 +1251,7 @@ func TestActivity_StaleLaunchSignalIsIgnored(t *testing.T) {
 	if err := m.ApplyActivitySignal(ctx, "mer-1", ports.ActivitySignal{Valid: true, State: domain.ActivityExited, LaunchID: "launch-1"}); err != nil {
 		t.Fatal(err)
 	}
-	if st.sessions["mer-1"] != before {
+	if !reflect.DeepEqual(st.sessions["mer-1"], before) {
 		t.Fatalf("stale process exit mutated session: %+v", st.sessions["mer-1"])
 	}
 }
@@ -1328,7 +1328,7 @@ func TestActivity_CancelledLaunchReleasesAndRejectsEarlySignal(t *testing.T) {
 	if err := <-signalDone; err != nil {
 		t.Fatal(err)
 	}
-	if got := st.sessions["mer-1"]; got != rec {
+	if got := st.sessions["mer-1"]; !reflect.DeepEqual(got, rec) {
 		t.Fatalf("cancelled launch signal mutated durable state: %+v", got)
 	}
 }
@@ -1885,7 +1885,7 @@ func TestActivity_OldRuntimeGenerationCannotReplaceConversationCheckpoint(t *tes
 	}); err != nil {
 		t.Fatalf("ApplyActivitySignal: %v", err)
 	}
-	if got := store.sessions[rec.ID]; got != rec {
+	if got := store.sessions[rec.ID]; !reflect.DeepEqual(got, rec) {
 		t.Fatalf("old generation mutated current checkpoint: got %+v, want %+v", got, rec)
 	}
 }
@@ -1913,7 +1913,7 @@ func TestActivity_UntaggedTUIHookCannotMutateLaunchedRuntime(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("ApplyActivitySignal: %v", err)
 	}
-	if got := store.sessions[rec.ID]; got != rec {
+	if got := store.sessions[rec.ID]; !reflect.DeepEqual(got, rec) {
 		t.Fatalf("untagged callback mutated launched runtime: got %+v, want %+v", got, rec)
 	}
 }
@@ -1939,7 +1939,7 @@ func TestActivity_LaunchTaggedTUIStopAfterChatEpochCannotMutateSession(t *testin
 	}); err != nil {
 		t.Fatalf("ApplyActivitySignal: %v", err)
 	}
-	if got := store.sessions[rec.ID]; got != rec {
+	if got := store.sessions[rec.ID]; !reflect.DeepEqual(got, rec) {
 		t.Fatalf("late TUI Stop mutated Chat owner: got %+v, want %+v", got, rec)
 	}
 }
@@ -1966,7 +1966,7 @@ func TestActivity_UntaggedTUIStopAfterChatEpochCannotMutateSession(t *testing.T)
 	}); err != nil {
 		t.Fatalf("ApplyActivitySignal: %v", err)
 	}
-	if got := store.sessions[rec.ID]; got != rec {
+	if got := store.sessions[rec.ID]; !reflect.DeepEqual(got, rec) {
 		t.Fatalf("untagged late TUI Stop mutated Chat owner: got %+v, want %+v", got, rec)
 	}
 }
@@ -2028,7 +2028,7 @@ func TestActivity_LateSourceSignalAfterStopConfirmationIsFenced(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("ApplyActivitySignal: %v", err)
 	}
-	if got := store.session(rec.ID); got != rec {
+	if got := store.session(rec.ID); !reflect.DeepEqual(got, rec) {
 		t.Fatalf("late source signal mutated stopped session: got %+v, want %+v", got, rec)
 	}
 	if calls := store.acknowledgements(); len(calls) != 0 {
@@ -2060,7 +2060,7 @@ func TestActivity_LateSourceSignalAfterTargetActivationIsFenced(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("ApplyActivitySignal: %v", err)
 	}
-	if got := store.session(rec.ID); got != rec {
+	if got := store.session(rec.ID); !reflect.DeepEqual(got, rec) {
 		t.Fatalf("late source signal mutated target owner: got %+v, want %+v", got, rec)
 	}
 	if calls := store.acknowledgements(); len(calls) != 0 {
@@ -2092,7 +2092,7 @@ func TestActivity_StaleGenerationPromptSubmitDoesNotAcknowledgeAgentSwitch(t *te
 	if calls := store.acknowledgements(); len(calls) != 0 {
 		t.Fatalf("stale generation produced acknowledgement calls: %+v", calls)
 	}
-	if got := store.session(rec.ID); got != rec {
+	if got := store.session(rec.ID); !reflect.DeepEqual(got, rec) {
 		t.Fatalf("stale generation mutated session: got %+v, want %+v", got, rec)
 	}
 }
@@ -2685,7 +2685,7 @@ func TestPRObservation_ReviewCommentsNudgeAgent(t *testing.T) {
 		"fix this",
 		"https://github.com/o/r/pull/1#discussion_r1",
 		"Thread ID: T1",
-		"re-fetch review data unless you need additional context",
+		"then resolve the threads by their IDs.",
 	} {
 		if !strings.Contains(msg.msgs[0], want) {
 			t.Fatalf("review nudge missing %q:\n%s", want, msg.msgs[0])
@@ -3955,7 +3955,7 @@ func TestApplyTrackerFacts_TerminalStateIsSuppressedDuringSessionMutation(t *tes
 	if err := m.ApplyTrackerFacts(ctx, "mer-1", o); err != nil {
 		t.Fatalf("ApplyTrackerFacts: %v", err)
 	}
-	if got := st.sessions["mer-1"]; got != rec {
+	if got := st.sessions["mer-1"]; !reflect.DeepEqual(got, rec) {
 		t.Fatalf("tracker observation mutated session during exclusive operation: got %+v, want %+v", got, rec)
 	}
 }
@@ -4022,7 +4022,7 @@ func TestApplyTrackerFacts_AssigneeChangedIsLogOnly(t *testing.T) {
 	if err := m.ApplyTrackerFacts(ctx, "mer-1", o); err != nil {
 		t.Fatalf("ApplyTrackerFacts: %v", err)
 	}
-	if st.sessions["mer-1"] != before {
+	if !reflect.DeepEqual(st.sessions["mer-1"], before) {
 		t.Fatalf("assignee-only change must not mutate the session row, got %+v", st.sessions["mer-1"])
 	}
 	if len(msg.msgs) != 0 {
@@ -4128,7 +4128,7 @@ func TestApplyTrackerFacts_NotFetchedIsNoop(t *testing.T) {
 	if err := m.ApplyTrackerFacts(ctx, "mer-1", ports.TrackerObservation{Fetched: false}); err != nil {
 		t.Fatalf("ApplyTrackerFacts: %v", err)
 	}
-	if st.sessions["mer-1"] != before {
+	if !reflect.DeepEqual(st.sessions["mer-1"], before) {
 		t.Fatalf("not-fetched observation must not mutate state")
 	}
 	if len(msg.msgs) != 0 {
@@ -4203,7 +4203,7 @@ func TestActivity_SameStateRepeatAfterReceiptIsNoOp(t *testing.T) {
 	if err := m.ApplyActivitySignal(ctx, "mer-1", ports.ActivitySignal{Valid: true, State: domain.ActivityActive}); err != nil {
 		t.Fatal(err)
 	}
-	if st.sessions["mer-1"] != before {
+	if !reflect.DeepEqual(st.sessions["mer-1"], before) {
 		t.Fatalf("same-state repeat after receipt must not rewrite: %+v", st.sessions["mer-1"])
 	}
 }
@@ -5103,6 +5103,127 @@ func TestRuntimeObservation_WorkloadDeathAloneDoesNotReap(t *testing.T) {
 	}
 }
 
+// fakeReviewerTeardown records ReviewerTeardown calls for the #5948 tests.
+type fakeReviewerTeardown struct {
+	calls  []domain.SessionID
+	bodies []string
+	err    error
+}
+
+func (f *fakeReviewerTeardown) TerminateReviewer(_ context.Context, id domain.SessionID, body string) error {
+	f.calls = append(f.calls, id)
+	f.bodies = append(f.bodies, body)
+	return f.err
+}
+
+// TestMarkTerminated_TearsDownReviewer is the #5948 regression: a worker
+// terminated by any path must take its reviewer pane down with it. Reviewer
+// panes are runtime handles ("review-<worker>") with no sessions row, so a
+// flag-only termination that skips session_manager.Kill used to leave the
+// pane's pty-host + agent running forever (observed: 8+ hours at ~300MB).
+func TestMarkTerminated_TearsDownReviewer(t *testing.T) {
+	rt := &fakeReviewerTeardown{}
+	m, st, _ := newManager()
+	m.SetReviewerTeardown(rt)
+	st.sessions["mer-1"] = working("mer-1")
+
+	if err := m.MarkTerminated(ctx, "mer-1"); err != nil {
+		t.Fatal(err)
+	}
+	if len(rt.calls) != 1 || rt.calls[0] != "mer-1" {
+		t.Fatalf("expected reviewer teardown for mer-1, got %v", rt.calls)
+	}
+	if rt.bodies[0] != "cancelled by worker session termination" {
+		t.Fatalf("body = %q, want the same body session_manager.Kill passes", rt.bodies[0])
+	}
+}
+
+// TestRuntimeObservation_ConfirmedDeathTearsDownReviewer reproduces the #5948
+// incident path: the reaper's terminal transition bypasses MarkTerminated, so
+// it must still destroy the worker's reviewer pane instead of leaving an
+// orphaned pty-host + agent behind a terminated session.
+func TestRuntimeObservation_ConfirmedDeathTearsDownReviewer(t *testing.T) {
+	rt := &fakeReviewerTeardown{}
+	m, st, _ := newManager()
+	m.SetReviewerTeardown(rt)
+	rec := working("mer-1")
+	rec.Activity.LastActivityAt = time.Now().Add(-2 * time.Minute)
+	st.sessions["mer-1"] = rec
+
+	if err := m.ApplyRuntimeObservation(ctx, "mer-1", ports.RuntimeFacts{Runtime: ports.ProbeDead, Workload: ports.ProbeFailed}); err != nil {
+		t.Fatal(err)
+	}
+	if !st.sessions["mer-1"].IsTerminated {
+		t.Fatal("session must be terminated")
+	}
+	if len(rt.calls) != 1 || rt.calls[0] != "mer-1" {
+		t.Fatalf("expected reviewer teardown for mer-1 on reaper-observed death, got %v", rt.calls)
+	}
+}
+
+// TestMarkTerminated_ReviewerTeardownFailureDoesNotFailTermination pins the
+// best-effort contract, matching the container reap: a reviewer teardown error
+// must never fail or block the termination itself.
+func TestMarkTerminated_ReviewerTeardownFailureDoesNotFailTermination(t *testing.T) {
+	rt := &fakeReviewerTeardown{err: errors.New("pane destroy: connection refused")}
+	m, st, _ := newManager()
+	m.SetReviewerTeardown(rt)
+	st.sessions["mer-1"] = working("mer-1")
+
+	if err := m.MarkTerminated(ctx, "mer-1"); err != nil {
+		t.Fatalf("a reviewer teardown failure must not fail MarkTerminated: %v", err)
+	}
+	if !st.sessions["mer-1"].IsTerminated {
+		t.Fatal("session must still be marked terminated despite the teardown failure")
+	}
+	if len(rt.calls) != 1 {
+		t.Fatalf("expected the teardown to still be attempted, got %v", rt.calls)
+	}
+}
+
+// TestMarkTerminated_TearsDownReviewerAgainWhenAlreadyTerminated pins the
+// fire-on-repeat decision: Engine.TerminateReviewer is idempotent, so a repeat
+// MarkTerminated re-runs the teardown as a cheap self-healing no-op, mirroring
+// the container reap.
+func TestMarkTerminated_TearsDownReviewerAgainWhenAlreadyTerminated(t *testing.T) {
+	rt := &fakeReviewerTeardown{}
+	m, st, _ := newManager()
+	m.SetReviewerTeardown(rt)
+	st.sessions["mer-1"] = working("mer-1")
+
+	if err := m.MarkTerminated(ctx, "mer-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.MarkTerminated(ctx, "mer-1"); err != nil {
+		t.Fatal(err)
+	}
+	if len(rt.calls) != 2 {
+		t.Fatalf("reviewer teardown calls = %v, want retry on repeated termination", rt.calls)
+	}
+}
+
+// TestRuntimeObservation_WorkloadDeathAloneDoesNotTearDownReviewer confirms
+// the non-terminal workload-dead branch (runtime alive, workload dead) does
+// NOT destroy the reviewer pane — only a confirmed termination should.
+func TestRuntimeObservation_WorkloadDeathAloneDoesNotTearDownReviewer(t *testing.T) {
+	rt := &fakeReviewerTeardown{}
+	m, st, _ := newManager()
+	m.SetReviewerTeardown(rt)
+	rec := working("mer-1")
+	rec.Metadata.RuntimeLaunchID = "launch-1"
+	st.sessions["mer-1"] = rec
+
+	if err := m.ApplyRuntimeObservation(ctx, "mer-1", ports.RuntimeFacts{LaunchID: "launch-1", Runtime: ports.ProbeAlive, Workload: ports.ProbeDead}); err != nil {
+		t.Fatal(err)
+	}
+	if st.sessions["mer-1"].IsTerminated {
+		t.Fatal("workload death alone must not terminate the session")
+	}
+	if len(rt.calls) != 0 {
+		t.Fatalf("expected no reviewer teardown for a non-terminal transition, got %v", rt.calls)
+	}
+}
+
 // mergeMetadata is an explicit allowlist, so a field added to SessionMetadata
 // without a line here is silently dropped on every spawn and restore. That
 // happened to the chat resume handle: the provider still held the conversation,
@@ -5435,11 +5556,12 @@ func TestEmitTelemetryStampsRequestID(t *testing.T) {
 	}
 }
 
-// Each unresolved comment gets its own dedup slot. Sharing one key per PR made
-// every poll re-send whichever comments were not the most recent signature
-// written, and made them share the reviewMaxNudge budget so a PR with more
-// comments than that could never deliver the last of them.
-func TestPRObservation_ReviewCommentNudgesDedupPerComment(t *testing.T) {
+// All of a PR's injectable unresolved comments ride in ONE digest message per
+// poll. The former per-comment nudges meant N comments cost N full-boilerplate
+// walls in the agent's chat (#60), and the pre-#5640 shared-key shape this test
+// used to pin starved later comments through a shared attempt budget — a shape
+// batching makes unreachable, since one message carries every comment.
+func TestPRObservation_ReviewCommentNudgesBatchedPerPR(t *testing.T) {
 	m, st, msg := newManager()
 	st.sessions["mer-1"] = working("mer-1")
 	comments := make([]domain.PullRequestComment, 0, reviewMaxNudge+2)
@@ -5447,8 +5569,7 @@ func TestPRObservation_ReviewCommentNudgesDedupPerComment(t *testing.T) {
 		id := fmt.Sprintf("%d", i+1)
 		// Every comment shares one thread: the observer expands a thread into
 		// one row per comment, so this is the routine shape whenever a worker
-		// replies to a review comment without resolving it. Keying on the
-		// thread would collapse them all back into one dedup slot.
+		// replies to a review comment without resolving it.
 		comments = append(comments, domain.PullRequestComment{
 			ID: id, ThreadID: "T1", Author: "alice", File: "foo.go", Line: i + 1,
 			Body: "finding " + id, AutoInjectReview: true,
@@ -5460,12 +5581,12 @@ func TestPRObservation_ReviewCommentNudgesDedupPerComment(t *testing.T) {
 	if err := m.ApplyPRObservation(ctx, "mer-1", o); err != nil {
 		t.Fatal(err)
 	}
-	if len(msg.msgs) != len(comments) {
-		t.Fatalf("first poll sent %d nudges, want one per comment (%d)", len(msg.msgs), len(comments))
+	if len(msg.msgs) != 1 {
+		t.Fatalf("first poll sent %d nudges, want one digest per PR:\n%v", len(msg.msgs), msg.msgs)
 	}
 	for _, c := range comments {
-		if !slices.ContainsFunc(msg.msgs, func(m string) bool { return strings.Contains(m, "finding "+c.ID) }) {
-			t.Fatalf("comment %s never nudged; the attempt budget is shared", c.ID)
+		if !strings.Contains(msg.msgs[0], "finding "+c.ID) {
+			t.Fatalf("comment %s missing from the digest:\n%s", c.ID, msg.msgs[0])
 		}
 	}
 
@@ -5476,5 +5597,25 @@ func TestPRObservation_ReviewCommentNudgesDedupPerComment(t *testing.T) {
 	if len(msg.msgs) != sent {
 		t.Fatalf("second poll re-sent %d nudges for unchanged comments:\n%v",
 			len(msg.msgs)-sent, msg.msgs[sent:])
+	}
+
+	// A new comment after the first delivery re-fires once, as one digest of
+	// the current unresolved set — the earlier findings included, so the agent
+	// sees one coherent list instead of a diff.
+	comments = append(comments, domain.PullRequestComment{
+		ID: "9", ThreadID: "T1", Author: "alice", File: "foo.go", Line: 99,
+		Body: "finding 9", AutoInjectReview: true,
+	})
+	st.comments["pr1"] = comments
+	if err := m.ApplyPRObservation(ctx, "mer-1", o); err != nil {
+		t.Fatal(err)
+	}
+	if len(msg.msgs) != sent+1 {
+		t.Fatalf("new comment produced %d new nudges, want one digest:\n%v", len(msg.msgs)-sent, msg.msgs[sent:])
+	}
+	for _, c := range comments {
+		if !strings.Contains(msg.msgs[sent], "finding "+c.ID) {
+			t.Fatalf("digest after new comment missing %s:\n%s", c.ID, msg.msgs[sent])
+		}
 	}
 }

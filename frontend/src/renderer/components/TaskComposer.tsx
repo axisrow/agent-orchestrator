@@ -44,7 +44,7 @@ import {
 } from "../hooks/useAgentModelsQuery";
 import { STANDALONE_WORKSPACE_ID } from "../types/workspace";
 import { AgentModelCombobox } from "./settings/AgentModelCombobox";
-import { useModelTuning } from "./settings/ModelTuningControls";
+import { effortChoices, useModelTuning } from "./settings/ModelTuningControls";
 import { SettingsOptionMenu } from "./settings/SettingsOptionMenu";
 import {
 	readTaskComposerPreferences,
@@ -496,12 +496,28 @@ export function TaskComposer({
 		onEffortChange: setEffort,
 		onEffortReset: setEffort,
 	});
-	const effortOptions = effortModel?.efforts?.filter((option) => option && option.toLowerCase() !== "default") ?? [];
+	const { options: effortOptions } = effortChoices(effortModel, isConcreteModelID(selectedModel));
 	const inheritedEffort = selectedAgent === configuredProjectAgent ? defaultWorkerEffort : "";
-	const implicitEffort = inheritedEffort || effortModel?.defaultEffort || "";
+	// A choice equal to the inherited worker effort is redundant by construction
+	// (the spawn falls back to the same role value), and one equal to a
+	// provider-advertised default is redundant because the agent's runtime
+	// default matches the catalog. A seeded default (AO's gateway seed table,
+	// e.g. max for glm-) need not match the agent's own runtime default
+	// (claude-code picks low), so an explicit choice equal to it must be sent —
+	// omitting the flag silently downgrades the spawn.
+	const implicitEffort = inheritedEffort
+		|| (effortModel?.effortsSeeded ? "" : effortModel?.defaultEffort)
+		|| "";
 	const requestedEffort = effortTouched || rememberedEffortIsExplicit
 		? effort === implicitEffort ? undefined : effort
-		: undefined;
+		// Untouched, the picker still displays the seeded catalog default; a
+		// spawn that sends nothing would fall back to the agent's own default
+		// (low for an unrecognized model), contradicting what the user sees.
+		// Role-inherited effort already reaches the spawn through the role
+		// override, so it stays unpinned.
+		: !inheritedEffort && effortModel?.effortsSeeded
+			? effortModel?.defaultEffort || undefined
+			: undefined;
 
 	const selectedAgentLabel = agentCatalog?.agents.find((item) => item.id === selectedAgent)?.label || selectedAgent;
 	const requiresTuiFallback =

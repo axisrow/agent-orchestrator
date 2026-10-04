@@ -2,9 +2,12 @@ package daemon
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
+	"github.com/aoagents/agent-orchestrator/backend/internal/service/gateway"
+	projectsvc "github.com/aoagents/agent-orchestrator/backend/internal/service/project"
 	settingssvc "github.com/aoagents/agent-orchestrator/backend/internal/service/settings"
 	"github.com/aoagents/agent-orchestrator/backend/internal/storage/sqlite"
 )
@@ -39,4 +42,19 @@ func (s settingsStore) SetDefaultSessionMode(
 
 func (s settingsStore) SetCloudOffering(ctx context.Context, enabled bool, now time.Time) error {
 	return s.store.SetCloudOffering(ctx, enabled, now)
+}
+
+// projectPathLookup adapts the project manager to the gateway service's
+// project-ID-to-path lookup, keeping neither package importing the other.
+func projectPathLookup(mgr projectsvc.Manager) gateway.ProjectLookup {
+	return func(ctx context.Context, projectID string) (string, error) {
+		result, err := mgr.Get(ctx, domain.ProjectID(projectID))
+		if err != nil {
+			return "", err
+		}
+		if result.Project == nil {
+			return "", fmt.Errorf("gateway: project %s not found", projectID)
+		}
+		return result.Project.Path, nil
+	}
 }
