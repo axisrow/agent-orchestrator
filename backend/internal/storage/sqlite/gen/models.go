@@ -682,10 +682,10 @@ type Session struct {
 	ClientRequestID                  string
 	ClientRequestHash                string
 	ClientRequestCommitted           bool
-	ProviderBaseURL                  string
-	ProviderModel                    string
 	CodexActivityFacts               string
 	ClaudeActivityFacts              string
+	ProviderBaseURL                  string
+	ProviderModel                    string
 }
 
 type SessionCleanupFact struct {

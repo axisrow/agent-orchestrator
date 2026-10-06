@@ -585,37 +585,6 @@ func (q *Queries) ListCurrentHeadReviewRunsBySessions(ctx context.Context, jsonE
 	return items, nil
 }
 
-const listPublishedReviewGitHubIDsByPR = `-- name: ListPublishedReviewGitHubIDsByPR :many
-SELECT DISTINCT github_review_id FROM review_run
-WHERE pr_url = ? AND github_review_id != ''
-`
-
-// Provider review ids of every published AO review pass for one PR. Comments
-// under these reviews are AO's own published findings, not human feedback, so
-// read models must not count them as unresolved human review comments.
-func (q *Queries) ListPublishedReviewGitHubIDsByPR(ctx context.Context, prUrl string) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, listPublishedReviewGitHubIDsByPR, prUrl)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []string{}
-	for rows.Next() {
-		var github_review_id string
-		if err := rows.Scan(&github_review_id); err != nil {
-			return nil, err
-		}
-		items = append(items, github_review_id)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listLiveReviewerHandles = `-- name: ListLiveReviewerHandles :many
 SELECT id, session_id, harness, reviewer_handle_id
 FROM review WHERE reviewer_handle_id != ''
@@ -651,6 +620,37 @@ func (q *Queries) ListLiveReviewerHandles(ctx context.Context) ([]ListLiveReview
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPublishedReviewGitHubIDsByPR = `-- name: ListPublishedReviewGitHubIDsByPR :many
+SELECT DISTINCT github_review_id FROM review_run
+WHERE pr_url = ? AND github_review_id != ''
+`
+
+// Provider review ids of every published AO review pass for one PR. Comments
+// under these reviews are AO's own published findings, not human feedback, so
+// read models must not count them as unresolved human review comments.
+func (q *Queries) ListPublishedReviewGitHubIDsByPR(ctx context.Context, prUrl string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listPublishedReviewGitHubIDsByPR, prUrl)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var github_review_id string
+		if err := rows.Scan(&github_review_id); err != nil {
+			return nil, err
+		}
+		items = append(items, github_review_id)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
