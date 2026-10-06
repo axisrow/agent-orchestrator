@@ -13012,6 +13012,10 @@ components:
       type: object
     ListReviewsResponse:
       properties:
+        activeReviewers:
+          items:
+            $ref: '#/components/schemas/DomainReviewerSurface'
+          type: array
         reviewerActivityState:
           enum:
           - active
@@ -13038,6 +13042,7 @@ components:
       - reviewerHandleId
       - reviews
       - runs
+      - activeReviewers
       type: object
     ListSessionMemoryResponse:
       properties:
@@ -13684,6 +13689,8 @@ components:
           $ref: '#/components/schemas/RoleOverride'
         workerPromptOverride:
           type: string
+        workersRequestReview:
+          type: boolean
       type: object
     ProjectGetResponse:
       properties:
@@ -14120,6 +14127,7 @@ components:
         triggerSource:
           enum:
           - manual
+          - agent
           - auto
           type: string
         verdict:
@@ -15496,12 +15504,38 @@ components:
           items:
             $ref: '#/components/schemas/ControllersSubmitReviewComment'
           type: array
+        githubReviewId:
+          description: Id of the GitHub PR review the reviewer posted, if any.
+          type: string
+        reviews:
+          description: Batched review results recorded by one reviewer CLI command.
+          items:
+            $ref: '#/components/schemas/SubmitReviewItem'
+          type: array
         runId:
           description: Review run id being completed.
           type: string
         verdict:
           description: 'Review verdict: approved or changes_requested.'
           type: string
+      type: object
+    SubmitReviewItem:
+      properties:
+        body:
+          description: Review body recorded by AO. Required for changes_requested.
+          type: string
+        githubReviewId:
+          description: Id of the GitHub PR review the reviewer posted, if any.
+          type: string
+        runId:
+          description: Review run id being completed.
+          type: string
+        verdict:
+          description: 'Review verdict: approved or changes_requested.'
+          type: string
+      required:
+      - runId
+      - verdict
       type: object
     SwitchAgentRequest:
       properties:
@@ -15642,6 +15676,10 @@ components:
       properties:
         agentConfig:
           $ref: '#/components/schemas/AgentConfig'
+        enableAutoInject:
+          description: Turn on the worker session's review auto-inject once a pass
+            has started, so the reviewer's PR review comments reach the worker.
+          type: boolean
         harness:
           enum:
           - claude-code
@@ -15673,16 +15711,34 @@ components:
           - tui
           type: string
         prUrl:
-          description: Restrict the pass to this pull request. Omit to review every
-            eligible PR on the session.
+          description: Restrict the pass to this pull request, attaching it to the
+            session first if AO does not track it yet (never from another active session).
+            Omit to review every eligible PR on the session.
           type: string
-        rerun:
-          description: Start a fresh manual pass for already-reviewed current heads;
-            reuse an active pass from the same reviewer.
+        rejectReviewedHead:
+          description: Return 409 instead of reusing when every open PR head is already
+            being reviewed or already has a review.
           type: boolean
+        rerun:
+          description: Start a fresh pass for already-reviewed current heads; a different
+            reviewer may run alongside one that is still running. A person's rerun
+            reuses an active pass from the same reviewer; an agent's rerun returns
+            409 REVIEW_ALREADY_RUNNING instead.
+          type: boolean
+        source:
+          description: 'Who requested the pass: manual (a person, the default) or
+            agent (an AO session through the CLI).'
+          enum:
+          - manual
+          - agent
+          type: string
       type: object
     TriggerReviewResponse:
       properties:
+        autoInjectEnabled:
+          description: True when this request turned the worker session's review auto-inject
+            on.
+          type: boolean
         created:
           description: True when a new review pass was started; false when an existing
             run for the same commit was reused.
@@ -15704,6 +15760,7 @@ components:
       - reviews
       - runs
       - created
+      - autoInjectEnabled
       type: object
     UnregisterPushDeviceResponse:
       properties:

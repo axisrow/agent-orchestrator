@@ -2919,7 +2919,7 @@ func TestTriggerWithPRURLReviewsOnlyThatPR(t *testing.T) {
 	}
 
 	t.Run("unknown pr url", func(t *testing.T) {
-		if _, err := eng.TriggerWithOptions(context.Background(), "mer-1", TriggerOptions{PRURL: "https://github.com/o/r/pull/9"}); !errors.Is(err, ErrInvalid) {
+		if _, err := eng.TriggerWithOptions(context.Background(), "mer-1", TriggerOptions{PRURL: "https://github.com/o/r/pull/9"}); !errors.Is(err, ErrNotFound) {
 			t.Fatalf("err = %v, want ErrInvalid", err)
 		}
 	})

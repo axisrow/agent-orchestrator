@@ -483,11 +483,11 @@ func TestReviewsSubmitCarriesFindingsAndRejectsObsoleteInputs(t *testing.T) {
 		t.Fatalf("body missing run id: %s", body)
 	}
 
-	// Caller-supplied GitHub review ids and batched results are obsolete
-	// inputs: they must fail clearly, never silently succeed.
+	// A caller-supplied GitHub review id is an obsolete input: AO owns
+	// publication, so ids are outputs and must fail clearly, never
+	// silently succeed. Batched results (reviews: [...]) are valid now.
 	for name, payload := range map[string]string{
 		"githubReviewId": `{"runId":"run-1","verdict":"approved","body":"ok","githubReviewId":"101"}`,
-		"batched":        `{"reviews":[{"runId":"run-1","verdict":"changes_requested","body":"fix auth"},{"runId":"run-2","verdict":"approved"}]}`,
 	} {
 		body, status, _ = doRequest(t, srv, "POST", "/api/v1/sessions/mer-1/reviews/submit", payload)
 		if status != http.StatusUnprocessableEntity {

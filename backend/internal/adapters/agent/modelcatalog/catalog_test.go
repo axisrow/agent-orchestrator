@@ -406,7 +406,15 @@ func TestUnrealCatalogShowsEffectiveModelAndAllowsOverride(t *testing.T) {
 
 func TestClaudeReturnsStaticCatalogWithConfiguredFallback(t *testing.T) {
 	claudeRequest(t)
-	t.Setenv("ANTHROPIC_MODEL", "")
+	// Hold on any dev shell that points claude-code at a gateway: only the
+	// request's own Env may configure the fallback catalog.
+	for _, name := range []string{
+		"ANTHROPIC_MODEL", "ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN",
+		"ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL",
+		"ANTHROPIC_DEFAULT_HAIKU_MODEL", "ANTHROPIC_SMALL_FAST_MODEL",
+	} {
+		t.Setenv(name, "")
+	}
 	t.Setenv("HOME", t.TempDir())
 	got, err := (Discoverer{}).Discover(context.Background(), ports.AgentModelDiscoveryRequest{
 		AgentID: "claude-code",

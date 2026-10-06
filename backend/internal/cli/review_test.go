@@ -230,7 +230,6 @@ func TestReviewSubmitRetriesAcrossDaemonRestartWithIdenticalPayload(t *testing.T
 func TestReviewSubmitBatchRetriesAcrossDaemonRestart(t *testing.T) {
 	cfg := setReviewEnv(t)
 	srv, capture := reviewServer(t, http.StatusOK, `{"reviews":[{"id":"run-1","verdict":"changes_requested"}]}`)
-	writeRunFileFor(t, cfg, srv)
 
 	deps := aliveDeps()
 	deps.In = strings.NewReader(`{"reviews":[{"runId":"run-1","verdict":"changes_requested","body":"fix auth","githubReviewId":"101"}]}`)
