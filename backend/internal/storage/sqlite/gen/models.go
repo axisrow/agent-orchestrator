@@ -595,6 +595,7 @@ type Review struct {
 	ProviderConversationID string
 	ControllerGeneration   string
 	ControllerError        string
+	IsArchived             bool
 }
 
 type ReviewRun struct {
@@ -683,6 +684,8 @@ type Session struct {
 	ClientRequestCommitted           bool
 	ProviderBaseURL                  string
 	ProviderModel                    string
+	CodexActivityFacts               string
+	ClaudeActivityFacts              string
 }
 
 type SessionCleanupFact struct {

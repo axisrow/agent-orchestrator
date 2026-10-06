@@ -246,6 +246,15 @@ if (typeof window !== "undefined") {
 				canGoForward: false,
 				isLoading: false,
 			}),
+			getFindState: async (viewId: string) => ({
+				viewId, tabId: "t1", query: "", activeMatchOrdinal: 0, matches: 0, finalUpdate: true,
+			}),
+			findInPage: async ({ viewId, query }) => ({
+				viewId, tabId: "t1", query, activeMatchOrdinal: 1, matches: 1, finalUpdate: true,
+			}),
+			stopFindInPage: async ({ viewId }) => ({
+				viewId, tabId: "t1", query: "", activeMatchOrdinal: 0, matches: 0, finalUpdate: true,
+			}),
 			captureScreenshot: async () => undefined,
 			downloads: {
 				list: async () => ({ downloads: [] }),
@@ -263,6 +272,7 @@ if (typeof window !== "undefined") {
 			notifyPanelUsed: () => undefined,
 			notifyPanelBlur: () => undefined,
 			onFocusLocation: () => () => undefined,
+			onFindOpen: () => () => undefined,
 			onReopenClosedTab: () => () => undefined,
 			devtools: async ({ viewId, operation }) => ({
 				viewId,
@@ -275,6 +285,7 @@ if (typeof window !== "undefined") {
 			discardAnnotations: async () => undefined,
 			annotationAction: async () => undefined,
 			onNavState: () => () => undefined,
+			onFindState: () => () => undefined,
 			onPageFocus: () => () => undefined,
 			onTabsState: () => () => undefined,
 			onAgentActivity: () => () => undefined,

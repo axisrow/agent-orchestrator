@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import type { components } from "../../../api/schema";
 import { isConcreteModelID } from "../../lib/agent-model-choices";
-import { SettingsOptionMenu } from "./SettingsOptionMenu";
+import { EffortPicker } from "./EffortPicker";
 import { SettingsRow } from "./SettingsRow";
 
 type Model = components["schemas"]["AgentModelInfo"];
@@ -87,33 +87,26 @@ export function ModelTuningControls(props: ModelTuningControlsProps) {
 	const warning = invalidEffort
 		? t("settings.models.unsupportedTuning", { role: roleLabel ? `${roleLabel} ` : "" })
 		: null;
-	if (!selected && !concreteModel) {
-		return warning && variant === "settings" ? (
-			<p role="alert" className="px-1 text-xs leading-row text-warning">{warning}</p>
-		) : null;
-	}
 	const effortOptions = choices.options;
 	const explicitEffort = effort.toLowerCase() === "default" ? "" : effort;
-	const effectiveEffort = explicitEffort || choices.defaultEffort;
 	const unverifiedHint = choices.unverified ? t("settings.models.effortUnverified") : null;
-	const effortControl = effortOptions.length ? (
-		<SettingsOptionMenu
-			aria-label={`${prefix}${t("settings.models.effort")}`}
-			value={effectiveEffort}
-			placeholder={t("settings.models.effortNotReported")}
-			disabled={disabled}
-			options={effortOptions.map((value) => ({ value, label: value }))}
-			onChange={onEffortChange}
-			triggerClassName={variant === "composer" ? "composer-chip composer-toolbar-option" : "justify-end"}
-		/>
-	) : null;
-	if (!effortControl) return null;
+	const effortControl = <EffortPicker
+		label={`${prefix}${t("settings.models.effort")}`}
+		value={explicitEffort}
+		choices={effortOptions.map((value) => ({ value }))}
+		defaultEffort={choices.defaultEffort || undefined}
+		availability={!selected || selected.efforts === undefined ? "unknown" : effortOptions.length ? "supported" : "unsupported"}
+		disabled={disabled}
+		onChange={onEffortChange}
+		triggerClassName={variant === "composer" ? "composer-chip composer-toolbar-option" : "justify-end"}
+	/>;
 	if (variant === "composer") {
 		return effortControl;
 	}
+	const hasEffortControl = effortOptions.length > 0 || explicitEffort !== "";
 	return (
 		<>
-			{effortControl ? <SettingsRow label={`${prefix}${t("settings.models.effort")}`}>{effortControl}</SettingsRow> : null}
+			{hasEffortControl ? <SettingsRow label={`${prefix}${t("settings.models.effort")}`}>{effortControl}</SettingsRow> : null}
 			{unverifiedHint ? <p className="px-1 text-xs leading-row text-settings-muted">{unverifiedHint}</p> : null}
 			{warning ? <p role="alert" className="px-1 text-xs leading-row text-warning">{warning}</p> : null}
 		</>
