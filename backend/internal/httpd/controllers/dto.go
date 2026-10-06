@@ -899,6 +899,24 @@ type SetSessionAutoInjectReviewResponse struct {
 	Session          SessionView      `json:"session"`
 }
 
+// ProviderStalenessResponse is the body of GET /api/v1/sessions/provider-staleness.
+type ProviderStalenessResponse struct {
+	Sessions []sessionsvc.ProviderStaleness `json:"sessions"`
+}
+
+// ApplyProviderRequest is the body of POST /api/v1/sessions/apply-provider.
+// Empty sessionIds applies to every stale running claude-code session.
+type ApplyProviderRequest struct {
+	SessionIds []string `json:"sessionIds,omitempty"`
+}
+
+// ApplyProviderResponse is the body of POST /api/v1/sessions/apply-provider.
+// The request never fails at batch level; each session reports its own outcome.
+type ApplyProviderResponse struct {
+	OK      bool                             `json:"ok"`
+	Results []sessionsvc.ProviderApplyResult `json:"results"`
+}
+
 // SetSessionAutoInjectCIRequest updates automatic CI delivery for a session
 // and every PR currently owned by it.
 type SetSessionAutoInjectCIRequest struct {
@@ -934,24 +952,6 @@ type ResumeAgentResponse struct {
 	SessionID  domain.SessionID           `json:"sessionId"`
 	ResumeMode sessionsvc.RestoreModeView `json:"resumeMode" enum:"native,saved_prompt,fresh"`
 	Session    SessionView                `json:"session"`
-}
-
-// ProviderStalenessResponse is the body of GET /api/v1/sessions/provider-staleness.
-type ProviderStalenessResponse struct {
-	Sessions []sessionsvc.ProviderStaleness `json:"sessions"`
-}
-
-// ApplyProviderRequest is the body of POST /api/v1/sessions/apply-provider.
-// Empty sessionIds applies to every stale running claude-code session.
-type ApplyProviderRequest struct {
-	SessionIds []string `json:"sessionIds,omitempty"`
-}
-
-// ApplyProviderResponse is the body of POST /api/v1/sessions/apply-provider.
-// The request never fails at batch level; each session reports its own outcome.
-type ApplyProviderResponse struct {
-	OK      bool                             `json:"ok"`
-	Results []sessionsvc.ProviderApplyResult `json:"results"`
 }
 
 // StartSessionInterfaceTransitionRequest is the body of POST
@@ -3097,6 +3097,28 @@ type UpdateCloudOfferingRequest struct {
 	Enabled *bool `json:"enabled"`
 }
 
+// capabilityNames lists the abilities a provider has, sorted so a client sees a
+// stable list rather than Go's map order. Only true entries are named: a
+// capability the driver reports as false is one it cannot do, which is the same
+// answer as not naming it, and listing both states would invite a client to read
+// presence rather than value.
+func capabilityNames(caps ports.ChatCapabilities) []string {
+	if len(caps) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(caps))
+	for name, has := range caps {
+		if has {
+			names = append(names, string(name))
+		}
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	sort.Strings(names)
+	return names
+}
+
 // GatewayScopeValue is one scope's stored Anthropic-compatible gateway entry.
 // The token is never returned, only whether one is stored.
 type GatewayScopeValue struct {
@@ -3142,38 +3164,22 @@ type GatewayConfigQuery struct {
 	ProjectID string `query:"projectId,omitempty" description:"Project id; when omitted, only the app scope is reported."`
 }
 
-// capabilityNames lists the abilities a provider has, sorted so a client sees a
-// stable list rather than Go's map order. Only true entries are named: a
-// capability the driver reports as false is one it cannot do, which is the same
-// answer as not naming it, and listing both states would invite a client to read
-// presence rather than value.
-func capabilityNames(caps ports.ChatCapabilities) []string {
-	if len(caps) == 0 {
-		return nil
-	}
-	names := make([]string, 0, len(caps))
-	for name, has := range caps {
-		if has {
-			names = append(names, string(name))
-		}
-	}
-	if len(names) == 0 {
-		return nil
-	}
-	sort.Strings(names)
-	return names
-}
-
 // TriggerReviewRequest is the optional body of the review trigger route. An
 // empty harness keeps the project's configured reviewer; setting one overrides
 // it for this pass only, without editing project config, so one session's choice
 // cannot change what another session in the project runs.
 type TriggerReviewRequest struct {
-	Rerun         bool                         `json:"rerun,omitempty" description:"Start a fresh manual pass for already-reviewed current heads; reuse an active pass from the same reviewer."`
 	Harness       domain.ReviewerHarness       `json:"harness,omitempty" enum:"claude-code,codex,copilot,cursor,kilocode,opencode,opencode-v2,kiro,pi,agy,devin,droid,kimi,kimchi,muse,amp,aider,grok,crush,auggie,cline,autohand"`
 	AgentConfig   domain.AgentConfig           `json:"agentConfig,omitempty"`
 	InterfaceMode domain.ReviewerInterfaceMode `json:"interfaceMode,omitempty" enum:"chat,tui"`
-	PRURL         string                       `json:"prUrl,omitempty" description:"Restrict the pass to this pull request. Omit to review every eligible PR on the session."`
+	PRURL         string                       `json:"prUrl,omitempty" description:"Restrict the pass to this pull request, attaching it to the session first if AO does not track it yet (never from another active session). Omit to review every eligible PR on the session."`
+	// Source labels who asked for the pass. Omitted means a person (manual).
+	Source string `json:"source,omitempty" enum:"manual,agent" description:"Who requested the pass: manual (a person, the default) or agent (an AO session through the CLI)."`
+	// RejectReviewedHead is the CLI's same-commit policy. Omitting it keeps the
+	// reuse behavior the desktop app relies on.
+	RejectReviewedHead bool `json:"rejectReviewedHead,omitempty" description:"Return 409 instead of reusing when every open PR head is already being reviewed or already has a review."`
+	Rerun              bool `json:"rerun,omitempty" description:"Start a fresh pass for already-reviewed current heads; a different reviewer may run alongside one that is still running. A person's rerun reuses an active pass from the same reviewer; an agent's rerun returns 409 REVIEW_ALREADY_RUNNING instead."`
+	EnableAutoInject   bool `json:"enableAutoInject,omitempty" description:"Turn on the worker session's review auto-inject once a pass has started, so the reviewer's PR review comments reach the worker."`
 }
 
 // ResolveReviewCommentRequest is the body of POST /api/v1/sessions/{sessionId}/reviews/comments/resolve.

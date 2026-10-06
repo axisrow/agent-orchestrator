@@ -30,6 +30,9 @@ type ListReviewsResponse struct {
 	// show one summary across reviewers without this.
 	Runs            []domain.ReviewRun      `json:"runs"`
 	ReviewerSurface *domain.ReviewerSurface `json:"reviewerSurface,omitempty"`
+	// ActiveReviewers is every reviewer with a live pane or a running pass,
+	// selected reviewer first. Several reviewers can work on one worker at once.
+	ActiveReviewers []domain.ReviewerSurface `json:"activeReviewers"`
 }
 
 // ReviewRunResponse is the body of submit (200). It carries the run plus the
@@ -50,6 +53,9 @@ type TriggerReviewResponse struct {
 	// Created is true when a new review pass was started (HTTP 201) and false
 	// when an existing run for the same commit was reused (HTTP 200).
 	Created bool `json:"created" description:"True when a new review pass was started; false when an existing run for the same commit was reused."`
+	// AutoInjectEnabled is true when this request turned the worker session's
+	// review auto-inject on.
+	AutoInjectEnabled bool `json:"autoInjectEnabled" description:"True when this request turned the worker session's review auto-inject on."`
 }
 
 // CancelReviewResponse is the body of cancel (200). reviews carries the
@@ -75,6 +81,14 @@ type KillReviewResponse struct {
 	Runs             []domain.ReviewRun         `json:"runs"`
 }
 
+// SubmitReviewItem is one review result in a batched submit request.
+type SubmitReviewItem struct {
+	RunID          string `json:"runId" description:"Review run id being completed."`
+	Verdict        string `json:"verdict" description:"Review verdict: approved or changes_requested."`
+	Body           string `json:"body,omitempty" description:"Review body recorded by AO. Required for changes_requested."`
+	GithubReviewID string `json:"githubReviewId,omitempty" description:"Id of the GitHub PR review the reviewer posted, if any."`
+}
+
 // SubmitReviewComment is one inline finding of a submit request.
 type SubmitReviewComment struct {
 	Path string `json:"path" description:"Repository path the finding anchors to."`
@@ -83,13 +97,13 @@ type SubmitReviewComment struct {
 }
 
 // SubmitReviewInput is the body of POST /api/v1/sessions/{sessionId}/reviews/submit.
-// AO publishes the provider review itself, so GitHub review ids are outputs of
-// this call, never inputs.
 type SubmitReviewInput struct {
-	RunID    string                `json:"runId,omitempty" description:"Review run id being completed."`
-	Verdict  string                `json:"verdict,omitempty" description:"Review verdict: approved or changes_requested."`
-	Body     string                `json:"body,omitempty" description:"Review body recorded by AO and published to the provider. Required for changes_requested."`
-	Comments []SubmitReviewComment `json:"comments,omitempty" description:"Inline findings published as the review's anchored comments."`
+	RunID          string                `json:"runId,omitempty" description:"Review run id being completed."`
+	Verdict        string                `json:"verdict,omitempty" description:"Review verdict: approved or changes_requested."`
+	Body           string                `json:"body,omitempty" description:"Review body recorded by AO and published to the provider. Required for changes_requested."`
+	GithubReviewID string                `json:"githubReviewId,omitempty" description:"Id of the GitHub PR review the reviewer posted, if any."`
+	Comments       []SubmitReviewComment `json:"comments,omitempty" description:"Inline findings published as the review's anchored comments."`
+	Reviews        []SubmitReviewItem    `json:"reviews,omitempty" description:"Batched review results recorded by one reviewer CLI command."`
 }
 
 // ReviewsController owns the session-scoped /reviews routes. A nil Svc returns 501.
@@ -190,15 +204,16 @@ func (c *ReviewsController) trigger(w http.ResponseWriter, r *http.Request) {
 		envelope.WriteAPIError(w, r, http.StatusBadRequest, "bad_request", "INVALID_JSON", "Invalid JSON body", nil)
 		return
 	}
-	var res reviewcore.TriggerResult
-	var err error
-	if in.Rerun {
-		res, err = c.Svc.TriggerWithOptions(r.Context(), sessionID(r), reviewcore.TriggerOptions{Harness: in.Harness, Config: in.AgentConfig, Source: domain.ReviewTriggerManual, InterfaceMode: in.InterfaceMode, Rerun: true, PRURL: in.PRURL})
-	} else if in.InterfaceMode != "" {
-		res, err = c.Svc.TriggerWithMode(r.Context(), sessionID(r), in.Harness, in.AgentConfig, in.InterfaceMode)
-	} else {
-		res, err = c.Svc.Trigger(r.Context(), sessionID(r), in.Harness, in.AgentConfig, in.PRURL)
-	}
+	res, err := c.Svc.TriggerRequested(r.Context(), sessionID(r), reviewsvc.TriggerRequest{
+		Harness:            in.Harness,
+		Config:             in.AgentConfig,
+		Source:             domain.ReviewTriggerSource(strings.TrimSpace(in.Source)),
+		InterfaceMode:      in.InterfaceMode,
+		PRURL:              strings.TrimSpace(in.PRURL),
+		RejectReviewedHead: in.RejectReviewedHead,
+		Rerun:              in.Rerun,
+		EnableAutoInject:   in.EnableAutoInject,
+	})
 	if err != nil {
 		writeReviewError(w, r, err)
 		return
@@ -218,11 +233,12 @@ func (c *ReviewsController) trigger(w http.ResponseWriter, r *http.Request) {
 		runs = []domain.ReviewRun{}
 	}
 	envelope.WriteJSON(w, status, TriggerReviewResponse{
-		ReviewerHandleID: res.ReviewerHandleID,
-		Reviews:          reviews,
-		Runs:             runs,
-		Created:          res.Created,
-		ReviewerSurface:  reviewerSurfacePayload(res.ReviewerSurface),
+		ReviewerHandleID:  res.ReviewerHandleID,
+		Reviews:           reviews,
+		Runs:              runs,
+		Created:           res.Created,
+		AutoInjectEnabled: res.AutoInjectEnabled,
+		ReviewerSurface:   reviewerSurfacePayload(res.ReviewerSurface),
 	})
 }
 
@@ -363,7 +379,15 @@ func reviewsResponse(res reviewcore.SessionReviews, reviews []reviewcore.PRRevie
 		Reviews:               reviews,
 		Runs:                  runs,
 		ReviewerSurface:       reviewerSurfacePayload(res.ReviewerSurface),
+		ActiveReviewers:       activeReviewersPayload(res.ActiveReviewers),
 	}
+}
+
+func activeReviewersPayload(surfaces []domain.ReviewerSurface) []domain.ReviewerSurface {
+	if surfaces == nil {
+		return []domain.ReviewerSurface{}
+	}
+	return surfaces
 }
 
 func reviewerSurfacePayload(surface domain.ReviewerSurface) *domain.ReviewerSurface {
@@ -378,34 +402,37 @@ func (c *ReviewsController) submit(w http.ResponseWriter, r *http.Request) {
 		apispec.NotImplemented(w, r, "POST", "/api/v1/sessions/{sessionId}/reviews/submit")
 		return
 	}
-	// The old contract let callers pass a batched "reviews" array and a
-	// caller-posted "githubReviewId". Both are obsolete: one submission
-	// carries one run, and GitHub review ids are daemon-produced outputs.
-	// Reject them with a clear message instead of silently ignoring.
-	var raw struct {
-		SubmitReviewInput
-		GithubReviewID string                `json:"githubReviewId"`
-		Reviews        []SubmitReviewComment `json:"reviews"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+	var in SubmitReviewInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		envelope.WriteAPIError(w, r, http.StatusBadRequest, "bad_request", "INVALID_BODY", "Invalid request body", nil)
 		return
 	}
-	if raw.GithubReviewID != "" {
+	// AO publishes the provider review itself, so a caller-posted githubReviewId
+	// is an obsolete input: GitHub review ids are outputs of this call, never
+	// inputs. Reject it instead of silently ignoring it.
+	if strings.TrimSpace(in.GithubReviewID) != "" {
 		envelope.WriteAPIError(w, r, http.StatusUnprocessableEntity, "unprocessable", "REVIEW_INPUT_OBSOLETE", "githubReviewId is no longer accepted: AO publishes the review and records its id", nil)
 		return
 	}
-	if len(raw.Reviews) > 0 {
-		envelope.WriteAPIError(w, r, http.StatusUnprocessableEntity, "unprocessable", "REVIEW_INPUT_OBSOLETE", "batched reviews are no longer accepted: submit one review per run with runId, verdict, body, and comments", nil)
-		return
+	reviews := make([]reviewsvc.SubmittedReview, 0, len(in.Reviews))
+	if len(in.Reviews) > 0 {
+		for _, item := range in.Reviews {
+			reviews = append(reviews, reviewsvc.SubmittedReview{
+				RunID:          item.RunID,
+				Verdict:        domain.ReviewVerdict(item.Verdict),
+				Body:           item.Body,
+				GithubReviewID: item.GithubReviewID,
+			})
+		}
+	} else {
+		reviews = append(reviews, reviewsvc.SubmittedReview{
+			RunID:    in.RunID,
+			Verdict:  domain.ReviewVerdict(in.Verdict),
+			Body:     in.Body,
+			Findings: findingsFromInput(in.Comments),
+		})
 	}
-	in := raw.SubmitReviewInput
-	runs, err := c.Svc.SubmitMany(r.Context(), sessionID(r), []reviewsvc.SubmittedReview{{
-		RunID:    in.RunID,
-		Verdict:  domain.ReviewVerdict(in.Verdict),
-		Body:     in.Body,
-		Findings: findingsFromInput(in.Comments),
-	}})
+	runs, err := c.Svc.SubmitMany(r.Context(), sessionID(r), reviews)
 	if err != nil {
 		writeReviewError(w, r, err)
 		return
@@ -434,6 +461,12 @@ func writeReviewError(w http.ResponseWriter, r *http.Request, err error) {
 		envelope.WriteAPIError(w, r, http.StatusUnprocessableEntity, "unprocessable", "REVIEW_INVALID", err.Error(), nil)
 	case errors.Is(err, reviewsvc.ErrNotFound):
 		envelope.WriteAPIError(w, r, http.StatusNotFound, "not_found", "REVIEW_NOT_FOUND", err.Error(), nil)
+	case errors.Is(err, reviewsvc.ErrReviewAlreadyRunning):
+		envelope.WriteAPIError(w, r, http.StatusConflict, "conflict", "REVIEW_ALREADY_RUNNING", err.Error(), nil)
+	case errors.Is(err, reviewsvc.ErrHeadAlreadyReviewed):
+		envelope.WriteAPIError(w, r, http.StatusConflict, "conflict", "REVIEW_HEAD_ALREADY_REVIEWED", err.Error(), nil)
+	case errors.Is(err, reviewsvc.ErrPROwnedElsewhere):
+		envelope.WriteAPIError(w, r, http.StatusConflict, "conflict", "REVIEW_PR_OWNED_BY_OTHER_SESSION", err.Error(), nil)
 	case errors.Is(err, reviewsvc.ErrAgentBinaryNotFound):
 		envelope.WriteAPIError(w, r, http.StatusUnprocessableEntity, "unprocessable", "REVIEWER_BINARY_NOT_FOUND", err.Error(), nil)
 	case errors.Is(err, ports.ErrChatAuthRequired):

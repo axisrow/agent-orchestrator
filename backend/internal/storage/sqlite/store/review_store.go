@@ -300,6 +300,21 @@ func (s *Store) UpdateReviewRunPublication(ctx context.Context, id string, state
 	return n > 0, nil
 }
 
+// MarkReviewRunDelivered records that lifecycle delivered the worker nudge for
+// a completed AO-internal review pass.
+func (s *Store) MarkReviewRunDelivered(ctx context.Context, id string, deliveredAt time.Time) (bool, error) {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	n, err := s.qw.MarkReviewRunDelivered(ctx, gen.MarkReviewRunDeliveredParams{
+		DeliveredAt: sql.NullTime{Time: deliveredAt, Valid: true},
+		ID:          id,
+	})
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
 // SupersedeStaleRunningReviewRuns marks older running unverdicted passes for a
 // worker failed before starting a review for a newer commit.
 func (s *Store) SupersedeStaleRunningReviewRuns(ctx context.Context, sessionID domain.SessionID, prURL, targetSHA, body string) (int64, error) {
@@ -334,21 +349,6 @@ func (s *Store) CancelRunningReviewRunsBySessionAndHarness(ctx context.Context, 
 		SessionID: sessionID,
 		Harness:   harness,
 	})
-}
-
-// MarkReviewRunDelivered records that lifecycle delivered the worker nudge for
-// a completed AO-internal review pass.
-func (s *Store) MarkReviewRunDelivered(ctx context.Context, id string, deliveredAt time.Time) (bool, error) {
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-	n, err := s.qw.MarkReviewRunDelivered(ctx, gen.MarkReviewRunDeliveredParams{
-		DeliveredAt: sql.NullTime{Time: deliveredAt, Valid: true},
-		ID:          id,
-	})
-	if err != nil {
-		return false, err
-	}
-	return n > 0, nil
 }
 
 // GetReviewRun returns one review pass by id.

@@ -104,6 +104,7 @@ import {
 
 type ProjectConfig = components["schemas"]["ProjectConfig"];
 type OpenReviewerTerminal = (target: { handleId: string; harness: string }) => void;
+type ReviewerSurface = components["schemas"]["DomainReviewerSurface"];
 
 export type { InspectorView } from "@aoagents/product-ui";
 
@@ -1979,6 +1980,11 @@ function ReviewsSection({
 				reviewerHandleId={reviewsQuery.data?.reviewerHandleId ?? ""}
 				reviewerSurface={reviewsQuery.data?.reviewerSurface}
 				reviewerActivityState={reviewsQuery.data?.reviewerActivityState}
+				activeReviewers={reviewsQuery.data?.activeReviewers ?? []}
+				onOpenReviewer={(surface) => {
+					if (surface.mode === "chat") onOpenReviewerChat?.(surface.reviewId);
+					else if (surface.handleId) onOpenReviewerTerminal?.({ handleId: surface.handleId, harness: surface.harness });
+				}}
 				reviewStates={reviewStates}
 				agentCatalog={agentsQuery.data}
 				reviewerOverride={reviewerOverride}
@@ -2161,7 +2167,10 @@ function MergedReviewsSection({
 			return {
 				autoInjectReview: run.autoInjectReview,
 				body: run.body,
-				createdAtLabel: formatTimeCompact(run.createdAt),
+				createdAtLabel:
+					run.triggerSource === "agent"
+						? `${formatTimeCompact(run.createdAt)} · ${t("inspector.review.requestedByAgent")}`
+						: formatTimeCompact(run.createdAt),
 				harness: run.harness || "reviewer",
 				id: run.id,
 				inlineComments: agentComments.get(run.githubReviewId)?.inlineComments ?? [],
@@ -2478,6 +2487,8 @@ function ReviewPanel({
 	reviewerHandleId,
 	reviewerSurface,
 	reviewerActivityState,
+	activeReviewers,
+	onOpenReviewer,
 	isLoading,
 	isTriggering,
 	isCancelling,
@@ -2504,6 +2515,8 @@ function ReviewPanel({
 	reviewerHandleId: string;
 	reviewerSurface?: components["schemas"]["ListReviewsResponse"]["reviewerSurface"];
 	reviewerActivityState?: components["schemas"]["ListReviewsResponse"]["reviewerActivityState"];
+	activeReviewers: ReviewerSurface[];
+	onOpenReviewer: (surface: ReviewerSurface) => void;
 	isLoading: boolean;
 	isTriggering: boolean;
 	isCancelling: boolean;
@@ -2619,6 +2632,30 @@ function ReviewPanel({
 							value={reviewerOverride}
 						/>
 					</div>
+					{/* Several reviewers can work on one worker at once (an agent may
+					    ask a reviewer other than the selected one). The reviewer tab
+					    shows one at a time, so each live reviewer gets a row to open it
+					    whenever any of them is not the selected reviewer. */}
+					{activeReviewers.some((surface) => surface.reviewId !== reviewerSurface?.reviewId)
+						? activeReviewers.map((surface) => (
+								<div className="flex min-h-10 min-w-0 items-center justify-between gap-3 py-2" key={surface.reviewId}>
+									<span className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-foreground">
+										<AgentAvatar className="size-4" decorative provider={surface.harness} />
+										<span className="truncate">{agentLabel(surface.harness)}</span>
+									</span>
+									<Button
+										className="shrink-0 px-1.5 text-xs"
+										disabled={surface.mode !== "chat" && !surface.handleId}
+										onClick={() => onOpenReviewer(surface)}
+										size="sm"
+										type="button"
+										variant="ghost"
+									>
+										{t("inspector.review.openReviewer")}
+									</Button>
+								</div>
+							))
+						: null}
 					<InspectorPolicyRow
 						checked={autoReviewEnabled}
 						description={t("inspector.autoReviewDescription")}

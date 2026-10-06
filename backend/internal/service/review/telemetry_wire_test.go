@@ -123,7 +123,7 @@ func TestReviewFunnelReachesTheWireWithItsProperties(t *testing.T) {
 		WithReviewPublisher(&fakePublisher{}),
 	)
 	svc.engineTrigger = func(
-		_ context.Context, _ domain.SessionID, _ domain.ReviewerHarness, _ domain.AgentConfig, _ domain.ReviewTriggerSource, _ string,
+		_ context.Context, _ domain.SessionID, _ reviewcore.TriggerOptions,
 	) (reviewcore.TriggerResult, error) {
 		return reviewcore.TriggerResult{
 			Run:         domain.ReviewRun{Harness: "claude-code"},
