@@ -131,8 +131,9 @@ export function AgentModelCombobox({
 	const showEffort = Boolean(tuning && (effortOptions.length || explicitEffort));
 	const defaultEffort = choices.defaultEffort;
 	// No provider default for these levels: AO picks one and saves it when the
-	// model is chosen, so the control never reads as unset.
-	const aoDefaultEffort = fallbackEffort(effortOptions, defaultEffort);
+	// model is chosen, so the control never reads as unset. The fallback ladder
+	// is a display guess only — an unverified guess must never be auto-saved.
+	const aoDefaultEffort = choices.unverified ? undefined : fallbackEffort(effortOptions, defaultEffort);
 	const effectiveEffort = explicitEffort || defaultEffort || aoDefaultEffort || "";
 	useApplyEffortDefault(
 		explicitModel,

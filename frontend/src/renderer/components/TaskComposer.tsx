@@ -537,7 +537,7 @@ export function TaskComposer({
 				: aoDefaultEffort;
 	const effortAvailability: EffortAvailability = requiresTuiFallback
 		? "launch-unavailable"
-		: !effortModel
+		: !effortModel || effortModel.efforts === undefined
 			? "unknown"
 			: effortOptions.length > 0
 				? "supported"
@@ -789,6 +789,10 @@ function TaskEffortPicker({
 			defaultEffort={defaultEffort}
 			availability={availability}
 			onChange={onChange}
+			// null: picking the displayed default sends it explicitly. A seeded
+			// default (e.g. max for glm-) differs from the agent's own runtime
+			// default, so omitting the flag would silently downgrade the spawn.
+			defaultValue={null}
 			triggerClassName="composer-chip composer-toolbar-option w-full justify-between"
 		/>
 	);

@@ -99,7 +99,7 @@ describe("ModelTuningControls", () => {
 		);
 
 		await userEvent.click(screen.getByRole("button", { name: "Worker Effort" }));
-		await userEvent.click(await screen.findByRole("menuitem", { name: "medium" }));
+		await userEvent.click(await screen.findByRole("menuitemradio", { name: "Medium" }));
 		expect(onEffortChange).toHaveBeenCalledWith("medium");
 		expect(screen.getByText(/best guess/i)).toBeInTheDocument();
 	});
@@ -137,7 +137,7 @@ describe("ModelTuningControls", () => {
 		);
 
 		await userEvent.click(screen.getByRole("button", { name: "Effort" }));
-		await userEvent.click(await screen.findByRole("menuitem", { name: "low" }));
+		await userEvent.click(await screen.findByRole("menuitemradio", { name: "Low" }));
 		expect(onEffortChange).toHaveBeenCalledWith("low");
 	});
 

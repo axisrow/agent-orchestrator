@@ -23,6 +23,9 @@ export function effortChoices(selected: Model | undefined, hasModel: boolean): E
 		const defaultEffort = selected?.defaultEffort ?? "";
 		return { options, defaultEffort: options.includes(defaultEffort) ? defaultEffort : "", unverified: false };
 	}
+	// Lend the fallback ladder whenever the provider reports nothing usable
+	// (gateways, off-catalog models): the picker still shows low/medium/high as
+	// a best guess instead of dead-ending.
 	return { options: hasModel ? FALLBACK_EFFORTS : [], defaultEffort: "", unverified: hasModel };
 }
 
@@ -89,13 +92,19 @@ export function ModelTuningControls(props: ModelTuningControlsProps) {
 		: null;
 	const effortOptions = choices.options;
 	const explicitEffort = effort.toLowerCase() === "default" ? "" : effort;
-	const unverifiedHint = choices.unverified ? t("settings.models.effortUnverified") : null;
+	// A cataloged model whose provider never reports efforts reads as "unknown"
+	// (clear-only): the fallback ladder must stay out of the menu there, or the
+	// unknown state would silently turn into an empty one. Gateways reporting an
+	// empty list and off-catalog models keep the ladder.
+	const unreported = Boolean(selected && selected.efforts === undefined);
+	const menuChoices = unreported ? [] : effortOptions;
+	const unverifiedHint = choices.unverified && !unreported ? t("settings.models.effortUnverified") : null;
 	const effortControl = <EffortPicker
 		label={`${prefix}${t("settings.models.effort")}`}
 		value={explicitEffort}
-		choices={effortOptions.map((value) => ({ value }))}
+		choices={menuChoices.map((value) => ({ value }))}
 		defaultEffort={choices.defaultEffort || undefined}
-		availability={!selected || selected.efforts === undefined ? "unknown" : effortOptions.length ? "supported" : "unsupported"}
+		availability={unreported || !selected && !concreteModel ? "unknown" : menuChoices.length ? "supported" : "unsupported"}
 		disabled={disabled}
 		onChange={onEffortChange}
 		triggerClassName={variant === "composer" ? "composer-chip composer-toolbar-option" : "justify-end"}
@@ -103,7 +112,7 @@ export function ModelTuningControls(props: ModelTuningControlsProps) {
 	if (variant === "composer") {
 		return effortControl;
 	}
-	const hasEffortControl = effortOptions.length > 0 || explicitEffort !== "";
+	const hasEffortControl = menuChoices.length > 0 || explicitEffort !== "";
 	return (
 		<>
 			{hasEffortControl ? <SettingsRow label={`${prefix}${t("settings.models.effort")}`}>{effortControl}</SettingsRow> : null}
