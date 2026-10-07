@@ -56,15 +56,19 @@ fi
 # синка.
 # git rev-parse --git-dir, а не "$REPO_ROOT/.git": в worktree последний —
 # файл, и запись в него затёрла бы ссылку на общий gitdir.
+# Фетч ВСЕГДА, включая резюме: резюме может начаться спустя сутки после
+# прерывания, и merge всё равно пойдёт против origin/main (инцидент
+# 2026-10-07: пропущенный на резюме fetch спрятал 18 апстрим-коммитов).
+# Тег-защита ниже — только про тег: точка отката не двигается на резюме.
+echo "==> git fetch origin..."
+git fetch origin
 BACKUP_MARKER="$(git rev-parse --git-dir)/ao-sync-backup-ref"
 BACKUP_TAG="$(cat "$BACKUP_MARKER" 2>/dev/null || true)"
 if [ -n "$BACKUP_TAG" ] && git rev-parse -q --verify "refs/tags/$BACKUP_TAG" >/dev/null; then
   echo "==> продолжаю начатый синк; backup-тег остаётся прежним: $BACKUP_TAG"
   echo "    ($(git rev-parse --short "$BACKUP_TAG") — состояние main ДО этого синка)"
-  echo "==> резюме начатого синка — база уже зафиксирована тегом, fetch пропускаю."
+  echo "==> резюме: тег не двигаю, merge идёт против свежего origin/main."
 else
-  echo "==> git fetch origin..."
-  git fetch origin
   [ -n "$BACKUP_TAG" ] && echo "!! маркер указывал на несуществующий тег $BACKUP_TAG — создаю новый." >&2 || true
   BACKUP_TAG="backup/pre-sync-$(date +%Y%m%d-%H%M)"
   # Без -f: если тег уже есть (два запуска в одну минуту), это тот же синк,
