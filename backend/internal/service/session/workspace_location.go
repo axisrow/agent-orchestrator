@@ -2,10 +2,13 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 	"github.com/aoagents/agent-orchestrator/backend/internal/httpd/apierr"
@@ -39,22 +42,32 @@ func (s *Service) WorkspaceLocation(ctx context.Context, id domain.SessionID) (s
 		if !ok {
 			return "", apierr.NotFound("SESSION_WORKSPACE_NOT_FOUND", "Session workspace is not available")
 		}
-		return workspaceDir(project.Path)
+		return workspaceDir(id, project.Path)
 	}
 
-	return workspaceDir(record.Metadata.WorkspacePath)
+	return workspaceDir(id, record.Metadata.WorkspacePath)
 }
 
-// workspaceDir validates path as an existing absolute directory and returns it
-// cleaned; anything else is reported as "not available" rather than guessed at.
-func workspaceDir(path string) (string, error) {
-	path = strings.TrimSpace(path)
-	if path == "" || !filepath.IsAbs(path) {
+// workspaceDir validates workspacePath as an existing absolute directory and
+// returns it cleaned. Definite absence is "not available"; structural
+// unreadability is a 409; anything else bubbles up as a wrapped error.
+func workspaceDir(id domain.SessionID, workspacePath string) (string, error) {
+	workspacePath = strings.TrimSpace(workspacePath)
+	if workspacePath == "" || !filepath.IsAbs(workspacePath) {
 		return "", apierr.NotFound("SESSION_WORKSPACE_NOT_FOUND", "Session workspace is not available")
 	}
-	info, err := os.Stat(path)
-	if err != nil || !info.IsDir() {
+	// Only a definite absence is "not found"; any other stat failure may be transient
+	// and must not tell callers the worktree is gone.
+	info, err := os.Stat(workspacePath)
+	if errors.Is(err, os.ErrNotExist) || (err == nil && !info.IsDir()) {
 		return "", apierr.NotFound("SESSION_WORKSPACE_NOT_FOUND", "Session workspace is not available")
 	}
-	return filepath.Clean(path), nil
+	// These won't clear on their own, so a 500 would only make the caller retry forever.
+	if errors.Is(err, fs.ErrPermission) || errors.Is(err, syscall.ENOTDIR) || errors.Is(err, syscall.ELOOP) {
+		return "", apierr.Conflict("SESSION_WORKSPACE_UNREADABLE", "AO can't read this session's folder. Check its permissions.", nil)
+	}
+	if err != nil {
+		return "", fmt.Errorf("stat session %s workspace: %w", id, err)
+	}
+	return filepath.Clean(workspacePath), nil
 }

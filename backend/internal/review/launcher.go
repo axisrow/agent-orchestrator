@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aoagents/agent-orchestrator/backend/internal/agentlaunch"
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 	sessionmanager "github.com/aoagents/agent-orchestrator/backend/internal/session_manager"
@@ -70,6 +71,7 @@ type LaunchSpec struct {
 	LaunchID        string
 	WorkerID        domain.SessionID
 	ProjectID       domain.ProjectID
+	ProjectEnv      map[string]string
 	Harness         domain.ReviewerHarness
 	AgentConfig     domain.AgentConfig
 	WorkspacePath   string
@@ -503,7 +505,7 @@ func (l *agentLauncher) startReviewerChat(ctx context.Context, spec LaunchSpec, 
 		providerID, err = l.chat.StartReviewChat(ctx, start)
 	}
 	if err != nil {
-		return LaunchResult{}, err
+		return LaunchResult{}, agentlaunch.RedactError(err, spec.ProjectEnv)
 	}
 	return LaunchResult{HandleID: reviewerChatHandlePrefix + spec.ReviewSessionID, LaunchID: strings.TrimSpace(spec.LaunchID), AgentSessionID: providerID}, nil
 }
@@ -583,7 +585,7 @@ func (l *agentLauncher) launchReviewerTerminalWithMode(ctx context.Context, spec
 		Env:           env,
 	})
 	if err != nil {
-		return LaunchResult{}, fmt.Errorf("reviewer runtime: %w", err)
+		return LaunchResult{}, fmt.Errorf("reviewer runtime: %w", agentlaunch.RedactError(err, spec.ProjectEnv))
 	}
 	if cmd.InitialMessage != "" && !spec.DeferInitialMessage {
 		if err := l.waitForPromptReadiness(ctx, reviewer, handle); err != nil {
@@ -661,10 +663,7 @@ func outputContainsAny(output string, patterns []string) bool {
 }
 
 func (l *agentLauncher) runtimeEnv(ctx context.Context, spec LaunchSpec, argv []string, base map[string]string) map[string]string {
-	env := make(map[string]string, len(base)+3)
-	for k, v := range base {
-		env[k] = v
-	}
+	env := agentlaunch.MergeEnv(spec.ProjectEnv, base)
 	// The reviewer's resolved agent config may carry a per-role provider pin
 	// (issue #6156): explicit env wins over settings files, same transport as
 	// the session launch path. The overlay is last so a pin cannot be undone.

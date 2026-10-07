@@ -1,4 +1,4 @@
-import { Bot, Loader2, MonitorCog, Network, Play, TriangleAlert, X, type LucideIcon } from "lucide-react";
+import { Bot, KeyRound, Loader2, MonitorCog, Network, Play, TriangleAlert, X, type LucideIcon } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useEffect, useRef, useState } from "react";
@@ -9,6 +9,7 @@ import { ensureCodexAccounts } from "../hooks/useCodexAccountsQuery";
 import { writeCodexAccounts } from "../hooks/codex-accounts-state";
 import { GlobalSettingsForm } from "./GlobalSettingsForm";
 import { ProjectSettingsForm, type ProjectSettingsSaveState, type ProjectSettingsSection as ProjectFormSection } from "./ProjectSettingsForm";
+import { ProjectEnvironmentSettings } from "./ProjectEnvironmentSettings";
 import { CuesSettings } from "./CuesDialog";
 import { DialogHeader, settingsDialogBodyClass, settingsDialogHeaderClass, settingsDialogSurfaceClass } from "./ui/dialog";
 import { type GlobalSettingsSection, type ProjectSettingsSection, type SettingsModal, useUiStore } from "../stores/ui-store";
@@ -84,15 +85,25 @@ function SettingsDialogLayer({ settingsModal }: { settingsModal: SettingsModal }
 		{ id: "agents", label: t("settings.project.agents"), icon: Bot },
 		{ id: "gateway", label: t("settings.gateway.title"), icon: Network },
 	];
-	if (!remoteHostId) projectSections.push({ id: "cues", label: t("cues.title"), icon: Play });
+	if (!remoteHostId) {
+		projectSections.push({ id: "environment", label: t("settings.project.environment"), icon: KeyRound });
+		projectSections.push({ id: "cues", label: t("cues.title"), icon: Play });
+	}
 
 	const isProjectSettings = displaySettings?.scope === "project";
 	const [activeSection, setActiveSection] = useState<GlobalSettingsSection>("general");
 	const [focusAgentId, setFocusAgentId] = useState<string>();
 	const [harnessView, setHarnessView] = useState<"local" | "cloud">();
 	const [activeProjectSection, setActiveProjectSection] = useState<ProjectSettingsSection>("general");
+	const [pendingProjectSection, setPendingProjectSection] = useState<ProjectSettingsSection | null>(null);
 	const [projectSaveState, setProjectSaveState] = useState<ProjectSettingsSaveState>(initialProjectSaveState);
 	const [cueBusy, setCueBusy] = useState(false);
+	useEffect(() => {
+		if (pendingProjectSection && projectSaveState.phase === "saved" && !projectSaveState.dirty) {
+			setActiveProjectSection(pendingProjectSection);
+			setPendingProjectSection(null);
+		}
+	}, [pendingProjectSection, projectSaveState]);
 	const closeWhenSavedRef = useRef(false);
 	const globalSettingsWasOpen = useRef(false);
 
@@ -237,7 +248,14 @@ function SettingsDialogLayer({ settingsModal }: { settingsModal: SettingsModal }
 							<nav aria-label={t("settings.navSectionsAria")} className="flex flex-col gap-0.5 p-2 pt-0">
 								{isProjectSettings
 									? projectSections.map(({ id, label, icon }) => (
-											<SettingsNavItem active={activeProjectSection === id} disabled={cueBusy} icon={icon} key={id} label={label} onClick={() => setActiveProjectSection(id)} />
+											<SettingsNavItem active={activeProjectSection === id} disabled={cueBusy} icon={icon} key={id} label={label} onClick={() => {
+												if (projectSaveState.dirty && id !== activeProjectSection) {
+													setPendingProjectSection(id);
+													(document.getElementById("project-settings-form") as HTMLFormElement | null)?.requestSubmit();
+												} else {
+													setActiveProjectSection(id);
+												}
+											}} />
 										))
 									: globalSections.map(({ id, label, icon }) => (
 											<SettingsNavItem
@@ -265,8 +283,7 @@ function SettingsDialogLayer({ settingsModal }: { settingsModal: SettingsModal }
 										</div>
 									) : (
 										<p className="flex items-center gap-2 text-settings-muted">
-											<Loader2 className="size-4 shrink-0 animate-spin" aria-hidden="true" />
-											{t("settings.project.saving")}
+											{projectSaveState.phase === "pending" && activeProjectSection === "environment" ? t("settings.project.unsavedChanges") : <><Loader2 className="size-4 shrink-0 animate-spin" aria-hidden="true" />{t("settings.project.saving")}</>}
 										</p>
 									)}
 								</div>
@@ -275,8 +292,8 @@ function SettingsDialogLayer({ settingsModal }: { settingsModal: SettingsModal }
 
 						{/* Main area — same bg as the app page */}
 						<div className="flex min-w-0 flex-1 flex-col bg-card">
-							<DialogHeader className={cn(settingsDialogHeaderClass, "flex h-auto shrink-0 flex-row items-center justify-between border-b-0 pb-3")}>
-								<Dialog.Title className="text-2xl font-bold text-foreground">{activeLabel}{remoteHostId && <span className="ml-2 text-sm font-normal text-muted-foreground">· {labelForHost(remoteHostId) ?? remoteHostId}</span>}</Dialog.Title>
+							<DialogHeader className={cn(settingsDialogHeaderClass, "flex h-auto shrink-0 flex-row items-center justify-between border-b-0 px-(--size-modal-padding) py-3")}>
+								<Dialog.Title className={cn(isProjectSettings ? "settings-dialog-title" : "text-2xl font-bold text-foreground")}>{activeLabel}{remoteHostId && <span className="ml-2 text-xs font-normal text-muted-foreground">· {labelForHost(remoteHostId) ?? remoteHostId}</span>}</Dialog.Title>
 								<Dialog.Description className="sr-only">
 									{isProjectSettings
 										? t("settings.project.dialogDescription")
@@ -299,6 +316,8 @@ function SettingsDialogLayer({ settingsModal }: { settingsModal: SettingsModal }
 								{isBodyReady ? (
 									displaySettings?.scope === "project" && !remoteHostId && activeProjectSection === "cues" ? (
 										<CuesSettings projectId={displaySettings.projectId} onBusyChange={setCueBusy} />
+									) : displaySettings?.scope === "project" && !remoteHostId && activeProjectSection === "environment" ? (
+										<ProjectEnvironmentSettings projectId={displaySettings.projectId} onSaveState={setProjectSaveState} />
 									) : displaySettings?.scope === "project" ? (
 										<ProjectSettingsForm projectId={displaySettings.projectId} hostId={remoteHostId} section={activeProjectSection as ProjectFormSection} onSaveState={setProjectSaveState} />
 									) : (
