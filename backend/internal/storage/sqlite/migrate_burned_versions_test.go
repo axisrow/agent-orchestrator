@@ -192,6 +192,8 @@ var shippedMigrations = map[int64]string{
 	// 188 removes the obsolete cue worktree-startup schema; project setup now
 	// owns automatic workspace initialization.
 	188: "0188_remove_worktree_startup_cues.sql",
+	189: "0189_session_interaction.sql",
+	190: "0190_session_hibernation.sql",
 	// Fork-local migrations live in the reserved 9000+ range so a sync rebase
 	// can never renumber them onto a number upstream will claim. See
 	// migrate_fork_reserved_range_test.go for why.
