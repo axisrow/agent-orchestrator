@@ -643,6 +643,7 @@
 	"inspector.loadMoreReviews": "Load more · {{count}} earlier",
 	"inspector.showLatestReviewOnly": "Show latest only",
 	"inspector.selectReviewerAgent": "Select reviewer agent",
+	"inspector.reviewerModelNotInCatalog": "not in catalog",
 	"inspector.showMore": "Show more",
 	"inspector.showLess": "Show less",
 	"inspector.viewOnPR": "View on PR",

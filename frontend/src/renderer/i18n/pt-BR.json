@@ -650,6 +650,7 @@
 	"inspector.loadMoreReviews": "Carregar mais · {{count}} anteriores",
 	"inspector.showLatestReviewOnly": "Mostrar apenas a mais recente",
 	"inspector.selectReviewerAgent": "Selecionar agente revisor",
+	"inspector.reviewerModelNotInCatalog": "não está no catálogo",
 	"inspector.showMore": "Mostrar mais",
 	"inspector.showLess": "Mostrar menos",
 	"inspector.viewOnPR": "Ver no PR",
