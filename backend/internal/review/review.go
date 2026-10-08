@@ -100,6 +100,10 @@ type Deps struct {
 	// ChatRecoveryDone gates operations that could mistake a recovering reviewer for an exited one.
 	ChatRecoveryDone <-chan struct{}
 
+	// ProviderEntries supplies the stored gateway entries a reviewer provider
+	// pin resolves against. Nil means none are configured.
+	ProviderEntries func(ctx stdctx.Context) []agentcreds.GatewayEntry
+
 	// Clock and NewID are injectable for deterministic tests.
 	Clock func() time.Time
 	NewID func() string
@@ -116,6 +120,9 @@ type Engine struct {
 	newID    func() string
 
 	chatRecoveryDone <-chan struct{}
+
+	// providerEntries supplies the stored gateway entries (see Deps.ProviderEntries).
+	providerEntries func(ctx stdctx.Context) []agentcreds.GatewayEntry
 
 	// triggerMu guards triggerLocks; triggerLocks holds one mutex per worker
 	// session so concurrent Trigger calls for the same worker serialise (see
@@ -147,6 +154,8 @@ func New(d Deps) *Engine {
 		triggerLocks: make(map[domain.SessionID]*sync.Mutex),
 
 		chatRecoveryDone: d.ChatRecoveryDone,
+
+		providerEntries: d.ProviderEntries,
 	}
 }
 
@@ -1934,13 +1943,11 @@ func (e *Engine) projectReviewerSelection(
 	worker domain.SessionRecord,
 ) (domain.ReviewerHarness, domain.AgentConfig, error) {
 	var cfg domain.ProjectConfig
-	var projectPath string
 	if e.projects != nil {
 		if proj, ok, err := e.projects.GetProject(ctx, string(worker.ProjectID)); err != nil {
 			return "", domain.AgentConfig{}, err
 		} else if ok {
 			cfg = proj.Config
-			projectPath = proj.Path
 		}
 	}
 	if len(cfg.Reviewers) > 0 {
@@ -1948,7 +1955,11 @@ func (e *Engine) projectReviewerSelection(
 		// A provider pin rides in AgentConfig.Env: the launcher merges that env
 		// into the reviewer process, same transport as the session launch path.
 		if cfg.Reviewers[0].Provider != "" {
-			pinEnv := agentcreds.ProviderPinEnv(ctx, projectPath, cfg.Reviewers[0].Provider)
+			var entries []agentcreds.GatewayEntry
+			if e.providerEntries != nil {
+				entries = e.providerEntries(ctx)
+			}
+			pinEnv := agentcreds.ProviderPinEnv(cfg.Reviewers[0].Provider, string(worker.ProjectID), entries)
 			if len(pinEnv) > 0 {
 				env := make(map[string]string, len(config.Env)+len(pinEnv))
 				for key, value := range config.Env {
