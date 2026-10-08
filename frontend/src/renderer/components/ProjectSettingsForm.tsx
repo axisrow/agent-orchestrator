@@ -16,7 +16,7 @@ import { agentModelsQueryKey, agentModelsQueryOptions, refreshAgentModels, reval
 import { useAgentReadinessQuery, useEnsureAgentReadiness } from "../hooks/useAgentReadinessQuery";
 import { useRemoteProjectQuery, workspaceQueryKeyForHost, workspaceQueryOptions } from "../hooks/useWorkspaceQuery";
 import { apiClient, apiErrorMessage } from "../lib/api-client";
-import { clientForHost } from "../lib/host-clients";
+import { clientForHost, clientForSessionHost } from "../lib/host-clients";
 import { useConnectedHosts } from "../hooks/useHostConnection";
 import { LOCAL_HOST, refKey } from "../lib/hosts";
 import { GatewayProvidersSection, gatewayConfigQueryKey } from "./settings/GatewayProvidersSection";
@@ -212,11 +212,12 @@ function SettingsBody({
 	const selectableAgents = hostId ? agentCatalog?.agents.filter(isLaunchableAgent) : agentCatalog?.agents;
 
 	// Per-role provider pins (#6156) are chosen among the configured gateway
-	// entries; the same GET the Gateway section uses reports both scopes.
+	// entries; the same GET the Gateway section uses reports both scopes. On a
+	// remote host the gateway settings live on that host's daemon, not local.
 	const gatewayQuery = useQuery({
-		queryKey: gatewayConfigQueryKey(projectId),
+		queryKey: gatewayConfigQueryKey(projectId, hostId),
 		queryFn: async () => {
-			const { data, error } = await apiClient.GET("/api/v1/settings/gateway", {
+			const { data, error } = await clientForSessionHost(hostId).GET("/api/v1/settings/gateway", {
 				params: projectId ? { query: { projectId } } : undefined,
 			});
 			if (error) throw new Error(apiErrorMessage(error));

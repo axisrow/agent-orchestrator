@@ -15,8 +15,10 @@ type GatewayProbeResponse =
 	components["schemas"]["ControllersGatewayProbeResponse"];
 type Staleness = components["schemas"]["SessionProviderStaleness"];
 
-export const gatewayConfigQueryKey = (projectId?: string) =>
-	["settings", "gateway", projectId ?? "app"] as const;
+// hostId scopes the cache per daemon: project settings on a remote host read
+// that host's gateway config, while the global Settings section stays local.
+export const gatewayConfigQueryKey = (projectId?: string, hostId?: string) =>
+	["settings", "gateway", hostId ?? "local", projectId ?? "app"] as const;
 
 // ScopeConfig is the editable form state for one scope's entry.
 type ScopeForm = { baseUrl: string; token: string; model: string };
