@@ -53,17 +53,22 @@ type ReportOutputResponse struct {
 	Label     string `json:"label,omitempty"`
 }
 
-// ReportResponse is one persisted worker claim, independent of delivery state.
+// ReportResponse is one persisted worker claim. Delivery fields surface the
+// outbox state for the fork's developer-mode board indicator.
 type ReportResponse struct {
-	ID          string                 `json:"id"`
-	SessionID   string                 `json:"sessionId"`
-	ProjectID   string                 `json:"projectId"`
-	State       string                 `json:"state,omitempty"`
-	Note        string                 `json:"note,omitempty"`
-	Message     string                 `json:"message,omitempty"`
-	Outputs     []ReportOutputResponse `json:"outputs,omitempty"`
-	CreatedAt   time.Time              `json:"createdAt"`
-	RepeatCount int64                  `json:"repeatCount"`
+	ID               string                 `json:"id"`
+	SessionID        string                 `json:"sessionId"`
+	ProjectID        string                 `json:"projectId"`
+	State            string                 `json:"state,omitempty"`
+	Note             string                 `json:"note,omitempty"`
+	Message          string                 `json:"message,omitempty"`
+	Outputs          []ReportOutputResponse `json:"outputs,omitempty"`
+	CreatedAt        time.Time              `json:"createdAt"`
+	RepeatCount      int64                  `json:"repeatCount"`
+	DeliveryState    string                 `json:"deliveryState,omitempty"`
+	DeliveryAttempts int64                  `json:"deliveryAttempts,omitempty"`
+	AvailableAt      *time.Time             `json:"availableAt,omitempty"`
+	LastError        string                 `json:"lastError,omitempty"`
 }
 
 // ListReportsResponse contains a project's ordered persisted reports.

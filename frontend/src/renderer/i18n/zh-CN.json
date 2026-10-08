@@ -112,6 +112,8 @@
 	"cloud.lifecycle.startingAoWorker": "正在启动 AO worker",
 	"cloud.lifecycle.connecting": "正在连接",
 	"board.empty.body": "描述一个任务后，编排器会进行规划、创建 worker 会话，并在工作推进时在此跟踪。",
+	"board.reportsDeliveryErrors": "{{count}} 个送达错误",
+	"board.reportsUndelivered": "{{count}} 个未送达",
 	"board.empty.title": "还没有 worker 会话",
 	"home.folderMissing": "文件夹缺失",
 	"home.getStarted": "开始使用",

@@ -112,6 +112,8 @@
 	"cloud.lifecycle.startingAoWorker": "Iniciando worker do AO",
 	"cloud.lifecycle.connecting": "Conectando",
 	"board.empty.body": "Descreva uma tarefa e o orchestrator a planeja, inicia sessões de worker e as acompanha aqui conforme o trabalho avança.",
+	"board.reportsDeliveryErrors": "{{count}} erros de entrega",
+	"board.reportsUndelivered": "{{count}} não entregues",
 	"board.empty.title": "Nenhuma sessão de worker ainda",
 	"home.folderMissing": "Pasta não encontrada",
 	"home.getStarted": "Começar",

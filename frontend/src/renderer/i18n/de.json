@@ -112,6 +112,8 @@
 	"cloud.lifecycle.startingAoWorker": "AO-Worker wird gestartet",
 	"cloud.lifecycle.connecting": "Verbinden",
 	"board.empty.body": "Beschreiben Sie eine Aufgabe — der Orchestrator plant sie, startet Worker-Sitzungen und verfolgt sie hier, während die Arbeit voranschreitet.",
+	"board.reportsDeliveryErrors": "{{count}} Zustellfehler",
+	"board.reportsUndelivered": "{{count}} nicht zugestellt",
 	"board.empty.title": "Noch keine Worker-Sitzungen",
 	"home.folderMissing": "Ordner fehlt",
 	"home.getStarted": "Loslegen",

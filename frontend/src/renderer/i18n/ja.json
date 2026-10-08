@@ -112,6 +112,8 @@
 	"cloud.lifecycle.startingAoWorker": "AO ワーカーを起動中",
 	"cloud.lifecycle.connecting": "接続中",
 	"board.empty.body": "タスクを説明すると、オーケストレーターが計画を立て、ワーカーセッションを起動し、進捗に合わせてここで追跡します。",
+	"board.reportsDeliveryErrors": "配達エラー {{count}}件",
+	"board.reportsUndelivered": "未配達 {{count}}件",
 	"board.empty.title": "ワーカーセッションはまだありません",
 	"home.folderMissing": "フォルダがありません",
 	"home.getStarted": "始めましょう",

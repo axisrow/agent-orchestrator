@@ -74,6 +74,8 @@
 	"cloud.lifecycle.startingAoWorker": "Starting AO worker",
 	"cloud.lifecycle.connecting": "Connecting",
 	"board.empty.body": "Describe a task and the orchestrator plans it, spawns worker sessions, and tracks them here as work moves forward.",
+	"board.reportsDeliveryErrors": "{{count}} delivery errors",
+	"board.reportsUndelivered": "{{count}} undelivered",
 	"board.empty.title": "No worker sessions yet",
 	"home.folderMissing": "Folder missing",
 	"home.getStarted": "Get started",
