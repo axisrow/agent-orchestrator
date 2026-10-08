@@ -11085,7 +11085,7 @@ func TestBuildSystemPrompt_AppendsRoleSystemPrompt(t *testing.T) {
 	lookPath := func(string) (string, error) { return "/bin/true", nil }
 	m := New(Deps{Runtime: &fakeRuntime{}, Agents: singleAgent{agent: &recordingAgent{}}, Workspace: &fakeWorkspace{}, Store: st, Messenger: &fakeMessenger{}, Lifecycle: &fakeLCM{store: st}, LookPath: lookPath})
 
-	sp, err := m.buildSystemPrompt(ctx, domain.KindWorker, "mer")
+	sp, err := m.buildSystemPrompt(ctx, domain.KindWorker, "mer", "mer-1")
 	if err != nil {
 		t.Fatalf("buildSystemPrompt: %v", err)
 	}
@@ -11107,7 +11107,7 @@ func TestBuildSystemPrompt_NoRolePromptWhenUnset(t *testing.T) {
 	lookPath := func(string) (string, error) { return "/bin/true", nil }
 	m := New(Deps{Runtime: &fakeRuntime{}, Agents: singleAgent{agent: &recordingAgent{}}, Workspace: &fakeWorkspace{}, Store: st, Messenger: &fakeMessenger{}, Lifecycle: &fakeLCM{store: st}, LookPath: lookPath})
 
-	sp, err := m.buildSystemPrompt(ctx, domain.KindWorker, "mer")
+	sp, err := m.buildSystemPrompt(ctx, domain.KindWorker, "mer", "mer-1")
 	if err != nil {
 		t.Fatalf("buildSystemPrompt: %v", err)
 	}
