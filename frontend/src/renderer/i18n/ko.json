@@ -647,6 +647,7 @@
 	"inspector.loadMoreReviews": "더 불러오기 · 이전 {{count}}개",
 	"inspector.showLatestReviewOnly": "최신 항목만 표시",
 	"inspector.selectReviewerAgent": "리뷰어 에이전트 선택",
+	"inspector.reviewerModelNotInCatalog": "카탈로그에 없음",
 	"inspector.showMore": "더 보기",
 	"inspector.showLess": "접기",
 	"inspector.viewOnPR": "PR에서 보기",

@@ -12,7 +12,7 @@ export const agentModelsQueryPrefix = (agentId: string) =>
 	["agent-models", agentId] as const;
 
 export const agentModelsQueryKey = (agentId: string, projectId: string, hostId?: string, role?: string) => {
-	if (hostId) return ["agent-models", hostId, agentId, projectId] as const;
+	if (hostId) return ["agent-models", hostId, agentId, projectId, role ?? ""] as const;
 	if (role) return [...agentModelsQueryPrefix(agentId), projectId, `role:${role}`] as const;
 	return [...agentModelsQueryPrefix(agentId), projectId] as const;
 };
