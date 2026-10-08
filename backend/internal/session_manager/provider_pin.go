@@ -22,14 +22,19 @@ func RoleProviderPin(kind domain.SessionKind, cfg domain.ProjectConfig) string {
 }
 
 // applyRoleProviderPin overlays the role's provider pin onto the launch env so
-// the agent process resolves the pinned provider instead of the gateway the
-// settings chain yields. A pinless role is a no-op. Callers inject before the
-// provider stamp is taken, so staleness compares like against like.
-func applyRoleProviderPin(ctx context.Context, env map[string]string, projectDir string, kind domain.SessionKind, cfg domain.ProjectConfig) {
+// the agent process resolves the pinned provider; a pinless role falls through
+// to the stored default gateway entry, if one is configured. With neither, the
+// launch keeps the settings-chain behavior. Callers inject before the provider
+// stamp is taken, so staleness compares like against like.
+func (m *Manager) applyRoleProviderPin(ctx context.Context, env map[string]string, projectID string, kind domain.SessionKind, cfg domain.ProjectConfig) {
 	if env == nil {
 		return
 	}
-	for key, value := range agentcreds.ProviderPinEnv(ctx, projectDir, RoleProviderPin(kind, cfg)) {
+	var entries []agentcreds.GatewayEntry
+	if m.providerEntries != nil {
+		entries = m.providerEntries(ctx)
+	}
+	for key, value := range agentcreds.ProviderLaunchEnv(RoleProviderPin(kind, cfg), projectID, entries) {
 		env[key] = value
 	}
 }
