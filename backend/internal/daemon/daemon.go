@@ -827,12 +827,6 @@ func Run() error {
 		}
 		return fmt.Errorf("reconcile sessions on boot: %w", reconcileErr)
 	}
-	// Reviewer-owned Chat controllers are durable independently of the worker's
-	// currently selected reviewer. Recover them through the required review
-	// service contract before accepting new automatic review work.
-	if reconcileErr := reviewSvc.RecoverChatReviewers(ctx); reconcileErr != nil {
-		log.Warn("reviewer chat recovery deferred", "err", reconcileErr)
-	}
 	// Ownerless conpty panes (the crash windows of #5948) have no one left to
 	// tear them down. Sweep before the listener accepts traffic so no fresh
 	// pane can appear mid-sweep, and before ReconcileBackground's adopt pass.
