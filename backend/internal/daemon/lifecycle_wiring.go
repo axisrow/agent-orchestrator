@@ -197,6 +197,7 @@ type sessionLifecycle interface {
 	ReconcileStartupSafety(ctx context.Context) error
 	ReconcileBackground(ctx context.Context) error
 	ReconcileOrphanedPtyHosts(ctx context.Context) error
+	HibernateIdleChats(ctx context.Context) error
 	RestoreAll(ctx context.Context) error
 	WaitBackgroundWorkers(ctx context.Context) error
 	WaitAgentSwitchWorkers(ctx context.Context) error
@@ -261,7 +262,7 @@ func telemetryEmitsSpawned(cfg config.Config) bool {
 // (issue #2685). The returned service is mounted at httpd APIDeps.Sessions.
 // It also returns the manager so the caller can wire Reconcile into the boot
 // sequence.
-func startSession(ctx context.Context, cfg config.Config, runtime runtimeselect.Runtime, store *sqlite.Store, lcm *lifecycle.Manager, messenger ports.AgentMessenger, telemetry ports.EventSink, notifications notificationSink, agents ports.AgentResolver, agentReadiness ports.AgentReadinessProvider, previewLifecycle sessionmanager.PreviewLifecycle, browserLifecycle sessionmanager.BrowserLifecycle, browserCapabilities sessionmanager.BrowserCapabilityIssuer, chat sessionmanager.ChatLauncher, defaults sessionmanager.SessionModeDefaults, reportingPolicy ports.AgentSwitchReportingPolicy, tracker ports.Tracker, codexOperationGate ports.CodexOperationGate, log *slog.Logger) (*sessionsvc.Service, reviewsvc.Manager, sessionLifecycle, error) {
+func startSession(ctx context.Context, cfg config.Config, runtime runtimeselect.Runtime, store *sqlite.Store, lcm *lifecycle.Manager, messenger ports.AgentMessenger, telemetry ports.EventSink, notifications notificationSink, agents ports.AgentResolver, agentReadiness ports.AgentReadinessProvider, previewLifecycle sessionmanager.PreviewLifecycle, browserLifecycle sessionmanager.BrowserLifecycle, browserCapabilities sessionmanager.BrowserCapabilityIssuer, chat sessionmanager.ChatLauncher, reviewerRecoveryDone <-chan struct{}, defaults sessionmanager.SessionModeDefaults, reportingPolicy ports.AgentSwitchReportingPolicy, tracker ports.Tracker, codexOperationGate ports.CodexOperationGate, log *slog.Logger) (*sessionsvc.Service, reviewsvc.Manager, sessionLifecycle, error) {
 	gitWS, err := gitworktree.New(gitworktree.Options{
 		// Per-session worktrees live under the data dir, so a single AO_DATA_DIR
 		// override moves all durable per-user state together.
@@ -355,6 +356,8 @@ func startSession(ctx context.Context, cfg config.Config, runtime runtimeselect.
 			reviewcore.WithRunFilePath(cfg.RunFilePath),
 			reviewcore.WithAgentAuth(reviewerAgentAuth{readiness: agentReadiness}),
 			reviewcore.WithReviewerChat(reviewerChat)),
+
+		ChatRecoveryDone: reviewerRecoveryDone,
 	})
 	reviewOpts := []reviewsvc.Option{
 		reviewsvc.WithTelemetry(telemetry),
@@ -562,12 +565,30 @@ func (r projectRepoResolver) RepoPath(projectID domain.ProjectID) (string, error
 // The two packages define their own request/result types on purpose so neither
 // depends on the other's; this is the one place that knows both, which keeps the
 // translation in the wiring rather than in either domain.
-type chatLauncher struct{ svc *chatsvc.Service }
+type chatLauncher struct {
+	svc                         *chatsvc.Service
+	persistentHostReconcileDone <-chan struct{}
+}
+
+func (c chatLauncher) waitForPersistentHostReconcile(ctx context.Context) error {
+	if c.persistentHostReconcileDone == nil {
+		return nil
+	}
+	select {
+	case <-c.persistentHostReconcileDone:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+var _ interface {
+	HibernateChat(context.Context, domain.SessionID) (bool, error)
+} = chatLauncher{}
 
 var _ sessionmanager.ChatLauncher = chatLauncher{}
 var _ interface {
 	RunBackgroundTask(context.Context, domain.AgentHarness, ports.ChatStartConfig, string) (string, error)
-	RelayUserAuthoredChatTurn(context.Context, domain.SessionID, string) (string, error)
 	ArmChatHandoff(context.Context, domain.SessionID, domain.SessionInterfaceTransitionPolicy) error
 	PrepareChatHandoff(context.Context, domain.SessionID, domain.SessionInterfaceTransitionPolicy) error
 	AbortChatHandoff(domain.SessionID)
@@ -602,6 +623,9 @@ func (c chatLauncher) RestoreReviewChat(ctx context.Context, cfg reviewcore.Revi
 }
 
 func (c chatLauncher) startReviewChat(ctx context.Context, cfg reviewcore.ReviewerChatStart, sendPrompt bool) (string, error) {
+	if err := c.waitForPersistentHostReconcile(ctx); err != nil {
+		return "", err
+	}
 	owner := domain.ReviewConversationOwner(cfg.ReviewID)
 	started, err := c.svc.StartChat(ctx, chatsvc.StartConfig{Owner: owner, SessionID: cfg.WorkerID, ProjectID: cfg.ProjectID, Kind: domain.KindWorker, Harness: cfg.Harness, DataDir: cfg.DataDir, WorkspacePath: cfg.WorkspacePath, Env: cfg.Env, Model: cfg.Model, Effort: cfg.Effort, Permissions: ports.PermissionModeAuto, SystemPrompt: cfg.SystemPrompt, ProviderConversationID: cfg.ProviderConversationID})
 	if err != nil {
@@ -639,6 +663,9 @@ func (c chatLauncher) StopReviewChat(ctx context.Context, reviewID string) error
 }
 
 func (c chatLauncher) StartChat(ctx context.Context, cfg sessionmanager.ChatStart) (sessionmanager.ChatStarted, error) {
+	if err := c.waitForPersistentHostReconcile(ctx); err != nil {
+		return sessionmanager.ChatStarted{}, err
+	}
 	return c.svc.StartChat(ctx, cfg)
 }
 
@@ -650,20 +677,8 @@ func (c chatLauncher) StartChatTurn(ctx context.Context, id domain.SessionID, te
 	return c.svc.StartChatTurn(ctx, id, text)
 }
 
-func (c chatLauncher) RelayChatTurn(ctx context.Context, id domain.SessionID, text string) (string, error) {
-	return c.svc.RelayChatTurn(ctx, id, text)
-}
-
-func (c chatLauncher) RelayUserAuthoredChatTurn(ctx context.Context, id domain.SessionID, text string) (string, error) {
-	return c.svc.RelayUserAuthoredChatTurn(ctx, id, text)
-}
-
-func (c chatLauncher) RelayChatTurnWithID(
-	ctx context.Context,
-	id domain.SessionID,
-	text, clientMessageID string,
-) (string, error) {
-	return c.svc.RelayChatTurnWithID(ctx, id, text, clientMessageID)
+func (c chatLauncher) RelaySessionChatTurn(ctx context.Context, id domain.SessionID, text, clientMessageID string, options ports.MessageDeliveryOptions) (string, error) {
+	return c.svc.RelaySessionChatTurn(ctx, id, text, clientMessageID, options)
 }
 
 func (c chatLauncher) QueueChatPrompt(ctx context.Context, id domain.SessionID, text string) (string, error) {
@@ -684,6 +699,10 @@ func (c chatLauncher) DrainChatQueue(ctx context.Context, id domain.SessionID) e
 
 func (c chatLauncher) HasLiveChatController(id domain.SessionID) bool {
 	return c.svc.HasLiveChatController(id)
+}
+
+func (c chatLauncher) HibernateChat(ctx context.Context, id domain.SessionID) (bool, error) {
+	return c.svc.HibernateChat(ctx, id)
 }
 
 // ArmChatHandoff closes Chat intake and dispatch synchronously at transition

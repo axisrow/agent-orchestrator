@@ -2296,7 +2296,7 @@ function SessionRow({
 						autoFocus
 						className={cn(
 							"relative z-[1] h-full min-w-0 flex-1 appearance-none border-0 bg-transparent! p-0 text-sm text-foreground outline-none ring-0 focus:outline-none focus:ring-0",
-							session.lastUserMessageAt && "pr-[36px]",
+							(session.lastInteractionAt ?? session.lastUserMessageAt) && "pr-[36px]",
 						)}
 						data-session-inline-editor=""
 						maxLength={MAX_SESSION_DISPLAY_NAME_LEN}
@@ -2353,7 +2353,7 @@ function SessionRow({
 							aria-label={t("shell.openSession", { title: hostLabel ? `${session.title} · ${hostLabel}` : session.title })}
 							className={cn(
 								"flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-lg py-0 pl-1.5 text-left text-sm outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring",
-								session.lastUserMessageAt ? "pr-[36px]" : "pr-2.5",
+								(session.lastInteractionAt ?? session.lastUserMessageAt) ? "pr-[36px]" : "pr-2.5",
 								!reorder?.isDragging &&
 									"group-hover/session-row:pr-sidebar-project-actions group-has-[:focus-visible]/session-row:pr-sidebar-project-actions",
 								reorder && "cursor-grab active:cursor-grabbing",
@@ -2443,16 +2443,17 @@ function SessionRow({
 
 const SessionMessageAge = memo(function SessionMessageAge({ session }: { session: WorkspaceSession }) {
 	const { t } = useTranslation();
-	if (!session.lastUserMessageAt) return null;
+	const at = session.lastInteractionAt ?? session.lastUserMessageAt;
+	if (!at) return null;
 
 	return (
 		<time
 			className="absolute inset-y-0 right-2 z-[1] flex min-w-0 shrink-0 items-center whitespace-nowrap font-sans text-micro tabular-nums text-passive opacity-100 group-has-[:focus-visible]/session-row:opacity-0"
 			data-session-message-age=""
-			dateTime={session.lastUserMessageAt}
-			title={t("shell.lastMessageAt", { time: formatTimeCompact(session.lastUserMessageAt) })}
+			dateTime={at}
+			title={t("shell.lastMessageAt", { time: formatTimeCompact(at) })}
 		>
-			{formatTimeTerse(session.lastUserMessageAt)}
+			{formatTimeTerse(at)}
 		</time>
 	);
 });
@@ -2562,18 +2563,17 @@ const SessionActions = memo(function SessionActions({
 	);
 });
 
-// CloudSignInRow: the entry point that starts the WorkOS sign-in flow. Shown
-// only when the cloud offering is enabled (entitled client + flag + control
-// plane), WorkOS is configured, and no one is signed in yet.
+// AO account sign-in is shared by Cloud execution and developer-mode remote hosts.
 function CloudSignInRow({ tabIndex }: { tabIndex: number }) {
 	const { t } = useTranslation();
 	const { cloudEnabled } = useCloudGate();
+	const developerMode = useUiStore((state) => state.developerMode);
 	const { configured, status, signIn } = useCloudSession();
 	// Dev + loopback CP: open the local email/password dialog instead of WorkOS.
 	const { available: localAuthAvailable } = useCloudLocalAuth();
 	const openLocalSignIn = useLocalSignInDialogStore((s) => s.openDialog);
 	const onSignIn = () => (localAuthAvailable ? openLocalSignIn() : signIn());
-	if (!configured || !cloudEnabled || status !== "unauthenticated") return null;
+	if (!configured || (!cloudEnabled && !developerMode) || status !== "unauthenticated") return null;
 
 	return (
 		<button
@@ -2596,12 +2596,13 @@ function CloudSignInRow({ tabIndex }: { tabIndex: number }) {
 function CloudSignInRailButton({ tabIndex }: { tabIndex: number }) {
 	const { t } = useTranslation();
 	const { cloudEnabled } = useCloudGate();
+	const developerMode = useUiStore((state) => state.developerMode);
 	const { configured, status, signIn } = useCloudSession();
 	// Dev + loopback CP: open the local email/password dialog instead of WorkOS.
 	const { available: localAuthAvailable } = useCloudLocalAuth();
 	const openLocalSignIn = useLocalSignInDialogStore((s) => s.openDialog);
 	const onSignIn = () => (localAuthAvailable ? openLocalSignIn() : signIn());
-	if (!configured || !cloudEnabled || status !== "unauthenticated") return null;
+	if (!configured || (!cloudEnabled && !developerMode) || status !== "unauthenticated") return null;
 
 	return (
 		<Tooltip>
@@ -2629,8 +2630,9 @@ function CloudSignInRailButton({ tabIndex }: { tabIndex: number }) {
 function CloudAccountRow({ tabIndex }: { tabIndex: number }) {
 	const { t } = useTranslation();
 	const { cloudEnabled } = useCloudGate();
+	const developerMode = useUiStore((state) => state.developerMode);
 	const { configured, session, status, signOut } = useCloudSession();
-	if (!configured || !cloudEnabled || status !== "authenticated") return null;
+	if (!configured || (!cloudEnabled && !developerMode) || status !== "authenticated") return null;
 
 	return (
 		<DropdownMenu>
@@ -2669,8 +2671,9 @@ function CloudAccountRow({ tabIndex }: { tabIndex: number }) {
 function CloudAccountRailButton({ tabIndex }: { tabIndex: number }) {
 	const { t } = useTranslation();
 	const { cloudEnabled } = useCloudGate();
+	const developerMode = useUiStore((state) => state.developerMode);
 	const { configured, session, status, signOut } = useCloudSession();
-	if (!configured || !cloudEnabled || status !== "authenticated") return null;
+	if (!configured || (!cloudEnabled && !developerMode) || status !== "authenticated") return null;
 
 	return (
 		<Tooltip>

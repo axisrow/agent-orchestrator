@@ -62,6 +62,13 @@ UPDATE sessions
 SET model = sqlc.arg(model)
 WHERE id = sqlc.arg(id);
 
+-- name: SetSessionHibernated :execrows
+-- Revision fencing keeps an idle decision from overwriting a later send,
+-- controller change, or lifecycle write. Generic updates leave this fact alone.
+UPDATE sessions
+SET hibernated_at = sqlc.narg(hibernated_at)
+WHERE id = sqlc.arg(id) AND revision = sqlc.arg(expected_revision);
+
 -- name: UpdateSessionArtifactOutput :execrows
 -- Narrow write for lifecycle.Manager.ReconcileSessionOutputType: touches only
 -- the two output-derivation columns. A full read-then-UpdateSession write here
@@ -89,6 +96,15 @@ WHERE id = sqlc.arg(id)
   AND agent_session_id_launch_id = sqlc.arg(expected_agent_session_id_launch_id)
   AND provider_conversation_id = sqlc.arg(expected_provider_conversation_id)
   AND controller_generation = sqlc.arg(expected_controller_generation);
+
+-- name: ReplaceUnpersistedChatProvider :execrows
+-- Move a Chat from a provider id the provider never persisted to the fresh id
+-- it started instead. Guarded on the old id so a newer owner is never replaced.
+UPDATE sessions SET
+    provider_conversation_id = sqlc.arg(provider_conversation_id)
+WHERE id = sqlc.arg(id)
+  AND session_mode = 'chat'
+  AND provider_conversation_id = sqlc.arg(expected_provider_conversation_id);
 
 -- name: RecordSessionLatestUserPrompt :execrows
 UPDATE sessions SET
@@ -205,12 +221,13 @@ SELECT id, project_id, num, issue_id, kind, harness,
     reviewer_harness, reviewer_agent_config, is_pinned, pinned_at,
     session_mode, provider_conversation_id, controller_generation, browser_capability_verifier,
     artifact_dir, session_output_type,
-    latest_user_prompt, latest_user_prompt_at, latest_assistant_update, latest_assistant_update_at,
+    latest_user_prompt, latest_user_prompt_at, latest_interaction_at, latest_assistant_update, latest_assistant_update_at,
     conversation_checkpoint_state, conversation_checkpoint_generation, conversation_checkpoint_native_id,
     conversation_checkpoint_unsettled, conversation_checkpoint_turn_id, native_checkpoint_evidence,
     native_transcript_path, auto_inject_review, auto_inject_ci, auto_review_enabled, model, effort, session_permissions,
     provision_state, provision_error, provision_steps, is_task_preparation, automation_run_id, automation_launch_completed,
-    provider_base_url, provider_model, claude_activity_facts, codex_activity_facts
+    provider_base_url, provider_model, claude_activity_facts, codex_activity_facts,
+    hibernated_at
 FROM sessions WHERE id = ?;
 
 -- name: GetSessionByAutomationRunID :one
@@ -223,12 +240,13 @@ SELECT id, project_id, num, issue_id, kind, harness,
     reviewer_harness, reviewer_agent_config, is_pinned, pinned_at,
     session_mode, provider_conversation_id, controller_generation, browser_capability_verifier,
     artifact_dir, session_output_type,
-    latest_user_prompt, latest_user_prompt_at, latest_assistant_update, latest_assistant_update_at,
+    latest_user_prompt, latest_user_prompt_at, latest_interaction_at, latest_assistant_update, latest_assistant_update_at,
     conversation_checkpoint_state, conversation_checkpoint_generation, conversation_checkpoint_native_id,
     conversation_checkpoint_unsettled, conversation_checkpoint_turn_id, native_checkpoint_evidence,
     native_transcript_path, auto_inject_review, auto_inject_ci, auto_review_enabled, model, effort, session_permissions,
     provision_state, provision_error, provision_steps, is_task_preparation, automation_run_id, automation_launch_completed,
-    provider_base_url, provider_model, claude_activity_facts, codex_activity_facts
+    provider_base_url, provider_model, claude_activity_facts, codex_activity_facts,
+    hibernated_at
 FROM sessions WHERE automation_run_id = ?;
 
 -- name: ListSessionsByProject :many
@@ -241,12 +259,13 @@ SELECT id, project_id, num, issue_id, kind, harness,
     reviewer_harness, reviewer_agent_config, is_pinned, pinned_at,
     session_mode, provider_conversation_id, controller_generation, browser_capability_verifier,
     artifact_dir, session_output_type,
-    latest_user_prompt, latest_user_prompt_at, latest_assistant_update, latest_assistant_update_at,
+    latest_user_prompt, latest_user_prompt_at, latest_interaction_at, latest_assistant_update, latest_assistant_update_at,
     conversation_checkpoint_state, conversation_checkpoint_generation, conversation_checkpoint_native_id,
     conversation_checkpoint_unsettled, conversation_checkpoint_turn_id, native_checkpoint_evidence,
     native_transcript_path, auto_inject_review, auto_inject_ci, auto_review_enabled, model, effort, session_permissions,
     provision_state, provision_error, provision_steps, is_task_preparation, automation_run_id, automation_launch_completed,
-    provider_base_url, provider_model, claude_activity_facts, codex_activity_facts
+    provider_base_url, provider_model, claude_activity_facts, codex_activity_facts,
+    hibernated_at
 FROM sessions WHERE project_id IS ? ORDER BY num;
 
 -- name: ListAllSessions :many
@@ -259,13 +278,23 @@ SELECT id, project_id, num, issue_id, kind, harness,
     reviewer_harness, reviewer_agent_config, is_pinned, pinned_at,
     session_mode, provider_conversation_id, controller_generation, browser_capability_verifier,
     artifact_dir, session_output_type,
-    latest_user_prompt, latest_user_prompt_at, latest_assistant_update, latest_assistant_update_at,
+    latest_user_prompt, latest_user_prompt_at, latest_interaction_at, latest_assistant_update, latest_assistant_update_at,
     conversation_checkpoint_state, conversation_checkpoint_generation, conversation_checkpoint_native_id,
     conversation_checkpoint_unsettled, conversation_checkpoint_turn_id, native_checkpoint_evidence,
     native_transcript_path, auto_inject_review, auto_inject_ci, auto_review_enabled, model, effort, session_permissions,
     provision_state, provision_error, provision_steps, is_task_preparation, automation_run_id, automation_launch_completed,
-    provider_base_url, provider_model, claude_activity_facts, codex_activity_facts
+    provider_base_url, provider_model, claude_activity_facts, codex_activity_facts,
+    hibernated_at
 FROM sessions ORDER BY project_id, num;
+
+-- name: ListChatHibernationCandidates :many
+SELECT id FROM sessions
+WHERE session_mode = 'chat' AND is_terminated = 0 AND is_task_preparation = 0
+    AND kind <> 'orchestrator'
+    AND provision_state IN ('', 'ready') AND hibernated_at IS NULL
+    AND activity_state = 'idle' AND activity_last_at IS NOT NULL
+    AND trim(provider_conversation_id) <> ''
+ORDER BY id;
 
 -- name: PromoteTaskPreparation :execrows
 -- Claim the hidden row without touching branch/workspace facts that may be

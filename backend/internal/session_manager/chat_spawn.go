@@ -41,14 +41,9 @@ type ChatLauncher interface {
 	// paste-and-Enter equivalent in chat mode: the provider either accepts the
 	// turn or reports why.
 	StartChatTurn(ctx context.Context, id domain.SessionID, text string) (string, error)
-	// RelayChatTurn delivers a message AO is carrying on someone else's behalf —
-	// `ao send`, an orchestrator writing to a worker, an automation — as a turn
-	// attributed to automation rather than to the human at the keyboard.
-	RelayChatTurn(ctx context.Context, id domain.SessionID, text string) (string, error)
-	// RelayChatTurnWithID is the durable-retry form. Implementations must pass
-	// the key through to ChatUserMessage so retry after an uncertain outbox
-	// acknowledgement cannot create a second provider turn.
-	RelayChatTurnWithID(ctx context.Context, id domain.SessionID, text, clientMessageID string) (string, error)
+	// RelaySessionChatTurn preserves delivery identity, authorship, and acceptance
+	// time. A durable clientMessageID makes queued retries idempotent.
+	RelaySessionChatTurn(ctx context.Context, id domain.SessionID, text, clientMessageID string, options ports.MessageDeliveryOptions) (string, error)
 	// HasLiveChatController reports whether the daemon still owns a controller
 	// for the session. Resume uses this to distinguish a stale durable activity
 	// state left by an older daemon from a genuinely live controller.
@@ -62,10 +57,6 @@ type ChatLauncher interface {
 	// DrainChatQueue dispatches what accumulated while the session had no
 	// controller.
 	DrainChatQueue(ctx context.Context, id domain.SessionID) error
-}
-
-type userAuthoredChatLauncher interface {
-	RelayUserAuthoredChatTurn(ctx context.Context, id domain.SessionID, text string) (string, error)
 }
 
 type chatBackgroundTaskRunner interface {
@@ -348,7 +339,7 @@ func (m *Manager) stopChatBestEffort(ctx context.Context, id domain.SessionID) {
 // receive a message, and one whose controller is gone cannot either. Busy is not
 // a refusal — the controller queues a mid-turn message, which is strictly better
 // than the terminal path's habit of dropping a nudge it cannot safely deliver.
-func (m *Manager) sendChat(ctx context.Context, id domain.SessionID, message, clientMessageID string, authoredByUser bool) (bool, error) {
+func (m *Manager) sendChat(ctx context.Context, id domain.SessionID, message, clientMessageID string, options ports.MessageDeliveryOptions) (bool, error) {
 	rec, ok, err := m.store.GetSession(ctx, id)
 	if err != nil {
 		return false, fmt.Errorf("send %s: session: %w", id, err)
@@ -363,18 +354,7 @@ func (m *Manager) sendChat(ctx context.Context, id domain.SessionID, message, cl
 	if rec.IsTerminated {
 		return true, fmt.Errorf("send %s: %w", id, ErrTerminated)
 	}
-	var relayErr error
-	if authoredByUser {
-		relay, ok := m.chat.(userAuthoredChatLauncher)
-		if !ok {
-			return true, fmt.Errorf("send %s: user-authored relay is not available", id)
-		}
-		_, relayErr = relay.RelayUserAuthoredChatTurn(ctx, id, message)
-	} else if clientMessageID != "" {
-		_, relayErr = m.chat.RelayChatTurnWithID(ctx, id, message, clientMessageID)
-	} else {
-		_, relayErr = m.chat.RelayChatTurn(ctx, id, message)
-	}
+	_, relayErr := m.chat.RelaySessionChatTurn(ctx, id, message, clientMessageID, options)
 	if relayErr != nil {
 		return true, fmt.Errorf("send %s: %w", id, relayErr)
 	}
@@ -468,6 +448,7 @@ func (m *Manager) resumeChatController(
 	if err != nil {
 		return RestoreResult{}, fmt.Errorf("%s %s: recover provider ownership: %w", operation, rec.ID, err)
 	}
+	freshIfMissing := !requireNativeHistory && !reconnectOnly && providerHandoff == nil && m.providerNeverPersisted(ctx, rec)
 	var completionErr error
 	_, err = m.chat.StartChat(ctx, ChatStart{
 		ReconnectOnly:           reconnectOnly,
@@ -499,8 +480,9 @@ func (m *Manager) resumeChatController(
 			return launchEnv, nil
 		},
 		// The handle that makes this a resume rather than a new conversation.
-		ProviderConversationID: rec.Metadata.ProviderConversationID,
-		ProviderHandoff:        providerHandoff,
+		ProviderConversationID:             rec.Metadata.ProviderConversationID,
+		FreshIfProviderConversationMissing: freshIfMissing,
+		ProviderHandoff:                    providerHandoff,
 		// Ordinary resumes allocate a fresh generation. Switch recovery reuses
 		// the saga's reserved generation until delivery is durably settled so a
 		// second restart can still prove exact target ownership.
@@ -513,6 +495,17 @@ func (m *Manager) resumeChatController(
 			metadata.WorkspaceRepoPath = ws.RepoPath
 			if ws.Branch != "" {
 				metadata.Branch = ws.Branch
+			}
+			if freshIfMissing && started.ProviderConversationID != rec.Metadata.ProviderConversationID {
+				// The provider started fresh in place of a conversation it never
+				// persisted. Move the session and its untouched root together.
+				if err := m.replaceUnpersistedChatProvider(ctx, rec, started.ProviderConversationID); err != nil {
+					completionErr = err
+					return ChatControllerCommit{}, err
+				}
+				// The swap is one-shot: any later call with this id must not retry it.
+				rec.Metadata.ProviderConversationID = started.ProviderConversationID
+				freshIfMissing = false
 			}
 			metadata.ProviderConversationID = started.ProviderConversationID
 			// A fresh generation per launch: events still arriving from the
@@ -548,11 +541,49 @@ func (m *Manager) resumeChatController(
 
 	restored, err := m.getRecord(ctx, rec.ID)
 	if err != nil {
-		return RestoreResult{}, err
+		// StartChat has published the new controller. A failed follow-up read
+		// cannot establish that it is safe to put the session back to sleep.
+		return RestoreResult{}, fmt.Errorf("%w: load resumed chat after native start: %w", ports.ErrChatRecoveryInconclusive, err)
 	}
 	// Native continuity: the provider still holds the conversation, so the agent
 	// resumes with its own history rather than a replayed prompt.
 	return RestoreResult{Session: restored, Mode: RestoreModeNative}, nil
+}
+
+type unpersistedChatProviderStore interface {
+	ReplaceUnpersistedChatProvider(ctx context.Context, id domain.SessionID, expectedProviderConversationID, providerConversationID string) error
+}
+
+// providerNeverPersisted reports durable proof that the stored provider
+// conversation was reserved but never started: the adapter finds no persisted
+// history behind the id and AO recorded no conversation activity. Only then may
+// a provider that cannot find the id start fresh in its place.
+func (m *Manager) providerNeverPersisted(ctx context.Context, rec domain.SessionRecord) bool {
+	id := rec.Metadata.ProviderConversationID
+	if id == "" {
+		return false
+	}
+	agent, ok := m.agents.Agent(rec.Harness)
+	if !ok {
+		return false
+	}
+	handoff, ok := agent.(ports.AgentInterfaceHandoff)
+	if !ok {
+		return false
+	}
+	if _, ok := m.store.(unpersistedChatProviderStore); !ok {
+		return false
+	}
+	persisted, err := m.persistedNativeConversationID(ctx, rec, id, handoff)
+	return err == nil && persisted == ""
+}
+
+func (m *Manager) replaceUnpersistedChatProvider(ctx context.Context, rec domain.SessionRecord, providerConversationID string) error {
+	store, ok := m.store.(unpersistedChatProviderStore)
+	if !ok {
+		return errors.New("replace unpersisted Chat provider: storage is unavailable")
+	}
+	return store.ReplaceUnpersistedChatProvider(ctx, rec.ID, rec.Metadata.ProviderConversationID, providerConversationID)
 }
 
 func (m *Manager) markChatControllerSpawned(

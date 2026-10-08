@@ -97,6 +97,8 @@ type Deps struct {
 	PRs      PRs
 	Projects Projects
 	Launcher Launcher
+	// ChatRecoveryDone gates operations that could mistake a recovering reviewer for an exited one.
+	ChatRecoveryDone <-chan struct{}
 
 	// Clock and NewID are injectable for deterministic tests.
 	Clock func() time.Time
@@ -112,6 +114,8 @@ type Engine struct {
 	launcher Launcher
 	clock    func() time.Time
 	newID    func() string
+
+	chatRecoveryDone <-chan struct{}
 
 	// triggerMu guards triggerLocks; triggerLocks holds one mutex per worker
 	// session so concurrent Trigger calls for the same worker serialise (see
@@ -141,6 +145,8 @@ func New(d Deps) *Engine {
 		clock:        clock,
 		newID:        newID,
 		triggerLocks: make(map[domain.SessionID]*sync.Mutex),
+
+		chatRecoveryDone: d.ChatRecoveryDone,
 	}
 }
 
@@ -162,6 +168,21 @@ func (e *Engine) lockWorker(id domain.SessionID) func() {
 	e.triggerMu.Unlock()
 	mu.Lock()
 	return mu.Unlock
+}
+
+// waitForChatRecovery keeps a missing startup controller from being treated as
+// proof of exit. Recovery itself bypasses this gate; provider result callbacks
+// must also remain available while native conversations reconnect.
+func (e *Engine) waitForChatRecovery(ctx stdctx.Context) error {
+	if e.chatRecoveryDone == nil {
+		return nil
+	}
+	select {
+	case <-e.chatRecoveryDone:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // TriggerResult is the outcome of a trigger: the (new or existing) run, the live
@@ -279,6 +300,9 @@ func (e *Engine) TriggerWithOptions(ctx stdctx.Context, workerID domain.SessionI
 	// below (and the reviewer spawn that follows it) can't be raced into a
 	// double-spawn. Held across the spawn deliberately: the loser then re-reads
 	// the freshly-recorded run and short-circuits to Created:false.
+	if err := e.waitForChatRecovery(ctx); err != nil {
+		return TriggerResult{}, err
+	}
 	unlock := e.lockWorker(workerID)
 	defer unlock()
 
@@ -811,6 +835,9 @@ func (e *Engine) SwitchReviewer(
 	if err := config.Validate(); err != nil {
 		return SessionReviews{}, fmt.Errorf("%w: reviewer config: %w", ErrInvalid, err)
 	}
+	if err := e.waitForChatRecovery(ctx); err != nil {
+		return SessionReviews{}, err
+	}
 	unlock := e.lockWorker(workerID)
 	defer unlock()
 
@@ -935,6 +962,9 @@ func (e *Engine) resetReviewerRuntimeLocked(ctx stdctx.Context, workerID domain.
 func (e *Engine) RestoreReviewer(ctx stdctx.Context, workerID domain.SessionID) (RestoreReviewerResult, error) {
 	if workerID == "" {
 		return RestoreReviewerResult{}, fmt.Errorf("%w: worker session id is required", ErrInvalid)
+	}
+	if err := e.waitForChatRecovery(ctx); err != nil {
+		return RestoreReviewerResult{}, err
 	}
 	unlock := e.lockWorker(workerID)
 	defer unlock()
@@ -1217,6 +1247,9 @@ func (e *Engine) TeardownReviewerTerminal(ctx stdctx.Context, workerID domain.Se
 	if workerID == "" {
 		return fmt.Errorf("%w: worker session id is required", ErrInvalid)
 	}
+	if err := e.waitForChatRecovery(ctx); err != nil {
+		return err
+	}
 	unlock := e.lockWorker(workerID)
 	defer unlock()
 	reviews, err := e.store.ListReviewsBySession(ctx, workerID)
@@ -1411,6 +1444,9 @@ func (e *Engine) List(ctx stdctx.Context, workerID domain.SessionID) (SessionRev
 	if workerID == "" {
 		return SessionReviews{}, fmt.Errorf("%w: worker session id is required", ErrInvalid)
 	}
+	if err := e.waitForChatRecovery(ctx); err != nil {
+		return SessionReviews{}, err
+	}
 	unlock := e.lockWorker(workerID)
 	defer unlock()
 
@@ -1594,6 +1630,9 @@ func legacyReviewerHandle(review domain.Review) string {
 func (e *Engine) Cancel(ctx stdctx.Context, workerID domain.SessionID) (CancelResult, error) {
 	if workerID == "" {
 		return CancelResult{}, fmt.Errorf("%w: worker session id is required", ErrInvalid)
+	}
+	if err := e.waitForChatRecovery(ctx); err != nil {
+		return CancelResult{}, err
 	}
 	worker, ok, err := e.sessions.GetSession(ctx, workerID)
 	if err != nil {
@@ -1780,6 +1819,9 @@ func (e *Engine) ArchiveReviewer(ctx stdctx.Context, workerID domain.SessionID) 
 func (e *Engine) terminateReviewer(ctx stdctx.Context, workerID domain.SessionID, body string, archive bool) (TerminateResult, error) {
 	if workerID == "" {
 		return TerminateResult{}, fmt.Errorf("%w: worker session id is required", ErrInvalid)
+	}
+	if err := e.waitForChatRecovery(ctx); err != nil {
+		return TerminateResult{}, err
 	}
 	unlock := e.lockWorker(workerID)
 	defer unlock()

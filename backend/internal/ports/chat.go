@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 )
@@ -331,9 +332,14 @@ type ChatResumeConfig struct {
 	ProviderIDsScoped      bool
 	SessionID              domain.SessionID
 	ProviderConversationID string
-	DataDir                string
-	WorkspacePath          string
-	Env                    map[string]string
+	// FreshIfMissing lets a driver that had to reload ProviderConversationID
+	// start a fresh provider conversation when the provider reports it does not
+	// exist. Callers set it only with durable proof that the conversation never
+	// started. The returned conversation then reports the new id.
+	FreshIfMissing bool
+	DataDir        string
+	WorkspacePath  string
+	Env            map[string]string
 	// See ChatStartConfig.PrepareEnv.
 	PrepareEnv func(context.Context) (map[string]string, error)
 	// Model is optional; empty keeps the provider conversation's current model.
@@ -393,7 +399,9 @@ func IsInternalReplayContent(content ChatContent) bool {
 
 // ChatUserMessage is one inbound request to the agent.
 type ChatUserMessage struct {
-	Text string
+	// InteractionAt preserves initial acceptance across transition outbox replay.
+	InteractionAt time.Time
+	Text          string
 	// SenderSessionID identifies the AO session that authored an automation steer.
 	// It is presentation metadata only and is never sent to the provider.
 	SenderSessionID string
@@ -426,7 +434,10 @@ type ChatUserMessage struct {
 // MessageDeliveryOptions describes facts about the message independent of the
 // mechanism AO uses to deliver it.
 type MessageDeliveryOptions struct {
-	AuthoredByUser bool
+	InteractionAt time.Time
+	// SenderSessionID is cooperative local identity, resolved from stored metadata.
+	SenderSessionID string
+	AuthoredByUser  bool
 }
 
 // ChatTurnSettings are the per-turn choices a provider accepts alongside the
@@ -925,6 +936,7 @@ const (
 	ChatControllerReady      ChatControllerState = "ready"
 	ChatControllerBusy       ChatControllerState = "busy"
 	ChatControllerRecovering ChatControllerState = "recovering"
+	ChatControllerHibernated ChatControllerState = "hibernated"
 	ChatControllerStopped    ChatControllerState = "stopped"
 )
 
@@ -1110,6 +1122,15 @@ type ChatProviderPreserver interface {
 // destruction must do more than detach the controller.
 type ChatProviderTerminator interface {
 	Terminate() error
+}
+
+// ChatProviderHibernator stops the controller and provider process while
+// retaining the native conversation for a later Resume.
+type ChatProviderHibernator interface {
+	// CanHibernate checks provider-owned work that can outlive a settled turn.
+	// An error must leave the provider running.
+	CanHibernate(ctx context.Context) (bool, error)
+	Hibernate() error
 }
 
 // ChatLiveReconnector identifies attachment to the same initialized provider

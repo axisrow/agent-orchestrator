@@ -36,9 +36,10 @@ const (
 	RuntimeTokenStdinEnv = "AO_BROWSER_RUNTIME_TOKEN_STDIN" //nolint:gosec // Environment variable name, not a credential.
 	// RuntimeAddressEnv carries the exact listener address into running.json so
 	// Electron never has to duplicate the backend's platform-specific naming.
-	RuntimeAddressEnv    = "AO_BROWSER_RUNTIME_ADDRESS"
-	helloTimeout         = 5 * time.Second
-	maxRuntimeFrameBytes = 8 << 20
+	RuntimeAddressEnv     = "AO_BROWSER_RUNTIME_ADDRESS"
+	helloTimeout          = 5 * time.Second
+	runtimeReconnectGrace = 2 * time.Second
+	maxRuntimeFrameBytes  = 8 << 20
 )
 
 // tokenHandoffTimeout bounds the stdin token read: the desktop app writes the
@@ -102,6 +103,11 @@ type livenessConfig struct {
 
 var defaultLiveness = livenessConfig{interval: 5 * time.Second, stallLimit: 15 * time.Second}
 
+// ErrReconnecting indicates that the desktop runtime is temporarily between
+// connections. It wraps ErrUnavailable so existing callers retain the
+// unavailable classification while newer callers can offer a retry action.
+var ErrReconnecting = errors.New("browser runtime is reconnecting")
+
 // Status describes whether Electron is connected to the browser command broker.
 type Status struct {
 	Connected   bool
@@ -159,13 +165,14 @@ type pendingResult struct {
 type Broker struct {
 	log *slog.Logger
 
-	mu          sync.Mutex
-	conn        net.Conn
-	connectedAt time.Time
-	pending     map[string]chan pendingResult
-	writeGate   chan struct{}
-	token       string
-	pongAt      time.Time
+	mu                sync.Mutex
+	conn              net.Conn
+	connectedAt       time.Time
+	pending           map[string]chan pendingResult
+	writeGate         chan struct{}
+	connectionChanged chan struct{}
+	token             string
+	pongAt            time.Time
 
 	liveness livenessConfig
 }
@@ -181,7 +188,7 @@ func New(log *slog.Logger, token ...string) *Broker {
 	if len(token) > 0 {
 		runtimeToken = token[0]
 	}
-	return &Broker{log: log, pending: make(map[string]chan pendingResult), writeGate: gate, token: runtimeToken, liveness: defaultLiveness}
+	return &Broker{log: log, pending: make(map[string]chan pendingResult), writeGate: gate, connectionChanged: make(chan struct{}), token: runtimeToken, liveness: defaultLiveness}
 }
 
 // NewToken returns a per-daemon-launch secret used to authenticate the desktop
@@ -206,14 +213,21 @@ func (b *Broker) Execute(ctx context.Context, sessionID domain.SessionID, action
 	requestID := uuid.NewString()
 	resultCh := make(chan pendingResult, 1)
 
-	b.mu.Lock()
-	conn := b.conn
-	if conn == nil {
+	var conn net.Conn
+	for {
+		var err error
+		conn, err = b.waitForConnection(ctx)
+		if err != nil {
+			return Result{}, err
+		}
+		b.mu.Lock()
+		if b.conn == conn {
+			b.pending[requestID] = resultCh
+			b.mu.Unlock()
+			break
+		}
 		b.mu.Unlock()
-		return Result{}, ErrUnavailable
 	}
-	b.pending[requestID] = resultCh
-	b.mu.Unlock()
 
 	msg := wireMessage{
 		Type:      "command",
@@ -297,6 +311,7 @@ func (b *Broker) serveConn(ctx context.Context, conn net.Conn) {
 	old := b.conn
 	b.conn = conn
 	b.connectedAt = time.Now().UTC()
+	b.signalConnectionChangedLocked()
 	pending := b.takePendingLocked()
 	b.mu.Unlock()
 	if old != nil && old != conn {
@@ -459,7 +474,7 @@ func (b *Broker) resolve(msg wireMessage) {
 	var value interface{} = map[string]interface{}{}
 	if len(msg.Result) > 0 && string(msg.Result) != "null" {
 		if err := json.Unmarshal(msg.Result, &value); err != nil {
-			ch <- pendingResult{err: fmt.Errorf("decode browser result: %w", err)}
+			ch <- pendingResult{err: CommandError{Code: "BROWSER_RUNTIME_PROTOCOL_ERROR", Message: "Browser runtime returned an invalid result"}}
 			return
 		}
 	}
@@ -474,6 +489,7 @@ func (b *Broker) disconnect(conn net.Conn, cause error) {
 	}
 	b.conn = nil
 	b.connectedAt = time.Time{}
+	b.signalConnectionChangedLocked()
 	pending := b.takePendingLocked()
 	b.mu.Unlock()
 	_ = conn.Close()
@@ -483,6 +499,33 @@ func (b *Broker) disconnect(conn net.Conn, cause error) {
 	} else {
 		b.log.Info("browser runtime disconnected")
 	}
+}
+
+func (b *Broker) waitForConnection(ctx context.Context) (net.Conn, error) {
+	waitCtx, cancel := context.WithTimeout(ctx, runtimeReconnectGrace)
+	defer cancel()
+	for {
+		b.mu.Lock()
+		conn := b.conn
+		changed := b.connectionChanged
+		b.mu.Unlock()
+		if conn != nil {
+			return conn, nil
+		}
+		select {
+		case <-waitCtx.Done():
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			return nil, fmt.Errorf("%w: %w", ErrReconnecting, ErrUnavailable)
+		case <-changed:
+		}
+	}
+}
+
+func (b *Broker) signalConnectionChangedLocked() {
+	close(b.connectionChanged)
+	b.connectionChanged = make(chan struct{})
 }
 
 func (b *Broker) removePending(requestID string) {

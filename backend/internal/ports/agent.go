@@ -223,6 +223,10 @@ type AgentModelInfo struct {
 	// not collapse an explicit selection equal to it into "send nothing".
 	EffortsSeeded bool   `json:"effortsSeeded,omitempty"`
 	DefaultEffort string `json:"defaultEffort,omitempty"`
+	// LastUsedAt is the latest activity of a session in scope whose current model
+	// is this model. It is derived from session history on every read, never
+	// stored on the cached catalog, and absent for a model no session ran.
+	LastUsedAt *time.Time `json:"lastUsedAt,omitempty"`
 }
 
 // AgentModelCatalog is AO's normalized model-picker response.
