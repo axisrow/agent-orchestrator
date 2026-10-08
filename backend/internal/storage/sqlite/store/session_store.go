@@ -875,6 +875,8 @@ func rowToRecord(row gen.GetSessionRow) domain.SessionRecord {
 			Model:                            row.Model,
 			Effort:                           row.Effort,
 			Permissions:                      domain.PermissionMode(row.SessionPermissions),
+			ProviderBaseURL:                  row.ProviderBaseURL,
+			ProviderModel:                    row.ProviderModel,
 		},
 		CleanupGeneration: row.CleanupGeneration,
 		CreatedAt:         row.CreatedAt,
@@ -1048,6 +1050,8 @@ func recordToUpdate(rec domain.SessionRecord) gen.UpdateSessionParams {
 		Effort:                           rec.Metadata.Effort,
 		UpdatedAt:                        rec.UpdatedAt,
 		AutomationLaunchCompleted:        rec.AutomationLaunchCompleted,
+		ProviderBaseURL:                  rec.Metadata.ProviderBaseURL,
+		ProviderModel:                    rec.Metadata.ProviderModel,
 	}
 }
 

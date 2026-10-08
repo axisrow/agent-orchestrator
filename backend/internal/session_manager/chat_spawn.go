@@ -203,6 +203,7 @@ func (m *Manager) launchChatController(ctx context.Context, in chatSpawn) (domai
 	// Chat Service retains this unprivileged base environment. The bearer is
 	// minted inside its per-session launch gate and is never cached for reuse.
 	env := m.runtimeEnv(id, in.record.ProjectID, in.record.IssueID, in.project.Config.Env)
+	applyRoleProviderPin(ctx, env, in.project.Path, in.cfg.Kind, in.project.Config)
 	if agent, ok := m.agents.Agent(in.cfg.Harness); ok {
 		m.augmentAgentRuntimeEnv(agent, env)
 	}
@@ -232,6 +233,7 @@ func (m *Manager) launchChatController(ctx context.Context, in chatSpawn) (domai
 			if prepareErr != nil {
 				return nil, fmt.Errorf("%w: %w", ErrSpawnBrowser, prepareErr)
 			}
+			applyRoleProviderPin(launchCtx, launchEnv, in.project.Path, in.record.Kind, in.project.Config)
 			if agent, ok := m.agents.Agent(in.cfg.Harness); ok {
 				m.augmentAgentRuntimeEnv(agent, launchEnv)
 			}
@@ -257,6 +259,7 @@ func (m *Manager) launchChatController(ctx context.Context, in chatSpawn) (domai
 				Model:                     agentConfig.Model,
 				Effort:                    agentConfig.Effort,
 			}
+			metadata.ProviderBaseURL, metadata.ProviderModel = stampSessionProvider(ctx, in.workspace.Path, env)
 			committedConversation, commitErr := m.markChatControllerSpawned(
 				ctx, id, metadata, started.Conversation, started.ProviderBoundary,
 				started.CommitProviderHistory, nil, started.LiveReconnect,
@@ -430,6 +433,7 @@ func (m *Manager) resumeChatController(
 		return RestoreResult{}, fmt.Errorf("%s %s: workspace roots: %w", operation, rec.ID, err)
 	}
 	env := m.runtimeEnv(rec.ID, rec.ProjectID, rec.IssueID, project.Config.Env)
+	applyRoleProviderPin(ctx, env, project.Path, rec.Kind, project.Config)
 	if agent, ok := m.agents.Agent(rec.Harness); ok {
 		m.augmentAgentRuntimeEnv(agent, env)
 	}
@@ -468,6 +472,7 @@ func (m *Manager) resumeChatController(
 			if prepareErr != nil {
 				return nil, prepareErr
 			}
+			applyRoleProviderPin(launchCtx, launchEnv, project.Path, rec.Kind, project.Config)
 			if agent, ok := m.agents.Agent(rec.Harness); ok {
 				m.augmentAgentRuntimeEnv(agent, launchEnv)
 			}
@@ -506,6 +511,7 @@ func (m *Manager) resumeChatController(
 			// A fresh generation per launch: events still arriving from the
 			// controller this one replaced carry the old one and are rejected.
 			metadata.ControllerGeneration = started.ControllerGeneration
+			metadata.ProviderBaseURL, metadata.ProviderModel = stampSessionProvider(ctx, ws.Path, env)
 
 			committedConversation, commitErr := m.markChatControllerSpawned(
 				ctx, rec.ID, metadata, started.Conversation, started.ProviderBoundary,

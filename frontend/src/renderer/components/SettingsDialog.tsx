@@ -1,4 +1,4 @@
-import { Bot, KeyRound, Loader2, MonitorCog, Play, TriangleAlert, X, type LucideIcon } from "lucide-react";
+import { Bot, KeyRound, Loader2, MonitorCog, Network, Play, TriangleAlert, X, type LucideIcon } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useEffect, useRef, useState } from "react";
@@ -107,6 +107,7 @@ function SettingsDialogLayer({ settingsModal }: { settingsModal: SettingsModal }
 	}> = [
 		{ id: "general", label: t("settings.project.general"), icon: MonitorCog },
 		{ id: "agents", label: t("settings.project.agents"), icon: Bot },
+		{ id: "gateway", label: t("settings.gateway.title"), icon: Network },
 	];
 	// Environment and cues are local-daemon features; remote hosts and Cloud projects do not expose them.
 	if (!remoteHostId && !isCloudProjectSettings) {

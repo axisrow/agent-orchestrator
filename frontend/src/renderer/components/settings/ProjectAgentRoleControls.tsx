@@ -14,6 +14,7 @@ export function AgentModelField({
 	role,
 	agentId,
 	projectId,
+	catalogRole,
 	hostId,
 	model,
 	mode,
@@ -31,6 +32,9 @@ export function AgentModelField({
 	role: "worker" | "orchestrator" | "reviewer";
 	agentId: string;
 	projectId: string;
+	// When the role pins a provider, the catalog is scoped to that role so the
+	// picker resolves the pinned provider's models, not the default resolution.
+	catalogRole?: "worker" | "orchestrator" | "reviewer";
 	hostId?: string;
 	model: string;
 	mode: string;
@@ -50,20 +54,20 @@ export function AgentModelField({
 }) {
 	const { t } = useTranslation();
 	const queryClient = useQueryClient();
-	const query = useQuery(agentModelsQueryOptions(agentId, projectId, hostId));
+	const query = useQuery(agentModelsQueryOptions(agentId, projectId, hostId, catalogRole));
 	const catalog: AgentModelCatalog | undefined = query.data;
 	const revalidationQuery = useQuery({
-		queryKey: ["agent-model-revalidation", hostId ?? LOCAL_HOST, agentId, projectId, catalog?.validatedAt ?? ""],
-		queryFn: () => revalidateAgentModels(agentId, projectId, hostId),
+		queryKey: ["agent-model-revalidation", hostId ?? LOCAL_HOST, agentId, projectId, catalogRole ?? "", catalog?.validatedAt ?? ""],
+		queryFn: () => revalidateAgentModels(agentId, projectId, hostId, catalogRole),
 		enabled: agentId !== "" && catalog?.refreshRecommended === true,
 		staleTime: Number.POSITIVE_INFINITY,
 		retry: false,
 	});
 	useEffect(() => {
 		if (revalidationQuery.data) {
-			queryClient.setQueryData(agentModelsQueryKey(agentId, projectId, hostId), revalidationQuery.data);
+			queryClient.setQueryData(agentModelsQueryKey(agentId, projectId, hostId, catalogRole), revalidationQuery.data);
 		}
-	}, [agentId, hostId, projectId, queryClient, revalidationQuery.data]);
+	}, [agentId, catalogRole, hostId, projectId, queryClient, revalidationQuery.data]);
 	const isMode = !independentMode && catalog?.selectionMode === "mode";
 	const label = t(`settings.models.${role}${isMode ? "Mode" : "Model"}`);
 	const warning =
@@ -127,8 +131,8 @@ export function AgentModelField({
 	const unsetLabel = emptyLabel ?? (catalogDefault ? agentModelDisplayLabel(agentId, catalogDefault.label) : undefined);
 	const customModelEntry = catalog?.customModelEntry ?? (catalog?.allowCustom || allowCustomFallback ? "direct" : "none");
 	const refreshCatalog = async () => {
-		const refreshed = await refreshAgentModels(agentId, projectId, hostId);
-		queryClient.setQueryData(agentModelsQueryKey(agentId, projectId, hostId), refreshed);
+		const refreshed = await refreshAgentModels(agentId, projectId, hostId, catalogRole);
+		queryClient.setQueryData(agentModelsQueryKey(agentId, projectId, hostId, catalogRole), refreshed);
 	};
 	const selectCatalogModel = (value: string) => {
 		onModelChange(value);
@@ -175,23 +179,25 @@ export function AgentModelField({
 	);
 }
 
-export function ProjectAgentRoleRow({ label, agent, model }: { label: string; agent: ReactNode; model: ReactNode }) {
+export function ProjectAgentRoleRow({ label, agent, model, provider }: { label: string; agent: ReactNode; model: ReactNode; provider?: ReactNode }) {
 	return (
-		<div className="grid min-h-16 grid-cols-[6rem_minmax(0,0.85fr)_minmax(0,1.25fr)] items-center gap-3 py-2">
+		<div className={`grid min-h-16 items-center gap-3 py-2 ${provider !== undefined ? "grid-cols-[6rem_minmax(0,0.75fr)_minmax(0,1.05fr)_minmax(0,0.8fr)]" : "grid-cols-[6rem_minmax(0,0.85fr)_minmax(0,1.25fr)]"}`}>
 			<span className="text-sm font-medium text-settings-label">{label}</span>
 			<div className="min-w-0">{agent}</div>
 			<div className="min-w-0">{model}</div>
+			<div className="min-w-0">{provider}</div>
 		</div>
 	);
 }
 
-export function ProjectAgentRoleHeader() {
+export function ProjectAgentRoleHeader({ withProvider = false }: { withProvider?: boolean }) {
 	const { t } = useTranslation();
 	return (
-		<div className="grid grid-cols-[6rem_minmax(0,0.85fr)_minmax(0,1.25fr)] gap-3 py-2 text-xs font-medium text-settings-muted">
+		<div className={`grid gap-3 py-2 text-xs font-medium text-settings-muted ${withProvider ? "grid-cols-[6rem_minmax(0,0.75fr)_minmax(0,1.05fr)_minmax(0,0.8fr)]" : "grid-cols-[6rem_minmax(0,0.85fr)_minmax(0,1.25fr)]"}`}>
 			<span />
 			<span>{t("settings.project.agent")}</span>
 			<span>{t("settings.project.modelOverride")}</span>
+			{withProvider && <span>{t("settings.project.providerLabel")}</span>}
 		</div>
 	);
 }

@@ -103,6 +103,7 @@ import {
 	sessionReviewsQueryOptions,
 	sessionReviewsQueryKey,
 	type PRReviewState,
+	historicalReviewStatesFrom,
 	type ReviewRunFacts,
 } from "../lib/session-reviews";
 import type { CloudCpAOReviewRun, CloudCpSessionReviewState, CloudCpPullRequestSummary } from "../lib/cloud-cp";
@@ -648,7 +649,7 @@ function UsageCostTelemetry({ usage }: { usage: SessionUsage }) {
 					className="rounded-lg border border-(--color-border-settings-input) bg-(--color-bg-settings-input) px-2.5 py-2.5"
 					data-testid="session-usage-metrics"
 				>
-					<UsageMetrics totals={usage.totals} />
+					<UsageMetrics totals={usage.totals} turns={usage.turns} tokensPerSecond={usage.tokensPerSecond} />
 				</div>
 			</div>
 
@@ -1072,15 +1073,109 @@ function EstimatedCostInfo({ cost }: { cost: EstimatedCost | null }) {
 	);
 }
 
-function UsageMetrics({ totals }: { totals: SessionUsage["totals"] }) {
+/**
+ * The ⓘ disclosure shared by the usage metrics grid: a real affordance on the
+ * label (same pattern as EstimatedCostInfo), not a hidden title a reader has
+ * to think to hover.
+ */
+function MetricInfoIcon({ hint }: { hint: string }) {
+	const { t } = useTranslation();
+	return (
+		<Tooltip>
+			<TooltipTrigger asChild>
+				{/* A generic accessible name: the hint text itself would collide
+				    with the value's aria-label (e.g. the cache-hit-rate figure) and
+				    break getByLabelText queries and screen-reader navigation. */}
+				<button
+					aria-label={t("inspector.usage.metricHintLabel")}
+					className="rounded-sm text-settings-muted outline-none transition-colors hover:text-settings-label focus-visible:ring-1 focus-visible:ring-ring"
+					type="button"
+				>
+					<Info aria-hidden="true" className="size-3" />
+				</button>
+			</TooltipTrigger>
+			<TooltipContent className="max-w-64 text-left" side="top">
+				<p>{hint}</p>
+			</TooltipContent>
+		</Tooltip>
+	);
+}
+
+function UsageMetrics({
+	totals,
+	turns,
+	tokensPerSecond,
+}: {
+	totals: SessionUsage["totals"];
+	// Session-level extras: per-model peeks omit them.
+	turns?: number;
+	tokensPerSecond?: number | null;
+}) {
 	const { t } = useTranslation();
 	const cacheHitRate = formatCacheHitRate(totals.cachedInputTokens, totals.inputTokens);
+	const turnsLabel = t("inspector.usage.turns");
+	const throughputLabel = t("inspector.usage.tokensPerSecond");
+	const throughput =
+		tokensPerSecond === null || tokensPerSecond === undefined
+			? null
+			: `${
+					// One decimal below 100 tok/s, integers above: the rate is a
+					// comparison aid, and its decimals stop carrying signal long
+					// before the number gets long.
+					tokensPerSecond >= 100
+						? Math.round(tokensPerSecond).toLocaleString("en-US")
+						: tokensPerSecond.toFixed(1)
+				} tok/s`;
 	return (
 		<dl className="grid grid-cols-2 gap-x-4 gap-y-2 @max-[300px]/inspector:grid-cols-1" data-testid="session-usage-metrics">
-			<UsageMetric label={t("inspector.usage.uncachedInputTokens")} metric={totals.uncachedInputTokens} />
-			<UsageMetric label={t("inspector.usage.cachedInputTokens")} metric={totals.cachedInputTokens} />
-			<UsageMetric label={t("inspector.usage.outputTokens")} metric={totals.outputTokens} />
+			<UsageMetric
+				hint={t("inspector.usage.uncachedInputTokensHint")}
+				label={t("inspector.usage.uncachedInputTokens")}
+				metric={totals.uncachedInputTokens}
+			/>
+			<UsageMetric
+				hint={t("inspector.usage.cachedInputTokensHint")}
+				label={t("inspector.usage.cachedInputTokens")}
+				metric={totals.cachedInputTokens}
+			/>
+			<UsageMetric
+				hint={t("inspector.usage.outputTokensHint")}
+				label={t("inspector.usage.outputTokens")}
+				metric={totals.outputTokens}
+			/>
 			<UsageRateMetric rate={cacheHitRate} />
+			{turns !== undefined ? (
+				<div className="min-w-0">
+					<dt className="flex items-center gap-1 truncate text-2xs text-settings-muted">
+						<span className="truncate">{turnsLabel}</span>
+						<MetricInfoIcon hint={t("inspector.usage.turnsHint")} />
+					</dt>
+					<dd
+						aria-label={`${turnsLabel}: ${turns}`}
+						className="mt-0.5 truncate font-mono text-sm-md text-settings-label"
+					>
+						{turns > 0 ? turns.toLocaleString("en-US") : "—"}
+					</dd>
+				</div>
+			) : null}
+			{tokensPerSecond !== undefined ? (
+				<div className="min-w-0">
+					<dt className="flex items-center gap-1 truncate text-2xs text-settings-muted">
+						<span className="truncate">{throughputLabel}</span>
+						<MetricInfoIcon hint={t("inspector.usage.tokensPerSecondHint")} />
+					</dt>
+					<dd
+						aria-label={
+							throughput === null
+								? t("inspector.usage.metricUnavailable", { label: throughputLabel })
+								: throughput
+						}
+						className="mt-0.5 truncate font-mono text-sm-md text-settings-label"
+					>
+						{throughput ?? "—"}
+					</dd>
+				</div>
+			) : null}
 		</dl>
 	);
 }
@@ -1094,11 +1189,13 @@ function UsageRateMetric({ rate }: { rate: string | null }) {
 			: t("inspector.usage.cacheHitRateDescription", { rate });
 	return (
 		<div className="min-w-0">
-			<dt className="truncate text-2xs text-settings-muted">{label}</dt>
+			<dt className="flex items-center gap-1 truncate text-2xs text-settings-muted">
+				<span className="truncate">{label}</span>
+				<MetricInfoIcon hint={description} />
+			</dt>
 			<dd
 				aria-label={description}
 				className="mt-0.5 truncate font-mono text-sm-md text-settings-label"
-				title={description}
 			>
 				{rate === null ? "—" : `${rate}%`}
 			</dd>
@@ -1106,7 +1203,15 @@ function UsageRateMetric({ rate }: { rate: string | null }) {
 	);
 }
 
-function UsageMetric({ label, metric }: { label: string; metric: number | null | undefined }) {
+function UsageMetric({
+	hint,
+	label,
+	metric,
+}: {
+	hint?: string;
+	label: string;
+	metric: number | null | undefined;
+}) {
 	const { t } = useTranslation();
 	const value = typeof metric === "number" && Number.isFinite(metric) ? metric : null;
 	const exactValue = value?.toLocaleString("en-US");
@@ -1116,7 +1221,10 @@ function UsageMetric({ label, metric }: { label: string; metric: number | null |
 			: t("inspector.usage.metricAria", { label, count: exactValue });
 	return (
 		<div className="min-w-0">
-			<dt className="truncate text-2xs text-settings-muted">{label}</dt>
+			<dt className="flex items-center gap-1 truncate text-2xs text-settings-muted">
+				<span className="truncate">{label}</span>
+				{hint ? <MetricInfoIcon hint={hint} /> : null}
+			</dt>
 			<dd
 				aria-label={accessibleLabel}
 				className="mt-0.5 truncate font-mono text-sm-md text-settings-label"
@@ -1411,6 +1519,23 @@ function PRSummaryCard({
 		},
 	});
 	const mergeError = mergePr.error instanceof Error ? mergePr.error.message : null;
+	// Review runs are per-PR now: the trigger carries this card's PR URL so a
+	// multi-PR session reviews the PR the button belongs to, not every PR.
+	const canReview = pr.state === "open" || pr.state === "draft";
+	const runReview = useMutation({
+		mutationFn: async () => {
+			if (usePreviewData) return;
+			const { error } = await clientForSessionHost(hostId).POST("/api/v1/sessions/{sessionId}/reviews/trigger", {
+				params: { path: { sessionId } },
+				body: { prUrl: pr.url },
+			});
+			if (error) throw new Error(apiErrorMessage(error, t("inspector.unableStartReview")));
+		},
+		onSuccess: () => {
+			void queryClient.invalidateQueries({ queryKey: ["session-reviews", sessionId] });
+			void queryClient.invalidateQueries({ queryKey: workspaceKey });
+		},
+	});
 	const viewModel: InspectorPullRequest = {
 		...pr,
 		card: presentation,
@@ -1428,28 +1553,53 @@ function PRSummaryCard({
 			externalIcon={<ArrowUpRight aria-hidden="true" className="size-icon-2xs shrink-0" strokeWidth={2} />}
 			externalLink={ProductExternalLink}
 			mergeAction={
-				canMerge ? (
-					<Button
-						aria-label={t("pr.merge.actionFor", { number: pr.number })}
-						className="gap-1 bg-success px-2 text-xs text-background hover:bg-success/80"
-						disabled={mergePr.isPending}
-						onClick={() => mergePr.mutate()}
-						size="sm"
-						type="button"
-					>
-						{mergePr.isPending ? (
-							<Loader2 className="size-icon-sm animate-spin" aria-hidden="true" />
-						) : (
-							<GitMerge className="size-icon-sm" aria-hidden="true" />
-						)}
-						{mergePr.isPending ? t("pr.merge.merging") : t("pr.merge.action")}
-					</Button>
-				) : undefined
+				<>
+					{canReview ? (
+						<Button
+							aria-label={t("pr.review.runFor", { number: pr.number })}
+							className="gap-1 px-2 text-xs"
+							disabled={runReview.isPending}
+							onClick={() => runReview.mutate()}
+							size="sm"
+							type="button"
+							variant="outline"
+						>
+							{runReview.isPending ? (
+								<Loader2 className="size-icon-sm animate-spin" aria-hidden="true" />
+							) : (
+								<Play className="size-icon-sm" aria-hidden="true" />
+							)}
+							{runReview.isPending ? t("inspector.review.reviewing") : t("inspector.review.run")}
+						</Button>
+					) : undefined}
+					{canMerge ? (
+						<Button
+							aria-label={t("pr.merge.actionFor", { number: pr.number })}
+							className="gap-1 bg-success px-2 text-xs text-background hover:bg-success/80"
+							disabled={mergePr.isPending}
+							onClick={() => mergePr.mutate()}
+							size="sm"
+							type="button"
+						>
+							{mergePr.isPending ? (
+								<Loader2 className="size-icon-sm animate-spin" aria-hidden="true" />
+							) : (
+								<GitMerge className="size-icon-sm" aria-hidden="true" />
+							)}
+							{mergePr.isPending ? t("pr.merge.merging") : t("pr.merge.action")}
+						</Button>
+					) : undefined}
+				</>
 			}
 			mergeError={mergeError}
 			openLabel={t("inspector.openPR", { number: pr.number })}
 			pr={viewModel}
 			pullRequestIcon={<GitPullRequest className="size-icon-sm shrink-0" aria-hidden="true" />}
+			statusNotice={runReview.error instanceof Error ? (
+				<p className="text-2xs leading-normal text-error" role="status">
+					{runReview.error.message}
+				</p>
+			) : undefined}
 		/>
 	);
 }
@@ -2283,6 +2433,7 @@ function cloudReviewRun(run: CloudCpAOReviewRun, harness: string): ReviewRunFact
 		harness: run.harness || harness,
 		id: run.id,
 		prUrl: run.pullRequestUrl,
+		publishState: run.providerReviewId ? "published" : "pending",
 		reviewId: run.reviewId,
 		sessionId: run.sessionId,
 		status: run.status,
@@ -2344,8 +2495,11 @@ function MergedReviewsSection({
 	const openInAOBrowser = useSessionBrowserLink(session);
 	const workspaceKey = workspaceQueryKeyForHost(hostId);
 	const openReviewStates = openReviewStatesFor(session, reviewStates);
-	const runsByPR = runsByPRFrom(openReviewStates, runs);
-	const aoStates = triggeredReviewStatesFrom(openReviewStates, runs);
+	// Merged/closed PRs from earlier in this session keep their runs but no live
+	// state — synthesize one per PR so the Reviews tab covers the whole history.
+	const reviewStatesForView = [...openReviewStates, ...historicalReviewStatesFrom(runs, openReviewStates)];
+	const runsByPR = runsByPRFrom(reviewStatesForView, runs);
+	const aoStates = triggeredReviewStatesFrom(reviewStatesForView, runs);
 
 	// Union by PR number, newest PR first. A PR can appear on either side alone.
 	const byNumber = new Map<number, { ao?: PRReviewState; github?: SessionPRSummary }>();
@@ -2907,6 +3061,9 @@ function ReviewPanel({
 			? t("inspector.review.cancelling")
 			: t("inspector.review.cancel")
 		: runAction;
+	// Kill stays available with auto-review on: a hung reviewer is exactly when
+	// it is needed, and the coordinator re-arms a fresh pass after the kill
+	// (the killed run carries the kill marker in its cancel body).
 	const archiveActionLabel = isKilling ? t("inspector.review.killingSession") : t("inspector.review.killSession");
 	const killDisabled = isKilling || isCancelling || isTriggering || isSwitchingReviewer || !hasReviewerSession;
 
