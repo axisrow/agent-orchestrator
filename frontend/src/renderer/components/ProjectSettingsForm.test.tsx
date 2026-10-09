@@ -491,8 +491,7 @@ describe("ProjectSettingsForm", () => {
 		});
 		renderSettings("proj-1", undefined, "agents");
 		const picker = await screen.findByRole("button", { name: "Worker model" });
-		expect(picker).toHaveTextContent("GPT Test");
-		expect(picker).not.toHaveTextContent("High");
+		expect(picker).toHaveTextContent("GPT Test · High");
 		expect(screen.queryByRole("button", { name: "Worker Effort" })).not.toBeInTheDocument();
 		await userEvent.click(picker);
 		await userEvent.click(screen.getByRole("menuitem", { name: /Reasoning effort/ }));
