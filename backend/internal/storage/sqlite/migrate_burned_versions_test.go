@@ -201,6 +201,7 @@ var shippedMigrations = map[int64]string{
 	9001: "9001_add_user_config.sql",
 	9004: "9004_review_run_publication.sql",
 	9006: "9006_session_provider_stamp.sql",
+	9007: "9007_gateway_entries.sql",
 }
 
 // burnedVersion reports version numbers that must never be (re)used: they
