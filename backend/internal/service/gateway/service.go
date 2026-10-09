@@ -173,6 +173,12 @@ func (s *Service) Set(ctx context.Context, in SetInput) (Config, error) {
 	if in.Scope == ScopeProject && strings.TrimSpace(in.ProjectID) == "" {
 		return Config{}, fmt.Errorf("gateway: projectId is required for the project scope")
 	}
+	// The app scope is keyed by an empty project id: normalize a stray
+	// projectId away so the PUT reads and writes the (app, "") row instead of
+	// storing an entry Get can never return.
+	if in.Scope == ScopeApp {
+		in.ProjectID = ""
+	}
 	if in.BaseURL != nil && strings.TrimSpace(*in.BaseURL) != "" {
 		parsed, err := url.Parse(strings.TrimSpace(*in.BaseURL))
 		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {

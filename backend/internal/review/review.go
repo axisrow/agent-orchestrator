@@ -1952,24 +1952,25 @@ func (e *Engine) projectReviewerSelection(
 	}
 	if len(cfg.Reviewers) > 0 {
 		config := cfg.Reviewers[0].AgentConfig
-		// A provider pin rides in AgentConfig.Env: the launcher merges that env
-		// into the reviewer process, same transport as the session launch path.
-		if cfg.Reviewers[0].Provider != "" {
-			var entries []agentcreds.GatewayEntry
-			if e.providerEntries != nil {
-				entries = e.providerEntries(ctx)
+		// A provider pin or the default gateway entry rides in AgentConfig.Env:
+		// the launcher merges that env into the reviewer process, same transport
+		// as the session launch path. AO no longer writes Claude settings files,
+		// so this overlay is the only channel that carries the configured
+		// gateway to a reviewer.
+		var entries []agentcreds.GatewayEntry
+		if e.providerEntries != nil {
+			entries = e.providerEntries(ctx)
+		}
+		launchEnv := agentcreds.ProviderLaunchEnv(cfg.Reviewers[0].Provider, string(worker.ProjectID), entries)
+		if len(launchEnv) > 0 {
+			env := make(map[string]string, len(config.Env)+len(launchEnv))
+			for key, value := range config.Env {
+				env[key] = value
 			}
-			pinEnv := agentcreds.ProviderPinEnv(cfg.Reviewers[0].Provider, string(worker.ProjectID), entries)
-			if len(pinEnv) > 0 {
-				env := make(map[string]string, len(config.Env)+len(pinEnv))
-				for key, value := range config.Env {
-					env[key] = value
-				}
-				for key, value := range pinEnv {
-					env[key] = value
-				}
-				config.Env = env
+			for key, value := range launchEnv {
+				env[key] = value
 			}
+			config.Env = env
 		}
 		return cfg.Reviewers[0].Harness, config, nil
 	}
