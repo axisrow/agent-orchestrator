@@ -307,6 +307,10 @@ func startSession(ctx context.Context, cfg config.Config, runtime runtimeselect.
 		Logger:              log,
 		ReconcileWorkers:    startupReconcileWorkers,
 		CodexOperationGate:  codexOperationGate,
+		// Stored gateway entries must reach every launch path: without them a
+		// pinless role never resolves the default gateway (settings files are
+		// no longer written). See TestWiring_StartSessionLaunchCarriesStoredGatewayEntry.
+		ProviderEntries: providerEntryLookup(store),
 		// UserConfig supplies global prompt overrides; unset config falls through
 		// to project overrides or hardcoded defaults.
 		UserConfig: store,
@@ -337,6 +341,7 @@ func startSession(ctx context.Context, cfg config.Config, runtime runtimeselect.
 		// coverage; partial callbacks cannot prove that silence is abnormal.
 		SignalCapable:        activitydispatch.FullySupportsHarness,
 		OutputTypeReconciler: lcm,
+		ProviderEntries:      providerEntryLookup(store),
 	})
 	// Triggering a review spawns a reviewer over the worker's worktree, resolved
 	// from the reviewer registry (distinct from the worker agent set). The
@@ -358,6 +363,9 @@ func startSession(ctx context.Context, cfg config.Config, runtime runtimeselect.
 			reviewcore.WithReviewerChat(reviewerChat)),
 
 		ChatRecoveryDone: reviewerRecoveryDone,
+		// Reviewer launches resolve their provider the same way worker launches
+		// do: a configured pin's credentials, else the default gateway entry.
+		ProviderEntries: providerEntryLookup(store),
 	})
 	reviewOpts := []reviewsvc.Option{
 		reviewsvc.WithTelemetry(telemetry),
