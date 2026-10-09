@@ -1074,7 +1074,14 @@ func (e *Engine) restorePersistedChatReviewerLocked(ctx stdctx.Context, worker d
 	if err != nil {
 		return RestoreReviewerResult{}, err
 	}
-	launch, err := e.launcher.RestoreTerminal(ctx, LaunchSpec{ReviewSessionID: review.ID, LaunchID: launchID, WorkerID: worker.ID, ProjectID: worker.ProjectID, ProjectEnv: projectEnv, Harness: review.Harness, WorkspacePath: worker.Metadata.WorkspacePath, AgentSessionID: review.AgentSessionID, ProviderConversationID: review.ProviderConversationID, PreviousRuns: previousRuns, InterfaceMode: review.InterfaceMode})
+	// The relaunched reviewer must resolve its gateway the same way a fresh
+	// launch does: AO no longer writes Claude settings files, so AgentConfig's
+	// launch-env overlay is the only channel that carries it.
+	_, config, err := e.reviewerSelection(ctx, worker)
+	if err != nil {
+		return RestoreReviewerResult{}, err
+	}
+	launch, err := e.launcher.RestoreTerminal(ctx, LaunchSpec{ReviewSessionID: review.ID, LaunchID: launchID, WorkerID: worker.ID, ProjectID: worker.ProjectID, ProjectEnv: projectEnv, Harness: review.Harness, AgentConfig: config, WorkspacePath: worker.Metadata.WorkspacePath, AgentSessionID: review.AgentSessionID, ProviderConversationID: review.ProviderConversationID, PreviousRuns: previousRuns, InterfaceMode: review.InterfaceMode})
 	if err != nil {
 		return RestoreReviewerResult{}, fmt.Errorf("restore reviewer: %w", err)
 	}
