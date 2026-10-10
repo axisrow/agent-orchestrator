@@ -36,6 +36,7 @@ import {
 	Trash2,
 	User,
 	X,
+	ArrowLeft,
 } from "lucide-react";
 import {
 	useCallback,
@@ -124,6 +125,7 @@ import { OrchestratorIcon } from "./icons";
 import { Badge } from "./ui/badge";
 import { cn } from "../lib/utils";
 import { recordManualWorkerOpen } from "../lib/session-management-telemetry";
+import { SettingsSaveStatus, useSettingsPage } from "./SettingsDialog";
 import { useUiStore } from "../stores/ui-store";
 import { useKeybindingsStore } from "../stores/keybindings-store";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -470,6 +472,7 @@ function AnimatedSectionBody({ open, children, className }: { open: boolean; chi
 	);
 }
 const expandedProjectsStorageKey = "ao.sidebar.expanded-projects";
+const projectOrderStorageKey = "ao.sidebar.project-order";
 
 function readExpandedProjectIds(): ReadonlySet<string> {
 	if (typeof window === "undefined" || !window.localStorage) return new Set();
@@ -652,6 +655,7 @@ export function Sidebar({
 	// rendered outside the shell (unit tests) — the mirror simply doesn't render.
 	const daemonStatus = useShellMaybe()?.daemonStatus ?? null;
 	const commandPaletteEnabled = useCommandPaletteEnabled();
+	const settingsPage = useSettingsPage();
 	const setCommandPaletteOpen = useUiStore((s) => s.setCommandPaletteOpen);
 	const existingProjectPaths = useMemo(
 		() => workspaces
@@ -742,11 +746,29 @@ export function Sidebar({
 		onExpand: () => setOpen(true),
 	});
 
-	const [projectOrder, setProjectOrder] = useState<string[]>([]);
+	const [projectOrder, setProjectOrder] = useState<string[]>(() => {
+		try {
+			const saved: unknown = JSON.parse(window.localStorage.getItem(projectOrderStorageKey) ?? "null");
+			if (Array.isArray(saved)) return [...new Set(saved.filter((id): id is string => typeof id === "string"))];
+		} catch {}
+		return workspaces.map((workspace) => workspace.id);
+	});
+	useEffect(() => {
+		try {
+			window.localStorage.setItem(projectOrderStorageKey, JSON.stringify(projectOrder));
+		} catch {}
+	}, [projectOrder]);
 	const orderedWorkspaces = useMemo(
-		() => applyOrder(workspaces, (workspace) => workspace.id, projectOrder, "end"),
+		() => applyOrder(workspaces, (workspace) => workspace.id, projectOrder, "start"),
 		[projectOrder, workspaces],
 	);
+	// Keep saved IDs through the initial empty query and alphabetical refreshes.
+	const visibleProjectIds = orderedWorkspaces.map((workspace) => workspace.id);
+	const nextProjectOrder = [...visibleProjectIds, ...projectOrder.filter((id) => !visibleProjectIds.includes(id))];
+	if (nextProjectOrder.length !== projectOrder.length || nextProjectOrder.some((id, index) => id !== projectOrder[index])) {
+		setProjectOrder(nextProjectOrder);
+	}
+
 	// The ad hoc group is a bucket for projectless sessions, not a project: it
 	// gets its own Scratchpad section below the project list rather than a
 	// project row appended to the end of it.
@@ -951,6 +973,10 @@ export function Sidebar({
 				</Tooltip>
 			</SidebarHeader>
 
+			{settingsPage ? (
+				<SettingsSidebarNav layer={settingsPage} />
+			) : (
+			<>
 			{/* Keep Search + section chrome fixed above the scrollable sidebar content. */}
 			<div className="flex shrink-0 flex-col gap-0 px-2 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:px-1.5">
 				{commandPaletteEnabled ? (
@@ -1146,6 +1172,8 @@ export function Sidebar({
 					</SidebarGroupContent>
 				</SidebarGroup>
 			</SidebarContent>
+			</>
+			)}
 
 			{/* Footer — Settings opens the global settings page directly.
 			    Footer rows share NAV_ROW height so Settings, Connect mobile,
@@ -1161,6 +1189,35 @@ export function Sidebar({
 						daemon {daemonStatus.state}
 					</span>
 				)}
+				{settingsPage ? (
+					<>
+						<UpdateStatusRow
+							availableDismissed={updateDismissal.dismissed}
+							onDismissAvailable={updateDismissal.dismiss}
+							status={updateStatus}
+							tabIndex={isCollapsed ? -1 : 0}
+						/>
+						<UpdateInstallSlide
+							availableDismissed={updateDismissal.dismissed}
+							onRequestInstall={openUpdateInstallPrompt}
+							status={updateStatus}
+							tabIndex={isCollapsed ? -1 : 0}
+						/>
+						<button
+							className={FOOTER_NAV_BUTTON_CLASS}
+							disabled={settingsPage.cueBusy}
+							onClick={settingsPage.close}
+							type="button"
+						>
+							<NavRowHighlight />
+							<span className="relative z-[1] flex min-w-0 flex-1 items-center gap-2.5 [&_svg]:size-icon-md [&_svg]:shrink-0">
+								<ArrowLeft aria-hidden="true" />
+								<span className="tracking-tight">{t("settings.back")}</span>
+							</span>
+						</button>
+					</>
+				) : (
+				<>
 				<div
 					aria-hidden={isCollapsed || undefined}
 					// `hidden` (display: none) is for the real icon rail only. Hiding the footer
@@ -1258,6 +1315,8 @@ export function Sidebar({
 						<TooltipContent side="right">{t("shell.settings")}</TooltipContent>
 					</Tooltip>
 				</div>
+				</>
+				)}
 			</SidebarFooter>
 
 			{/* useResizable owns clamp. */}
@@ -1326,7 +1385,7 @@ const ProjectItem = memo(function ProjectItem({
 		workspace.sessions.some(
 			(session) => session.id === selection.activeSessionId && session.kind === "orchestrator",
 		);
-	const projectActive = dashboardActive || orchestratorActive;
+
 	const queryClient = useQueryClient();
 	const [removeError, setRemoveError] = useState<string | null>(null);
 	const [isRemoving, setIsRemoving] = useState(false);
@@ -1343,6 +1402,7 @@ const ProjectItem = memo(function ProjectItem({
 	}, []);
 	const projectKey = sessionUiKey(workspace.id, workspace.hostId);
 	const isProjectProvisioning = useUiStore((state) => state.provisioningProjectIds.has(projectKey));
+	const projectActive = dashboardActive || orchestratorActive || (activeProjectMatches && isProjectProvisioning);
 	const isProjectRestarting = useUiStore((state) => state.restartingProjectIds.has(projectKey));
 	const requestNewTask = useUiStore((state) => state.requestNewTask);
 	const showGlobalToast = useUiStore((state) => state.showGlobalToast);
@@ -1409,7 +1469,7 @@ const ProjectItem = memo(function ProjectItem({
 	// Expand a collapsed project so opening the orchestrator also reveals its
 	// session list — otherwise the tree stays shut while you're inside it.
 	const openOrchestrator = async () => {
-		if (isProjectProvisioning || isProjectRestarting) return;
+		if (isSpawning || isProjectProvisioning || isProjectRestarting) return;
 		if (!expanded) toggleDisclosure();
 		if (onOpenOrchestrator) {
 			onOpenOrchestrator();
@@ -1420,8 +1480,13 @@ const ProjectItem = memo(function ProjectItem({
 			if (canResumeOrchestrator && workspace.kind !== "cloud") {
 				setIsSpawning(true);
 				try {
-					await resumeOrchestrator(orchestrator.id);
+					// Start the resume, then open the chat while it runs; its
+					// composer shows the startup shimmer in the meantime.
+					const resume = resumeOrchestrator(orchestrator.id);
+					selection.goSession(workspace.id, orchestrator.id);
+					await resume;
 					await queryClient.invalidateQueries({ queryKey: workspaceQueryKey });
+					return;
 				} catch (err) {
 					console.error("Failed to resume orchestrator:", err);
 					showGlobalToast(
@@ -1539,7 +1604,7 @@ const ProjectItem = memo(function ProjectItem({
 					data-host-id={workspace.hostId}
 					data-sidebar="menu-item"
 					data-slot="sidebar-menu-item"
-					initial={{ opacity: 0, y: -4 }}
+					initial={false}
 					animate={{ opacity: 1, y: 0 }}
 					exit={{ opacity: 0, y: -4, transition: { duration: prefersReducedMotion ? 0 : 0.12, ease: "easeIn" } }}
 					onDragOver={(event) => onProjectDragOver(event, workspace.id)}
@@ -3160,6 +3225,7 @@ function SectionDisclosure({
  * (NavRowHighlight pill, foreground text, instant) cannot drift apart. */
 function SidebarTopNavRow({
 	active = false,
+	disabled,
 	icon,
 	label,
 	onClick,
@@ -3167,6 +3233,7 @@ function SidebarTopNavRow({
 	trailing,
 }: {
 	active?: boolean;
+	disabled?: boolean;
 	icon: ReactNode;
 	label: string;
 	onClick: () => void;
@@ -3183,6 +3250,8 @@ function SidebarTopNavRow({
 				"transition-none",
 				"group-data-[collapsible=icon]:size-control-board! group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:rounded-lg group-data-[collapsible=icon]:p-0!",
 			)}
+			aria-current={active ? "page" : undefined}
+			disabled={disabled}
 			isActive={active}
 			onClick={onClick}
 			tooltip={tooltip}
@@ -3198,6 +3267,27 @@ function SidebarTopNavRow({
 				</span>
 			) : null}
 		</SidebarMenuButton>
+	);
+}
+
+/** Settings sections in place of the project tree while the settings page is open. */
+export function SettingsSidebarNav({ layer }: { layer: NonNullable<ReturnType<typeof useSettingsPage>> }) {
+	const { t } = useTranslation();
+	return (
+		<SidebarContent className="scrollbar-none gap-0 px-2">
+			<SidebarGroup className="p-0">
+				<SidebarGroupContent>
+					<SidebarMenu aria-label={t("settings.navSectionsAria")} className="gap-0.5" role="navigation">
+						{layer.navItems.map(({ id, label, icon: Icon, active, disabled, onSelect }) => (
+							<SidebarMenuItem key={id}>
+								<SidebarTopNavRow active={active} disabled={disabled} icon={<Icon aria-hidden="true" />} label={label} onClick={onSelect} tooltip={label} />
+							</SidebarMenuItem>
+						))}
+					</SidebarMenu>
+				</SidebarGroupContent>
+				<SettingsSaveStatus />
+			</SidebarGroup>
+		</SidebarContent>
 	);
 }
 

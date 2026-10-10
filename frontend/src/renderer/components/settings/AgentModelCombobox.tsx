@@ -19,7 +19,7 @@ import {
 } from "../ui/dropdown-menu";
 
 const MAX_VISIBLE_MODELS = 50;
-const MODEL_SEARCH_THRESHOLD = 8;
+const MODEL_SEARCH_THRESHOLD = 5;
 const MAX_RECENT_MODELS = 3;
 const RECENT_MODELS_STORAGE_KEY = "ao.recentModels.v1";
 const ignoreEffortChange = () => {};
@@ -70,9 +70,11 @@ export function AgentModelCombobox({
 	triggerLabel,
 	triggerClassName,
 	menuAlign = "end",
+	menuClassName,
 	renderTrigger,
 	recentScope,
 	compact = false,
+	showEffortInTrigger = true,
 	agentId,
 	tuning,
 	disabled = false,
@@ -88,7 +90,7 @@ export function AgentModelCombobox({
 	refreshError?: string;
 	retryAt?: string | null;
 	onChange: (value: string) => void;
-	onCustom: (value: string) => void;
+	onCustom?: (value: string) => void;
 	/** Shown when the agent does not report a concrete model. */
 	emptyLabel?: string;
 	/** Claude Code lists its newest model per family and folds the rest under "Other models". */
@@ -96,6 +98,7 @@ export function AgentModelCombobox({
 	triggerLabel?: string;
 	triggerClassName?: string;
 	menuAlign?: "start" | "center" | "end";
+	menuClassName?: string;
 	renderTrigger?: (label: string) => ReactNode;
 	/** Persists explicit model choices for this agent and pins them below the current model. */
 	recentScope?: string;
@@ -105,6 +108,8 @@ export function AgentModelCombobox({
 	 *  contexts where the menu should read like a simple choice, not a
 	 *  model-management surface. */
 	compact?: boolean;
+	/** Keep the effort level inside the menu only, off the trigger label. */
+	showEffortInTrigger?: boolean;
 	/** Callers opt into a combined model and reasoning-effort menu. */
 	tuning?: ModelEffortSelection;
 	disabled?: boolean;
@@ -159,7 +164,6 @@ export function AgentModelCombobox({
 	const normalizedSearch = normalizeSearch(search);
 	const searchIndex = useMemo(() => buildModelSearchIndex(concreteModels), [concreteModels]);
 	const selected = searchIndex.byID.get(normalizeSearch(effectiveModel));
-	const showSearch = allowDirectCustom || concreteModels.length >= MODEL_SEARCH_THRESHOLD;
 	const hasMultipleProviders = useMemo(
 		() =>
 			new Set(
@@ -177,6 +181,10 @@ export function AgentModelCombobox({
 	const [otherOpen, setOtherOpen] = useState(false);
 	const selectedIsOther = Boolean(claude?.other.some((item) => item.id === selected?.id));
 	const showOther = otherOpen || selectedIsOther;
+	// Count what the menu lists up front: Claude's folded "Other models" don't
+	// count until expanded, so four visible models never get a search box.
+	const listedModelCount = claude && !showOther ? claude.current.length : concreteModels.length;
+	const showSearch = allowDirectCustom || listedModelCount >= MODEL_SEARCH_THRESHOLD;
 
 	const rankedModels = useMemo(() => {
 		if (!normalizedSearch) {
@@ -281,7 +289,7 @@ export function AgentModelCombobox({
 					) : (
 						<span className="min-w-0 truncate">{currentLabel}</span>
 					)}
-					{showEffort && (explicitEffort || !choices.unverified) && <span className="shrink-0 text-settings-muted"> · {currentEffortLabel}</span>}
+					{showEffort && showEffortInTrigger && (explicitEffort || !choices.unverified) && <span className="shrink-0 text-settings-muted"> · {currentEffortLabel}</span>}
 					<ChevronDown
 						className="size-icon-sm shrink-0 opacity-70 transition-transform duration-300 ease-out group-data-[state=open]/agent-model-trigger:rotate-180"
 						aria-hidden="true"
@@ -307,7 +315,7 @@ export function AgentModelCombobox({
 						setSearch((current) => current + event.key);
 					}
 				}}
-				className="settings-menu-surface max-h-select-menu-max! w-[min(22rem,calc(100vw-2rem))] overflow-hidden! rounded-(--radius-settings-panel) border-settings-menu bg-settings-menu"
+				className={cn("settings-menu-surface max-h-select-menu-max! w-[min(22rem,calc(100vw-2rem))] overflow-hidden! rounded-(--radius-settings-panel) border-settings-menu bg-settings-menu", menuClassName)}
 			>
 				{(showSearch || showManualRefresh) && (
 					<div className="flex shrink-0 items-center gap-1">
@@ -444,14 +452,14 @@ export function AgentModelCombobox({
 						) : null}
 
 						{showCustomSearchAction && (
-							<DropdownMenuItem onSelect={() => onCustom(customSearchValue)} className={modelItemClass(false)}>
+							<DropdownMenuItem onSelect={() => onCustom?.(customSearchValue)} className={modelItemClass(false)}>
 								{t("settings.models.useCustom", { model: customSearchValue })}
 							</DropdownMenuItem>
 						)}
 						{normalizedSearch !== "" && rankedModels.length === 0 && !allowDirectCustom && (
 							<p className="px-2 py-1.5 text-xs text-settings-muted">{t("settings.models.noMatches")}</p>
 						)}
-						{normalizedSearch === "" && entryMode !== "direct" && (
+						{normalizedSearch === "" && entryMode !== "direct" && !(compact && entryMode === "none") && (
 							<>
 								<DropdownMenuSeparator />
 								<div className="space-y-1 px-2 py-1.5 text-xs text-settings-muted">

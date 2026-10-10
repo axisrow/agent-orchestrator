@@ -118,6 +118,7 @@ export async function installFakeBridge(page: Page, opts: FakeBridgeOptions = {}
 				theme: {
 					set: async () => undefined,
 					persistTerminal: async () => undefined,
+					setWindowBackground: async () => undefined,
 				},
 				menu: { action: async () => undefined, notifyShellFocus: () => undefined },
 				clipboard: {
@@ -734,6 +735,7 @@ export async function installFakeAgent(page: Page, opts: FakeAgentOptions = {}):
 				theme: {
 					set: async () => undefined,
 					persistTerminal: async () => undefined,
+					setWindowBackground: async () => undefined,
 				},
 				menu: { action: async () => undefined, notifyShellFocus: () => undefined },
 				clipboard: { writeText: async () => undefined, readText: async () => "" },

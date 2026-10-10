@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import type { ProjectSettingsSaveState, ProjectSettingsSection as SettingsSection } from "./ProjectSettingsForm";
 import { deriveRepoHost, deriveRepoPath, IntakeFields, intakeNeedsRule } from "./IntakeFields";
 import { ProductExternalLink } from "./ProductExternalLink";
-import { AgentModelField, ProjectAgentRoleHeader, ProjectAgentRoleRow, ProjectAutoReviewToggle, ProjectWorkersRequestReviewToggle } from "./settings/ProjectAgentRoleControls";
+import { AgentModelField, ProjectAutoReviewToggle, ProjectWorkersRequestReviewToggle } from "./settings/ProjectAgentRoleControls";
 import { SettingsOptionMenu } from "./settings/SettingsOptionMenu";
 import { Button } from "./ui/button";
 
@@ -189,7 +189,7 @@ export function ProjectSettingsEditor({ initialValues, section, capabilities, de
 					{details.map((detail) => <ProjectSettingsValueRow key={detail.label} {...detail} externalLink={ProductExternalLink} />)}
 				</ProjectSettingsSection>
 				{workspaceRepos && <ProjectSettingsSection title={t("settings.project.workspaceRepos")} grouped>
-					{workspaceRepos.length ? workspaceRepos.map((repo) => <ProjectSettingsRow key={repo.name} label={repo.name}><span className="settings-row-value">{repo.relativePath}{repo.repo ? ` · ${repo.repo}` : ""}</span></ProjectSettingsRow>) : <p className="px-1 text-xs text-settings-muted">{t("settings.project.childReposEmpty")}</p>}
+					{workspaceRepos.length ? workspaceRepos.map((repo) => <ProjectSettingsRow key={repo.name} label={repo.name}><span className="settings-row-value">{repo.relativePath}{repo.repo ? ` · ${repo.repo}` : ""}</span></ProjectSettingsRow>) : <p className="text-xs text-settings-muted">{t("settings.project.childReposEmpty")}</p>}
 				</ProjectSettingsSection>}
 				{capabilities.workflow && <>
 					<ProjectSettingsSection title={t("settings.project.worktrees")} grouped>
@@ -258,5 +258,5 @@ function ProjectRolePermissions({ role, agent, value, runtimeDefaults, onChange 
 	const label = t("settings.project.roleApproval", { role: t(`settings.models.${role}Role`) });
 	const values = runtimeDefaults ? ["", "default", "auto", ...(agent === "opencode" ? [] : ["accept-edits"]), "bypass-permissions"] : [...(agent === "codex" ? [] : ["default"]), "auto", "accept-edits", "bypass-permissions"];
 	const options = values.map((permission) => ({ value: permission, label: permission === "" ? t("settings.cloudProject.sessionPolicy") : permission === "default" ? t(agent === "claude-code" ? "settings.project.permissionUseClaude" : "settings.project.permissionUseAgent") : t(permission === "accept-edits" ? "settings.project.permissionAcceptEdits" : permission === "auto" ? "settings.project.permissionAuto" : "settings.project.permissionBypass") }));
-	return <div className="min-w-0 space-y-1.5"><span className="text-xs text-settings-muted">{label}</span><SettingsOptionMenu aria-label={label} value={runtimeDefaults ? value : value === "default" && agent === "codex" ? "bypass-permissions" : value || "auto"} options={options} disabled={runtimeDefaults && !agent} placeholder={t("settings.project.permissionNotReported")} triggerClassName="w-full justify-between" onChange={onChange} /></div>;
+	return <SettingsOptionMenu aria-label={label} value={runtimeDefaults ? value : value === "default" && agent === "codex" ? "bypass-permissions" : value || "auto"} options={options} disabled={runtimeDefaults && !agent} placeholder={t("settings.project.permissionNotReported")} triggerClassName="w-fit" onChange={onChange} />;
 }
