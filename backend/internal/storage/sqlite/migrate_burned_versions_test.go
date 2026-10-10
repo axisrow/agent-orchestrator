@@ -195,6 +195,9 @@ var shippedMigrations = map[int64]string{
 	189: "0189_session_interaction.sql",
 	190: "0190_session_hibernation.sql",
 	191: "0191_session_branch_state.sql",
+	192: "0192_allow_openhands_harness.sql",
+	193: "0193_allow_codewhale_harness.sql",
+	194: "0194_allow_command_code_harness.sql",
 	// Fork-local migrations live in the reserved 9000+ range so a sync rebase
 	// can never renumber them onto a number upstream will claim. See
 	// migrate_fork_reserved_range_test.go for why.

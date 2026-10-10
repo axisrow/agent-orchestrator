@@ -5327,6 +5327,23 @@ func (m *Manager) cleanupRecords(ctx context.Context, project domain.ProjectID) 
 	return m.store.ListSessions(ctx, project)
 }
 
+// liveWorkspacePaths returns the set of normalized workspace paths still
+// occupied by a non-terminated session. Cleanup consults it so a terminated
+// session that shares a persistent worktree with a live successor is skipped
+// rather than reclaimed.
+func liveWorkspacePaths(recs []domain.SessionRecord) map[string]bool {
+	live := make(map[string]bool)
+	for _, rec := range recs {
+		if rec.IsTerminated {
+			continue
+		}
+		if p := rec.Metadata.WorkspacePath; p != "" {
+			live[normalizeWorkspacePath(p)] = true
+		}
+	}
+	return live
+}
+
 // normalizeWorkspacePath canonicalizes a workspace path for set membership so
 // two records naming the same directory (a terminated predecessor and its live
 // successor) compare equal despite trailing slashes or "." segments.
