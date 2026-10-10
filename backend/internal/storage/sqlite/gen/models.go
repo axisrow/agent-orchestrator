@@ -395,6 +395,15 @@ type Cue struct {
 	UpdatedAt time.Time
 }
 
+type GatewayEntry struct {
+	Scope     string
+	ProjectID string
+	BaseURL   string
+	AuthToken string
+	Model     string
+	UpdatedAt time.Time
+}
+
 type ModelUsageEvent struct {
 	ID                    int64
 	BindingID             int64

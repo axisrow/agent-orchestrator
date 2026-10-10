@@ -1,8 +1,8 @@
 // Package gateway reads, writes, and probes the Anthropic-compatible gateway
-// configuration AO resolves from Claude settings files. It persists through
-// the same files the resolver reads — the user's global Claude settings for
-// the app scope and the project's .claude/settings.json for the project
-// scope — so the UI and a hand-edited file can never disagree.
+// configuration. Entries persist in AO's own storage — never in Claude
+// settings files, which the user owns (a personal provider switcher may manage
+// the same keys there) — and reach agent processes as launch env, so the UI
+// and the launch path can never disagree.
 package gateway
 
 import (
@@ -11,26 +11,26 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/aoagents/agent-orchestrator/backend/pkg/agentcreds"
 )
 
-// Scope selects which settings file a gateway entry lives in.
+// Scope selects which gateway entry a settings surface edits.
 type Scope string
 
 const (
-	// ScopeApp is the user's global Claude settings (~/.claude/settings.json).
+	// ScopeApp is the app-wide entry every project inherits.
 	ScopeApp Scope = "app"
-	// ScopeProject is <project>/.claude/settings.json.
+	// ScopeProject is one project's overriding entry.
 	ScopeProject Scope = "project"
 )
 
 // The three keys a gateway entry is made of, as the resolver reads them.
 const (
 	keyBaseURL = "ANTHROPIC_BASE_URL"
-	// gosec: settings-file env key name, not a credential value.
+	// gosec: env key name, not a credential value.
 	keyToken = "ANTHROPIC_AUTH_TOKEN" //nolint:gosec // env key name, not a credential value
 	keyModel = "ANTHROPIC_MODEL"
 )
@@ -88,53 +88,65 @@ type Model struct {
 // ProjectLookup resolves a project ID to its working directory.
 type ProjectLookup func(ctx context.Context, projectID string) (string, error)
 
-// Service implements the settings-screen surface on top of Claude settings
-// files and the shared credential validator.
+// Entry is the stored form of one scope's gateway record.
+type Entry struct {
+	Scope     Scope
+	ProjectID string
+	BaseURL   string
+	Token     string
+	Model     string
+}
+
+// Store is the durable gateway-entry storage boundary.
+type Store interface {
+	GetGatewayEntry(ctx context.Context, scope Scope, projectID string) (Entry, bool, error)
+	UpsertGatewayEntry(ctx context.Context, entry Entry, now time.Time) error
+	ListGatewayEntries(ctx context.Context) ([]Entry, error)
+}
+
+// LegacySource names one pre-existing Claude settings file whose gateway keys
+// should be imported once. AO reads the file and never writes it back.
+type LegacySource struct {
+	Scope     Scope
+	ProjectID string
+	Path      string
+}
+
+// Service implements the settings-screen surface on top of AO's storage and
+// the shared credential validator.
 type Service struct {
+	store    Store
 	projects ProjectLookup
-	// claudeDir overrides ~/.claude, for tests.
-	claudeDir func() (string, error)
 }
 
 // New builds a Service.
-func New(projects ProjectLookup) *Service {
-	return &Service{projects: projects, claudeDir: defaultClaudeDir}
-}
-
-func defaultClaudeDir() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("gateway: resolve home directory: %w", err)
-	}
-	if dir := strings.TrimSpace(os.Getenv("CLAUDE_CONFIG_DIR")); dir != "" {
-		return filepath.Abs(dir)
-	}
-	return filepath.Join(home, ".claude"), nil
+func New(store Store, projects ProjectLookup) *Service {
+	return &Service{store: store, projects: projects}
 }
 
 // Get reports the stored entry per scope and the effective resolution.
 func (s *Service) Get(ctx context.Context, projectID string) (Config, error) {
 	cfg := Config{}
-	appPath, err := s.claudeDir()
+	app, _, err := s.store.GetGatewayEntry(ctx, ScopeApp, "")
 	if err != nil {
 		return Config{}, err
 	}
-	cfg.App = readScope(filepath.Join(appPath, "settings.json"))
+	cfg.App = scopeValue(app)
 	if strings.TrimSpace(projectID) == "" {
 		cfg.Effective = effective(cfg.App, ScopeValue{})
 		return cfg, nil
 	}
-	projectPath, err := s.projects(ctx, projectID)
+	project, _, err := s.store.GetGatewayEntry(ctx, ScopeProject, projectID)
 	if err != nil {
 		return Config{}, err
 	}
-	project := readScope(filepath.Join(projectPath, ".claude", "settings.json"))
-	cfg.Project = &project
-	cfg.Effective = effective(cfg.App, project)
+	projectValue := scopeValue(project)
+	cfg.Project = &projectValue
+	cfg.Effective = effective(cfg.App, projectValue)
 	return cfg, nil
 }
 
-// effective folds two scope entries the way the resolver does: project
+// effective folds two scope entries the way the launch path does: project
 // values win, and an entry wins only if it configures anything at all.
 func effective(app, project ScopeValue) Effective {
 	for _, entry := range []struct {
@@ -148,23 +160,24 @@ func effective(app, project ScopeValue) Effective {
 	return Effective{}
 }
 
-func readScope(path string) ScopeValue {
-	env, ok := readEnv(path)
-	if !ok {
-		return ScopeValue{}
-	}
-	return ScopeValue{
-		BaseURL:  env[keyBaseURL],
-		TokenSet: env[keyToken] != "",
-		Model:    env[keyModel],
-	}
+func scopeValue(entry Entry) ScopeValue {
+	return ScopeValue{BaseURL: entry.BaseURL, TokenSet: entry.Token != "", Model: entry.Model}
 }
 
-// Set writes the entry into the scope's settings file and returns the
-// refreshed config for the same scope.
+// Set writes the entry into AO storage and returns the refreshed config for
+// the same scope.
 func (s *Service) Set(ctx context.Context, in SetInput) (Config, error) {
 	if in.Scope != ScopeApp && in.Scope != ScopeProject {
 		return Config{}, fmt.Errorf("gateway: unknown scope %q", in.Scope)
+	}
+	if in.Scope == ScopeProject && strings.TrimSpace(in.ProjectID) == "" {
+		return Config{}, fmt.Errorf("gateway: projectId is required for the project scope")
+	}
+	// The app scope is keyed by an empty project id: normalize a stray
+	// projectId away so the PUT reads and writes the (app, "") row instead of
+	// storing an entry Get can never return.
+	if in.Scope == ScopeApp {
+		in.ProjectID = ""
 	}
 	if in.BaseURL != nil && strings.TrimSpace(*in.BaseURL) != "" {
 		parsed, err := url.Parse(strings.TrimSpace(*in.BaseURL))
@@ -172,42 +185,60 @@ func (s *Service) Set(ctx context.Context, in SetInput) (Config, error) {
 			return Config{}, fmt.Errorf("gateway: base URL must be an http(s) URL")
 		}
 	}
-	updates := make(map[string]string, 3)
-	for key, value := range map[string]*string{keyBaseURL: in.BaseURL, keyToken: in.Token, keyModel: in.Model} {
-		if value != nil {
-			updates[key] = strings.TrimSpace(*value)
-		}
-	}
-	path, err := s.settingsPath(ctx, in)
+	entry, _, err := s.store.GetGatewayEntry(ctx, in.Scope, in.ProjectID)
 	if err != nil {
 		return Config{}, err
 	}
-	if err := writeEnvKeys(path, updates); err != nil {
+	// Tri-state per key: nil keeps the stored value, a pointer clears or sets.
+	apply := func(dst *string, update *string) {
+		if update != nil {
+			*dst = strings.TrimSpace(*update)
+		}
+	}
+	apply(&entry.BaseURL, in.BaseURL)
+	apply(&entry.Token, in.Token)
+	apply(&entry.Model, in.Model)
+	entry.Scope = in.Scope
+	entry.ProjectID = in.ProjectID
+	if err := s.store.UpsertGatewayEntry(ctx, entry, time.Now().UTC()); err != nil {
 		return Config{}, err
 	}
-	projectID := in.ProjectID
-	if in.Scope == ScopeApp {
-		projectID = ""
-	}
-	return s.Get(ctx, projectID)
+	return s.Get(ctx, in.ProjectID)
 }
 
-func (s *Service) settingsPath(ctx context.Context, in SetInput) (string, error) {
-	if in.Scope == ScopeApp {
-		dir, err := s.claudeDir()
-		if err != nil {
-			return "", err
-		}
-		return filepath.Join(dir, "settings.json"), nil
-	}
-	if strings.TrimSpace(in.ProjectID) == "" {
-		return "", fmt.Errorf("gateway: projectId is required for the project scope")
-	}
-	projectPath, err := s.projects(ctx, in.ProjectID)
+// ImportLegacy seeds storage from pre-existing Claude settings files exactly
+// once: when storage already holds an entry, it is a no-op — the files stay
+// owned by the user and are never written back. Returns the imported count.
+func (s *Service) ImportLegacy(ctx context.Context, sources []LegacySource) (int, error) {
+	existing, err := s.store.ListGatewayEntries(ctx)
 	if err != nil {
-		return "", err
+		return 0, err
 	}
-	return filepath.Join(projectPath, ".claude", "settings.json"), nil
+	if len(existing) > 0 {
+		return 0, nil
+	}
+	imported := 0
+	for _, source := range sources {
+		env, ok := readRawEnv(source.Path)
+		if !ok {
+			continue
+		}
+		entry := Entry{
+			Scope:     source.Scope,
+			ProjectID: source.ProjectID,
+			BaseURL:   env[keyBaseURL],
+			Token:     env[keyToken],
+			Model:     env[keyModel],
+		}
+		if entry.BaseURL == "" && entry.Token == "" && entry.Model == "" {
+			continue
+		}
+		if err := s.store.UpsertGatewayEntry(ctx, entry, time.Now().UTC()); err != nil {
+			return imported, err
+		}
+		imported++
+	}
+	return imported, nil
 }
 
 // Probe validates a base URL + token the way the resolver will use them,
@@ -235,9 +266,9 @@ func (s *Service) Probe(ctx context.Context, baseURL, token string) (ProbeResult
 	return ProbeResult{State: string(result.State), Detail: result.Detail, Models: models}, nil
 }
 
-// readEnv reads just the gateway keys from one settings file. A missing,
-// malformed, or keyless file is an empty entry, not an error.
-func readEnv(path string) (map[string]string, bool) {
+// readRawEnv reads just the gateway keys from one legacy settings file. A
+// missing, malformed, or keyless file is an empty entry, not an error.
+func readRawEnv(path string) (map[string]string, bool) {
 	raw, err := os.ReadFile(path) //nolint:gosec // documented Claude settings location
 	if err != nil {
 		return nil, false
@@ -253,50 +284,4 @@ func readEnv(path string) (map[string]string, bool) {
 		env[key] = strings.TrimSpace(payload.Env[key])
 	}
 	return env, true
-}
-
-// writeEnvKeys applies updates to a settings file's env object, preserving
-// every other field Claude Code stores there. An empty value removes the key.
-func writeEnvKeys(path string, updates map[string]string) error {
-	document := make(map[string]json.RawMessage)
-	if raw, err := os.ReadFile(path); err == nil { //nolint:gosec // documented Claude settings location
-		if err := json.Unmarshal(raw, &document); err != nil {
-			return fmt.Errorf("gateway: %s is not valid JSON: %w", path, err)
-		}
-	}
-	env := make(map[string]json.RawMessage)
-	if raw, ok := document["env"]; ok {
-		if err := json.Unmarshal(raw, &env); err != nil {
-			return fmt.Errorf("gateway: env in %s is not an object", path)
-		}
-	}
-	for key, value := range updates {
-		if value == "" {
-			delete(env, key)
-			continue
-		}
-		encoded, err := json.Marshal(value)
-		if err != nil {
-			return err
-		}
-		env[key] = encoded
-	}
-	envEncoded, err := json.Marshal(env)
-	if err != nil {
-		return err
-	}
-	document["env"] = envEncoded
-	encoded, err := json.MarshalIndent(document, "", "  ")
-	if err != nil {
-		return err
-	}
-	encoded = append(encoded, '\n')
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-		return err
-	}
-	mode := os.FileMode(0o600) // the file may carry a token
-	if info, err := os.Stat(path); err == nil {
-		mode = info.Mode().Perm()
-	}
-	return os.WriteFile(path, encoded, mode)
 }

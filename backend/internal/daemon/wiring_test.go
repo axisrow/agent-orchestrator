@@ -22,6 +22,7 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 	"github.com/aoagents/agent-orchestrator/backend/internal/lifecycle"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
+	"github.com/aoagents/agent-orchestrator/backend/internal/service/gateway"
 	"github.com/aoagents/agent-orchestrator/backend/internal/service/systeminstall"
 	sessionmanager "github.com/aoagents/agent-orchestrator/backend/internal/session_manager"
 	"github.com/aoagents/agent-orchestrator/backend/internal/storage/sqlite/sqlitetest"
@@ -404,6 +405,84 @@ func TestWiring_StartSessionSpawnsScratchWithoutGitRepo(t *testing.T) {
 	}
 	if _, err := os.Stat(wantWorkspace); err != nil {
 		t.Fatalf("scratch workspace not created at %q: %v", wantWorkspace, err)
+	}
+}
+
+// TestWiring_StartSessionLaunchCarriesStoredGatewayEntry asserts the wiring
+// hands providerEntryLookup to the session manager: with a stored app-scope
+// gateway entry and a pinless project, the spawn launch env must carry the
+// entry. AO no longer writes Claude settings files, so a wiring regression
+// here silently drops the configured gateway from every launch.
+func TestWiring_StartSessionLaunchCarriesStoredGatewayEntry(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlitetest.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	binDir := t.TempDir()
+	writeFakeExecutable(t, filepath.Join(binDir, "claude"))
+	writeFakeExecutable(t, filepath.Join(binDir, "claude.cmd"))
+	writeFakeExecutable(t, filepath.Join(binDir, "tmux"))
+	writeFakeExecutable(t, filepath.Join(binDir, "tmux.cmd"))
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+
+	dataDir := t.TempDir()
+	scratchPath := filepath.Join(dataDir, "scratch", "default")
+	if err := os.MkdirAll(scratchPath, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpsertProject(ctx, domain.ProjectRecord{
+		ID:           "scratch",
+		Path:         scratchPath,
+		Kind:         domain.ProjectKindScratch,
+		RegisteredAt: time.Now(),
+		Config: domain.ProjectConfig{
+			Worker:       domain.RoleOverride{Harness: domain.HarnessClaudeCode},
+			Orchestrator: domain.RoleOverride{Harness: domain.HarnessClaudeCode},
+		},
+	}); err != nil {
+		t.Fatalf("UpsertProject: %v", err)
+	}
+	if err := store.UpsertGatewayEntry(ctx, gateway.Entry{
+		Scope:   gateway.ScopeApp,
+		BaseURL: "https://gw.example.dev",
+		Token:   "gw-token",
+		Model:   "gw-model",
+	}, time.Now().UTC()); err != nil {
+		t.Fatalf("UpsertGatewayEntry: %v", err)
+	}
+
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	lcm := lifecycle.New(store, nil)
+	runtime := &selectableRuntime{}
+	cfg := config.Config{DataDir: dataDir, Agent: string(domain.HarnessClaudeCode)}
+	messenger := newSessionMessenger(store, runtime, log)
+	agents, err := buildAgentResolver(string(domain.HarnessClaudeCode), log)
+	if err != nil {
+		t.Fatalf("buildAgentResolver: %v", err)
+	}
+	svc, _, _, err := startSession(context.Background(), cfg, runtime, store, lcm, messenger, telemetryadapter.NoopSink{}, nil, agents, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, log)
+	if err != nil {
+		t.Fatalf("startSession: %v", err)
+	}
+	if _, _, _, err := svc.Spawn(ctx, ports.SpawnConfig{ProjectID: "scratch", Kind: domain.KindWorker, Prompt: "gateway wiring"}); err != nil {
+		t.Fatalf("Spawn scratch: %v", err)
+	}
+	env := runtime.lastCfg.Env
+	for key, want := range map[string]string{
+		"ANTHROPIC_BASE_URL":   "https://gw.example.dev",
+		"ANTHROPIC_AUTH_TOKEN": "gw-token",
+		"ANTHROPIC_MODEL":      "gw-model",
+	} {
+		if env[key] != want {
+			t.Fatalf("launch env %s = %q, want %q", key, env[key], want)
+		}
 	}
 }
 

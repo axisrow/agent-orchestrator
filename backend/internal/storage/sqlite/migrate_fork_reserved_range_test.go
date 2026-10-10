@@ -53,6 +53,7 @@ var forkLocalMigrations = []string{
 	"add_user_config",
 	"review_run_publication",
 	"session_provider_stamp",
+	"gateway_entries",
 }
 
 func TestForkMigrationsUseReservedRange(t *testing.T) {

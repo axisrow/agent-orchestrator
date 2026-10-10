@@ -114,18 +114,23 @@ func (s *Service) compareProviderStamp(ctx context.Context, rec domain.SessionRe
 	if err != nil {
 		return stamp, current, false, err
 	}
-	// A per-role provider pin changes what a relaunch would resolve, so it folds
-	// into the current-resolution env exactly as the launch path applies it —
-	// a role switch then flags the affected sessions stale like any gateway edit.
-	// The copy keeps the project env map unshared: the pin overlay must not leak
-	// into other comparisons of the same project.
+	// The effective provider launch env — a role's provider pin, else the
+	// default gateway entry — changes what a relaunch would resolve, so it
+	// folds into the current-resolution env exactly as the launch path applies
+	// it; a role switch then flags the affected sessions stale like any gateway
+	// edit. The copy keeps the project env map unshared: the overlay must not
+	// leak into other comparisons of the same project.
 	env := projectEnv
-	if pinEnv := agentcreds.ProviderPinEnv(ctx, project.Path, sessionmanager.RoleProviderPin(rec.Kind, project.Config)); len(pinEnv) > 0 {
-		env = make(map[string]string, len(projectEnv)+len(pinEnv))
+	var entries []agentcreds.GatewayEntry
+	if s.providerEntries != nil {
+		entries = s.providerEntries(ctx)
+	}
+	if overlay := agentcreds.ProviderLaunchEnv(sessionmanager.RoleProviderPin(rec.Kind, project.Config), string(rec.ProjectID), entries); len(overlay) > 0 {
+		env = make(map[string]string, len(projectEnv)+len(overlay))
 		for key, value := range projectEnv {
 			env[key] = value
 		}
-		for key, value := range pinEnv {
+		for key, value := range overlay {
 			env[key] = value
 		}
 	}

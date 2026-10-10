@@ -76,6 +76,7 @@ type Service struct {
 	modelDiscoveryDir string
 	projects          ProjectLookup
 	sessions          SessionUsageLookup
+	providerEntries   func(ctx context.Context) []agentcreds.GatewayEntry
 	resolverMu        map[string]*sync.Mutex
 	modelCallMu       sync.Mutex
 	modelCalls        map[string]*modelCatalogCall
@@ -90,11 +91,14 @@ type Service struct {
 
 // Deps contains optional durable dependencies for the agent catalog service.
 type Deps struct {
-	Cache                  ports.AgentModelCatalogCache
-	Discoverer             ports.AgentModelDiscoverer
-	ModelDiscoveryDir      string
-	Projects               ProjectLookup
-	Sessions               SessionUsageLookup
+	Cache             ports.AgentModelCatalogCache
+	Discoverer        ports.AgentModelDiscoverer
+	ModelDiscoveryDir string
+	Projects          ProjectLookup
+	Sessions          SessionUsageLookup
+	// ProviderEntries supplies the stored gateway entries a role's provider pin
+	// resolves against during model discovery. Nil means none are configured.
+	ProviderEntries        func(ctx context.Context) []agentcreds.GatewayEntry
 	Context                context.Context
 	Logger                 *slog.Logger
 	CodexAccountRoot       string
@@ -131,6 +135,7 @@ func NewWithDeps(deps Deps) *Service {
 	agents := agentregistry.Harnessed()
 	svc := newService(agents, deps.Cache, deps.Projects, deps.Discoverer)
 	svc.modelDiscoveryDir = deps.ModelDiscoveryDir
+	svc.providerEntries = deps.ProviderEntries
 	if deps.Logger != nil {
 		svc.logger = deps.Logger
 	}
@@ -538,7 +543,11 @@ func (s *Service) rolePinnedDiscoveryRequest(ctx context.Context, request ports.
 	default:
 		pin = project.Config.Worker.Provider
 	}
-	for key, value := range agentcreds.ProviderPinEnv(ctx, project.Path, pin) {
+	var entries []agentcreds.GatewayEntry
+	if s.providerEntries != nil {
+		entries = s.providerEntries(ctx)
+	}
+	for key, value := range agentcreds.ProviderLaunchEnv(pin, string(project.ID), entries) {
 		env[key] = value
 	}
 	if len(env) > 0 {

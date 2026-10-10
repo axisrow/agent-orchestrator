@@ -2,28 +2,49 @@ package gateway
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
+	"time"
 )
 
-func testService(t *testing.T) (*Service, string) {
+type fakeStore struct{ entries map[[2]string]Entry }
+
+func newFakeStore() *fakeStore {
+	return &fakeStore{entries: map[[2]string]Entry{}}
+}
+
+func (f *fakeStore) GetGatewayEntry(_ context.Context, scope Scope, projectID string) (Entry, bool, error) {
+	entry, ok := f.entries[[2]string{string(scope), projectID}]
+	return entry, ok, nil
+}
+
+func (f *fakeStore) UpsertGatewayEntry(_ context.Context, entry Entry, _ time.Time) error {
+	f.entries[[2]string{string(entry.Scope), entry.ProjectID}] = entry
+	return nil
+}
+
+func (f *fakeStore) ListGatewayEntries(context.Context) ([]Entry, error) {
+	entries := make([]Entry, 0, len(f.entries))
+	for _, entry := range f.entries {
+		entries = append(entries, entry)
+	}
+	return entries, nil
+}
+
+func testService(t *testing.T) (*Service, *fakeStore) {
 	t.Helper()
-	dir := t.TempDir()
-	projectDir := t.TempDir()
+	store := newFakeStore()
 	projects := func(ctx context.Context, projectID string) (string, error) {
 		if projectID != "p1" {
 			t.Fatalf("unexpected project lookup %q", projectID)
 		}
-		return projectDir, nil
+		return t.TempDir(), nil
 	}
-	svc := New(projects)
-	svc.claudeDir = func() (string, error) { return dir, nil }
-	return svc, dir
+	svc := New(store, projects)
+	return svc, store
 }
 
 func TestGetEmpty(t *testing.T) {
@@ -43,14 +64,8 @@ func TestGetEmpty(t *testing.T) {
 	}
 }
 
-func TestSetAppWritesThroughAndPreservesFile(t *testing.T) {
-	svc, dir := testService(t)
-	settings := filepath.Join(dir, "settings.json")
-	existing := map[string]any{"model": "claude-opus-4-5", "env": map[string]any{"OTHER": "keep"}}
-	raw, _ := json.Marshal(existing)
-	if err := os.WriteFile(settings, raw, 0o600); err != nil {
-		t.Fatal(err)
-	}
+func TestSetAppTriState(t *testing.T) {
+	svc, _ := testService(t)
 	token := "gw-token-1"
 	baseURL := "https://gw.example.com"
 	model := "glm-5"
@@ -63,80 +78,25 @@ func TestSetAppWritesThroughAndPreservesFile(t *testing.T) {
 	// A nil key leaves the stored value: a token-only rotation must not wipe
 	// the entry's other keys.
 	token2 := "gw-token-2"
-	if _, err := svc.Set(context.Background(), SetInput{Scope: ScopeApp, Token: &token2}); err != nil {
-		t.Fatal(err)
-	}
-	var rotated struct {
-		Env map[string]string `json:"env"`
-	}
-	data2, err := os.ReadFile(settings)
+	config, err := svc.Set(context.Background(), SetInput{Scope: ScopeApp, Token: &token2})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := json.Unmarshal(data2, &rotated); err != nil {
-		t.Fatal(err)
+	if config.App.BaseURL != baseURL || config.App.Model != model || !config.App.TokenSet {
+		t.Fatalf("nil keys must leave stored values: %+v", config.App)
 	}
-	if rotated.Env[keyToken] != token2 || rotated.Env[keyBaseURL] != baseURL || rotated.Env[keyModel] != model {
-		t.Fatalf("nil keys must leave stored values: %+v", rotated.Env)
-	}
-	var stored struct {
-		Model string            `json:"model"`
-		Env   map[string]string `json:"env"`
-	}
-	data, err := os.ReadFile(settings)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := json.Unmarshal(data, &stored); err != nil {
-		t.Fatal(err)
-	}
-	if stored.Model != "claude-opus-4-5" || stored.Env["OTHER"] != "keep" {
-		t.Fatalf("sibling fields lost: %+v", stored)
-	}
-	if stored.Env[keyBaseURL] != baseURL || stored.Env[keyToken] != token2 || stored.Env[keyModel] != model {
-		t.Fatalf("gateway keys not written: %+v", stored.Env)
-	}
-
-	config, err := svc.Get(context.Background(), "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if config.App.BaseURL != "https://gw.example.com" || !config.App.TokenSet {
-		t.Fatalf("unexpected app scope %+v", config.App)
-	}
-	if strings.Contains(config.App.BaseURL, token) || config.Effective.Source != "app" {
+	if config.Effective.Source != "app" {
 		t.Fatalf("unexpected effective %+v", config.Effective)
 	}
-}
 
-func TestSetClearsKeysOnEmptyValues(t *testing.T) {
-	svc, _ := testService(t)
-	token := "tok"
+	// An empty key clears it.
 	empty := ""
-	baseURL := "https://gw.example.com"
-	model := "glm-5"
-	if _, err := svc.Set(context.Background(), SetInput{
-		Scope: ScopeApp, BaseURL: &baseURL, Token: &token, Model: &model,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	// A nil key leaves the stored value; an empty one clears it.
-	config, err := svc.Set(context.Background(), SetInput{Scope: ScopeApp, BaseURL: &empty, Model: &empty})
+	config, err = svc.Set(context.Background(), SetInput{Scope: ScopeApp, BaseURL: &empty, Model: &empty})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if config.App.BaseURL != "" || config.App.Model != "" || !config.App.TokenSet {
 		t.Fatalf("expected keys cleared but token kept, got %+v", config.App)
-	}
-	config, err = svc.Set(context.Background(), SetInput{Scope: ScopeApp, Token: &empty})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if config.App.BaseURL != "" || config.App.TokenSet || config.App.Model != "" {
-		t.Fatalf("expected cleared app scope, got %+v", config.App)
-	}
-	if config.Effective.Source != "" {
-		t.Fatalf("expected no effective source, got %+v", config.Effective.Source)
 	}
 }
 
@@ -173,6 +133,50 @@ func TestSetRejectsBadScopeAndURL(t *testing.T) {
 	}
 	if _, err := svc.Set(context.Background(), SetInput{Scope: ScopeProject}); err == nil {
 		t.Fatal("expected missing projectId rejection")
+	}
+}
+
+// The whole point of AO-owned storage: importing a legacy entry reads the
+// user's Claude settings file once and never writes it back.
+func TestImportLegacySeedsOnceAndNeverWrites(t *testing.T) {
+	svc, _ := testService(t)
+	settings := filepath.Join(t.TempDir(), "settings.json")
+	original := `{"model":"claude-opus-4-5","env":{"OTHER":"keep","ANTHROPIC_BASE_URL":"https://gw.example.com","ANTHROPIC_AUTH_TOKEN":"gw-secret","ANTHROPIC_MODEL":"glm-5"}}`
+	if err := os.WriteFile(settings, []byte(original), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	imported, err := svc.ImportLegacy(context.Background(), []LegacySource{{Scope: ScopeApp, Path: settings}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if imported != 1 {
+		t.Fatalf("imported %d entries, want 1", imported)
+	}
+	config, err := svc.Get(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.App.BaseURL != "https://gw.example.com" || !config.App.TokenSet || config.App.Model != "glm-5" {
+		t.Fatalf("unexpected imported app scope %+v", config.App)
+	}
+	if raw, err := os.ReadFile(settings); err != nil || string(raw) != original {
+		t.Fatalf("legacy file must stay byte-identical (err=%v)", err)
+	}
+
+	// A second import is a no-op once storage holds an entry: the user's file
+	// must never win over what the settings screen saved.
+	if imported, err := svc.ImportLegacy(context.Background(), []LegacySource{{Scope: ScopeApp, Path: settings}}); err != nil || imported != 0 {
+		t.Fatalf("second import = (%d, %v), want (0, nil)", imported, err)
+	}
+	empty := `{"env":{}}`
+	if err := os.WriteFile(settings, []byte(empty), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if imported, err := svc.ImportLegacy(context.Background(), []LegacySource{{Scope: ScopeApp, Path: settings}}); err != nil || imported != 0 {
+		t.Fatalf("import after save = (%d, %v), want (0, nil)", imported, err)
+	}
+	if config, err := svc.Get(context.Background(), ""); err != nil || !config.App.TokenSet {
+		t.Fatalf("stored entry must survive a changed legacy file: %+v (%v)", config.App, err)
 	}
 }
 

@@ -32,6 +32,7 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/skillassets"
 	"github.com/aoagents/agent-orchestrator/backend/internal/termtheme"
 	"github.com/aoagents/agent-orchestrator/backend/internal/tmuxbin"
+	"github.com/aoagents/agent-orchestrator/backend/pkg/agentcreds"
 )
 
 // Sentinel errors returned by the Session Manager; callers match them with
@@ -411,7 +412,9 @@ type Manager struct {
 	// before each failure-aware store transaction. Nil is fail-closed.
 	agentSwitchReporting ports.AgentSwitchReportingPolicy
 	daemonRunID          string
-	agentReadiness       ports.AgentReadinessProvider
+	// providerEntries supplies the stored gateway entries (see Deps.ProviderEntries).
+	providerEntries func(ctx context.Context) []agentcreds.GatewayEntry
+	agentReadiness  ports.AgentReadinessProvider
 	// messenger is a sessionguard.Guard wrapping the raw messenger, so every
 	// pane write is guarded (re-read state, refuse a blocked session) without
 	// each call site re-deriving the check. Send/confirmActive use Deliver for
@@ -821,6 +824,10 @@ type Deps struct {
 	// Logger receives spawn-time diagnostics (e.g. when the session PATH
 	// cannot be pinned to the daemon binary). Nil defaults to slog.Default().
 	Logger *slog.Logger
+	// ProviderEntries supplies the stored gateway entries a launch resolves its
+	// provider pin — or, pinless, the default gateway entry — against. Nil means
+	// none are configured and launches fall through to the settings chain.
+	ProviderEntries func(ctx context.Context) []agentcreds.GatewayEntry
 	// UserConfig supplies global prompt overrides from the user-config singleton.
 	// Nil preserves the historical hardcoded baseline.
 	UserConfig UserConfigSource
@@ -884,9 +891,10 @@ func New(d Deps) *Manager {
 			idleSettle:     interfaceTransitionIdleSettle,
 			staleIdleLimit: interfaceTransitionStaleIdleLimit,
 		},
-		logger:         d.Logger,
-		userConfig:     d.UserConfig,
-		workspaceGates: make(map[domain.ProjectID]*sync.Mutex),
+		logger:          d.Logger,
+		userConfig:      d.UserConfig,
+		providerEntries: d.ProviderEntries,
+		workspaceGates:  make(map[domain.ProjectID]*sync.Mutex),
 	}
 	if m.clock == nil {
 		// UTC so spawn-stamped CreatedAt/UpdatedAt match every other session
@@ -1337,7 +1345,7 @@ func (m *Manager) Spawn(ctx context.Context, cfg ports.SpawnConfig) (domain.Sess
 		m.rollbackSeedSpawnWorkspace(ctx, rec, ws, workspaceProject, true, false)
 		return domain.SessionRecord{}, 0, 0, wrapSpawnStage(id, ErrSpawnBrowser, err)
 	}
-	applyRoleProviderPin(ctx, env, project.Path, cfg.Kind, project.Config)
+	m.applyRoleProviderPin(ctx, env, string(project.ID), cfg.Kind, project.Config)
 	m.augmentAgentRuntimeEnv(agent, env)
 	pinRuntimePermissionEnv(env, adapterConfig.Permissions)
 	if validator, ok := agent.(ports.AgentLaunchAuthValidator); ok {
@@ -3325,7 +3333,7 @@ func (m *Manager) relaunchSessionWithPolicyAndGeneration(ctx context.Context, op
 	if err != nil {
 		return RestoreResult{}, fmt.Errorf("%s %s: browser capability: %w", operation, rec.ID, err)
 	}
-	applyRoleProviderPin(ctx, env, project.Path, rec.Kind, project.Config)
+	m.applyRoleProviderPin(ctx, env, string(project.ID), rec.Kind, project.Config)
 	m.augmentAgentRuntimeEnv(agent, env)
 	pinRuntimePermissionEnv(env, agentConfig.Permissions)
 	if validator, ok := agent.(ports.AgentLaunchAuthValidator); ok {
