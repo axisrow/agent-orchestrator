@@ -361,6 +361,35 @@ fi
 echo "==> npm install (frontend)..."
 ( cd frontend && npm install ) || { echo "!! npm install упал." >&2; exit 1; }
 
+# 6b. Гейт frontend typecheck — единственная защита от класса «merge взял
+#     апстрим-версию файла и потерял часть fork-дельты». Инцидент 2026-10-10:
+#     #6439 перестроил ProjectSettingsEditor.tsx, merge-резолюция съела
+#     ProjectAgentRoleHeader из импорта, использование осталось — «X is not
+#     defined» всплыло только в рантайме собранного .app, потому что vite не
+#     типчекает. tsc --noEmit ловит это за секунды, до пуша и сборки.
+TS_LOG=/tmp/ao-sync-typecheck.log
+gate_frontend_typecheck() {
+  ( cd "$REPO_ROOT/frontend" && npm run typecheck ) >"$TS_LOG" 2>&1
+}
+echo "==> tsc --noEmit (frontend)..."
+if ! gate_frontend_typecheck; then
+  cat "$TS_LOG" >&2
+  rm -f "$TS_LOG"
+  cat >&2 <<'EOF'
+
+!! TypeScript красный после merge. Типичная причина: merge взял апстрим-версию
+   файла и потерял часть fork-дельты (импорт, использование, проп). Сверь
+   файл с состоянием до синка и верни потерянное:
+     git diff <файл>          # что сломано сейчас
+     git diff $BACKUP_TAG HEAD -- <файл>   # что дельта теряет/меняет
+   После починки: git add <файлы> && git commit и запусти синк снова
+   (merge уже закоммичен — продолжение начнёт с проверок).
+EOF
+  exit 1
+fi
+echo "   OK"
+
+
 # 7. Быстрые гейты: whole-module gofmt (см. память ao-gofmt-whole-module-gate —
 #    точечный gofmt на файлах не ловит рассинхрон после merge) + go build.
 echo "==> gofmt -l . (весь backend-модуль)..."
