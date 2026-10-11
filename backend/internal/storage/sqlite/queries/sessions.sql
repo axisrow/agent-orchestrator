@@ -52,6 +52,7 @@ UPDATE sessions SET
     preview_url = ?, preview_revision = ?, terminate_on_pr_merge = ?,
     cleanup_generation = ?, browser_capability_verifier = ?,
     provider_conversation_id = ?, controller_generation = ?, model = ?, effort = ?, updated_at = ?,
+    provider_base_url = ?, provider_model = ?,
     is_pinned = ?, pinned_at = ?, auto_inject_review = ?, auto_inject_ci = ?,
     automation_launch_completed = ?
 WHERE id = ?;
@@ -225,7 +226,7 @@ SELECT id, project_id, num, issue_id, kind, harness,
     conversation_checkpoint_unsettled, conversation_checkpoint_turn_id, native_checkpoint_evidence,
     native_transcript_path, auto_inject_review, auto_inject_ci, auto_review_enabled, model, effort, session_permissions,
     provision_state, provision_error, provision_steps, branch_state, is_task_preparation, automation_run_id, automation_launch_completed,
-    claude_activity_facts, codex_activity_facts,
+    provider_base_url, provider_model, claude_activity_facts, codex_activity_facts,
     hibernated_at
 FROM sessions WHERE id = ?;
 
@@ -244,7 +245,7 @@ SELECT id, project_id, num, issue_id, kind, harness,
     conversation_checkpoint_unsettled, conversation_checkpoint_turn_id, native_checkpoint_evidence,
     native_transcript_path, auto_inject_review, auto_inject_ci, auto_review_enabled, model, effort, session_permissions,
     provision_state, provision_error, provision_steps, branch_state, is_task_preparation, automation_run_id, automation_launch_completed,
-    claude_activity_facts, codex_activity_facts,
+    provider_base_url, provider_model, claude_activity_facts, codex_activity_facts,
     hibernated_at
 FROM sessions WHERE automation_run_id = ?;
 
@@ -263,7 +264,7 @@ SELECT id, project_id, num, issue_id, kind, harness,
     conversation_checkpoint_unsettled, conversation_checkpoint_turn_id, native_checkpoint_evidence,
     native_transcript_path, auto_inject_review, auto_inject_ci, auto_review_enabled, model, effort, session_permissions,
     provision_state, provision_error, provision_steps, branch_state, is_task_preparation, automation_run_id, automation_launch_completed,
-    claude_activity_facts, codex_activity_facts,
+    provider_base_url, provider_model, claude_activity_facts, codex_activity_facts,
     hibernated_at
 FROM sessions WHERE project_id IS ? ORDER BY num;
 
@@ -282,7 +283,7 @@ SELECT id, project_id, num, issue_id, kind, harness,
     conversation_checkpoint_unsettled, conversation_checkpoint_turn_id, native_checkpoint_evidence,
     native_transcript_path, auto_inject_review, auto_inject_ci, auto_review_enabled, model, effort, session_permissions,
     provision_state, provision_error, provision_steps, branch_state, is_task_preparation, automation_run_id, automation_launch_completed,
-    claude_activity_facts, codex_activity_facts,
+    provider_base_url, provider_model, claude_activity_facts, codex_activity_facts,
     hibernated_at
 FROM sessions ORDER BY project_id, num;
 

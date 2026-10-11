@@ -12,6 +12,7 @@ import (
 	stdctx "context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
+	"github.com/aoagents/agent-orchestrator/backend/pkg/agentcreds"
 )
 
 // ErrInvalid and ErrNotFound let the transport layer map failures to 422/404.
@@ -37,6 +39,13 @@ var (
 	ErrPROwnedElsewhere = fmt.Errorf("%w: pull request owned by another session", ErrConflict)
 )
 
+// agentConfigsEqual compares two agent configs. AgentConfig carries the Env
+// map (per-role env profile), so it is not comparable with ==; DeepEqual is
+// the map-safe equivalent for the "did the effective config change" checks.
+func agentConfigsEqual(a, b domain.AgentConfig) bool {
+	return reflect.DeepEqual(a, b)
+}
+
 // Store is the persistence surface the engine needs. *sqlite.Store satisfies it
 // in production; tests use a fake.
 type Store interface {
@@ -52,7 +61,7 @@ type Store interface {
 	ListReviewsBySession(ctx stdctx.Context, id domain.SessionID) ([]domain.Review, error)
 	ClearReviewerHandleByHarness(ctx stdctx.Context, id domain.SessionID, harness domain.ReviewerHarness) error
 	InsertReviewRun(ctx stdctx.Context, r domain.ReviewRun) error
-	UpdateReviewRunResult(ctx stdctx.Context, id string, status domain.ReviewRunStatus, verdict domain.ReviewVerdict, body, githubReviewID string, autoInjectReview bool) (bool, error)
+	UpdateReviewRunResult(ctx stdctx.Context, id string, status domain.ReviewRunStatus, verdict domain.ReviewVerdict, body, findingsJSON, githubReviewID string, autoInjectReview bool) (bool, error)
 	UpdateReviewAgentSessionID(ctx stdctx.Context, id, agentSessionID string) (bool, error)
 	SupersedeStaleRunningReviewRuns(ctx stdctx.Context, sessionID domain.SessionID, prURL, targetSHA, body string) (int64, error)
 	CancelRunningReviewRunsBySession(ctx stdctx.Context, sessionID domain.SessionID, body string) (int64, error)
@@ -91,6 +100,10 @@ type Deps struct {
 	// ChatRecoveryDone gates operations that could mistake a recovering reviewer for an exited one.
 	ChatRecoveryDone <-chan struct{}
 
+	// ProviderEntries supplies the stored gateway entries a reviewer provider
+	// pin resolves against. Nil means none are configured.
+	ProviderEntries func(ctx stdctx.Context) []agentcreds.GatewayEntry
+
 	// Clock and NewID are injectable for deterministic tests.
 	Clock func() time.Time
 	NewID func() string
@@ -107,6 +120,9 @@ type Engine struct {
 	newID    func() string
 
 	chatRecoveryDone <-chan struct{}
+
+	// providerEntries supplies the stored gateway entries (see Deps.ProviderEntries).
+	providerEntries func(ctx stdctx.Context) []agentcreds.GatewayEntry
 
 	// triggerMu guards triggerLocks; triggerLocks holds one mutex per worker
 	// session so concurrent Trigger calls for the same worker serialise (see
@@ -138,6 +154,8 @@ func New(d Deps) *Engine {
 		triggerLocks: make(map[domain.SessionID]*sync.Mutex),
 
 		chatRecoveryDone: d.ChatRecoveryDone,
+
+		providerEntries: d.ProviderEntries,
 	}
 }
 
@@ -357,7 +375,7 @@ func (e *Engine) TriggerWithOptions(ctx stdctx.Context, workerID domain.SessionI
 		harness = override
 		if override == resolvedHarness {
 			config = mergeReviewerAgentConfig(resolvedConfig, overrideConfig)
-			hasConfigOverride = config != resolvedConfig
+			hasConfigOverride = !agentConfigsEqual(config, resolvedConfig)
 		} else if !overrideConfig.IsZero() {
 			config = mergeReviewerAgentConfig(domain.AgentConfig{}, overrideConfig)
 		} else {
@@ -365,7 +383,7 @@ func (e *Engine) TriggerWithOptions(ctx stdctx.Context, workerID domain.SessionI
 		}
 	} else if !overrideConfig.IsZero() {
 		config = mergeReviewerAgentConfig(config, overrideConfig)
-		hasConfigOverride = config != resolvedConfig
+		hasConfigOverride = !agentConfigsEqual(config, resolvedConfig)
 	}
 	reviewRows, err := e.store.ListReviewsBySession(ctx, workerID)
 	if err != nil {
@@ -545,7 +563,7 @@ func (e *Engine) TriggerWithOptions(ctx stdctx.Context, workerID domain.SessionI
 
 	failRuns := func(start int, err error) error {
 		for _, run := range created[start:] {
-			if _, updateErr := e.store.UpdateReviewRunResult(ctx, run.ID, domain.ReviewRunFailed, domain.VerdictNone, err.Error(), "", run.AutoInjectReview); updateErr != nil {
+			if _, updateErr := e.store.UpdateReviewRunResult(ctx, run.ID, domain.ReviewRunFailed, domain.VerdictNone, err.Error(), "", "", run.AutoInjectReview); updateErr != nil {
 				return updateErr
 			}
 		}
@@ -584,7 +602,7 @@ func (e *Engine) TriggerWithOptions(ctx stdctx.Context, workerID domain.SessionI
 		}
 		if previousStopped {
 			for _, run := range restarted {
-				if _, err := e.store.UpdateReviewRunResult(ctx, run.ID, domain.ReviewRunFailed, domain.VerdictNone, cause.Error(), "", run.AutoInjectReview); err != nil {
+				if _, err := e.store.UpdateReviewRunResult(ctx, run.ID, domain.ReviewRunFailed, domain.VerdictNone, cause.Error(), "", "", run.AutoInjectReview); err != nil {
 					cause = errors.Join(cause, err)
 				}
 			}
@@ -861,7 +879,7 @@ func (e *Engine) SwitchReviewer(
 	if err := e.destroyOtherReviewerHandles(ctx, workerID, selected, reviewRows); err != nil {
 		return SessionReviews{}, err
 	}
-	if previousSelected == selected && previousConfig != selectedConfig {
+	if previousSelected == selected && !agentConfigsEqual(previousConfig, selectedConfig) {
 		if err := e.resetReviewerRuntimeLocked(ctx, workerID, selected); err != nil {
 			return SessionReviews{}, err
 		}
@@ -1056,7 +1074,14 @@ func (e *Engine) restorePersistedChatReviewerLocked(ctx stdctx.Context, worker d
 	if err != nil {
 		return RestoreReviewerResult{}, err
 	}
-	launch, err := e.launcher.RestoreTerminal(ctx, LaunchSpec{ReviewSessionID: review.ID, LaunchID: launchID, WorkerID: worker.ID, ProjectID: worker.ProjectID, ProjectEnv: projectEnv, Harness: review.Harness, WorkspacePath: worker.Metadata.WorkspacePath, AgentSessionID: review.AgentSessionID, ProviderConversationID: review.ProviderConversationID, PreviousRuns: previousRuns, InterfaceMode: review.InterfaceMode})
+	// The relaunched reviewer must resolve its gateway the same way a fresh
+	// launch does: AO no longer writes Claude settings files, so AgentConfig's
+	// launch-env overlay is the only channel that carries it.
+	_, config, err := e.reviewerSelection(ctx, worker)
+	if err != nil {
+		return RestoreReviewerResult{}, err
+	}
+	launch, err := e.launcher.RestoreTerminal(ctx, LaunchSpec{ReviewSessionID: review.ID, LaunchID: launchID, WorkerID: worker.ID, ProjectID: worker.ProjectID, ProjectEnv: projectEnv, Harness: review.Harness, AgentConfig: config, WorkspacePath: worker.Metadata.WorkspacePath, AgentSessionID: review.AgentSessionID, ProviderConversationID: review.ProviderConversationID, PreviousRuns: previousRuns, InterfaceMode: review.InterfaceMode})
 	if err != nil {
 		return RestoreReviewerResult{}, fmt.Errorf("restore reviewer: %w", err)
 	}
@@ -1224,7 +1249,7 @@ func (e *Engine) failRunningRestoredRuns(ctx stdctx.Context, runs []domain.Revie
 		if run.Status != domain.ReviewRunRunning {
 			continue
 		}
-		if _, err := e.store.UpdateReviewRunResult(ctx, run.ID, domain.ReviewRunFailed, domain.VerdictNone, body, "", run.AutoInjectReview); err != nil {
+		if _, err := e.store.UpdateReviewRunResult(ctx, run.ID, domain.ReviewRunFailed, domain.VerdictNone, body, "", "", run.AutoInjectReview); err != nil {
 			return fmt.Errorf("fail review run %q after reviewer restore: %w", run.ID, err)
 		}
 	}
@@ -1512,8 +1537,20 @@ func (e *Engine) listLocked(ctx stdctx.Context, workerID domain.SessionID, selec
 	if err != nil {
 		return SessionReviews{}, err
 	}
+	handle := legacyReviewerHandle(reviewRow)
+	// Same cleared-handle gap as in TerminateReviewer: the DB handle can be
+	// gone while the deterministic terminal pane is still alive. Report the
+	// stable id when it probes alive, so the inspector's kill control stays
+	// visible and reviews/kill can reach the orphaned pane. Chat-mode handles
+	// are session-scoped and cannot be reconstructed from the worker id, so
+	// they keep the DB-only behavior (#6064).
+	if handle == "" && (reviewRow.ID == "" || reviewRow.InterfaceMode != domain.ReviewerInterfaceChat) {
+		if alive, err := e.launcher.Alive(ctx, reviewerHandleID(workerID), ""); err == nil && alive {
+			handle = reviewerHandleID(workerID)
+		}
+	}
 	return SessionReviews{
-		ReviewerHandleID:      legacyReviewerHandle(reviewRow),
+		ReviewerHandleID:      handle,
 		ReviewerHarness:       reviewerHarness,
 		ReviewerActivityState: reviewRow.ReviewerActivityState,
 		Runs:                  runs,
@@ -1571,7 +1608,7 @@ func (e *Engine) reconcileExitedReviewer(ctx stdctx.Context, review *domain.Revi
 		if run.ReviewID != review.ID || run.Status != domain.ReviewRunRunning {
 			continue
 		}
-		if _, err := e.store.UpdateReviewRunResult(ctx, run.ID, domain.ReviewRunFailed, domain.VerdictNone, reviewerExitedBeforeSubmission, "", run.AutoInjectReview); err != nil {
+		if _, err := e.store.UpdateReviewRunResult(ctx, run.ID, domain.ReviewRunFailed, domain.VerdictNone, reviewerExitedBeforeSubmission, "", "", run.AutoInjectReview); err != nil {
 			return false, err
 		}
 	}
@@ -1787,8 +1824,11 @@ func (e *Engine) TerminateReviewer(ctx stdctx.Context, workerID domain.SessionID
 }
 
 // ArchiveReviewer retires all reviewer surfaces but retains conversations and results.
+// The cancel body is the kill constant: the kill endpoint routes here, and the
+// autoreview coordinator treats a kill-cancel as an explicit force-restart that
+// lifts the same-SHA veto.
 func (e *Engine) ArchiveReviewer(ctx stdctx.Context, workerID domain.SessionID) error {
-	_, err := e.terminateReviewer(ctx, workerID, "cancelled because reviewer was archived", true)
+	_, err := e.terminateReviewer(ctx, workerID, domain.ReviewRunCancelledByKill, true)
 	return err
 }
 
@@ -1823,6 +1863,17 @@ func (e *Engine) terminateReviewer(ctx stdctx.Context, workerID domain.SessionID
 		if destroyedHandle == "" {
 			destroyedHandle = review.ReviewerHandleID
 		}
+	}
+	// A cleared DB handle does not mean a dead pane: teardown paths clear
+	// ReviewerHandleID on terminal-state writes while the deterministic
+	// terminal pane (stable per worker, launcher.go reviewerHandleID) can
+	// still be running. Destroy it by its stable id — Destroy on an absent
+	// pane is a no-op. Sessions with no review history at all stay a no-op.
+	if destroyedHandle == "" && len(reviews) > 0 {
+		if err := e.launcher.Destroy(ctx, reviewerHandleID(workerID)); err != nil {
+			return TerminateResult{}, err
+		}
+		destroyedHandle = reviewerHandleID(workerID)
 	}
 	if !archive && len(reviews) > 0 {
 		if err := e.store.ClearReviewerHandle(ctx, workerID); err != nil {
@@ -1907,7 +1958,28 @@ func (e *Engine) projectReviewerSelection(
 		}
 	}
 	if len(cfg.Reviewers) > 0 {
-		return cfg.Reviewers[0].Harness, cfg.Reviewers[0].AgentConfig, nil
+		config := cfg.Reviewers[0].AgentConfig
+		// A provider pin or the default gateway entry rides in AgentConfig.Env:
+		// the launcher merges that env into the reviewer process, same transport
+		// as the session launch path. AO no longer writes Claude settings files,
+		// so this overlay is the only channel that carries the configured
+		// gateway to a reviewer.
+		var entries []agentcreds.GatewayEntry
+		if e.providerEntries != nil {
+			entries = e.providerEntries(ctx)
+		}
+		launchEnv := agentcreds.ProviderLaunchEnv(cfg.Reviewers[0].Provider, string(worker.ProjectID), entries)
+		if len(launchEnv) > 0 {
+			env := make(map[string]string, len(config.Env)+len(launchEnv))
+			for key, value := range config.Env {
+				env[key] = value
+			}
+			for key, value := range launchEnv {
+				env[key] = value
+			}
+			config.Env = env
+		}
+		return cfg.Reviewers[0].Harness, config, nil
 	}
 	harness, config := cfg.DefaultWorkerReviewer()
 	if harness != "" {
