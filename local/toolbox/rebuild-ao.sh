@@ -101,6 +101,7 @@ echo "==> npm run package (сборка .app + Go-демона; таймаут 3
 # нельзя: процесс читает старый asar-индекс по новым байтам и окно рисует
 # сырой бандл вместо UI (инцидент 2026-10-11). Ждём смерти всех GUI-процессов;
 # не дождались — падаем, бандл не трогаем.
+# --- guard: begin (extraction target for rebuild-ao.test.sh) ---
 for i in $(seq 1 10); do
   pgrep -f "MacOS/agent-orchestrator" >/dev/null 2>&1 || break
   if [ "$i" = 5 ]; then pkill -9 -f "MacOS/agent-orchestrator" 2>/dev/null || true; fi
@@ -110,6 +111,7 @@ if pgrep -f "MacOS/agent-orchestrator" >/dev/null 2>&1; then
   echo "!! AO GUI не завершился за 10с — отмена пересборки (нельзя переписывать бандл под живым аппом)." >&2
   exit 1
 fi
+# --- guard: end ---
 
 # --- install: begin (atomic bundle swap; extraction target for rebuild-ao.test.sh) ---
 set -e
@@ -151,7 +153,6 @@ echo "==> атомарная замена $APP_DST..."
 rm -rf "$APP_DST"
 mv "$STAGE_APP" "$APP_DST"
 rmdir "$STAGE_ROOT" 2>/dev/null || true
-STAGE_ROOT=""
 # --- install: end ---
 
 # 4. CLI-бинарь (имя строго ao, иначе demon варнит про PATH pin). build:daemon

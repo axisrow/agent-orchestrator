@@ -32,6 +32,31 @@ grep -q 'AO GUI не завершился' "$REBUILD" \
   && note_green T2 "есть отказ инсталляции при живом GUI" \
   || note_red T2 "инсталляция не защищена от живого GUI-процесса"
 
+# T2b (поведенческий): гард-блок между маркерами guard: begin/end.
+# Живой GUI (pgrep=0) → блок обязан выйти с ошибкой; мёртвый (pgrep=1) → пропустить.
+GUARD="$TMP/guard.sh"
+awk '/^# --- guard: begin/,/^# --- guard: end/' "$REBUILD" > "$GUARD"
+if [ -s "$GUARD" ] && grep -q pgrep "$GUARD"; then
+  mkdir -p "$TMP/bin2"
+  printf '#!/bin/bash\nexit 0\n' > "$TMP/bin2/pgrep"   # «GUI жив»
+  printf '#!/bin/bash\n' > "$TMP/bin2/sleep"            # без пауз
+  printf '#!/bin/bash\nexit 0\n' > "$TMP/bin2/pkill"
+  chmod +x "$TMP/bin2/"*
+  if PATH="$TMP/bin2:$PATH" bash "$GUARD" >/dev/null 2>&1; then
+    note_red T2b "гард пропустил инсталляцию при живом GUI (exit 0)"
+  else
+    note_green T2b "гард отказал при живом GUI"
+  fi
+  printf '#!/bin/bash\nexit 1\n' > "$TMP/bin2/pgrep"    # «GUI мёртв»
+  if PATH="$TMP/bin2:$PATH" bash "$GUARD" >/dev/null 2>&1; then
+    note_green T2c "гард пропускает при отсутствии GUI"
+  else
+    note_red T2c "гард ложноположительно отказал без GUI"
+  fi
+else
+  note_red T2b "маркеры guard: begin/end не найдены"
+fi
+
 # T3 (поведенческий): блок инсталляции между маркерами гоняется в песочнице.
 # success: dst = новая сборка; ditto-фейл: dst остаётся старой, live-бандл не тронут.
 if ! awk '/^# --- install: begin/,/^# --- install: end/' "$REBUILD" > "$TMP/install.sh"; then
@@ -84,10 +109,10 @@ STUB
     else
       note_red T3b "после инсталляции dst не v2"
     fi
-    if [ ! -d "$STAGE_ROOT" ] || [ -z "$(ls -A "$STAGE_ROOT" 2>/dev/null)" ]; then
-      note_green T3c "staging подметён после инсталляции"
+    if [ ! -d "$STAGE_ROOT" ]; then
+      note_green T3c "staging-каталог отсутствует после инсталляции"
     else
-      note_red T3c "staging не подметён: $STAGE_ROOT"
+      note_red T3c "staging-каталог остался: $STAGE_ROOT"
     fi
   else
     note_red T3b "блок инсталляции упал на корректной сборке"
