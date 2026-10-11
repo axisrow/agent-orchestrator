@@ -4,9 +4,9 @@
 # без подтверждения — это рутинный цикл самосборки из форка (см. память
 # ao-local-build-update-procedure).
 #
-# Что делает: npm run package → ditto в /Applications → codesign adhoc →
-# сборка CLI в ~/.local/bin/ao → прямой запуск бинаря (обход provenance/Gatekeeper)
-# → poll ao status → готово.
+# Что делает: npm run package → staging в /Applications → codesign → атомарный
+# rm+mv живого бандла → сборка CLI в ~/.local/bin/ao → прямой запуск бинаря
+# (обход provenance/Gatekeeper) → poll ao status → готово.
 #
 # Предполагает: запуск из корня репо agent-orchestrator, на нужной ветке.
 # Старые AO-процессы убивает сам (pkill). Данные durable в ~/.ao/data переживают.
@@ -18,7 +18,7 @@ set -e
 # --- найти корень репо надёжно (по .git), НЕ доверяя cwd ---
 # bash-сессия агента часто сидит в backend/, и `cd frontend` ломается. Идём от
 # расположения скрипта вверх до каталога с .git, потом проверяем frontend/+backend.
-SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")" 2>/dev/null && pwd)"
 REPO_ROOT=""
 for cand in "$SCRIPT_DIR/.." "$SCRIPT_DIR" "$PWD" "$PWD/.."; do
   abs="$(cd "$cand" 2>/dev/null && pwd)" || continue
@@ -66,7 +66,13 @@ STAMP_VERSION="0.10.$(date +%y%m%d)"
 restore_package_json() {
   git -C "$REPO_ROOT" checkout -- frontend/package.json frontend/package-lock.json 2>/dev/null || true
 }
-trap restore_package_json EXIT
+# Один EXIT-хук: подмести staging (если создан) и откатить стамп package.json.
+STAGE_ROOT=""
+on_exit() {
+  if [ -n "$STAGE_ROOT" ]; then rm -rf "$STAGE_ROOT" 2>/dev/null || true; fi
+  restore_package_json
+}
+trap on_exit EXIT
 
 # 0. Убить старые AO-процессы (GUI + демон), иначе ditto/запуск нестабильны.
 echo "==> останавливаю старые AO-процессы..."
@@ -91,11 +97,34 @@ echo "==> npm run package (сборка .app + Go-демона; таймаут 3
 # лимите просто перезапустить (кэши Forge частично выживают).
 (cd "$REPO_ROOT/frontend" && timeout --kill-after=15 180 npm run package)
 
-# 2. ditto в /Applications (без rm -rf, без sudo — пользователь владелец).
-echo "==> ditto → /Applications..."
-ditto "$APP_SRC" "$APP_DST"
+# 0b. Гард: живой GUI держит app.asar открытым. Переписывать бандл под ним
+# нельзя: процесс читает старый asar-индекс по новым байтам и окно рисует
+# сырой бандл вместо UI (инцидент 2026-10-11). Ждём смерти всех GUI-процессов;
+# не дождались — падаем, бандл не трогаем.
+for i in $(seq 1 10); do
+  pgrep -f "MacOS/agent-orchestrator" >/dev/null 2>&1 || break
+  if [ "$i" = 5 ]; then pkill -9 -f "MacOS/agent-orchestrator" 2>/dev/null || true; fi
+  sleep 1
+done
+if pgrep -f "MacOS/agent-orchestrator" >/dev/null 2>&1; then
+  echo "!! AO GUI не завершился за 10с — отмена пересборки (нельзя переписывать бандл под живым аппом)." >&2
+  exit 1
+fi
 
-# 3. Переподписать (ditto ломает подпись на Sequoia → open молча не запускает).
+# --- install: begin (atomic bundle swap; extraction target for rebuild-ao.test.sh) ---
+set -e
+# 2+3. Сборка → staging → codesign → атомарная замена. Инсталляция ПРЯМО в
+# /Applications (in-place ditto) перезаписывает байты asar под живыми
+# процессами; свежезапущенный во время копирования процесс получает смесь
+# старого индекса и новых байтов — окно показывает сырой JS вместо UI
+# (инцидент 2026-10-11). Теперь бандл полностью собирается и подписывается в
+# staging рядом с целью, и только затем одним mv занимает место живого.
+STAGE_ROOT="${STAGE_ROOT:-$(mktemp -d "/Applications/.ao-rebuild-staging-XXXXXX")}"
+STAGE_APP="$STAGE_ROOT/Agent Orchestrator.app"
+echo "==> копирую сборку в staging ($STAGE_ROOT)..."
+ditto "$APP_SRC" "$STAGE_APP"
+
+# Переподписать (ditto ломает подпись на Sequoia → open молча не запускает).
 # Стабильная self-signed identity (AO-Local-CodeSign в login.keychain), а не
 # ad-hoc (--sign -): ad-hoc пересчитывает свой designated requirement на
 # каждой сборке (weight = хэш кода), так что Keychain ACL для Electron
@@ -111,9 +140,19 @@ if ! security find-identity -v -p codesigning 2>/dev/null | grep -q "$CODESIGN_I
   echo "      (Keychain ACL для safeStorage не переживёт следующую пересборку.)" >&2
   CODESIGN_IDENTITY="-"
 fi
-echo "==> codesign --force --deep --sign $CODESIGN_IDENTITY (fix подписи после ditto)..."
-codesign --force --deep --sign "$CODESIGN_IDENTITY" "$APP_DST" 2>/dev/null || \
+echo "==> codesign --force --deep --sign $CODESIGN_IDENTITY (в staging, до подмены)..."
+codesign --force --deep --sign "$CODESIGN_IDENTITY" "$STAGE_APP" 2>/dev/null || \
   echo "   (codesign warning — проигнорировано)"
+
+# Подмена: rm + mv (не одиночный renameat2 — на macOS его нет из шелла).
+# ponytail: зазор в миллисекунды между rm и mv, когда пути нет; запуск в этот
+# миг просто ошибётся (видно сразу), смешанных байтов не бывает никогда.
+echo "==> атомарная замена $APP_DST..."
+rm -rf "$APP_DST"
+mv "$STAGE_APP" "$APP_DST"
+rmdir "$STAGE_ROOT" 2>/dev/null || true
+STAGE_ROOT=""
+# --- install: end ---
 
 # 4. CLI-бинарь (имя строго ao, иначе demon варнит про PATH pin). build:daemon
 #    (внутри npm run package, шаг 1) уже собрал ./cmd/ao в бандл — копируем
