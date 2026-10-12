@@ -28,14 +28,10 @@ import (
 // sessionIDPattern bounds the AO_SESSION_ID we will place in a request path to
 // the id alphabet the daemon issues. Validating the externally-set env value
 // before it reaches the loopback URL keeps it from steering the request.
-//
-// Kept in sync with projectIDPattern (service/project/service.go), since AO
-// session ids are derived as "{ProjectID}-{num}": a project id may contain
-// dots, so this pattern must accept them too, or every session for such a
-// project fails validation here regardless of num. A leading dot is still
-// rejected, so ".." / "../" segments remain impossible and the id stays safe
-// to embed in both a URL path segment and a filename.
-var sessionIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+// Project ids may contain single dots (e.g. "acme.dev"), and session ids
+// inherit them ("acme.dev-2"); dot runs and leading dots stay rejected so the
+// id can never be "." or ".." in a request or file path.
+var sessionIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`)
 
 const (
 	// hooksLogName is the file under AO_DATA_DIR where hook delivery failures

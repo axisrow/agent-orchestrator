@@ -1,9 +1,11 @@
 import { useQueryClient } from "@tanstack/react-query";
+import { paidPlanBadge, useCloudBilling } from "../hooks/useCloudBilling";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { useNavigate, useParams, useRouterState } from "@tanstack/react-router";
 import {
 	DndContext,
+	KeyboardSensor,
 	PointerSensor,
 	closestCenter,
 	useSensor,
@@ -11,7 +13,7 @@ import {
 	type Modifier,
 	type DragEndEvent,
 } from "@dnd-kit/core";
-import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
 	AlertTriangle,
@@ -127,6 +129,8 @@ import { cn } from "../lib/utils";
 import { recordManualWorkerOpen } from "../lib/session-management-telemetry";
 import { SettingsSaveStatus, useSettingsPage } from "./SettingsDialog";
 import { useUiStore } from "../stores/ui-store";
+import { useSidebarOrderStore } from "../stores/sidebar-order-store";
+import { applyOrder } from "../lib/sidebar-order";
 import { useKeybindingsStore } from "../stores/keybindings-store";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { SessionArchiveDialog } from "./SessionArchiveDialog";
@@ -207,6 +211,11 @@ function useReorderSensors() {
 	return useSensors(
 		useSensor(PointerSensor, {
 			activationConstraint: { distance: REORDER_ACTIVATION_DISTANCE },
+		}),
+		// Space-only start so Enter keeps opening the row.
+		useSensor(KeyboardSensor, {
+			coordinateGetter: sortableKeyboardCoordinates,
+			keyboardCodes: { start: ["Space"], cancel: ["Escape"], end: ["Space"] },
 		}),
 	);
 }
@@ -292,18 +301,6 @@ function reorderById(ids: string[], activeId: string, overId: string): string[] 
 	const [moved] = next.splice(from, 1);
 	next.splice(to, 0, moved);
 	return next;
-}
-
-function applyOrder<T>(items: readonly T[], idOf: (item: T) => string, order: readonly string[], unplaced: "start" | "end"): T[] {
-	if (order.length === 0) return [...items];
-	const byId = new Map(items.map((item) => [idOf(item), item]));
-	const placed = order.flatMap((id) => {
-		const item = byId.get(id);
-		return item ? [item] : [];
-	});
-	const placedIds = new Set(order);
-	const rest = items.filter((item) => !placedIds.has(idOf(item)));
-	return unplaced === "start" ? [...rest, ...placed] : [...placed, ...rest];
 }
 
 function useGrabbingCursor(active: boolean) {
@@ -715,6 +712,47 @@ export function Sidebar({
 	const [projectsOpen, setProjectsOpen] = useState(true);
 	const [scratchpadOpen, setScratchpadOpen] = useState(true);
 
+	// Keyboard navigation (⌘⇧[ / ⌘⇧], ⌘1-9, attention jumps) can land on a row
+	// that is scrolled out, in a collapsed project or inside a closed section.
+	// Open whatever hides the active session, then scroll its row into view.
+	// Only a change of session triggers this, so a project the user collapses
+	// while staying on a session is left alone.
+	const activeSessionKey = selection.activeSessionId ?? selection.activeRemoteSessionId;
+	const activeProjectKey = selection.activeProjectId;
+	useEffect(() => {
+		if (!activeSessionKey || isCollapsed) return;
+		if (activeProjectKey) {
+			setExpandedIds((prev) => {
+				if (prev.has(activeProjectKey)) return prev;
+				const next = new Set(prev);
+				next.add(activeProjectKey);
+				window.localStorage?.setItem(expandedProjectsStorageKey, JSON.stringify([...next]));
+				return next;
+			});
+		}
+		let frame = 0;
+		let attempts = 0;
+		const reveal = () => {
+			const row = document.querySelector<HTMLElement>(
+				"[data-slot='sidebar-container'] [data-session-row] button[aria-current='page']",
+			);
+			if (row) {
+				row.scrollIntoView?.({ block: "nearest" });
+				return;
+			}
+			// Not rendered yet: its section may be closed. Open them all once, then retry.
+			if (attempts === 0) {
+				setPinnedOpen(true);
+				setProjectsOpen(true);
+				setScratchpadOpen(true);
+			}
+			if (attempts++ < 3) frame = requestAnimationFrame(reveal);
+		};
+		frame = requestAnimationFrame(() => requestAnimationFrame(reveal));
+		return () => cancelAnimationFrame(frame);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [activeSessionKey]);
+
 	// agent-orchestrator's sidebar resize: drag the right edge (200-420px,
 	// persisted), double-click to reset to 240px. Drives --ao-sidebar-w on :root,
 	// only to the two layout consumers and fixed titlebar strip, rather than
@@ -757,6 +795,7 @@ export function Sidebar({
 		try {
 			window.localStorage.setItem(projectOrderStorageKey, JSON.stringify(projectOrder));
 		} catch {}
+		useSidebarOrderStore.getState().setProjectOrder(projectOrder);
 	}, [projectOrder]);
 	const orderedWorkspaces = useMemo(
 		() => applyOrder(workspaces, (workspace) => workspace.id, projectOrder, "start"),
@@ -1419,6 +1458,12 @@ const ProjectItem = memo(function ProjectItem({
 		() => applyOrder(visibleSessions, (session) => session.id, sessionOrder, "start"),
 		[sessionOrder, visibleSessions],
 	);
+	// Publish the order shown here so keyboard navigation follows it.
+	useEffect(() => {
+		const sessionIds = sessions.map((session) => session.id);
+		useSidebarOrderStore.getState().setSessionOrder(projectKey, sessionIds);
+		return () => useSidebarOrderStore.getState().clearSessionOrder(projectKey);
+	}, [projectKey, sessions]);
 	const {
 		listed: listedSessions,
 		hiddenCount: hiddenSessionCount,
@@ -1710,6 +1755,7 @@ const ProjectItem = memo(function ProjectItem({
 									aria-expanded={expanded}
 									className="absolute inset-y-0 left-0 z-10 w-9 cursor-pointer bg-transparent group-data-[collapsible=icon]:hidden"
 									data-project-folder=""
+									tabIndex={-1}
 									onClick={onFolderClick}
 									type="button"
 								/>
@@ -1943,6 +1989,13 @@ function ScratchpadSection({
 		() => applyOrder(visibleSessions, (session) => session.id, sessionOrder, "start"),
 		[sessionOrder, visibleSessions],
 	);
+	// Publish the order shown here so keyboard navigation follows it.
+	const scratchpadKey = sessionUiKey(workspace.id, workspace.hostId);
+	useEffect(() => {
+		const sessionIds = sessions.map((session) => session.id);
+		useSidebarOrderStore.getState().setSessionOrder(scratchpadKey, sessionIds);
+		return () => useSidebarOrderStore.getState().clearSessionOrder(scratchpadKey);
+	}, [scratchpadKey, sessions]);
 	const {
 		listed: listedSessions,
 		hiddenCount: hiddenSessionCount,
@@ -2189,7 +2242,6 @@ function SessionReorderList({
 		if (!over) {
 			setListDragging(false);
 			setDropTransitionDisabledId(null);
-			if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
 			return;
 		}
 		// reorderById rejects any id that is not in THIS list, so a stray
@@ -2204,13 +2256,11 @@ function SessionReorderList({
 			setDropTransitionDisabledId(sessionId);
 		});
 		requestAnimationFrame(() => setDropTransitionDisabledId(null));
-		if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
 	}, [dragClickGuard, onReorder, sessionIds]);
 
 	const onDragCancel = useCallback(() => {
 		setListDragging(false);
 		setDropTransitionDisabledId(null);
-		if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
 	}, []);
 
 	if (plain) {
@@ -2435,6 +2485,7 @@ function SessionRow({
 								onOpen();
 							}}
 							onKeyDown={(event) => {
+								reorder?.listeners?.onKeyDown?.(event);
 								if (event.key !== "F2") return;
 								event.preventDefault();
 								beginRename();
@@ -2688,7 +2739,11 @@ function CloudAccountRow({ tabIndex }: { tabIndex: number }) {
 	const { cloudEnabled } = useCloudGate();
 	const developerMode = useUiStore((state) => state.developerMode);
 	const { configured, session, status, signOut } = useCloudSession();
+	// The plan badge is self-serve billing only; a contract org has no plan to show.
+	const billing = useCloudBilling();
+	const plan = billing.offering.selfServeBilling ? paidPlanBadge(billing.data) : null;
 	if (!configured || (!cloudEnabled && !developerMode) || status !== "authenticated") return null;
+	const name = accountName(session?.user);
 
 	return (
 		<DropdownMenu>
@@ -2699,14 +2754,18 @@ function CloudAccountRow({ tabIndex }: { tabIndex: number }) {
 					})}
 					className={FOOTER_NAV_BUTTON_CLASS}
 					tabIndex={tabIndex}
+					title={session?.user.email}
 					type="button"
 				>
 					<NavRowHighlight />
 					<span className="relative z-[1] flex min-w-0 flex-1 items-center gap-2.5 [&_svg]:size-icon-md [&_svg]:shrink-0">
-						<User aria-hidden="true" />
-						<span className="min-w-0 flex-1 truncate tracking-tight">
-							{session?.user.email ?? "AO Cloud"}
-						</span>
+						<AccountAvatar user={session?.user} />
+						<span className="min-w-0 truncate tracking-tight">{name}</span>
+						{plan ? (
+							<span className="shrink-0 rounded-full bg-[var(--color-status-working)] px-1.5 py-px text-[length:var(--font-size-xs)] font-medium leading-4 text-white">
+								{plan}
+							</span>
+						) : null}
 					</span>
 				</button>
 			</DropdownMenuTrigger>
@@ -2720,6 +2779,40 @@ function CloudAccountRow({ tabIndex }: { tabIndex: number }) {
 				</DropdownMenuItem>
 			</DropdownMenuContent>
 		</DropdownMenu>
+	);
+}
+
+/** The signed-in person's name, falling back to their email. */
+function accountName(user: { displayName?: string; email?: string } | undefined): string {
+	const display = user?.displayName?.trim();
+	if (display && display !== user?.email) return display;
+	return user?.email ?? "AO Cloud";
+}
+
+/** The profile picture from the sign-in provider, or the person's initials. */
+function AccountAvatar({ user }: { user: { displayName?: string; email?: string; avatarUrl?: string } | undefined }) {
+	const [broken, setBroken] = useState(false);
+	if (user?.avatarUrl && !broken) {
+		return (
+			<img
+				src={user.avatarUrl}
+				alt=""
+				aria-hidden="true"
+				referrerPolicy="no-referrer"
+				className="size-icon-md shrink-0 rounded-full object-cover"
+				onError={() => setBroken(true)}
+			/>
+		);
+	}
+	const source = accountName(user);
+	const initials = source.includes("@")
+		? source.charAt(0).toUpperCase()
+		: source.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part.charAt(0).toUpperCase()).join("");
+	if (!initials) return <User aria-hidden="true" />;
+	return (
+		<span aria-hidden="true" className="grid size-icon-md shrink-0 place-items-center rounded-full bg-[var(--color-bg-tertiary)] text-[length:var(--font-size-xs)] font-medium leading-none text-settings-label">
+			{initials}
+		</span>
 	);
 }
 
@@ -2745,7 +2838,7 @@ function CloudAccountRailButton({ tabIndex }: { tabIndex: number }) {
 				>
 					<NavRowHighlight />
 					<span className="relative z-[1] grid place-items-center [&_svg]:size-icon-base">
-						<User aria-hidden="true" />
+						<AccountAvatar user={session?.user} />
 					</span>
 				</button>
 			</TooltipTrigger>

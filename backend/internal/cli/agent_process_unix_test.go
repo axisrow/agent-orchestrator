@@ -44,33 +44,25 @@ func TestAgentProcessSuperviseRejectsInvalidGeneration(t *testing.T) {
 	}
 }
 
-// TestAgentProcessSuperviseAcceptsDottedProjectSessionID guards against a
-// regression where AO session ids derived from a dotted project id
-// ("{ProjectID}-{num}", e.g. a project named like a domain) were accepted by
-// projectIDPattern but rejected here, permanently failing every session for
-// that project regardless of num.
 func TestAgentProcessSuperviseAcceptsDottedProjectSessionID(t *testing.T) {
 	cfg := setConfigEnv(t)
-	srv, _ := activityServer(t, http.StatusOK, `{"ok":true}`)
+	srv, capture := activityServer(t, http.StatusOK, `{"ok":true}`)
 	writeRunFileFor(t, cfg, srv)
 
-	out, errOut, err := executeCLI(t, Deps{
-		In:           strings.NewReader(""),
-		ProcessAlive: func(int) bool { return true },
-	}, "agent-process", "supervise", "--session", "my.project-16", "--launch", "launch-3", "--", "sh", "-c", "printf ok")
+	_, errOut, err := executeCLI(t, Deps{In: strings.NewReader("")}, "agent-process", "supervise", "--session", "acme.dev-2", "--launch", "launch-3", "--", "sh", "-c", "exit 0")
 	if err != nil {
-		t.Fatalf("dotted project session id should be accepted: %v\nstderr=%s", err, errOut)
+		t.Fatalf("supervise rejected a session id from a dotted project id: %v\nstderr=%s", err, errOut)
 	}
-	if out != "ok" {
-		t.Fatalf("stdout = %q, want ok", out)
+	if capture.path != "/api/v1/sessions/acme.dev-2/activity" {
+		t.Fatalf("exit report path = %q, want session activity endpoint", capture.path)
 	}
 }
 
-func TestAgentProcessSuperviseRejectsTraversalSessionID(t *testing.T) {
-	for _, id := range []string{"../evil", "a/b", ".hidden"} {
+func TestAgentProcessSuperviseRejectsDotPathSessionIDs(t *testing.T) {
+	for _, id := range []string{".", "..", "../ao-7", ".ao-7", "ao..7", "ao-7."} {
 		_, _, err := executeCLI(t, Deps{}, "agent-process", "supervise", "--session", id, "--launch", "launch-3", "--", "true")
 		if err == nil {
-			t.Fatalf("session id %q should be rejected", id)
+			t.Fatalf("session id %q should be rejected before starting the child", id)
 		}
 	}
 }
