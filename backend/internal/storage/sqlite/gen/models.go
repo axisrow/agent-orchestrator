@@ -703,6 +703,18 @@ type Session struct {
 	BranchState                      string
 	ProviderBaseURL                  string
 	ProviderModel                    string
+	RequestedOutput                  string
+}
+
+type SessionArtifactVersion struct {
+	SessionID   domain.SessionID
+	Path        string
+	Version     int64
+	Sha256      string
+	Size        int64
+	ContentType string
+	Mtime       int64
+	CreatedAt   time.Time
 }
 
 type SessionCleanupFact struct {
