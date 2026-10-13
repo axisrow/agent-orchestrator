@@ -104,15 +104,14 @@ func withReviewerConfig(argv []string, taskPromptRoot, systemPromptFile string) 
 		"grep": "allow",
 		"bash": map[string]string{
 			"*":                             "deny",
-			"gh pr view *":                  "allow",
-			"gh pr diff *":                  "allow",
-			"gh pr checks *":                "allow",
+			"gh api *":                      "allow",
 			"git diff*":                     "allow",
 			"git log*":                      "allow",
 			"git show*":                     "allow",
 			"git status*":                   "allow",
 			"ao review submit *":            "allow",
 			"printf *":                      "allow",
+			"printf * | gh api *":           "allow",
 			"printf * | ao review submit *": "allow",
 		},
 	}

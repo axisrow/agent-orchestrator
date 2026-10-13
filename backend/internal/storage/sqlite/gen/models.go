@@ -625,9 +625,6 @@ type ReviewRun struct {
 	BatchID          string
 	AutoInjectReview bool
 	TriggerSource    domain.ReviewTriggerSource
-	Findings         string
-	PublishState     string
-	PublishError     string
 }
 
 type Session struct {

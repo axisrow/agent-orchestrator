@@ -204,7 +204,6 @@ var shippedMigrations = map[int64]string{
 	// can never renumber them onto a number upstream will claim. See
 	// migrate_fork_reserved_range_test.go for why.
 	9001: "9001_add_user_config.sql",
-	9004: "9004_review_run_publication.sql",
 	9006: "9006_session_provider_stamp.sql",
 	9011: "9011_gateway_entries.sql",
 }
@@ -224,7 +223,9 @@ var shippedMigrations = map[int64]string{
 // Any such migration whose schema the generated queries depend on must add a
 // schemaRepairs entry in db.go.
 func burnedVersion(v int64) bool {
-	return v == 22 || v == 9003
+	// 9004 (review_run_publication) shipped in fork builds and was then dropped
+	// with the daemon-owned publication contract; never reuse the number.
+	return v == 22 || v == 9003 || v == 9004
 }
 
 // TestMigrationVersionLedger enforces the append-only migration ledger: every

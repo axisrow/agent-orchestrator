@@ -2439,7 +2439,6 @@ function cloudReviewRun(run: CloudCpAOReviewRun, harness: string): ReviewRunFact
 		harness: run.harness || harness,
 		id: run.id,
 		prUrl: run.pullRequestUrl,
-		publishState: run.providerReviewId ? "published" : "pending",
 		reviewId: run.reviewId,
 		sessionId: run.sessionId,
 		status: run.status,

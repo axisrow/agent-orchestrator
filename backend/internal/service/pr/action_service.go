@@ -19,7 +19,6 @@ var (
 
 type actionStore interface {
 	GetPR(ctx context.Context, url string) (domain.PullRequest, bool, error)
-	ListPublishedReviewGitHubIDsByPR(ctx context.Context, prURL string) ([]string, error)
 }
 
 type resolveStore interface {
@@ -135,11 +134,7 @@ func (s *ActionService) Merge(ctx context.Context, request MergeRequest) (MergeR
 	if !strings.EqualFold(fresh.PR.HeadSHA, expectedHead) {
 		return MergeResult{}, ErrPRHeadChanged
 	}
-	published, err := s.publishedReviewIDs(ctx, tracked.URL)
-	if err != nil {
-		return MergeResult{}, err
-	}
-	if !readyToMerge(fresh, review, published) {
+	if !readyToMerge(fresh, review) {
 		return MergeResult{}, ErrPRPreconditions
 	}
 
@@ -165,15 +160,9 @@ func (s *ActionService) fetchMergeReadiness(ctx context.Context, ref ports.SCMPR
 		if errors.Is(err, ports.ErrSCMNotFound) {
 			return ports.SCMObservation{}, ports.SCMReviewObservation{}, fmt.Errorf("%w: %w", ErrPRNotFound, err)
 		}
-		return ports.SCMObservation{}, ports.SCMReviewObservation{}, fmt.Errorf("%w: refresh pull request before merge: %w", ErrPRProviderUnavailable, err)
+		return ports.SCMObservation{}, ports.SCMReviewObservation{}, fmt.Errorf("refresh pull request before merge: %w", err)
 	}
 	if len(observations) != 1 || !observations[0].Fetched || observations[0].PR.Number != ref.Number {
-		// The multi-provider reader reports a failed provider fetch as an
-		// unfetched placeholder carrying the cause in Error; a provider outage
-		// must not masquerade as a missing PR.
-		if len(observations) == 1 && observations[0].Error != nil && !errors.Is(observations[0].Error, ports.ErrSCMNotFound) {
-			return ports.SCMObservation{}, ports.SCMReviewObservation{}, fmt.Errorf("%w: refresh pull request before merge: %w", ErrPRProviderUnavailable, observations[0].Error)
-		}
 		return ports.SCMObservation{}, ports.SCMReviewObservation{}, ErrPRNotFound
 	}
 	review, err := s.reader.FetchReviewThreads(ctx, ref)
@@ -181,29 +170,12 @@ func (s *ActionService) fetchMergeReadiness(ctx context.Context, ref ports.SCMPR
 		if errors.Is(err, ports.ErrSCMNotFound) {
 			return ports.SCMObservation{}, ports.SCMReviewObservation{}, fmt.Errorf("%w: %w", ErrPRNotFound, err)
 		}
-		return ports.SCMObservation{}, ports.SCMReviewObservation{}, fmt.Errorf("%w: refresh pull request reviews before merge: %w", ErrPRProviderUnavailable, err)
+		return ports.SCMObservation{}, ports.SCMReviewObservation{}, fmt.Errorf("refresh pull request reviews before merge: %w", err)
 	}
 	return observations[0], review, nil
 }
 
-// publishedReviewIDs returns the provider review ids AO itself published for
-// this PR. Comments under those reviews are AO's own findings, not human
-// feedback, so they must not block a merge as unresolved human comments. A
-// lookup failure degrades to an empty set: the pre-existing conservative
-// behavior beats failing the merge on a storage hiccup.
-func (s *ActionService) publishedReviewIDs(ctx context.Context, prURL string) (map[string]bool, error) {
-	ids, err := s.store.ListPublishedReviewGitHubIDsByPR(ctx, prURL)
-	if err != nil {
-		return nil, fmt.Errorf("load published review ids: %w", err)
-	}
-	out := make(map[string]bool, len(ids))
-	for _, id := range ids {
-		out[id] = true
-	}
-	return out, nil
-}
-
-func readyToMerge(o ports.SCMObservation, review ports.SCMReviewObservation, publishedReviewIDs map[string]bool) bool {
+func readyToMerge(o ports.SCMObservation, review ports.SCMReviewObservation) bool {
 	if o.PR.HeadSHA == "" || o.CI.HeadSHA != o.PR.HeadSHA || review.Partial {
 		return false
 	}
@@ -214,17 +186,17 @@ func readyToMerge(o ports.SCMObservation, review ports.SCMReviewObservation, pub
 		CI:                 domain.CIState(o.CI.Summary),
 		Review:             domain.ReviewDecision(review.Decision),
 		Mergeability:       domain.Mergeability(o.Mergeability.State),
-		UnresolvedComments: hasUnresolvedHumanComments(review.Threads, publishedReviewIDs),
+		UnresolvedComments: hasUnresolvedHumanComments(review.Threads),
 	}.ReadyToMerge()
 }
 
-func hasUnresolvedHumanComments(threads []ports.SCMReviewThreadObservation, publishedReviewIDs map[string]bool) bool {
+func hasUnresolvedHumanComments(threads []ports.SCMReviewThreadObservation) bool {
 	for _, thread := range threads {
 		if thread.Resolved {
 			continue
 		}
 		for _, comment := range thread.Comments {
-			if !comment.IsBot && !publishedReviewIDs[comment.ReviewID] {
+			if !comment.IsBot {
 				return true
 			}
 		}

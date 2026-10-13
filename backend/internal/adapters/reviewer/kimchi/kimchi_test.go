@@ -74,7 +74,9 @@ func TestReviewCommandAppliesBestEffortPolicyOffBypass(t *testing.T) {
 		"bash(git commit:*)",
 		"bash(git show:*)",
 		"bash(gh pr merge:*)",
-		"bash(gh api:*)",
+		"bash(gh api --method DELETE:*)",
+		"bash(gh api --method PUT:*)",
+		"bash(gh api --method PATCH:*)",
 		"bash(gh gist:*)",
 	} {
 		if !contains(agent.got.DisallowedTools, denied) {
@@ -123,16 +125,12 @@ func TestAllowlistIncludesProtocolToolsAndDeniesDangerousGh(t *testing.T) {
 		t.Fatalf("ReviewCommand: %v", err)
 	}
 
-	// printf and the read-only gh pr verbs must be in the allow list — the
-	// review protocol (prompt.go) needs a piped printf | ao review submit
-	// command, and the provider publication itself is daemon-owned (#5701).
-	for _, tool := range []string{"bash(printf:*)", "bash(gh pr view:*)", "bash(gh pr diff:*)", "bash(gh pr checks:*)"} {
+	// printf and gh must be in the allow list — the review protocol
+	// (prompt.go step 1) requires a piped printf | gh api command.
+	for _, tool := range []string{"bash(printf:*)", "bash(gh:*)"} {
 		if !contains(agent.got.AllowedTools, tool) {
 			t.Fatalf("allowlist missing protocol tool %q: %#v", tool, agent.got.AllowedTools)
 		}
-	}
-	if contains(agent.got.AllowedTools, "bash(gh:*)") {
-		t.Fatalf("allowlist must not grant blanket gh access: %#v", agent.got.AllowedTools)
 	}
 
 	// The reviewer can still submit verdicts via ao review submit.
@@ -151,10 +149,12 @@ func TestAllowlistIncludesProtocolToolsAndDeniesDangerousGh(t *testing.T) {
 		t.Fatalf("disallow list missing bash(git show:*): %#v", agent.got.DisallowedTools)
 	}
 
-	// gh api must be denied outright: publication is daemon-owned since #5701.
+	// Dangerous gh verbs must be denied as defense in depth.
 	for _, denied := range []string{
 		"bash(gh pr merge:*)",
-		"bash(gh api:*)",
+		"bash(gh api --method DELETE:*)",
+		"bash(gh api --method PUT:*)",
+		"bash(gh api --method PATCH:*)",
 		"bash(gh gist:*)",
 	} {
 		if !contains(agent.got.DisallowedTools, denied) {
@@ -162,8 +162,8 @@ func TestAllowlistIncludesProtocolToolsAndDeniesDangerousGh(t *testing.T) {
 		}
 	}
 
-	// The blanket bash(gh:*) deny must NOT be present — read-only gh pr
-	// view/diff/checks stay allowed for review context.
+	// The blanket bash(gh:*) deny must NOT be present — it blocks the
+	// protocol's gh api --method POST call.
 	if contains(agent.got.DisallowedTools, "bash(gh:*)") {
 		t.Fatalf("disallow list must not contain blanket bash(gh:*): %#v", agent.got.DisallowedTools)
 	}

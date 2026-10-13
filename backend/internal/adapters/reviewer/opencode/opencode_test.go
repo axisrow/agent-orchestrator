@@ -71,7 +71,7 @@ func TestReviewCommandUsesReadOnlyPermissionPolicy(t *testing.T) {
 		t.Fatalf("permission policy = %#v", permission)
 	}
 	bash := permission["bash"].(map[string]any)
-	if bash["*"] != "deny" || bash["gh api *"] != nil || bash["ao review submit *"] != "allow" || bash["gh pr view *"] != "allow" {
+	if bash["*"] != "deny" || bash["gh api *"] != "allow" || bash["ao review submit *"] != "allow" {
 		t.Fatalf("bash policy = %#v", bash)
 	}
 }
@@ -237,18 +237,13 @@ func TestBashAllowlistCoversPromptRequiredCommands(t *testing.T) {
 		allowed bool
 	}{
 		{
-			name:    "github review creation is daemon-owned",
+			name:    "github review creation",
 			command: `printf '%s' '{ "event": "COMMENT", "body": "x" }' | gh api --method POST repos/o/r/pulls/1/reviews --input - --jq '.id'`,
-			allowed: false,
-		},
-		{
-			name:    "github pr metadata reads",
-			command: `gh pr view 12 --json headRefName`,
 			allowed: true,
 		},
 		{
 			name:    "local review submit",
-			command: `printf '%s' 'Review body' | ao review submit --session sess-1 --run run-1 --verdict approved --body -`,
+			command: `printf '%s' '{ "reviews": [] }' | ao review submit --session sess-1 --reviews -`,
 			allowed: true,
 		},
 		{
