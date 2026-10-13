@@ -198,13 +198,15 @@ var shippedMigrations = map[int64]string{
 	192: "0192_allow_openhands_harness.sql",
 	193: "0193_allow_codewhale_harness.sql",
 	194: "0194_allow_command_code_harness.sql",
+	195: "0195_session_requested_output.sql",
+	196: "0196_session_artifact_versions.sql",
 	// Fork-local migrations live in the reserved 9000+ range so a sync rebase
 	// can never renumber them onto a number upstream will claim. See
 	// migrate_fork_reserved_range_test.go for why.
 	9001: "9001_add_user_config.sql",
 	9004: "9004_review_run_publication.sql",
 	9006: "9006_session_provider_stamp.sql",
-	9010: "9010_gateway_entries.sql",
+	9011: "9011_gateway_entries.sql",
 }
 
 // burnedVersion reports version numbers that must never be (re)used: they

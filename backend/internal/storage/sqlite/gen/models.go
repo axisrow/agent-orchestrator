@@ -701,9 +701,9 @@ type Session struct {
 	LatestInteractionAt              sql.NullTime
 	HibernatedAt                     sql.NullTime
 	BranchState                      string
+	RequestedOutput                  string
 	ProviderBaseURL                  string
 	ProviderModel                    string
-	RequestedOutput                  string
 }
 
 type SessionArtifactVersion struct {
