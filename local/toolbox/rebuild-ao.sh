@@ -169,8 +169,12 @@ else
 fi
 
 # 5. Прямой запуск бинаря — 100% обход provenance/Gatekeeper/LaunchServices.
-echo "==> запуск GUI (прямой exec бинаря, обход блок-листов)..."
-"$APP_DST/Contents/MacOS/agent-orchestrator" >/dev/null 2>&1 &
+#    env -i: чистое окружение без proxy-переменных агента (https_proxy и т.п.).
+#    Демон наследует env GUI; с агентским https_proxy его стартовые сетевые
+#    вызовы уходят в локальный прокси и вешают старт до открытия порта
+#    (наблюдалось 2026-10-14: демон жив, 3001 не слушает, ESTABLISHED к :8118).
+echo "==> запуск GUI (прямой exec бинаря, env -i, обход блок-листов)..."
+env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin "$APP_DST/Contents/MacOS/agent-orchestrator" >/dev/null 2>&1 &
 
 # 6. Post-check: ждём демон ready +全套 проверок (PID сменился, порт тот же, healthz).
 echo "==> жду демон ready (до 30с)..."
