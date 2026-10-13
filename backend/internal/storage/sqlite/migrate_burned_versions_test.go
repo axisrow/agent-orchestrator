@@ -323,6 +323,58 @@ SELECT COUNT(*) FROM (
 	}
 }
 
+// TestMigrationsApplyOverDroppedForkMigrations pins the live-install profile
+// after the 2026-10-13 publication drop: real installs keep goose_db_version
+// rows for fork migrations whose files no longer ship (9002, 9003, 9004, 9005,
+// 9009 — 9004 was dropped with the daemon-owned publication contract). goose
+// runs with WithAllowMissing, so the orphaned rows are ignored and the
+// surviving fork files (9006, 9011) still apply: a rebuild needs no manual
+// ledger surgery, and burnedVersion keeps any later file off those numbers.
+func TestMigrationsApplyOverDroppedForkMigrations(t *testing.T) {
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(t.TempDir(), "ao.db")+pragmas)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = db.Close() })
+	upTo(t, db, 9001)
+
+	for _, v := range []int64{9002, 9003, 9004, 9005, 9009} {
+		if _, err := db.Exec(
+			`INSERT INTO goose_db_version (version_id, is_applied) VALUES (?, 1)`, v,
+		); err != nil {
+			t.Fatalf("seed dropped fork migration %d: %v", v, err)
+		}
+	}
+
+	if err := migrate(db); err != nil {
+		t.Fatalf("migrate over dropped fork migrations: %v", err)
+	}
+	var gateways int
+	if err := db.QueryRow(
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'gateway_entries'`,
+	).Scan(&gateways); err != nil {
+		t.Fatal(err)
+	}
+	if gateways != 1 {
+		t.Fatalf("gateway_entries tables = %d, want 1: surviving fork migrations must still apply", gateways)
+	}
+	for _, v := range []int64{9002, 9003, 9004, 9005, 9009} {
+		var applied int
+		if err := db.QueryRow(
+			`SELECT COUNT(*) FROM goose_db_version WHERE version_id = ? AND is_applied = 1`, v,
+		).Scan(&applied); err != nil {
+			t.Fatal(err)
+		}
+		if applied != 1 {
+			t.Fatalf("dropped fork migration %d ledger rows = %d, want the orphaned row kept exactly once", v, applied)
+		}
+	}
+	if err := migrate(db); err != nil {
+		t.Fatalf("repeat migrate over dropped fork migrations: %v", err)
+	}
+}
+
 // TestSessionListSucceedsOnBurnedMigrationHistory reproduces the #3475/#3476
 // field profile: goose_db_version already records versions 40 through 51
 // (written by a foreign build), so goose silently skips the real

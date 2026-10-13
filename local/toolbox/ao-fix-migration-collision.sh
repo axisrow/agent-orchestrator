@@ -98,8 +98,8 @@ read_fork_suffixes() {
 # суффикс из forkLocalMigrations без записи здесь получит следующий свободный
 # номер 9000+ автоматически (с warning'ом).
 CANONICAL_LIST="add_user_config:9001
-review_run_publication:9004
-session_provider_stamp:9006"
+session_provider_stamp:9006
+gateway_entries:9011"
 
 is_fork_suffix() {
   printf '%s\n' "$FORK_SUFFIXES" | grep -qx "$1"
