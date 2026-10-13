@@ -348,6 +348,9 @@ func migrate(db *sql.DB) error {
 	if err := prepareBrowserVerifierMigration(db); err != nil {
 		return fmt.Errorf("prepare browser verifier migration: %w", err)
 	}
+	if err := prepareGatewayEntriesMigration(db); err != nil {
+		return fmt.Errorf("prepare gateway entries migration: %w", err)
+	}
 	if err := prepareQueuedTurnPromotionMigration(db); err != nil {
 		return fmt.Errorf("prepare queued-turn promotion migration: %w", err)
 	}
@@ -764,6 +767,51 @@ SELECT COALESCE((
 	}
 
 	_, err := db.Exec(`INSERT INTO goose_db_version (version_id, is_applied) VALUES (84, 1)`)
+	return err
+}
+
+// prepareGatewayEntriesMigration preserves databases that already hold the
+// gateway_entries table while goose_db_version records no 9011 row: the table
+// shipped in self-builds as migration 9010 before the 2026-10-13 sync settle
+// renumbered the file, and the live install acquired the table with no ledger
+// row at all. Recording the physically present table prevents goose from
+// replaying CREATE TABLE into "table gateway_entries already exists"
+// (observed 2026-10-14: daemon wedged at startup). Gateway profile rows are
+// kept untouched.
+func prepareGatewayEntriesMigration(db *sql.DB) error {
+	var gooseTable int
+	if err := db.QueryRow(
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'goose_db_version'`,
+	).Scan(&gooseTable); err != nil {
+		return err
+	}
+	if gooseTable == 0 {
+		return nil
+	}
+
+	var applied int
+	if err := db.QueryRow(`
+SELECT COALESCE((
+    SELECT is_applied FROM goose_db_version
+    WHERE version_id = 9011 ORDER BY id DESC LIMIT 1
+), 0)`).Scan(&applied); err != nil {
+		return err
+	}
+	if applied != 0 {
+		return nil
+	}
+
+	var present int
+	if err := db.QueryRow(
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'gateway_entries'`,
+	).Scan(&present); err != nil {
+		return err
+	}
+	if present == 0 {
+		return nil
+	}
+
+	_, err := db.Exec(`INSERT INTO goose_db_version (version_id, is_applied) VALUES (9011, 1)`)
 	return err
 }
 
