@@ -5374,7 +5374,7 @@ func TestRefreshDefaultBranchesUsesOneOverallFetchBudget(t *testing.T) {
 	}
 
 	started := time.Now()
-	baseRefs := m.refreshDefaultBranchesBestEffort(context.Background(), project)
+	baseRefs, _ := m.refreshDefaultBranchesBestEffort(context.Background(), project)
 	elapsed := time.Since(started)
 
 	if elapsed > 250*time.Millisecond {
@@ -5443,6 +5443,33 @@ func TestSpawn_DefaultBranchFetchFailureDoesNotBlockWorkerSpawn(t *testing.T) {
 	}
 	if ws.lastCfg.Branch != "ao/mer-1/root" {
 		t.Fatalf("created branch = %q, want ao/mer-1/root", ws.lastCfg.Branch)
+	}
+}
+
+// A spawn timeout must carry the failures of the best-effort steps that ran
+// before it (default-branch refresh), not just the bare deadline (#6683).
+func TestSpawn_TimeoutErrorCarriesBestEffortStepFailures(t *testing.T) {
+	m, st, _, ws := newManager()
+	st.projects["mer"] = domain.ProjectRecord{ID: "mer", Path: "/repo/mer", Config: testRoleAgents()}
+	ws.fetchErr = errors.New("git fetch origin main: SSL_ERROR_SYSCALL")
+	ws.createErr = context.DeadlineExceeded
+
+	_, _, _, err := m.Spawn(ctx, ports.SpawnConfig{ProjectID: "mer", Kind: domain.KindWorker})
+	if err == nil {
+		t.Fatal("spawn = nil error, want workspace deadline failure")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want DeadlineExceeded in chain", err)
+	}
+	if got, want := err.Error(), "earlier spawn steps failed: base ref refresh: git fetch origin main: SSL_ERROR_SYSCALL"; !strings.Contains(got, want) {
+		t.Fatalf("err = %q, want it to contain %q", got, want)
+	}
+
+	// Non-deadline failures keep the plain stage error; notes stay log-only.
+	ws.createErr = errors.New("worktree add failed")
+	_, _, _, err = m.Spawn(ctx, ports.SpawnConfig{ProjectID: "mer", Kind: domain.KindWorker})
+	if err == nil || strings.Contains(err.Error(), "earlier spawn steps failed") {
+		t.Fatalf("err = %v, want no best-effort notes on a non-deadline failure", err)
 	}
 }
 

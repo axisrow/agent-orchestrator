@@ -28,9 +28,12 @@ type taskPreparation struct {
 	workspace        ports.WorkspaceInfo
 	workspaceProject *ports.WorkspaceProjectInfo
 	err              error
-	promoted         bool
-	cancelled        bool
-	cleaning         bool
+	// notes summarizes this preparation's best-effort step failures. Written
+	// before done closes; Spawn surfaces them if the claimed spawn times out.
+	notes     []string
+	promoted  bool
+	cancelled bool
+	cleaning  bool
 }
 
 // PrepareTaskWorkspace reserves the final session id and starts only the Git
@@ -87,7 +90,7 @@ func (m *Manager) PrepareTaskWorkspace(ctx context.Context, project domain.Proje
 
 func (m *Manager) createTaskPreparation(ctx context.Context, prep *taskPreparation) {
 	releaseWorkspaceGate := m.acquireWorkspaceGate(domain.ProjectID(prep.project.ID))
-	baseRefs := m.refreshDefaultBranchesBestEffort(ctx, prep.project)
+	baseRefs, prepNotes := m.refreshDefaultBranchesBestEffort(ctx, prep.project)
 	ws, workspaceProject, err := m.createSessionWorkspace(ctx, prep.project, ports.SpawnConfig{
 		ProjectID:       domain.ProjectID(prep.project.ID),
 		Kind:            domain.KindWorker,
@@ -134,6 +137,7 @@ func (m *Manager) createTaskPreparation(ctx context.Context, prep *taskPreparati
 	prep.workspace = ws
 	prep.workspaceProject = workspaceProject
 	prep.err = err
+	prep.notes = prepNotes
 	releaseWorkspaceGate()
 	close(prep.done)
 }
@@ -169,13 +173,13 @@ func (m *Manager) promoteTaskPreparation(ctx context.Context, prep *taskPreparat
 	return m.getRecord(ctx, prep.record.ID)
 }
 
-func (m *Manager) awaitTaskPreparation(ctx context.Context, prep *taskPreparation) (ports.WorkspaceInfo, *ports.WorkspaceProjectInfo, error) {
+func (m *Manager) awaitTaskPreparation(ctx context.Context, prep *taskPreparation) (ports.WorkspaceInfo, *ports.WorkspaceProjectInfo, []string, error) {
 	select {
 	case <-prep.done:
 	case <-ctx.Done():
-		return ports.WorkspaceInfo{}, nil, ctx.Err()
+		return ports.WorkspaceInfo{}, nil, nil, ctx.Err()
 	}
-	return prep.workspace, prep.workspaceProject, prep.err
+	return prep.workspace, prep.workspaceProject, prep.notes, prep.err
 }
 
 // CancelTaskPreparation is idempotent. Once Spawn has claimed the token,

@@ -937,7 +937,17 @@ func New(d Deps) *Manager {
 // workspace and runtime, then reports completion to the LCM. If workspace
 // materialization fails the still-seed row is deleted outright; a later failure
 // parks the row as terminated and rolls back what was built.
-func (m *Manager) Spawn(ctx context.Context, cfg ports.SpawnConfig) (domain.SessionRecord, int, int, error) {
+func (m *Manager) Spawn(ctx context.Context, cfg ports.SpawnConfig) (record domain.SessionRecord, promptBytes, systemPromptBytes int, spawnErr error) {
+	// Best-effort spawn steps (default-branch resolution/refresh) log their
+	// failures and continue. If the spawn still times out, the deadline error
+	// alone says nothing about why, so fold those step failures into the
+	// surfaced error (#6683).
+	var bestEffortNotes []string
+	defer func() {
+		if spawnErr != nil && len(bestEffortNotes) > 0 && errors.Is(spawnErr, context.DeadlineExceeded) {
+			spawnErr = fmt.Errorf("%w (earlier spawn steps failed: %s)", spawnErr, strings.Join(bestEffortNotes, "; "))
+		}
+	}()
 	if cfg.RequestedOutput == domain.RequestedOutputArtifact && m.artifactDir("") == "" {
 		return domain.SessionRecord{}, 0, 0, fmt.Errorf("spawn: %w", ErrArtifactOutputUnavailable)
 	}
@@ -1147,8 +1157,8 @@ func (m *Manager) Spawn(ctx context.Context, cfg ports.SpawnConfig) (domain.Sess
 		}
 		return domain.SessionRecord{}, 0, 0, wrapSpawnStage(id, ErrSpawnPrompt, err)
 	}
-	promptBytes := len(prompt)
-	systemPromptBytes := len(systemPrompt)
+	promptBytes = len(prompt)
+	systemPromptBytes = len(systemPrompt)
 	systemPromptFile, err := m.prepareSystemPromptFile(id, cfg.Harness, systemPrompt)
 	if err != nil {
 		m.cleanupArtifactDir(id)
@@ -1166,7 +1176,8 @@ func (m *Manager) Spawn(ctx context.Context, cfg ports.SpawnConfig) (domain.Sess
 		// preparation has finished publishing its worktree. Otherwise its late
 		// publication loses the provisioning-state fence and deletes the worktree.
 		if !asyncChat {
-			if _, _, err := m.awaitTaskPreparation(ctx, prep); err != nil && ctx.Err() != nil {
+			if _, _, prepNotes, err := m.awaitTaskPreparation(ctx, prep); err != nil && ctx.Err() != nil {
+				bestEffortNotes = append(bestEffortNotes, prepNotes...)
 				cleanupCtx, cancel := spawnRollbackContext(ctx)
 				m.discardClaimedTaskPreparation(cleanupCtx, prep)
 				cancel()
@@ -1258,8 +1269,10 @@ func (m *Manager) Spawn(ctx context.Context, cfg ports.SpawnConfig) (domain.Sess
 
 	var ws ports.WorkspaceInfo
 	var workspaceProject *ports.WorkspaceProjectInfo
+	var prepNotes []string
 	if prep != nil {
-		ws, workspaceProject, err = m.awaitTaskPreparation(ctx, prep)
+		ws, workspaceProject, prepNotes, err = m.awaitTaskPreparation(ctx, prep)
+		bestEffortNotes = append(bestEffortNotes, prepNotes...)
 		if err != nil && ctx.Err() != nil {
 			cleanupCtx, cancel := spawnRollbackContext(ctx)
 			m.discardClaimedTaskPreparation(cleanupCtx, prep)
@@ -1269,7 +1282,8 @@ func (m *Manager) Spawn(ctx context.Context, cfg ports.SpawnConfig) (domain.Sess
 		}
 	}
 	if ws.Path == "" {
-		baseRefs := m.refreshDefaultBranchesBestEffort(ctx, project)
+		baseRefs, notes := m.refreshDefaultBranchesBestEffort(ctx, project)
+		bestEffortNotes = append(bestEffortNotes, notes...)
 		ws, workspaceProject, err = m.createSessionWorkspace(ctx, project, cfg, id, branch, baseRefs)
 	}
 	if err != nil {
@@ -1767,16 +1781,22 @@ type defaultBranchRefreshTarget struct {
 	resolved         ports.WorkspaceDefaultBranch
 }
 
-func (m *Manager) refreshDefaultBranchesBestEffort(ctx context.Context, project domain.ProjectRecord) map[string]string {
+// refreshDefaultBranchesBestEffort resolves and fetches each repository's
+// default branch so new worktrees seed from fresh remote refs. Failures are
+// non-fatal: the spawn continues with local refs and the adapter's own
+// fallback. The returned notes summarize those failures so a later spawn
+// timeout can surface them to the caller (#6683).
+func (m *Manager) refreshDefaultBranchesBestEffort(ctx context.Context, project domain.ProjectRecord) (map[string]string, []string) {
+	notes := []string(nil)
 	if project.Kind.WithDefault() == domain.ProjectKindScratch {
-		return nil
+		return nil, notes
 	}
 	if strings.TrimSpace(project.Path) == "" {
-		return nil
+		return nil, notes
 	}
 	refresher, ok := m.workspace.(ports.WorkspaceDefaultBranchRefresher)
 	if !ok {
-		return nil
+		return nil, notes
 	}
 	baseRefs := make(map[string]string)
 	targets := []defaultBranchRefreshTarget{{
@@ -1815,6 +1835,7 @@ func (m *Manager) refreshDefaultBranchesBestEffort(ctx context.Context, project 
 				"defaultBranch", targets[i].configuredBranch,
 				"error", err,
 			)
+			notes = append(notes, fmt.Sprintf("default branch resolution: %v", err))
 			continue
 		}
 		targets[i].resolved = resolved
@@ -1840,9 +1861,10 @@ func (m *Manager) refreshDefaultBranchesBestEffort(ctx context.Context, project 
 				"baseRef", target.resolved.BaseRef,
 				"error", err,
 			)
+			notes = append(notes, fmt.Sprintf("base ref refresh: %v", err))
 		}
 	}
-	return baseRefs
+	return baseRefs, notes
 }
 
 func (m *Manager) createSessionWorkspace(ctx context.Context, project domain.ProjectRecord, cfg ports.SpawnConfig, id domain.SessionID, branch string, baseRefs map[string]string) (ports.WorkspaceInfo, *ports.WorkspaceProjectInfo, error) {

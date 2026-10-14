@@ -1498,7 +1498,10 @@ func toSpawnAPIError(err error) error {
 	case errors.Is(err, sessionmanager.ErrClientRequestIncomplete):
 		return apierr.Conflict("CLIENT_REQUEST_INCOMPLETE", "This task is still starting or its prior launch did not finish; check the session before trying again", nil)
 	case errors.Is(err, context.DeadlineExceeded):
-		return apierr.Conflict("SPAWN_TIMEOUT", "Session spawn timed out before the agent could start", nil)
+		// The chain names the stage and per-step causes (worktree, git fetch,
+		// best-effort step failures) that daemon.log would otherwise be the
+		// only place to see them (#6683).
+		return apierr.Conflict("SPAWN_TIMEOUT", "Session spawn timed out before the agent could start: "+err.Error(), nil)
 	case errors.Is(err, context.Canceled):
 		return apierr.Conflict("SPAWN_CANCELLED", "Session spawn was cancelled", nil)
 	case errors.Is(err, sessionmanager.ErrSpawnPrompt):
