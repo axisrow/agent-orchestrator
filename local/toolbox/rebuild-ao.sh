@@ -51,6 +51,17 @@ if [ -z "$SANITY_NEEDLE" ]; then
   SANITY_NEEDLE="${1-$DEFAULT_SANITY_NEEDLE}"
 fi
 
+# Node 26 (brew обновил node до 26.11.1 2026-10-14) молча обрывает forge
+# package: процесс выходит с кодом 0 сразу после «Finalizing package», out/
+# остаётся пуст, код возврата обманчиво зелёный. LTS из nvm работает —
+# пакеджим под ним, если кега есть; иначе живём на системном node.
+for nvm_bin in "$HOME"/.nvm/versions/node/v20.*/bin "$HOME"/.nvm/versions/node/v22.*/bin; do
+  if [ -d "$nvm_bin" ]; then
+    PATH="$nvm_bin:$PATH"
+  fi
+done
+export PATH
+
 echo "==> репо: $REPO_ROOT (ветка: $(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?'))"
 if [ -n "$SANITY_NEEDLE" ]; then
   echo "==> sanity-check: в демоне должно быть «$SANITY_NEEDLE»"
