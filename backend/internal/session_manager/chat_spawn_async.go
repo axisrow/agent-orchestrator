@@ -115,6 +115,15 @@ func (m *Manager) completeAsyncChatSpawn(ctx context.Context, in asyncChatSpawn)
 	var ws ports.WorkspaceInfo
 	var workspaceProject *ports.WorkspaceProjectInfo
 	var err error
+	// Best-effort step failures (default-branch resolution/refresh) are folded
+	// into the surfaced cause on a deadline, mirroring Manager.Spawn (#6683).
+	var bestEffortNotes []string
+	surface := func(err error) error {
+		if err != nil && len(bestEffortNotes) > 0 && errors.Is(err, context.DeadlineExceeded) {
+			return fmt.Errorf("%w (earlier spawn steps failed: %s)", err, strings.Join(bestEffortNotes, "; "))
+		}
+		return err
+	}
 	reusePublishedWorkspace := in.retry && in.record.Metadata.WorkspacePath != ""
 	progress := m.startProvisionProgress(ctx, id, provisionPlan(in, reusePublishedWorkspace))
 	if reusePublishedWorkspace {
@@ -128,10 +137,12 @@ func (m *Manager) completeAsyncChatSpawn(ctx context.Context, in asyncChatSpawn)
 		}
 	}
 	if in.preparation != nil {
-		ws, workspaceProject, _, err = m.awaitTaskPreparation(ctx, in.preparation)
+		var prepNotes []string
+		ws, workspaceProject, prepNotes, err = m.awaitTaskPreparation(ctx, in.preparation)
+		bestEffortNotes = append(bestEffortNotes, prepNotes...)
 		if err != nil && ctx.Err() != nil {
 			in.preparation.cancel()
-			m.failAsyncChatSpawn(ctx, id, wrapSpawnStage(id, ErrWorkspaceCreate, err))
+			m.failAsyncChatSpawn(ctx, id, surface(wrapSpawnStage(id, ErrWorkspaceCreate, err)))
 			// The claimed preparation has no timer or cache entry. Keep owning its
 			// cleanup after the visible session fails, even if Create returns late.
 			<-in.preparation.done
@@ -147,7 +158,8 @@ func (m *Manager) completeAsyncChatSpawn(ctx context.Context, in asyncChatSpawn)
 	ctx = context.WithValue(ctx, spawnWorkspaceGateKey{}, releaseWorkspaceGate)
 	defer releaseWorkspaceGate()
 	if ws.Path == "" {
-		baseRefs, _ := m.refreshDefaultBranchesBestEffort(ctx, in.project)
+		baseRefs, notes := m.refreshDefaultBranchesBestEffort(ctx, in.project)
+		bestEffortNotes = append(bestEffortNotes, notes...)
 		m.logAsyncChatSpawnStage(id, "default_branch_refresh", stageStarted)
 		progress.complete(ctx, domain.SessionProvisionStepFetch)
 		stageStarted = time.Now()
@@ -160,12 +172,12 @@ func (m *Manager) completeAsyncChatSpawn(ctx context.Context, in asyncChatSpawn)
 		if ws.Path != "" {
 			m.cleanupAsyncChatWorkspace(ctx, id, ws, workspaceProject)
 		}
-		m.failAsyncChatSpawn(ctx, id, wrapSpawnStage(id, ErrWorkspaceCreate, err))
+		m.failAsyncChatSpawn(ctx, id, surface(wrapSpawnStage(id, ErrWorkspaceCreate, err)))
 		return
 	}
 	if err := ctx.Err(); err != nil {
 		m.cleanupAsyncChatWorkspace(ctx, id, ws, workspaceProject)
-		m.failAsyncChatSpawn(ctx, id, err)
+		m.failAsyncChatSpawn(ctx, id, surface(err))
 		return
 	}
 	m.logAsyncChatSpawnStage(id, "workspace_create", stageStarted)

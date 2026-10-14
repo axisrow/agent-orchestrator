@@ -230,6 +230,38 @@ func TestSpawnAsyncChat_FailedStartKeepsSessionAndReason(t *testing.T) {
 	}
 }
 
+// An async start that times out must surface the best-effort step failures
+// that preceded it, not a bare deadline (#6683).
+func TestSpawnAsyncChat_TimeoutCarriesBestEffortStepFailures(t *testing.T) {
+	launcher := &recordingLauncher{}
+	m, st, _ := newChatManager(launcher)
+	m.browserCapabilities = browsersvc.NewAuthority()
+	deferred := deferredBackground(m)
+	ws := m.workspace.(*fakeWorkspace)
+	ws.fetchErr = errors.New("git fetch origin main: SSL_ERROR_SYSCALL")
+	ws.createErr = context.DeadlineExceeded
+	project := st.projects[string(chatTestProject)]
+	project.Path = "/repo/mer"
+	st.projects[string(chatTestProject)] = project
+
+	rec, _, _, err := m.Spawn(context.Background(), asyncChatSpawnConfig("do the thing"))
+	if err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	(*deferred)[0]()
+
+	stored := st.sessions[rec.ID]
+	if stored.ProvisionState != domain.SessionProvisionFailed {
+		t.Fatalf("provision state = %q, want failed", stored.ProvisionState)
+	}
+	if got, want := stored.ProvisionError, "earlier spawn steps failed: base ref refresh: git fetch origin main: SSL_ERROR_SYSCALL"; !strings.Contains(got, want) {
+		t.Fatalf("provision error = %q, want it to contain %q", got, want)
+	}
+	if len(launcher.started) != 0 {
+		t.Fatal("controller started despite the workspace timing out")
+	}
+}
+
 func TestSpawnAsyncChat_DrainFailureLeavesRetryableSession(t *testing.T) {
 	launcher := &recordingLauncher{drainErr: errors.New("controller stopped before dispatch")}
 	m, st, _ := newChatManager(launcher)
