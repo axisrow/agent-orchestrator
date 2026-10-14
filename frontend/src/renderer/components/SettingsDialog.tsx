@@ -1,4 +1,4 @@
-import { Bot, KeyRound, Loader2, MonitorCog, Play, TriangleAlert, Wrench, X, type LucideIcon } from "lucide-react";
+import { Bot, KeyRound, Loader2, MonitorCog, Network, Play, TriangleAlert, Wrench, X, type LucideIcon } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -98,6 +98,7 @@ function useSettingsLayer(settingsModal: SettingsModal | null) {
 	}> = [
 		{ id: "general", label: t("settings.project.general"), icon: MonitorCog },
 		{ id: "agents", label: t("settings.project.agents"), icon: Bot },
+		{ id: "gateway", label: t("settings.gateway.title"), icon: Network },
 	];
 	// Scripts, environment, and cues are local-daemon features; remote hosts and Cloud projects do not expose them.
 	if (!remoteHostId && !isCloudProjectSettings) {

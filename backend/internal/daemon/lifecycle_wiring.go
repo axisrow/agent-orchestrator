@@ -202,6 +202,7 @@ type sessionLifecycle interface {
 	Reconcile(ctx context.Context) error
 	ReconcileStartupSafety(ctx context.Context) error
 	ReconcileBackground(ctx context.Context) error
+	ReconcileOrphanedPtyHosts(ctx context.Context) error
 	HibernateIdleChats(ctx context.Context) error
 	RestoreAll(ctx context.Context) error
 	WaitBackgroundWorkers(ctx context.Context) error
@@ -312,6 +313,13 @@ func startSession(ctx context.Context, cfg config.Config, runtime runtimeselect.
 		Logger:              log,
 		ReconcileWorkers:    startupReconcileWorkers,
 		CodexOperationGate:  codexOperationGate,
+		// Stored gateway entries must reach every launch path: without them a
+		// pinless role never resolves the default gateway (settings files are
+		// no longer written). See TestWiring_StartSessionLaunchCarriesStoredGatewayEntry.
+		ProviderEntries: providerEntryLookup(store),
+		// UserConfig supplies global prompt overrides; unset config falls through
+		// to project overrides or hardcoded defaults.
+		UserConfig: store,
 	})
 	mgr.SetAgentReadiness(agentReadiness)
 	scmProvider := newMultiSCMProvider(cfg.GitLab, log)
@@ -339,6 +347,7 @@ func startSession(ctx context.Context, cfg config.Config, runtime runtimeselect.
 		// coverage; partial callbacks cannot prove that silence is abnormal.
 		SignalCapable:        activitydispatch.FullySupportsHarness,
 		OutputTypeReconciler: lcm,
+		ProviderEntries:      providerEntryLookup(store),
 		ArtifactDeleter:      artifactVersions,
 	})
 	// Triggering a review spawns a reviewer over the worker's worktree, resolved
@@ -361,6 +370,9 @@ func startSession(ctx context.Context, cfg config.Config, runtime runtimeselect.
 			reviewcore.WithReviewerChat(reviewerChat)),
 
 		ChatRecoveryDone: reviewerRecoveryDone,
+		// Reviewer launches resolve their provider the same way worker launches
+		// do: a configured pin's credentials, else the default gateway entry.
+		ProviderEntries: providerEntryLookup(store),
 	})
 	reviewOpts := []reviewsvc.Option{
 		reviewsvc.WithTelemetry(telemetry),
@@ -376,6 +388,7 @@ func startSession(ctx context.Context, cfg config.Config, runtime runtimeselect.
 	reviewOpts = append(reviewOpts, reviewsvc.WithPRRefresher(reviewPRRefresher{sessions: sessionSvc}))
 	reviewSvc := reviewsvc.New(reviewEngine, store, reviewOpts...)
 	mgr.SetReviewerTerminator(reviewSvc)
+	lcm.SetReviewerTeardown(reviewSvc) // #5948: lifecycle terminal writes also tear down the reviewer pane
 	return sessionSvc, reviewSvc, mgr, nil
 }
 

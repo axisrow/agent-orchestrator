@@ -395,6 +395,15 @@ type Cue struct {
 	UpdatedAt time.Time
 }
 
+type GatewayEntry struct {
+	Scope     string
+	ProjectID string
+	BaseURL   string
+	AuthToken string
+	Model     string
+	UpdatedAt time.Time
+}
+
 type ModelUsageEvent struct {
 	ID                    int64
 	BindingID             int64
@@ -690,6 +699,8 @@ type Session struct {
 	HibernatedAt                     sql.NullTime
 	BranchState                      string
 	RequestedOutput                  string
+	ProviderBaseURL                  string
+	ProviderModel                    string
 }
 
 type SessionArtifactVersion struct {
@@ -825,6 +836,11 @@ type UsageSource struct {
 	NextRetryAt     sql.NullTime
 	LastErrorCode   string
 	UpdatedAt       time.Time
+}
+
+type UserConfig struct {
+	ID     int64
+	Config sql.NullString
 }
 
 type WorkspaceRepo struct {
