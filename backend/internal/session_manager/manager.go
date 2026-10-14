@@ -5121,15 +5121,40 @@ func (m *Manager) Cleanup(ctx context.Context, project domain.ProjectID) (Cleanu
 		}
 		g.recs = append(g.recs, rec)
 	}
-	// Pass B: one fresh list per project group, read under that group's gate.
-	// The gate is what makes the check timely: Spawn and Restore hold the same
-	// gate while they allocate a workspace and commit metadata, so the
-	// live-workspace set below cannot race with an in-progress spawn that has
-	// not yet written WorkspacePath to the store. Listing once per group (not
-	// once per session, as before) turns the O(N²) store traffic of a
-	// many-session project into O(P·N); the list stays scoped to the group's
-	// project, matching the per-record check it replaces.
+	// Pass B, phase 1: run each session's teardown commands outside the gate.
+	// A pre-remove script can run for minutes; holding the gate across it
+	// starved every other gate user and deadlocked cleanupOne, which takes the
+	// same non-re-entrant gate itself (#6684). Ownership is settled afterwards:
+	// phase 2 re-lists the project once per group under the gate, so a spawn
+	// that slipped in while the commands ran still blocks the removal — and
+	// the store still sees one list per group plus the initial one (#2598).
+	live := liveWorkspacePaths(recs)
 	for _, projectID := range order {
+		group := groups[projectID]
+		type prepared struct {
+			rec     domain.SessionRecord
+			ws      ports.WorkspaceInfo
+			release func()
+			tracked bool
+		}
+		preparedSessions := make([]prepared, 0, len(group.recs))
+		for _, rec := range group.recs {
+			ws := workspaceInfo(rec)
+			if live[normalizeWorkspacePath(ws.Path)] {
+				result.Skipped = append(result.Skipped, CleanupSkip{SessionID: rec.ID, Reason: "workspace in use by a live session"})
+				continue
+			}
+			release, tracked, reason := m.cleanupPrepareWorkspace(ctx, rec, false)
+			if reason == "" {
+				preparedSessions = append(preparedSessions, prepared{rec: rec, ws: ws, release: release, tracked: tracked})
+				continue
+			}
+			release()
+			result.Skipped = append(result.Skipped, CleanupSkip{SessionID: rec.ID, Reason: reason})
+		}
+		if len(preparedSessions) == 0 {
+			continue
+		}
 		func() {
 			release := m.acquireWorkspaceGate(projectID)
 			defer release()
@@ -5137,67 +5162,140 @@ func (m *Manager) Cleanup(ctx context.Context, project domain.ProjectID) (Cleanu
 			fresh, err := m.cleanupRecords(ctx, projectID)
 			if err != nil {
 				m.logger.Warn("cleanup: workspace ownership check failed", "projectID", projectID, "error", err)
-				for _, rec := range groups[projectID].recs {
-					result.Skipped = append(result.Skipped, CleanupSkip{SessionID: rec.ID, Reason: "workspace teardown failed"})
+				for _, p := range preparedSessions {
+					p.release()
+					result.Skipped = append(result.Skipped, CleanupSkip{SessionID: p.rec.ID, Reason: "workspace teardown failed"})
 				}
 				return
 			}
-			live := liveWorkspacePaths(fresh)
-			for _, rec := range groups[projectID].recs {
-				ws := workspaceInfo(rec)
-				if live[normalizeWorkspacePath(ws.Path)] {
-					result.Skipped = append(result.Skipped, CleanupSkip{SessionID: rec.ID, Reason: "workspace in use by a live session"})
+			freshLive := liveWorkspacePaths(fresh)
+			for _, p := range preparedSessions {
+				if freshLive[normalizeWorkspacePath(p.ws.Path)] {
+					p.release()
+					result.Skipped = append(result.Skipped, CleanupSkip{SessionID: p.rec.ID, Reason: "workspace in use by a live session"})
 					continue
 				}
-				reclaim, reason := m.cleanupOne(ctx, rec, ws)
+				reclaim, reason := m.cleanupDestroyWorkspace(ctx, p.rec, p.ws, p.tracked)
+				p.release()
 				if reason != "" {
-					result.Skipped = append(result.Skipped, CleanupSkip{SessionID: rec.ID, Reason: reason})
+					result.Skipped = append(result.Skipped, CleanupSkip{SessionID: p.rec.ID, Reason: reason})
 					continue
 				}
-				m.cleanupSystemPromptDir(rec.ID)
+				m.cleanupSystemPromptDir(p.rec.ID)
 				if reclaim == ports.WorkspaceReclaimAlreadyAbsent {
-					result.AlreadyGone = append(result.AlreadyGone, rec.ID)
+					result.AlreadyGone = append(result.AlreadyGone, p.rec.ID)
 					continue
 				}
-				result.Cleaned = append(result.Cleaned, rec.ID)
+				result.Cleaned = append(result.Cleaned, p.rec.ID)
 			}
 		}()
 	}
 	return result, nil
 }
 
-// cleanupWorkspaceUnderGate acquires the per-project workspace gate and then
-// decides whether to tear the workspace down. The gate is what makes the
-// check timely: Spawn and Restore hold the same gate while they allocate a
-// workspace and commit metadata, so isWorkspaceInUse cannot race with an
-// in-progress spawn that has not yet written WorkspacePath to the store.
-// User commands run outside the gate; cleanupOne rechecks ownership under it
-// before removal.
-// Returns an empty reason when the workspace was reclaimed; a non-empty
-// reason means it was left alone this run and the reclaim value is undefined.
-func (m *Manager) cleanupWorkspaceUnderGate(ctx context.Context, rec domain.SessionRecord, ws ports.WorkspaceInfo) (ports.WorkspaceReclaim, string) {
+// cleanupPrepareWorkspace runs the pre-teardown half of a session cleanup
+// outside the workspace gate: the per-session agent-operation guard (a
+// concurrent cleanup reports "already running"; callers that already hold it —
+// the kill background job — pass opHeld and keep owning its release), the
+// tracked-cleanup disposition, the scoped shell terminal shutdown, attachment
+// preservation, and the project's pre-remove commands. The caller must
+// eventually invoke the returned release even when the reason is non-empty. An
+// empty reason means the session is ready for cleanupDestroyWorkspace.
+func (m *Manager) cleanupPrepareWorkspace(ctx context.Context, rec domain.SessionRecord, opHeld bool) (func(), bool, string) {
 	// A preceding session's cleanup commands can outlive the request deadline.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), killTeardownBudget)
 	defer cancel()
-	if err := m.beginAgentOperation(ctx, rec.ID, agentOperationKill); err != nil {
-		if errors.Is(err, errAgentOperationInProgress) {
-			return ports.WorkspaceReclaimRemoved, "workspace cleanup is already running"
+	if !opHeld {
+		if err := m.beginAgentOperation(ctx, rec.ID, agentOperationKill); err != nil {
+			if errors.Is(err, errAgentOperationInProgress) {
+				return func() {}, false, "workspace cleanup is already running"
+			}
+			return func() {}, false, "workspace teardown failed"
 		}
-		return ports.WorkspaceReclaimRemoved, "workspace teardown failed"
 	}
-	defer m.endAgentOperation(rec.ID, agentOperationKill)
+	// The scoped shell terminal stays shut down through the workspace removal:
+	// the closer logs Begin before the destroy and End after it, so its
+	// release must not fire inside this phase.
+	var releaseTerminal func()
+	release := sync.OnceFunc(func() {
+		if releaseTerminal != nil {
+			releaseTerminal()
+		}
+		if !opHeld {
+			m.endAgentOperation(rec.ID, agentOperationKill)
+		}
+	})
 	facts, tracked, err := m.store.GetSessionCleanupFacts(ctx, rec.ID)
 	if err != nil {
 		m.logger.Error("read workspace cleanup facts", "sessionID", rec.ID, "error", err)
-		return ports.WorkspaceReclaimRemoved, "workspace teardown failed"
+		return release, false, "workspace teardown failed"
 	}
 	tracked = tracked && facts.SessionGeneration == rec.CleanupGeneration
-	if tracked {
+	// opHeld callers (the kill background job) already recorded this attempt
+	// in RequestKill; re-recording here would double the attempt count.
+	if tracked && !opHeld {
 		if err := m.recordWorkspaceCleanup(ctx, rec, domain.DispositionPending, ""); err != nil {
-			return ports.WorkspaceReclaimRemoved, "workspace teardown failed"
+			return release, tracked, "workspace teardown failed"
 		}
 	}
-	reclaim, reason := m.cleanupOne(ctx, rec, ws)
+	releaseTerminal, closeErr := m.beginShellTerminalTeardown(ctx, rec.ID)
+	if closeErr != nil {
+		m.logger.Warn("cleanup: shell terminal still open", "sessionID", rec.ID, "error", closeErr)
+		return release, tracked, "shell terminal still open"
+	}
+	if err := m.importAttachments(ctx, rec); err != nil {
+		m.logger.Warn("cleanup: attachment preservation failed", "sessionID", rec.ID, "error", err)
+		return release, tracked, "attachment preservation failed"
+	}
+	ws := workspaceInfo(rec)
+	if err := m.runPreRemove(rec.ProjectID, ws.Path); err != nil {
+		m.logger.Warn("cleanup: workspace script failed; preserving workspace", "sessionID", rec.ID, "error", err)
+		return release, tracked, cleanupSkipReason(err)
+	}
+	return release, tracked, ""
+}
+
+// cleanupDestroyWorkspace removes a prepared session's workspace under the
+// project gate and records the tracked-cleanup result. It must run with the
+// gate held and after cleanupPrepareWorkspace returned an empty reason.
+func (m *Manager) cleanupDestroyWorkspace(ctx context.Context, rec domain.SessionRecord, ws ports.WorkspaceInfo, tracked bool) (ports.WorkspaceReclaim, string) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), killTeardownBudget)
+	defer cancel()
+
+	if rows, ok, rowErr := m.workspaceProjectRows(ctx, rec); rowErr != nil {
+		m.logger.Warn("cleanup: workspace rows failed", "sessionID", rec.ID, "error", rowErr)
+		return m.finishWorkspaceCleanup(ctx, rec, tracked, ports.WorkspaceReclaimRemoved, "workspace teardown failed")
+	} else if ok {
+		reclaim, err := m.destroyWorkspaceProjectRows(ctx, rows)
+		if err != nil {
+			if !expectedWorkspaceRefusal(err) {
+				m.logger.Warn("cleanup: workspace teardown failed", "sessionID", rec.ID, "path", ws.Path, "error", err)
+			}
+			return m.finishWorkspaceCleanup(ctx, rec, tracked, ports.WorkspaceReclaimRemoved, cleanupSkipReason(err))
+		}
+		m.cleanupAgentWorkspace(ctx, rec, ws.Path)
+		return m.finishWorkspaceCleanup(ctx, rec, tracked, reclaim, "")
+	}
+	reclaim := ports.WorkspaceReclaimRemoved
+	var err error
+	if reclaimer, ok := m.workspace.(ports.WorkspaceReclaimer); ok {
+		reclaim, err = reclaimer.DestroyReclaim(ctx, ws)
+	} else {
+		err = m.workspace.Destroy(ctx, ws)
+	}
+	if err != nil {
+		if !expectedWorkspaceRefusal(err) {
+			// The public reason stays a fixed string (the raw error carries
+			// internal filesystem paths); the full cause lands here.
+			m.logger.Warn("cleanup: workspace teardown failed", "sessionID", rec.ID, "path", ws.Path, "error", err)
+		}
+		return m.finishWorkspaceCleanup(ctx, rec, tracked, ports.WorkspaceReclaimRemoved, cleanupSkipReason(err))
+	}
+	m.cleanupAgentWorkspace(ctx, rec, ws.Path)
+	return m.finishWorkspaceCleanup(ctx, rec, tracked, reclaim, "")
+}
+
+func (m *Manager) finishWorkspaceCleanup(ctx context.Context, rec domain.SessionRecord, tracked bool, reclaim ports.WorkspaceReclaim, reason string) (ports.WorkspaceReclaim, string) {
 	if tracked {
 		if err := m.recordWorkspaceCleanupResult(ctx, rec, reason); err != nil {
 			m.logger.Error("record retried workspace cleanup", "sessionID", rec.ID, "error", err)
@@ -5209,7 +5307,9 @@ func (m *Manager) cleanupWorkspaceUnderGate(ctx context.Context, rec domain.Sess
 
 // isWorkspaceInUse reports whether any non-terminated session in the project
 // references the given workspace path. Must be called under the project's
-// workspace gate; see cleanupWorkspaceUnderGate for the full invariant.
+// workspace gate: Spawn and Restore hold the same gate while they allocate a
+// workspace and commit metadata, so this check cannot miss an in-progress
+// spawn that has not yet written WorkspacePath to the store.
 func (m *Manager) isWorkspaceInUse(ctx context.Context, projectID domain.ProjectID, workspacePath string, except domain.SessionID) (bool, error) {
 	if workspacePath == "" {
 		return false, nil
@@ -5227,86 +5327,33 @@ func (m *Manager) isWorkspaceInUse(ctx context.Context, projectID domain.Project
 	return false, nil
 }
 
-// cleanupOne reclaims one terminated session's workspace, gating shut any
-// shell terminal scoped to it first (same ordering as Kill). Split out of
-// Cleanup's loop so the release function's defer is scoped to one session's
-// call, not deferred across every iteration until Cleanup itself returns.
-// Returns "" when the workspace was reclaimed; a non-empty reason means it was
-// left alone this run (Cleanup records it in Skipped and can retry on a later
-// call) — most commonly because a scoped shell terminal could not be
-// confirmed closed, so reclaiming would pull the ground out from under it.
+// cleanupOne reclaims one terminated session's workspace with the same
+// two-phase shape the batch Cleanup drives: prepare (terminal shutdown,
+// attachments, pre-remove commands) outside the gate, then a fresh gate
+// acquisition with an ownership recheck and the destroy. The gate never spans
+// the teardown commands. The caller must already hold the session's
+// agent-operation guard (opHeld prepares skip re-acquiring it). Used by the
+// Kill background job. Returns "" when the workspace was reclaimed; a
+// non-empty reason means it was left alone this run — most commonly because
+// a scoped shell terminal could not be confirmed closed, so reclaiming would
+// pull the ground out from under it.
 func (m *Manager) cleanupOne(ctx context.Context, rec domain.SessionRecord, ws ports.WorkspaceInfo) (ports.WorkspaceReclaim, string) {
-	{
-		release := m.acquireWorkspaceGate(rec.ProjectID)
-
-		inUse, err := m.isWorkspaceInUse(ctx, rec.ProjectID, ws.Path, "")
-		release()
-		if err != nil {
-			m.logger.Warn("cleanup: workspace ownership check failed", "sessionID", rec.ID, "projectID", rec.ProjectID, "error", err)
-			return ports.WorkspaceReclaimRemoved, "workspace teardown failed"
-		}
-		if inUse {
-			return ports.WorkspaceReclaimRemoved, "workspace in use by a live session"
-		}
+	releaseOp, tracked, reason := m.cleanupPrepareWorkspace(ctx, rec, true)
+	defer releaseOp()
+	if reason != "" {
+		return ports.WorkspaceReclaimRemoved, reason
 	}
-	release, closeErr := m.beginShellTerminalTeardown(ctx, rec.ID)
-	if closeErr != nil {
-		m.logger.Warn("cleanup: shell terminal still open", "sessionID", rec.ID, "error", closeErr)
-		return ports.WorkspaceReclaimRemoved, "shell terminal still open"
-	}
-	if release != nil {
-		defer release()
-	}
-	if err := m.importAttachments(ctx, rec); err != nil {
-		m.logger.Warn("cleanup: attachment preservation failed", "sessionID", rec.ID, "error", err)
-		return ports.WorkspaceReclaimRemoved, "attachment preservation failed"
-	}
-	if err := m.runPreRemove(rec.ProjectID, ws.Path); err != nil {
-		m.logger.Warn("cleanup: workspace script failed; preserving workspace", "sessionID", rec.ID, "error", err)
-		return ports.WorkspaceReclaimRemoved, cleanupSkipReason(err)
-	}
-	ctx, cancelWorkspace := context.WithTimeout(m.backgroundContext, killTeardownBudget)
-	defer cancelWorkspace()
-	releaseWorkspaceGate := m.acquireWorkspaceGate(rec.ProjectID)
-	defer releaseWorkspaceGate()
-	if inUse, err := m.isWorkspaceInUse(ctx, rec.ProjectID, ws.Path, ""); err != nil {
-		m.logger.Warn("cleanup: workspace ownership check failed", "sessionID", rec.ID, "error", err)
+	release := m.acquireWorkspaceGate(rec.ProjectID)
+	defer release()
+	inUse, err := m.isWorkspaceInUse(ctx, rec.ProjectID, ws.Path, "")
+	if err != nil {
+		m.logger.Warn("cleanup: workspace ownership check failed", "sessionID", rec.ID, "projectID", rec.ProjectID, "error", err)
 		return ports.WorkspaceReclaimRemoved, "workspace teardown failed"
-	} else if inUse {
+	}
+	if inUse {
 		return ports.WorkspaceReclaimRemoved, "workspace in use by a live session"
 	}
-
-	if rows, ok, rowErr := m.workspaceProjectRows(ctx, rec); rowErr != nil {
-		m.logger.Warn("cleanup: workspace rows failed", "sessionID", rec.ID, "error", rowErr)
-		return ports.WorkspaceReclaimRemoved, "workspace teardown failed"
-	} else if ok {
-		reclaim, err := m.destroyWorkspaceProjectRows(ctx, rows)
-		if err != nil {
-			if !expectedWorkspaceRefusal(err) {
-				m.logger.Warn("cleanup: workspace teardown failed", "sessionID", rec.ID, "path", ws.Path, "error", err)
-			}
-			return ports.WorkspaceReclaimRemoved, cleanupSkipReason(err)
-		}
-		m.cleanupAgentWorkspace(ctx, rec, ws.Path)
-		return reclaim, ""
-	}
-	reclaim := ports.WorkspaceReclaimRemoved
-	var err error
-	if reclaimer, ok := m.workspace.(ports.WorkspaceReclaimer); ok {
-		reclaim, err = reclaimer.DestroyReclaim(ctx, ws)
-	} else {
-		err = m.workspace.Destroy(ctx, ws)
-	}
-	if err != nil {
-		if !expectedWorkspaceRefusal(err) {
-			// The public reason stays a fixed string (the raw error carries
-			// internal filesystem paths); the full cause lands here.
-			m.logger.Warn("cleanup: workspace teardown failed", "sessionID", rec.ID, "path", ws.Path, "error", err)
-		}
-		return ports.WorkspaceReclaimRemoved, cleanupSkipReason(err)
-	}
-	m.cleanupAgentWorkspace(ctx, rec, ws.Path)
-	return reclaim, ""
+	return m.cleanupDestroyWorkspace(ctx, rec, ws, tracked)
 }
 
 // cleanupSkipReason renders a workspace teardown refusal as a short
