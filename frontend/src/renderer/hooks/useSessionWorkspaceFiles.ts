@@ -144,6 +144,28 @@ async function fetchSessionPRFile(sessionId: string, number: number, sourceUrl: 
 	return data as WorkspaceFileDetail;
 }
 
+// Mirror of the backend's workspaceImageMediaTypes (workspace_files.go):
+// renderable raster formats only. SVG is deliberately absent — it is text,
+// and the diff/markdown paths rely on it staying textual.
+const artifactImageMediaTypes: Record<string, string> = {
+	".apng": "image/apng",
+	".avif": "image/avif",
+	".bmp": "image/bmp",
+	".gif": "image/gif",
+	".ico": "image/x-icon",
+	".jpeg": "image/jpeg",
+	".jpg": "image/jpeg",
+	".png": "image/png",
+	".webp": "image/webp",
+};
+
+function artifactImageMediaType(path: string, contentType: string | null): string | undefined {
+	const mime = contentType?.split(";")[0]?.trim().toLowerCase();
+	if (mime?.startsWith("image/") && mime !== "image/svg+xml") return mime;
+	const dot = path.lastIndexOf(".");
+	return dot >= 0 ? artifactImageMediaTypes[path.slice(dot).toLowerCase()] : undefined;
+}
+
 // Artifact files live in the session's artifact directory, outside the git
 // workspace, so they have no diff/status and aren't reachable through the
 // workspace-files endpoint. rawUrl (from the artifact list response) fetches
@@ -166,6 +188,9 @@ async function fetchSessionArtifactFile(sessionId: string, path: string, rawUrl:
 		diffTruncated: false,
 		editable: false,
 		fileFingerprint: "",
+		// Same field the workspace detail endpoint sets for binary images, so
+		// ReadOnlyFileView renders the <img> branch for artifact files too.
+		imageMediaType: binary ? artifactImageMediaType(path, response.headers.get("content-type")) : undefined,
 		path,
 		sessionId,
 		size,
