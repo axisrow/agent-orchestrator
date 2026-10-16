@@ -71,5 +71,4 @@ export function GlobalSettingsForm({
 			<PromptOverrideDialog open={agentDefaultsOpen} onOpenChange={setAgentDefaultsOpen} scope="user" />
 		</SettingsPageTitleContext.Provider>
 	);
-	);
 }
