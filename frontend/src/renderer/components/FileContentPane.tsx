@@ -524,6 +524,9 @@ function artifactOriginOf(source: FilesSource): string | undefined {
 function CompleteFileView({ annotation, commitSha, detail, editing, markdownEditing = false, onContentReady, onEditChange, onRevealLineConsumed, revealLine, scope, sessionId, hostId, source }: { annotation: FileAnnotationModel; commitSha?: string; detail: WorkspaceFileDetail; editing: boolean; markdownEditing?: boolean; onContentReady?: () => void; onEditChange: (content: string) => void; onRevealLineConsumed?: (requestKey: number) => void; revealLine?: { line: number; requestKey: number }; scope: WorkspaceDiffScope; sessionId: string; hostId?: string; source: FilesSource }) {
 	const { t } = useTranslation();
 	const needsRevision = source.kind !== "artifact" && (detail.deleted || detail.contentTruncated) && !detail.imageMediaType;
+	// Artifact bytes live on the artifact preview origin, so their images must
+	// point at the artifact rawUrl — the workspace blob endpoint can't serve them.
+	const artifactRawUrl = source.kind === "artifact" ? source.rawUrl : undefined;
 	const revision = useQuery({
 		...sessionSourceFileRevisionQueryOptions({ commitSha, path: detail.path, scope, sessionId, hostId, side: detail.deleted ? "before" : "after", source, workspaceVersion: detail.workspaceVersion }),
 		enabled: needsRevision,
@@ -547,6 +550,7 @@ function CompleteFileView({ annotation, commitSha, detail, editing, markdownEdit
 				onContentReady={onContentReady}
 				onEditChange={onEditChange}
 				onRevealLineConsumed={onRevealLineConsumed}
+				rawUrl={artifactRawUrl}
 				revealLine={revealLine}
 				sessionId={sessionId}
 				hostId={hostId}
@@ -556,5 +560,5 @@ function CompleteFileView({ annotation, commitSha, detail, editing, markdownEdit
 		);
 	}
 	if (markdownEditing) return <MarkdownEditor filePath={detail.path} onChange={onEditChange} value={detail.content} />;
-	return <ReadOnlyFileView annotation={annotation} detail={detail} editing={editing} onContentReady={onContentReady} onEditChange={onEditChange} onRevealLineConsumed={onRevealLineConsumed} revealLine={revealLine} scope={scope} sessionId={sessionId} hostId={hostId} />;
+	return <ReadOnlyFileView annotation={annotation} detail={detail} editing={editing} onContentReady={onContentReady} onEditChange={onEditChange} onRevealLineConsumed={onRevealLineConsumed} rawUrl={artifactRawUrl} revealLine={revealLine} scope={scope} sessionId={sessionId} hostId={hostId} />;
 }

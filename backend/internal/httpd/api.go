@@ -19,6 +19,7 @@ import (
 	prsvc "github.com/aoagents/agent-orchestrator/backend/internal/service/pr"
 	projectsvc "github.com/aoagents/agent-orchestrator/backend/internal/service/project"
 	reviewsvc "github.com/aoagents/agent-orchestrator/backend/internal/service/review"
+	userconfigsvc "github.com/aoagents/agent-orchestrator/backend/internal/service/userconfig"
 )
 
 // APIDeps bundles every service the API layer's controllers depend on.
@@ -26,6 +27,7 @@ type APIDeps struct {
 	Agents             controllers.AgentCatalog
 	CodexAccounts      controllers.CodexAccountService
 	Projects           projectsvc.Manager
+	UserConfig         userconfigsvc.Manager
 	Sessions           controllers.SessionService
 	ArtifactVersions   controllers.ArtifactVersionService
 	Automations        controllers.AutomationService
@@ -76,6 +78,9 @@ type APIDeps struct {
 	// LinkPreview unfurls external URLs for the renderer's hover cards; nil
 	// leaves the route answering 501.
 	LinkPreview controllers.LinkPreviewService
+	// Gateway backs the Anthropic-compatible gateway settings routes; nil
+	// leaves them answering 501.
+	Gateway controllers.GatewayService
 
 	// Presence tracks which mobile devices are currently running the app.
 	// Nil disables presence tracking (the roster then reports every device offline).
@@ -84,6 +89,11 @@ type APIDeps struct {
 	// DeviceRoster and DeviceLive back the desktop-only mobile device roster.
 	DeviceRoster controllers.DeviceRoster
 	DeviceLive   controllers.LiveSet
+
+	// Readiness is the daemon's self-reported readiness state, reflected by
+	// /readyz. Nil means the daemon reports ready unconditionally (the default
+	// in tests and in callers that predate the state).
+	Readiness *Readiness
 }
 
 // normalizeAPIDeps closes the Presence/DeviceLive duplication trap structurally.
@@ -121,6 +131,7 @@ type API struct {
 	agents        *controllers.AgentsController
 	codexAccounts *controllers.CodexAccountsController
 	projects      *controllers.ProjectsController
+	userConfig    *controllers.UserConfigController
 	sessions      *controllers.SessionsController
 	automations   *controllers.AutomationsController
 	desktop       *controllers.DesktopWorkspaceController
@@ -168,6 +179,9 @@ func newAPIWithLogger(cfg config.Config, deps APIDeps, log *slog.Logger) *API {
 		projects: &controllers.ProjectsController{
 			Mgr: deps.Projects,
 		},
+		userConfig: &controllers.UserConfigController{
+			Mgr: deps.UserConfig,
+		},
 		sessions: &controllers.SessionsController{
 			Svc:                      deps.Sessions,
 			Projects:                 deps.Projects,
@@ -194,7 +208,7 @@ func newAPIWithLogger(cfg config.Config, deps APIDeps, log *slog.Logger) *API {
 		shellTerms:    &controllers.ShellTerminalsController{Svc: deps.ShellTerminals},
 		cues:          &controllers.CuesController{Svc: deps.Cues},
 		conversations: &controllers.ConversationsController{Svc: deps.Conversations, Renders: attachmentstore.New(cfg.DataDir)},
-		settings:      &controllers.SettingsController{Svc: deps.Settings},
+		settings:      &controllers.SettingsController{Svc: deps.Settings, Gateway: deps.Gateway},
 		dev:           &controllers.DevController{Import: deps.DevImport},
 		browser:       &controllers.BrowserController{Svc: deps.Browser},
 		system:        &controllers.SystemController{Checks: deps.SystemChecks},
@@ -240,6 +254,7 @@ func (a *API) Register(root chi.Router) {
 			a.agents.Register(r)
 			a.codexAccounts.Register(r)
 			a.projects.Register(r)
+			a.userConfig.Register(r)
 			a.sessions.Register(r)
 			a.automations.Register(r)
 			a.desktop.Register(r)

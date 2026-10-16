@@ -37,6 +37,7 @@ export function ReadOnlyFileView({
 	onContentReady,
 	onEditChange,
 	onRevealLineConsumed,
+	rawUrl,
 	revealLine,
 	scope = "combined",
 	sessionId,
@@ -49,6 +50,9 @@ export function ReadOnlyFileView({
 	onContentReady?: () => void;
 	onEditChange?: (content: string) => void;
 	onRevealLineConsumed?: (requestKey: number) => void;
+	/** Direct bytes URL for files outside the git workspace (artifacts);
+	 * falls back to the workspace blob endpoint. */
+	rawUrl?: string;
 	revealLine?: { line: number; requestKey: number };
 	scope?: WorkspaceDiffScope;
 	sessionId: string;
@@ -98,7 +102,7 @@ export function ReadOnlyFileView({
 					<img
 						alt={detail.path}
 						className="max-h-[70vh] max-w-full object-contain"
-						src={workspaceRawImageUrl(sessionId, detail.path, side, hostId, remoteBaseUrl)}
+						src={rawUrl ?? workspaceRawImageUrl(sessionId, detail.path, side, hostId, remoteBaseUrl)}
 					/>
 				</div>
 			);
