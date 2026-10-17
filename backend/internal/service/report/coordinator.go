@@ -20,8 +20,18 @@ import (
 // ReportInterruptWindow is the durable per-worker urgent interruption limit.
 const ReportInterruptWindow = 3 * time.Minute
 
+// reportScheduleScan bounds one scheduling pass. A refused project's batch is
+// deferred past this window so later projects still get their attempt (#6119).
+const reportScheduleScan = 16
+
 // ErrReportDeliveryModeUnsupported reports a target without semantic delivery.
 var ErrReportDeliveryModeUnsupported = errors.New("report delivery requires a semantic conversation")
+
+// errDeliveryDeferred reports a refused batch that was durably deferred past
+// the schedule head. The pass may advance to the next project; an un-wrapped
+// error still aborts the pass because it means scheduling infrastructure, not
+// one target, is failing (#6119).
+var errDeliveryDeferred = errors.New("report delivery deferred")
 
 // DeliveryStore is the durable report scheduling and routing boundary.
 type DeliveryStore interface {
@@ -119,7 +129,11 @@ func (c *Coordinator) run(ctx context.Context) {
 }
 
 // RunDue performs bounded due delivery and returns the delay until the next
-// durable deadline. Tests call it directly with fake time.
+// durable deadline. Tests call it directly with fake time. A project whose
+// delivery is refused has its batch deferred past the schedule head, so the
+// pass advances to the following projects instead of retrying one head
+// forever (#6119). Un-wrapped errors abort the pass: scheduling itself is
+// failing, not a single target.
 func (c *Coordinator) RunDue(ctx context.Context) (time.Duration, error) {
 	if c == nil || c.store == nil || c.delivery == nil {
 		return -1, errors.New("report coordinator dependencies are required")
@@ -127,7 +141,7 @@ func (c *Coordinator) RunDue(ctx context.Context) (time.Duration, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for {
-		pending, err := c.store.ListPendingReportSchedule(ctx, 1)
+		pending, err := c.store.ListPendingReportSchedule(ctx, reportScheduleScan)
 		if err != nil {
 			return c.retryDelay, err
 		}
@@ -139,6 +153,9 @@ func (c *Coordinator) RunDue(ctx context.Context) (time.Duration, error) {
 			return pending[0].AvailableAt.Sub(now), nil
 		}
 		if err := c.deliverProject(ctx, pending[0].ProjectID); err != nil {
+			if errors.Is(err, errDeliveryDeferred) {
+				continue
+			}
 			return c.retryDelay, err
 		}
 	}
@@ -150,7 +167,7 @@ func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.Proje
 		return err
 	}
 	if !ok {
-		return fmt.Errorf("project %s has no active orchestrator", projectID)
+		return c.deferProjectWithoutTarget(ctx, projectID)
 	}
 	batch, err := c.claim(ctx, projectID)
 	if err != nil || len(batch.Reports) == 0 {
@@ -167,7 +184,7 @@ func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.Proje
 			if acquired {
 				interrupted = true
 				if interruptErr := c.delivery.Interrupt(ctx, target.ID); interruptErr != nil {
-					return c.release(ctx, batch, interruptErr)
+					return c.requeue(ctx, batch, interruptErr)
 				}
 			} else if nextInterrupt.IsZero() || next.Before(nextInterrupt) {
 				nextInterrupt = next
@@ -179,7 +196,7 @@ func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.Proje
 		}
 	}
 	if err := c.delivery.Submit(ctx, target.ID, batch.Render(), batch.IdempotencyKey()); err != nil {
-		return c.release(ctx, batch, err)
+		return c.requeue(ctx, batch, err)
 	}
 	_, err = c.store.AcknowledgeReportBatch(ctx, batch.ProjectID, batch.Token, c.now().UTC())
 	return err
@@ -265,6 +282,31 @@ func (c *Coordinator) release(ctx context.Context, batch PreparedBatch, cause er
 		return errors.Join(cause, releaseErr)
 	}
 	return cause
+}
+
+// requeue makes a refused batch retryable after a bounded delay instead of
+// leaving it due at the schedule head, where it would block every newer
+// project (#6119). A store that cannot defer falls back to a plain release.
+func (c *Coordinator) requeue(ctx context.Context, batch PreparedBatch, cause error) error {
+	if _, err := c.store.DeferReportBatch(ctx, batch.ProjectID, batch.Token, c.now().UTC().Add(c.retryDelay), cause.Error()); err != nil {
+		return c.release(ctx, batch, cause)
+	}
+	return errors.Join(errDeliveryDeferred, cause)
+}
+
+// deferProjectWithoutTarget parks a project with no active orchestrator after
+// a bounded delay. Failing before any claim used to leave the project's rows
+// due at the schedule head forever, starving every newer project (#6119).
+func (c *Coordinator) deferProjectWithoutTarget(ctx context.Context, projectID domain.ProjectID) error {
+	batch, err := c.claim(ctx, projectID)
+	if err != nil || len(batch.Reports) == 0 {
+		return err
+	}
+	cause := fmt.Errorf("project %s has no active orchestrator", projectID)
+	if _, deferErr := c.store.DeferReportBatch(ctx, projectID, batch.Token, c.now().UTC().Add(c.retryDelay), cause.Error()); deferErr != nil {
+		return deferErr
+	}
+	return errors.Join(errDeliveryDeferred, cause)
 }
 
 const (

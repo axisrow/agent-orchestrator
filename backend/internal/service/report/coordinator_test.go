@@ -50,12 +50,18 @@ func TestCoordinatorRoutesAtAttemptAndLeavesPendingWithoutOrchestrator(t *testin
 	store.add(reportAt("need", "worker", now, now, "decision"))
 	delivery := &coordinatorDelivery{}
 	c := NewCoordinator(CoordinatorDeps{Store: store, Delivery: delivery, Now: func() time.Time { return now }, RetryDelay: time.Second})
-	if delay, err := c.RunDue(context.Background()); err == nil || delay != time.Second {
+	// A project without an active orchestrator is deferred past the schedule
+	// head, not pinned there with an error (#6119).
+	if delay, err := c.RunDue(context.Background()); err != nil || delay != time.Second {
 		t.Fatalf("no orchestrator delay = %v, err = %v", delay, err)
 	}
 	if store.reports[0].DeliveryState != domain.ReportPending {
 		t.Fatalf("state = %s, want pending", store.reports[0].DeliveryState)
 	}
+	if !store.reports[0].AvailableAt.After(now) {
+		t.Fatalf("available = %v, want deferred past %v", store.reports[0].AvailableAt, now)
+	}
+	now = now.Add(time.Second)
 	store.sessions = []domain.SessionRecord{
 		{ID: "old", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeChat, IsTerminated: true, CreatedAt: now},
 		{ID: "replacement", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeChat, CreatedAt: now.Add(time.Second)},
@@ -65,6 +71,52 @@ func TestCoordinatorRoutesAtAttemptAndLeavesPendingWithoutOrchestrator(t *testin
 	}
 	if len(delivery.submissions) != 1 || delivery.submissions[0].target != "replacement" {
 		t.Fatalf("submissions = %#v", delivery.submissions)
+	}
+}
+
+func TestCoordinatorDeferredHeadDoesNotStarveNewerProjects(t *testing.T) {
+	now := time.Date(2026, 9, 14, 14, 0, 0, 0, time.UTC)
+	store := newCoordinatorStore(now)
+	store.sessions = []domain.SessionRecord{{ID: "orch", ProjectID: "alive", Kind: domain.KindOrchestrator, Mode: domain.SessionModeChat}}
+	dead := reportAt("dead-1", "gone", now, now, "orphaned project")
+	dead.ProjectID = "dead"
+	live := reportAt("live-1", "worker", now.Add(time.Second), now, "fresh report")
+	live.ProjectID = "alive"
+	store.add(dead, live)
+	delivery := &coordinatorDelivery{}
+	c := NewCoordinator(CoordinatorDeps{Store: store, Delivery: delivery, Now: func() time.Time { return now }, RetryDelay: time.Second})
+
+	if _, err := c.RunDue(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(delivery.submissions) != 1 || delivery.submissions[0].target != "orch" {
+		t.Fatalf("submissions = %#v, want the newer project delivered in the same pass", delivery.submissions)
+	}
+	if store.acked != 1 {
+		t.Fatalf("acknowledged = %d, want 1", store.acked)
+	}
+	for _, rec := range store.reports {
+		if rec.ProjectID != "dead" {
+			continue
+		}
+		if rec.DeliveryState != domain.ReportPending {
+			t.Fatalf("dead batch state = %s, want pending", rec.DeliveryState)
+		}
+		if !rec.AvailableAt.After(now) {
+			t.Fatalf("dead batch available = %v, want deferred past %v", rec.AvailableAt, now)
+		}
+		if !strings.Contains(rec.LastError, "no active orchestrator") {
+			t.Fatalf("dead batch last_error = %q, want the deferral reason", rec.LastError)
+		}
+	}
+	// The deferred batch returns after its backoff and is refused again without
+	// disturbing the already-delivered project.
+	now = now.Add(time.Second)
+	if _, err := c.RunDue(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(delivery.submissions) != 1 {
+		t.Fatalf("retry duplicated a delivery: %#v", delivery.submissions)
 	}
 }
 
@@ -164,8 +216,14 @@ func reportAt(id string, worker domain.SessionID, created, available time.Time, 
 func (s *coordinatorStore) add(records ...domain.ReportRecord) {
 	s.reports = append(s.reports, records...)
 }
-func (s *coordinatorStore) ListSessions(context.Context, domain.ProjectID) ([]domain.SessionRecord, error) {
-	return append([]domain.SessionRecord(nil), s.sessions...), nil
+func (s *coordinatorStore) ListSessions(_ context.Context, project domain.ProjectID) ([]domain.SessionRecord, error) {
+	var recs []domain.SessionRecord
+	for _, rec := range s.sessions {
+		if rec.ProjectID == project {
+			recs = append(recs, rec)
+		}
+	}
+	return recs, nil
 }
 func (s *coordinatorStore) GetSession(_ context.Context, id domain.SessionID) (domain.SessionRecord, bool, error) {
 	for _, rec := range s.sessions {
@@ -175,7 +233,7 @@ func (s *coordinatorStore) GetSession(_ context.Context, id domain.SessionID) (d
 	}
 	return domain.SessionRecord{}, false, nil
 }
-func (s *coordinatorStore) ListPendingReportSchedule(context.Context, int64) ([]domain.ReportRecord, error) {
+func (s *coordinatorStore) ListPendingReportSchedule(_ context.Context, limit int64) ([]domain.ReportRecord, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var pending []domain.ReportRecord
@@ -185,8 +243,8 @@ func (s *coordinatorStore) ListPendingReportSchedule(context.Context, int64) ([]
 		}
 	}
 	sortReports(pending)
-	if len(pending) > 1 {
-		pending = pending[:1]
+	if int64(len(pending)) > limit {
+		pending = pending[:limit]
 	}
 	return pending, nil
 }
@@ -230,13 +288,13 @@ func (s *coordinatorStore) AcknowledgeReportBatch(_ context.Context, project dom
 	s.acked += count
 	return count, nil
 }
-func (s *coordinatorStore) ReleaseReportBatch(_ context.Context, project domain.ProjectID, token string, _ time.Time, _ string) (int, error) {
+func (s *coordinatorStore) ReleaseReportBatch(_ context.Context, project domain.ProjectID, token string, _ time.Time, reason string) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	count := 0
 	for i := range s.reports {
 		if s.reports[i].ProjectID == project && s.reports[i].DeliveryState == domain.ReportClaimed && s.reports[i].ClaimToken == token {
-			s.reports[i].DeliveryState, s.reports[i].ClaimToken = domain.ReportPending, ""
+			s.reports[i].DeliveryState, s.reports[i].ClaimToken, s.reports[i].LastError = domain.ReportPending, "", reason
 			count++
 		}
 	}
