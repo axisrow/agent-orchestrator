@@ -2449,8 +2449,10 @@ func (m *Manager) rollbackSpawnSeedRow(ctx context.Context, id domain.SessionID)
 	// Rollback usually unwinds after the spawn request context is already dead
 	// (the REST timeout canceled it mid-spawn). Store writes on a canceled
 	// context fail silently and strand the seed row as an "Almost there"
-	// phantom, so clean up with cancellation detached.
-	cleanupCtx := context.WithoutCancel(ctx)
+	// phantom, so clean up detached, bounded by the same rollback budget as
+	// the sibling helpers: a wedged store write must not hang the goroutine.
+	cleanupCtx, cancel := spawnRollbackContext(ctx)
+	defer cancel()
 	if deleted, err := m.store.DeleteSession(cleanupCtx, id); err == nil && deleted {
 		m.cleanupSystemPromptDir(id)
 		m.cleanupAttachments(cleanupCtx, id)
