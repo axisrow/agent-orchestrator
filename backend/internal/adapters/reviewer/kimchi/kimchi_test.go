@@ -67,9 +67,13 @@ func TestReviewCommandAppliesBestEffortPolicyOffBypass(t *testing.T) {
 	if !contains(agent.got.AllowedTools, "read") || !contains(agent.got.AllowedTools, "bash(ao review submit:*)") {
 		t.Fatalf("allowlist missing read-only review tools: %#v", agent.got.AllowedTools)
 	}
+	// Task/agent are denied (#6841): a subagent would inherit the full tool
+	// surface and recreate every denial one hop away.
 	for _, denied := range []string{
 		"edit",
 		"write",
+		"task",
+		"agent",
 		"bash(git push:*)",
 		"bash(git commit:*)",
 		"bash(git show:*)",
@@ -126,8 +130,9 @@ func TestAllowlistIncludesProtocolToolsAndDeniesDangerousGh(t *testing.T) {
 	}
 
 	// printf and gh must be in the allow list — the review protocol
-	// (prompt.go step 1) requires a piped printf | gh api command.
-	for _, tool := range []string{"bash(printf:*)", "bash(gh:*)"} {
+	// (prompt.go step 1) requires a piped printf | gh api command. base64 is
+	// the protocol's staging segment (#6021).
+	for _, tool := range []string{"bash(printf:*)", "bash(base64:*)", "bash(gh:*)"} {
 		if !contains(agent.got.AllowedTools, tool) {
 			t.Fatalf("allowlist missing protocol tool %q: %#v", tool, agent.got.AllowedTools)
 		}

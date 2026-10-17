@@ -81,6 +81,17 @@ func TestReviewCommandAppliesFinalReadOnlyAgentPermissions(t *testing.T) {
 	if permissionEffect(append(config.Permissions, agent.Permissions...), "edit", "src/main.go") != "deny" {
 		t.Fatalf("edit remained allowed after caller and agent rules: global=%#v agent=%#v", config.Permissions, agent.Permissions)
 	}
+	// File mutation and subagent spawning stay denied by the trailing agent
+	// rules (#6841) even though the caller's global rules allow everything.
+	for _, probe := range []struct{ action, resource string }{
+		{"edit", "src/main.go"},
+		{"write", "src/main.go"},
+		{"task", "*"},
+	} {
+		if permissionEffect(agent.Permissions, probe.action, probe.resource) != "deny" {
+			t.Errorf("%s remained allowed by the agent policy: %#v", probe.action, agent.Permissions)
+		}
+	}
 	for _, command := range []string{
 		"gh api repos/o/r/pulls/1",
 		"git diff HEAD^ HEAD",

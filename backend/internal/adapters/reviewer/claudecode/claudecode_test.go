@@ -100,6 +100,11 @@ func TestReviewCommandLaunchesReadOnlyOffBypass(t *testing.T) {
 	if !contains(agent.got.AllowedTools, "Read") || !contains(agent.got.AllowedTools, "Bash(ao review submit:*)") {
 		t.Fatalf("allowlist missing read-only review tools: %#v", agent.got.AllowedTools)
 	}
+	// The staged-payload protocol (#6021) pipes printf|base64; the static
+	// allowlist must keep admitting the printf segment the prompt depends on.
+	if !contains(agent.got.AllowedTools, "Bash(printf:*)") {
+		t.Fatalf("allowlist missing staging tool: %#v", agent.got.AllowedTools)
+	}
 	// A blanket Bash(gh:*) rule would admit merges and arbitrary API
 	// mutations without a prompt; only the read subcommands are allowed and the
 	// review POST goes through the PermissionRequest hook (#4810).
@@ -113,7 +118,9 @@ func TestReviewCommandLaunchesReadOnlyOffBypass(t *testing.T) {
 			t.Fatalf("allowlist grants blanket gh access: %#v", agent.got.AllowedTools)
 		}
 	}
-	for _, denied := range []string{"Edit", "Write", "Bash(git push:*)", "Bash(git commit:*)", "Bash(gh pr merge:*)"} {
+	// Task/Agent are denied (#6841): a subagent would inherit the full tool
+	// surface and recreate every denial one hop away.
+	for _, denied := range []string{"Edit", "Write", "Task", "Agent", "Bash(git push:*)", "Bash(git commit:*)", "Bash(gh pr merge:*)"} {
 		if !contains(agent.got.DisallowedTools, denied) {
 			t.Fatalf("disallow list missing %q: %#v", denied, agent.got.DisallowedTools)
 		}

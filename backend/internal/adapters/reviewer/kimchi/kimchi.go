@@ -53,7 +53,9 @@ var reviewerAllowedTools = []string{
 // reviewerDisallowedTools denies common write and exfiltration paths inside
 // Kimchi's own permission layer. It is defense in depth only: a shell-capable
 // process in the worker checkout still has host authority. Kimchi has no
-// NotebookEdit tool, so it is omitted from the deny list.
+// NotebookEdit tool, so it is omitted from the deny list. The subagent tool is
+// denied under both spellings (#6841): a subagent inherits the harness's full
+// tool surface, so spawning one would recreate the write paths one hop away.
 //
 // Deny-before-allow ordering: Kimchi's evaluateRules (in
 // src/extensions/permissions/rules.ts) checks deny rules before allow rules
@@ -69,6 +71,8 @@ var reviewerAllowedTools = []string{
 var reviewerDisallowedTools = []string{
 	"edit",
 	"write",
+	"task",
+	"agent",
 	"bash(git push:*)",
 	"bash(git commit:*)",
 	"bash(git show:*)",
