@@ -34,6 +34,7 @@ var (
 	ErrReviewAlreadyRunning = reviewcore.ErrReviewAlreadyRunning
 	ErrHeadAlreadyReviewed  = reviewcore.ErrHeadAlreadyReviewed
 	ErrPROwnedElsewhere     = reviewcore.ErrPROwnedElsewhere
+	ErrReviewerSelected     = reviewcore.ErrReviewerSelected
 	ErrAgentBinaryNotFound  = ports.ErrAgentBinaryNotFound
 )
 
