@@ -195,8 +195,9 @@ func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.Proje
 
 // backOffBatch returns a claimed batch to pending with exponential backoff so
 // the schedule advances past it instead of leaving it at the head (#6119).
-// It reports success once deferred; an empty batch keeps its cause so the
-// caller stops this cycle rather than spinning on an immovable head.
+// It reports success once deferred; an empty batch or a defer that lost its
+// claim token keeps the cause so the anomaly is visible to the caller instead
+// of silently stranding a claimed batch.
 func (c *Coordinator) backOffBatch(ctx context.Context, batch PreparedBatch, cause error) error {
 	if len(batch.Reports) == 0 {
 		return cause
@@ -209,8 +210,12 @@ func (c *Coordinator) backOffBatch(ctx context.Context, batch PreparedBatch, cau
 		shift = 0
 	}
 	deferAt := c.now().UTC().Add(c.retryDelay << uint(shift))
-	if _, err := c.store.DeferReportBatch(ctx, batch.ProjectID, batch.Token, deferAt, cause.Error()); err != nil {
+	deferred, err := c.store.DeferReportBatch(ctx, batch.ProjectID, batch.Token, deferAt, cause.Error())
+	if err != nil {
 		return errors.Join(cause, err)
+	}
+	if deferred == 0 {
+		return errors.Join(cause, errors.New("report delivery defer matched no claimed batch"))
 	}
 	return nil
 }

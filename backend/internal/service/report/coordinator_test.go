@@ -299,16 +299,20 @@ func (s *coordinatorStore) ReleaseReportBatch(_ context.Context, project domain.
 	}
 	return count, nil
 }
-func (s *coordinatorStore) DeferReportBatch(ctx context.Context, project domain.ProjectID, token string, at time.Time, reason string) (int, error) {
-	count, err := s.ReleaseReportBatch(ctx, project, token, at, reason)
-	if err != nil {
-		return count, err
-	}
+
+// DeferReportBatch mirrors the real token-scoped UPDATE: only reports still
+// claimed by this token return to pending, and only they move later.
+func (s *coordinatorStore) DeferReportBatch(_ context.Context, project domain.ProjectID, token string, at time.Time, _ string) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	count := 0
 	for i := range s.reports {
-		if s.reports[i].ProjectID == project && s.reports[i].DeliveryState == domain.ReportPending && s.reports[i].DeliveryBatchID != "" && s.reports[i].AvailableAt.Before(at) {
-			s.reports[i].AvailableAt = at
+		if s.reports[i].ProjectID == project && s.reports[i].DeliveryState == domain.ReportClaimed && s.reports[i].ClaimToken == token {
+			s.reports[i].DeliveryState, s.reports[i].ClaimToken = domain.ReportPending, ""
+			if s.reports[i].AvailableAt.Before(at) {
+				s.reports[i].AvailableAt = at
+			}
+			count++
 		}
 	}
 	return count, nil
