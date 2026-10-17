@@ -70,11 +70,15 @@ var reviewerAllowedTools = []string{
 
 // reviewerDisallowedTools hard-denies the write paths as defense in depth, so a
 // misbehaving model cannot edit files or move the branch even if a future
-// allowlist entry would otherwise admit it.
+// allowlist entry would otherwise admit it. Task/Agent deny the subagent tool
+// under both spellings (#6841): a spawned subagent inherits the full tool
+// surface, so allowing it would recreate every denied tool one hop away.
 var reviewerDisallowedTools = []string{
 	"Edit",
 	"Write",
 	"NotebookEdit",
+	"Task",
+	"Agent",
 	"Bash(git push:*)",
 	"Bash(git commit:*)",
 	// The reviewer must never merge. No allow rule admits it, so this only

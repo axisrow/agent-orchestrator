@@ -228,5 +228,13 @@ func reviewerPermissions(taskPromptRoot string) []permissionRule {
 	} {
 		rules = append(rules, permissionRule{Action: "shell", Resource: resource, Effect: "deny"})
 	}
+	// Trailing denies carry the same contract as the other reviewer adapters'
+	// disallowed lists (#6841): no file mutation and no subagent spawning. The
+	// opening catch-all already denies them today, but OpenCode resolves rules
+	// by the last match, so only a rule after every allow keeps the denial in
+	// force if a future allowlist entry would otherwise admit these shapes.
+	for _, action := range []string{"edit", "write", "task"} {
+		rules = append(rules, permissionRule{Action: action, Resource: "*", Effect: "deny"})
+	}
 	return rules
 }
