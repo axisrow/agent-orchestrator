@@ -35,6 +35,9 @@ var (
 	// ErrPROwnedElsewhere means a named PR belongs to another active session,
 	// which a review trigger never takes over.
 	ErrPROwnedElsewhere = fmt.Errorf("%w: pull request owned by another session", ErrConflict)
+	// ErrReviewerSelected means the session's reviewer was already selected:
+	// an agent cannot switch it with a trigger override (a person can).
+	ErrReviewerSelected = fmt.Errorf("%w: session reviewer already selected; an agent cannot switch reviewers", ErrConflict)
 	// ErrHarnessInstallActive means the reviewer's harness is being installed,
 	// updated or removed, so a reviewer cannot start on it now.
 	ErrHarnessInstallActive = fmt.Errorf("%w: reviewer harness is being updated", ErrConflict)
@@ -385,6 +388,17 @@ func (e *Engine) TriggerWithOptions(ctx stdctx.Context, workerID domain.SessionI
 	if err != nil {
 		return TriggerResult{}, err
 	}
+	if hasHarnessOverride && source == domain.ReviewTriggerAgent {
+		// ponytail: source is client-asserted (AO_SESSION_ID), so this gate is
+		// a convention that stops honest automation from switching the session's
+		// reviewer and stranding paid temporary panes; upgrade to a daemon-issued
+		// credential if spoofing ever shows up.
+		for _, row := range reviewRows {
+			if !row.IsArchived && row.Harness != harness {
+				return TriggerResult{}, fmt.Errorf("%w: reviewer %q is already selected for this session", ErrReviewerSelected, row.Harness)
+			}
+		}
+	}
 	reviewRow, hasReview, err := e.store.GetReviewBySessionAndHarness(ctx, workerID, harness)
 	if err != nil {
 		return TriggerResult{}, err
@@ -530,6 +544,17 @@ func (e *Engine) TriggerWithOptions(ctx stdctx.Context, workerID domain.SessionI
 		}
 		created = append(created, run)
 		reviews = replaceReviewLatestRun(reviews, reviewState.PRURL, reviewState.TargetSHA, run)
+	}
+	if len(created) > 0 || len(restarted) > 0 {
+		if reviewRow.IsArchived {
+			// A pass starting on an archived row revives it: the reviewer is
+			// live again for this pass; sweep retirement applies only after it
+			// ends. A no-op trigger never reopens a retired reviewer.
+			reviewRow.IsArchived = false
+			if err := e.store.UpsertReview(ctx, reviewRow); err != nil {
+				return TriggerResult{}, err
+			}
+		}
 	}
 	if len(created) == 0 && len(restarted) == 0 {
 		if modeChanging && mode == "" {
@@ -1535,6 +1560,40 @@ func (e *Engine) listLocked(ctx stdctx.Context, workerID domain.SessionID, selec
 		}
 		if reviewerRowActive(other, runs) {
 			active = append(active, reviewerSurface(other))
+		}
+	}
+	// A pass-only override reviewer retires once its runs are terminal: the
+	// --agent flag documents "for this pass only", so a temporary reviewer must
+	// not linger in the pane forever (#6862). The session's selected reviewer
+	// and any reviewer with a running pass always stay.
+	for i := range reviewRows {
+		row := reviewRows[i]
+		if row.IsArchived || row.Harness == selectedHarness {
+			continue
+		}
+		running := false
+		for _, run := range runs {
+			if run.ReviewID == row.ID && run.Status == domain.ReviewRunRunning {
+				running = true
+				break
+			}
+		}
+		if running {
+			continue
+		}
+		retired := row
+		retired.IsArchived = true
+		retired.ReviewerHandleID = ""
+		retired.ReviewerLaunchID = ""
+		retired.ControllerGeneration = ""
+		retired.ReviewerActivityState = domain.ActivityExited
+		if _, err := e.store.RestoreReviewLaunchState(ctx, retired, e.clock()); err != nil {
+			return SessionReviews{}, err
+		}
+		if row.ID == reviewRow.ID {
+			reviewRow = retired
+		} else {
+			reviewRows[i] = retired
 		}
 	}
 	prs, err := e.prs.ListPRsBySession(ctx, workerID)

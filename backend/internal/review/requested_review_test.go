@@ -128,8 +128,9 @@ func TestTriggerRerunReviewsAnApprovedHeadAgainWithTheSameReviewer(t *testing.T)
 	}
 }
 
-// A worker may ask several reviewers at once. Adding one must not cancel or
-// tear down another that is still working on the same head.
+// A person may ask several reviewers at once. Adding one must not cancel or
+// tear down another that is still working on the same head. (An agent cannot
+// add a different reviewer at all: TestTriggerAgentCannotSwitchAnAlreadySelectedReviewer.)
 func TestTriggerRerunAddsAParallelReviewerWithoutStoppingTheRunningOne(t *testing.T) {
 	store := &fakeStore{
 		reviews: map[domain.ReviewerHarness]domain.Review{
@@ -140,7 +141,7 @@ func TestTriggerRerunAddsAParallelReviewerWithoutStoppingTheRunningOne(t *testin
 	launcher := &fakeLauncher{alive: true, handle: "codex-pane"}
 	eng := newEngineForTest(store, fakeSessions{rec: liveWorker(), ok: true}, prAt("sha1"), fakeProjects{}, launcher)
 
-	res, err := eng.TriggerWithOptions(context.Background(), "mer-1", TriggerOptions{Harness: domain.ReviewerCodex, Source: domain.ReviewTriggerAgent, Rerun: true})
+	res, err := eng.TriggerWithOptions(context.Background(), "mer-1", TriggerOptions{Harness: domain.ReviewerCodex, Source: domain.ReviewTriggerManual, Rerun: true})
 	if err != nil {
 		t.Fatalf("TriggerWithOptions: %v", err)
 	}
@@ -185,7 +186,7 @@ func TestTriggerReleasesAnIdleOtherReviewer(t *testing.T) {
 	launcher := &fakeLauncher{alive: true, handle: "codex-pane"}
 	eng := newEngineForTest(store, fakeSessions{rec: liveWorker(), ok: true}, prAt("sha1"), fakeProjects{}, launcher)
 
-	if _, err := eng.TriggerWithOptions(context.Background(), "mer-1", TriggerOptions{Harness: domain.ReviewerCodex, Source: domain.ReviewTriggerAgent, Rerun: true}); err != nil {
+	if _, err := eng.TriggerWithOptions(context.Background(), "mer-1", TriggerOptions{Harness: domain.ReviewerCodex, Source: domain.ReviewTriggerManual, Rerun: true}); err != nil {
 		t.Fatalf("TriggerWithOptions: %v", err)
 	}
 	if launcher.destroyCalls != 1 || launcher.destroyedHandle != "claude-pane" {
@@ -441,4 +442,156 @@ func triggerWithSource(ctx context.Context, e *Engine, workerID domain.SessionID
 
 func triggerWithSourceAndMode(ctx context.Context, e *Engine, workerID domain.SessionID, harness domain.ReviewerHarness, config domain.AgentConfig, source domain.ReviewTriggerSource, mode domain.ReviewerInterfaceMode) (TriggerResult, error) {
 	return e.TriggerWithOptions(ctx, workerID, TriggerOptions{Harness: harness, Config: config, Source: source, InterfaceMode: mode})
+}
+
+// An agent cannot switch the session's already-selected reviewer with an
+// override: that is how a paid temporary reviewer ended up stuck in the pane
+// forever (#6862). A person keeps the manual override.
+func TestTriggerAgentCannotSwitchAnAlreadySelectedReviewer(t *testing.T) {
+	store := &fakeStore{
+		reviews: map[domain.ReviewerHarness]domain.Review{
+			domain.ReviewerClaudeCode: {ID: "rev-claude-code", SessionID: "mer-1", Harness: domain.ReviewerClaudeCode, ReviewerHandleID: "claude-pane"},
+		},
+		runs: []domain.ReviewRun{requestedRun("run-1", domain.ReviewerClaudeCode, domain.ReviewRunComplete, domain.VerdictApproved, 1)},
+	}
+	launcher := &fakeLauncher{}
+	eng := newEngineForTest(store, fakeSessions{rec: liveWorker(), ok: true}, prAt("sha1"), fakeProjects{}, launcher)
+
+	_, err := eng.TriggerWithOptions(context.Background(), "mer-1", TriggerOptions{Source: domain.ReviewTriggerAgent, Harness: domain.ReviewerCodex, Rerun: true})
+	if !errors.Is(err, ErrReviewerSelected) || !errors.Is(err, ErrConflict) {
+		t.Fatalf("err = %v, want ErrReviewerSelected", err)
+	}
+	if launcher.spawnCount != 0 {
+		t.Fatalf("a rejected switch must not spawn a reviewer (spawned %d)", launcher.spawnCount)
+	}
+}
+
+func TestTriggerManualOverrideCanStillSwitchTheReviewer(t *testing.T) {
+	store := &fakeStore{
+		reviews: map[domain.ReviewerHarness]domain.Review{
+			domain.ReviewerClaudeCode: {ID: "rev-claude-code", SessionID: "mer-1", Harness: domain.ReviewerClaudeCode, ReviewerHandleID: "claude-pane"},
+		},
+		runs: []domain.ReviewRun{requestedRun("run-1", domain.ReviewerClaudeCode, domain.ReviewRunComplete, domain.VerdictApproved, 1)},
+	}
+	launcher := &fakeLauncher{handle: "codex-pane"}
+	eng := newEngineForTest(store, fakeSessions{rec: liveWorker(), ok: true}, prAt("sha1"), fakeProjects{}, launcher)
+
+	res, err := eng.TriggerWithOptions(context.Background(), "mer-1", TriggerOptions{Harness: domain.ReviewerCodex, Rerun: true})
+	if err != nil {
+		t.Fatalf("TriggerWithOptions: %v", err)
+	}
+	if !res.Created || len(res.CreatedRuns) != 1 {
+		t.Fatalf("result = %+v, want one created pass", res)
+	}
+	if got := res.CreatedRuns[0]; got.Harness != domain.ReviewerCodex || got.TriggerSource != domain.ReviewTriggerManual {
+		t.Fatalf("run = %+v, want a manual codex pass", got)
+	}
+}
+
+// With no reviewer selected yet an agent's override is the first choice, not a
+// switch: it starts the pass.
+func TestTriggerAgentOverrideStartsWhenNoReviewerIsSelected(t *testing.T) {
+	store := &fakeStore{
+		runs: []domain.ReviewRun{requestedRun("run-1", domain.ReviewerClaudeCode, domain.ReviewRunComplete, domain.VerdictApproved, 1)},
+	}
+	launcher := &fakeLauncher{handle: "codex-pane"}
+	eng := newEngineForTest(store, fakeSessions{rec: liveWorker(), ok: true}, prAt("sha1"), fakeProjects{}, launcher)
+
+	res, err := eng.TriggerWithOptions(context.Background(), "mer-1", TriggerOptions{Source: domain.ReviewTriggerAgent, Harness: domain.ReviewerCodex, Rerun: true})
+	if err != nil {
+		t.Fatalf("TriggerWithOptions: %v", err)
+	}
+	if !res.Created || len(res.CreatedRuns) != 1 {
+		t.Fatalf("result = %+v, want one created pass", res)
+	}
+	if got := res.CreatedRuns[0]; got.Harness != domain.ReviewerCodex || got.TriggerSource != domain.ReviewTriggerAgent {
+		t.Fatalf("run = %+v, want an agent codex pass", got)
+	}
+}
+
+// Retrying the same reviewer is a retry, not a switch.
+func TestTriggerAgentSameHarnessRerunIsNotASwitch(t *testing.T) {
+	store := &fakeStore{
+		reviews: map[domain.ReviewerHarness]domain.Review{
+			domain.ReviewerCodex: {ID: "rev-codex", SessionID: "mer-1", Harness: domain.ReviewerCodex},
+		},
+		runs: []domain.ReviewRun{requestedRun("run-1", domain.ReviewerCodex, domain.ReviewRunComplete, domain.VerdictChangesRequested, 1)},
+	}
+	launcher := &fakeLauncher{handle: "codex-pane"}
+	eng := newEngineForTest(store, fakeSessions{rec: liveWorker(), ok: true}, prAt("sha1"), fakeProjects{}, launcher)
+
+	res, err := eng.TriggerWithOptions(context.Background(), "mer-1", TriggerOptions{Source: domain.ReviewTriggerAgent, Harness: domain.ReviewerCodex})
+	if err != nil {
+		t.Fatalf("TriggerWithOptions: %v", err)
+	}
+	if !res.Created || len(res.CreatedRuns) != 1 {
+		t.Fatalf("result = %+v, want one created pass", res)
+	}
+	if got := res.CreatedRuns[0]; got.Harness != domain.ReviewerCodex {
+		t.Fatalf("run = %+v, want a codex pass", got)
+	}
+}
+
+// A pass-only override reviewer retires once its runs are terminal: the pane
+// must not keep showing the temporary agent forever (#6862). The selected
+// reviewer stays, and a rerun revives the retired override.
+func TestListRetiresAPassOnlyOverrideReviewerAfterItsPassEnds(t *testing.T) {
+	ctx := context.Background()
+	store := newSQLiteReviewStore(t)
+	worker := liveWorker()
+	seedReviewWorker(t, store, worker)
+	now := time.Unix(1, 0).UTC()
+	for _, r := range []domain.Review{
+		{ID: "rev-claude-code", SessionID: worker.ID, ProjectID: worker.ProjectID, Harness: domain.ReviewerClaudeCode, InterfaceMode: domain.ReviewerInterfaceTUI, CreatedAt: now, UpdatedAt: now},
+		{ID: "rev-codex", SessionID: worker.ID, ProjectID: worker.ProjectID, Harness: domain.ReviewerCodex, InterfaceMode: domain.ReviewerInterfaceChat, CreatedAt: now, UpdatedAt: now},
+	} {
+		if err := store.UpsertReview(ctx, r); err != nil {
+			t.Fatalf("seed review %s: %v", r.ID, err)
+		}
+	}
+	for _, r := range []domain.ReviewRun{
+		requestedRun("run-claude", domain.ReviewerClaudeCode, domain.ReviewRunComplete, domain.VerdictApproved, 1),
+		requestedRun("run-codex", domain.ReviewerCodex, domain.ReviewRunFailed, domain.VerdictNone, 2),
+	} {
+		if err := store.InsertReviewRun(ctx, r); err != nil {
+			t.Fatalf("seed run %s: %v", r.ID, err)
+		}
+	}
+	eng := newEngineForTest(store, fakeSessions{rec: worker, ok: true}, prAt("sha1"), fakeProjects{}, &fakeLauncher{})
+
+	if _, err := eng.List(ctx, worker.ID); err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	codex, ok, err := store.GetReviewBySessionAndHarness(ctx, worker.ID, domain.ReviewerCodex)
+	if err != nil || !ok {
+		t.Fatalf("codex review row: ok=%v err=%v", ok, err)
+	}
+	if !codex.IsArchived || codex.ReviewerActivityState != domain.ActivityExited {
+		t.Fatalf("codex row = archived=%v state=%q, want retired", codex.IsArchived, codex.ReviewerActivityState)
+	}
+	claude, _, err := store.GetReviewBySessionAndHarness(ctx, worker.ID, domain.ReviewerClaudeCode)
+	if err != nil {
+		t.Fatalf("claude review row: %v", err)
+	}
+	if claude.IsArchived {
+		t.Fatalf("the selected claude-code reviewer must never be retired")
+	}
+
+	// A rerun revives the retired override for its new pass.
+	launcher := &fakeLauncher{handle: "codex-pane"}
+	eng = newEngineForTest(store, fakeSessions{rec: worker, ok: true}, prAt("sha1"), fakeProjects{}, launcher)
+	res, err := eng.TriggerWithOptions(ctx, worker.ID, TriggerOptions{Harness: domain.ReviewerCodex, Rerun: true})
+	if err != nil {
+		t.Fatalf("TriggerWithOptions: %v", err)
+	}
+	if !res.Created || res.ReviewerSurface.Harness != domain.ReviewerCodex || res.ReviewerSurface.ReviewID != codex.ID {
+		t.Fatalf("result = %+v, want a revived codex reviewer surface", res)
+	}
+	revived, _, err := store.GetReviewBySessionAndHarness(ctx, worker.ID, domain.ReviewerCodex)
+	if err != nil {
+		t.Fatalf("revived codex review row: %v", err)
+	}
+	if revived.IsArchived {
+		t.Fatalf("a rerun must revive the retired override, still archived")
+	}
 }

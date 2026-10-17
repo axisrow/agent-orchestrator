@@ -132,7 +132,7 @@ ao review trigger [worker-session-id] [flags]
 |---|---|---|
 | `--session string` | Worker session id (or pass it positionally) | The calling AO session |
 | `--pr string` | Review only this session's implementation PR URL, attaching it to the session first if AO does not track it yet (never from another active session). Do not pass an external review target | Every eligible PR on the session |
-| `--agent string` | Reviewer agent for this pass only (alias `--harness`) | Session reviewer, then project reviewer, then the project's default worker agent |
+| `--agent string` | Reviewer agent for this pass only (alias `--harness`). An AO session cannot use it to switch the session's already-selected reviewer — only a person can; the temporary reviewer retires when its pass ends | Session reviewer, then project reviewer, then the project's default worker agent |
 | `--model string` | Reviewer model for this pass only | As above |
 | `--effort string` | Reviewer reasoning effort for this pass only | As above |
 | `--rerun` | Review a head that already has a review again, or add a reviewer with a different agent alongside one that is still running | - |
@@ -168,5 +168,6 @@ ao review trigger mer-3 --agent codex --model gpt-5.5
 
 ```bash
 # Add a second opinion on the same commit while the first reviewer runs
+# (manual, from the owner's terminal — an AO session cannot switch reviewers)
 ao review trigger --agent claude-code --rerun
 ```

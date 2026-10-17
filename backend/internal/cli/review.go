@@ -363,6 +363,9 @@ opening a PR, pass --pr <url>: AO attaches it to the session if it does not
 track it yet (never taking it from another active session) and reviews only it. The reviewer defaults to the session's reviewer
 choice, then the project's reviewer config, then the project's default worker
 agent and model; --agent, --model, and --effort override it for this pass only.
+An AO session (a worker or orchestrator) cannot switch the session's
+already-selected reviewer with --agent — only a person can; a pass-only
+override reviewer retires from the pane once its pass ends.
 
 A head that is already being reviewed, or already has a review, is not reviewed
 again: the command fails and says why. Pass --rerun to review the same commit
@@ -386,7 +389,7 @@ approval and does not authorize merging.`,
 	})
 	f.StringVar(&opts.session, "session", "", "Worker session id (or pass it positionally; default: this AO session)")
 	f.StringVar(&opts.prURL, "pr", "", "Review only this pull request URL, attaching it to the session if AO does not track it yet (default: every eligible PR on the session)")
-	f.StringVar(&opts.harness, "harness", "", "Reviewer agent / --agent for this pass only (e.g. claude-code, codex)")
+	f.StringVar(&opts.harness, "harness", "", "Reviewer agent / --agent for this pass only (e.g. claude-code, codex); an AO session cannot use it to switch an already-selected reviewer")
 	f.StringVar(&opts.model, "model", "", "Reviewer model for this pass only")
 	f.StringVar(&opts.effort, "effort", "", "Reviewer reasoning effort for this pass only")
 	f.BoolVar(&opts.rerun, "rerun", false, "Review heads that already have a review again, or add another reviewer alongside a running one")
