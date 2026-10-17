@@ -15472,6 +15472,10 @@ components:
           items:
             $ref: '#/components/schemas/DomainReviewerSurface'
           type: array
+        autoInjectReview:
+          description: 'The session''s live review auto-inject policy: whether reviewer
+            feedback observed from now on is delivered to the session.'
+          type: boolean
         reviewerActivityState:
           enum:
           - active
@@ -15498,6 +15502,7 @@ components:
       - reviewerHandleId
       - reviews
       - runs
+      - autoInjectReview
       - activeReviewers
       type: object
     ListSessionMemoryResponse:
@@ -18906,6 +18911,10 @@ components:
       type: object
     TriggerReviewResponse:
       properties:
+        autoInjectDisabled:
+          description: True when this request turned the worker session's review auto-inject
+            off.
+          type: boolean
         autoInjectEnabled:
           description: True when this request turned the worker session's review auto-inject
             on.
@@ -18932,6 +18941,7 @@ components:
       - runs
       - created
       - autoInjectEnabled
+      - autoInjectDisabled
       type: object
     UnregisterPushDeviceResponse:
       properties:

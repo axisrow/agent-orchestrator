@@ -5303,6 +5303,8 @@ export interface components {
         };
         ListReviewsResponse: {
             activeReviewers: components["schemas"]["DomainReviewerSurface"][];
+            /** @description The session's live review auto-inject policy: whether reviewer feedback observed from now on is delivered to the session. */
+            autoInjectReview: boolean;
             /** @enum {string} */
             reviewerActivityState?: "active" | "idle" | "waiting_input" | "blocked" | "exited";
             reviewerHandleId: string;
@@ -6669,6 +6671,8 @@ export interface components {
             source?: "manual" | "agent";
         };
         TriggerReviewResponse: {
+            /** @description True when this request turned the worker session's review auto-inject off. */
+            autoInjectDisabled: boolean;
             /** @description True when this request turned the worker session's review auto-inject on. */
             autoInjectEnabled: boolean;
             /** @description True when a new review pass was started; false when an existing run for the same commit was reused. */

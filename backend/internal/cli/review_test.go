@@ -560,6 +560,7 @@ func TestReviewListJSONPreservesResponse(t *testing.T) {
 	cfg := setReviewEnv(t)
 	srv, _ := reviewServer(t, http.StatusOK, `{
 		"reviewerHandleId":"handle-1",
+		"autoInjectReview":true,
 		"reviews":[{
 			"prUrl":"https://github.com/example/repo/pull/42",
 			"prNumber":42,
@@ -588,6 +589,9 @@ func TestReviewListJSONPreservesResponse(t *testing.T) {
 	}
 	if res.Reviews[0].PreviousRun == nil || res.Reviews[0].PreviousRun.ID != "run-0" {
 		t.Fatalf("previous run = %+v", res.Reviews[0].PreviousRun)
+	}
+	if !res.AutoInjectReview {
+		t.Fatalf("autoInjectReview = false, want the session policy echoed (#6810)")
 	}
 }
 
@@ -719,8 +723,29 @@ func TestReviewTriggerForwardsReviewerAndPolicyFlags(t *testing.T) {
 			t.Fatalf("body = %v, want no %s", body, key)
 		}
 	}
-	if !strings.Contains(out, "left review auto-inject unchanged for mer-1") {
-		t.Fatalf("stdout = %q, want the unchanged-inject note", out)
+	if !strings.Contains(out, "review auto-inject was already off for mer-1") {
+		t.Fatalf("stdout = %q, want the already-off note", out)
+	}
+}
+
+// --no-inject must report the hard guarantee (#6810): the daemon turned the
+// session's review auto-inject off, so nothing will be delivered.
+func TestReviewTriggerReportsAutoInjectDisabled(t *testing.T) {
+	cfg := setReviewEnv(t)
+	srv, capture := reviewServer(t, http.StatusCreated, `{"created":true,"autoInjectDisabled":true}`)
+	writeRunFileFor(t, cfg, srv)
+
+	out, errOut, err := executeCLI(t, aliveDeps(), "review", "trigger", "mer-1", "--no-inject")
+	if err != nil {
+		t.Fatalf("unexpected error: %v\nstderr=%s", err, errOut)
+	}
+	// enableAutoInject has omitempty: its absence IS false, matching the daemon
+	// contract that --no-inject must not turn the policy on.
+	if body := capture.body; strings.Contains(body, `"enableAutoInject":true`) {
+		t.Fatalf("body = %q, want enableAutoInject absent/false", body)
+	}
+	if !strings.Contains(out, "turned off review auto-inject for mer-1") {
+		t.Fatalf("stdout = %q, want the turned-off note", out)
 	}
 }
 

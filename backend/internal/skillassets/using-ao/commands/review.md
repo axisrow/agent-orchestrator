@@ -136,7 +136,7 @@ ao review trigger [worker-session-id] [flags]
 | `--model string` | Reviewer model for this pass only | As above |
 | `--effort string` | Reviewer reasoning effort for this pass only | As above |
 | `--rerun` | Review a head that already has a review again, or add a reviewer with a different agent alongside one that is still running | - |
-| `--no-inject` | Leave the session's review auto-inject setting unchanged | Auto-inject is turned on |
+| `--no-inject` | Turn the session's review auto-inject off, so reviewer comments are not delivered to the session | Auto-inject is turned on |
 
 AO fetches the session's PRs fresh from the provider before deciding what is
 due, so the pass covers the commit really on the PR. Right after opening a PR,
@@ -153,6 +153,9 @@ reviewer posts an inline GitHub comment for each change it requires, and AO
 forwards those comments to the worker like any other review comments. An
 approval adds no comments, so check the verdict with `ao review ls`. If a run
 shows `failed` or `cancelled`, trigger again; nothing else reports it.
+`--no-inject` turns the policy off instead, so no reviewer feedback reaches the
+session regardless of its prior state; `ao session auto-inject <id> <on|off>`
+flips it for an existing session, and `ao review ls --json` shows it.
 
 **Examples:**
 

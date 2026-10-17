@@ -2884,6 +2884,31 @@ func TestPRObservation_ReviewFeedbackNotInjectedWhenDisabled(t *testing.T) {
 	}
 }
 
+// The session's live auto-inject policy gates review delivery even when the
+// persisted comments still carry stamp=true from an earlier observation made
+// while the policy was on (#6810). CI nudges keep their own policy.
+func TestPRObservation_NoReviewDeliveryWhenSessionAutoInjectOff(t *testing.T) {
+	m, st, msg := newManager()
+	rec := working("mer-1")
+	rec.AutoInjectReview = false
+	st.sessions[rec.ID] = rec
+	st.comments["pr1"] = []domain.PullRequestComment{{ID: "1", ThreadID: "T1", Author: "alice", Body: "fix this", AutoInjectReview: true}}
+	st.reviews["pr1"] = []domain.PullRequestReview{{ID: "r1", Author: "alice", State: domain.ReviewChangesRequest, Body: "change this", AutoInjectReview: true}}
+	o := ports.PRObservation{
+		Fetched: true,
+		URL:     "pr1",
+		CI:      domain.CIFailing,
+		Checks:  []ports.PRCheckObservation{{Name: "build", CommitHash: "c1", Status: domain.PRCheckFailed, LogTail: "boom"}},
+		Review:  domain.ReviewChangesRequest,
+	}
+	if err := m.ApplyPRObservation(ctx, rec.ID, o); err != nil {
+		t.Fatal(err)
+	}
+	if len(msg.msgs) != 1 || !strings.Contains(msg.msgs[0], "boom") || strings.Contains(msg.msgs[0], "fix this") || strings.Contains(msg.msgs[0], "change this") {
+		t.Fatalf("messages = %v, want CI only while the session policy is off", msg.msgs)
+	}
+}
+
 func TestPRObservation_MixedPersistedCommentDecisions(t *testing.T) {
 	m, st, msg := newManager()
 	st.sessions["mer-1"] = working("mer-1")
