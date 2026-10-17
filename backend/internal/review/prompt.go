@@ -25,6 +25,8 @@ Complete every review task in the queue autonomously. Do not ask the user whethe
 
 This headless sandbox auto-allows the exact commands below; no human will ever be prompted for them. Their base64 payload makes each command long — that is expected and required. Any standing rule against long inline arguments or staged files does not apply here: these shapes are the only sanctioned submission channel, so emit them exactly as shown. The staged file names embed %[1]s — your own worker session, which is the only session the sandbox allows you to stage for or submit as.
 
+Staging rule: if your harness offers a Write (file-creation) tool and permits writing to /tmp, create the staged JSON file with it and skip the printf|base64 line. Otherwise emit the printf|base64 shape exactly as shown. Do not stage any other way. If a staging or submit attempt is denied or fails, never loop over alternative shell forms (heredoc, cat redirection, tee, touch+append, re-reads): switch once between the two sanctioned shapes above, and if neither works, stop and report the staging failure in your final output instead of retrying.
+
 Do these steps in order:
 1. For each PR below, post a separate review on that pull request and capture its id in one call. Post with `+"`gh api`"+` rather than `+"`gh pr review`"+`: it is the only way to attach inline comments, and its response carries the created review's id, so AO can tell the worker exactly which review to address. Build the complete JSON payload, base64-encode it yourself (the encoding is pure letters, digits, and +/=, so it carries no shell-quoting hazard at any length and never needs escaping), stage it, and post from the staged file:
 
@@ -37,7 +39,7 @@ Do these steps in order:
      - Leave optional or nice-to-have suggestions out of "comments"; mention them in the summary only.
      - Omit "comments" only when nothing needs to change.
    - Always use "event": "COMMENT": reviews are posted from the PR author's own account, and GitHub rejects both APPROVE and REQUEST_CHANGES on your own PR. State in the body whether you are requesting changes or approving; the machine-readable verdict goes to AO in step 2.
-   - Do not use a heredoc and do not stage any other way: reviewer panes run through an interactive PTY, and these two commands are the auto-allowed shape.
+   - Stage exactly per the staging rule above (Write tool when permitted, else the printf|base64 shape); never a heredoc or any other redirection: reviewer panes run through an interactive PTY, and only the sanctioned shapes are usable.
    - The printed number is the review id. If the call fails on the provider, leave the id empty.
 2. After every PR has its own GitHub review from step 1, record AO's bookkeeping for those already-posted reviews: stage the JSON the same way, then run one submit command. Stage to /tmp only — never into the worktree, where a file could be committed onto the worker's branch. Include one object per PR/run from the queue:
 
