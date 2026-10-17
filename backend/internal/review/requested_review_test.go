@@ -595,3 +595,34 @@ func TestListRetiresAPassOnlyOverrideReviewerAfterItsPassEnds(t *testing.T) {
 		t.Fatalf("a rerun must revive the retired override, still archived")
 	}
 }
+
+// Retiring an override reviewer also destroys its live idle pane: an archived
+// row with a living reviewer process behind it is a zombie, and the retired
+// reviewer must not stay listed as active in the same response.
+func TestListDestroysThePaneOfARetiredOverrideReviewer(t *testing.T) {
+	store := &fakeStore{
+		reviews: map[domain.ReviewerHarness]domain.Review{
+			domain.ReviewerClaudeCode: {ID: "rev-claude-code", SessionID: "mer-1", Harness: domain.ReviewerClaudeCode, ReviewerHandleID: "claude-pane"},
+			domain.ReviewerCodex:      {ID: "rev-codex", SessionID: "mer-1", Harness: domain.ReviewerCodex, ReviewerHandleID: "codex-pane", ReviewerActivityState: domain.ActivityActive},
+		},
+		runs: []domain.ReviewRun{
+			requestedRun("run-claude", domain.ReviewerClaudeCode, domain.ReviewRunComplete, domain.VerdictApproved, 1),
+			requestedRun("run-codex", domain.ReviewerCodex, domain.ReviewRunFailed, domain.VerdictNone, 2),
+		},
+	}
+	launcher := &fakeLauncher{}
+	eng := newEngineForTest(store, fakeSessions{rec: liveWorker(), ok: true}, prAt("sha1"), fakeProjects{}, launcher)
+
+	got, err := eng.List(context.Background(), "mer-1")
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if launcher.destroyCalls != 1 || launcher.destroyedHandle != "codex-pane" {
+		t.Fatalf("launcher = %+v, want exactly the codex pane destroyed", launcher)
+	}
+	for _, surface := range got.ActiveReviewers {
+		if surface.Harness == domain.ReviewerCodex {
+			t.Fatalf("retired codex reviewer still listed active: %+v", got.ActiveReviewers)
+		}
+	}
+}

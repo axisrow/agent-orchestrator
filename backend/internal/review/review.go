@@ -1539,10 +1539,6 @@ func (e *Engine) listLocked(ctx stdctx.Context, workerID domain.SessionID, selec
 	if err != nil {
 		return SessionReviews{}, err
 	}
-	active := []domain.ReviewerSurface{}
-	if reviewerRowActive(reviewRow, runs) {
-		active = append(active, reviewerSurface(reviewRow))
-	}
 	for i := range reviewRows {
 		other := reviewRows[i]
 		if other.ID == reviewRow.ID {
@@ -1558,14 +1554,13 @@ func (e *Engine) listLocked(ctx stdctx.Context, workerID domain.SessionID, selec
 				return SessionReviews{}, err
 			}
 		}
-		if reviewerRowActive(other, runs) {
-			active = append(active, reviewerSurface(other))
-		}
 	}
 	// A pass-only override reviewer retires once its runs are terminal: the
 	// --agent flag documents "for this pass only", so a temporary reviewer must
 	// not linger in the pane forever (#6862). The session's selected reviewer
-	// and any reviewer with a running pass always stay.
+	// and any reviewer with a running pass always stay. A live idle pane is
+	// destroyed with the row: retiring the record alone would orphan the
+	// reviewer process.
 	for i := range reviewRows {
 		row := reviewRows[i]
 		if row.IsArchived || row.Harness == selectedHarness {
@@ -1581,6 +1576,11 @@ func (e *Engine) listLocked(ctx stdctx.Context, workerID domain.SessionID, selec
 		if running {
 			continue
 		}
+		if row.ReviewerHandleID != "" {
+			// Best-effort: List must not fail because a dying pane refused to
+			// die; the archived row below keeps it out of every surface anyway.
+			_ = e.launcher.Destroy(ctx, row.ReviewerHandleID)
+		}
 		retired := row
 		retired.IsArchived = true
 		retired.ReviewerHandleID = ""
@@ -1594,6 +1594,20 @@ func (e *Engine) listLocked(ctx stdctx.Context, workerID domain.SessionID, selec
 			reviewRow = retired
 		} else {
 			reviewRows[i] = retired
+		}
+	}
+	// Built after the sweep so a reviewer retired above is never listed active.
+	active := []domain.ReviewerSurface{}
+	if reviewerRowActive(reviewRow, runs) {
+		active = append(active, reviewerSurface(reviewRow))
+	}
+	for i := range reviewRows {
+		other := reviewRows[i]
+		if other.ID == reviewRow.ID {
+			continue
+		}
+		if reviewerRowActive(other, runs) {
+			active = append(active, reviewerSurface(other))
 		}
 	}
 	prs, err := e.prs.ListPRsBySession(ctx, workerID)

@@ -503,12 +503,14 @@ func TestReviewsTriggerForwardsAgentPolicyAndReportsAutoInject(t *testing.T) {
 
 func TestReviewsTriggerMapsSameCommitConflictsTo409(t *testing.T) {
 	for _, tc := range []struct {
-		err  error
-		code string
+		err    error
+		code   string
+		substr string
 	}{
-		{fmt.Errorf("%w: codex is already reviewing PR #1 head abc", reviewcore.ErrReviewAlreadyRunning), "REVIEW_ALREADY_RUNNING"},
-		{fmt.Errorf("%w: PR #1 head abc was already reviewed (approved); push new commits, or pass --rerun", reviewcore.ErrHeadAlreadyReviewed), "REVIEW_HEAD_ALREADY_REVIEWED"},
-		{fmt.Errorf("%w: PR #1 head abc belongs to active session mer-2", reviewcore.ErrPROwnedElsewhere), "REVIEW_PR_OWNED_BY_OTHER_SESSION"},
+		{fmt.Errorf("%w: codex is already reviewing PR #1 head abc", reviewcore.ErrReviewAlreadyRunning), "REVIEW_ALREADY_RUNNING", "PR #1 head abc"},
+		{fmt.Errorf("%w: PR #1 head abc was already reviewed (approved); push new commits, or pass --rerun", reviewcore.ErrHeadAlreadyReviewed), "REVIEW_HEAD_ALREADY_REVIEWED", "PR #1 head abc"},
+		{fmt.Errorf("%w: PR #1 head abc belongs to active session mer-2", reviewcore.ErrPROwnedElsewhere), "REVIEW_PR_OWNED_BY_OTHER_SESSION", "PR #1 head abc"},
+		{fmt.Errorf(`%w: reviewer "codex" is already selected for this session`, reviewcore.ErrReviewerSelected), "REVIEWER_ALREADY_SELECTED", "already selected"},
 	} {
 		srv := newReviewTestServer(t, &fakeReviewService{triggerErr: tc.err})
 		body, status, headers := doRequest(t, srv, "POST", "/api/v1/sessions/mer-1/reviews/trigger", `{"rejectReviewedHead":true}`)
@@ -516,7 +518,7 @@ func TestReviewsTriggerMapsSameCommitConflictsTo409(t *testing.T) {
 		assertErrorCode(t, body, status, http.StatusConflict, tc.code)
 		var got errorBody
 		mustJSON(t, body, &got)
-		if !strings.Contains(got.Message, "PR #1 head abc") {
+		if !strings.Contains(got.Message, tc.substr) {
 			t.Fatalf("message = %q, want the actionable explanation", got.Message)
 		}
 	}
