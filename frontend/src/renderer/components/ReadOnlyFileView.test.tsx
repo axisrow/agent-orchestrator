@@ -192,16 +192,16 @@ describe("ReadOnlyFileView", () => {
 		expect(screen.getByText("Binary file preview is not available.")).toBeInTheDocument();
 	});
 
-	it("renders artifact images from the artifact rawUrl, not the workspace blob endpoint", () => {
+	it("renders artifact images from the artifact imageUrl, not the workspace blob endpoint", () => {
 		render(
 			<ReadOnlyFileView
 				annotation={annotation()}
 				detail={baseDetail({ binary: true, content: "", path: "shots/01-home.png", imageMediaType: "image/png" })}
-				rawUrl="http://ao-artifacts.test:8080/shots/01-home.png?raw=true"
+				imageUrl="http://ao-artifacts.test:8080/shots/01-home.png?raw=true&v=42"
 				sessionId="sess-1"
 			/>,
 		);
-		expect(screen.getByRole("img")).toHaveAttribute("src", "http://ao-artifacts.test:8080/shots/01-home.png?raw=true");
+		expect(screen.getByRole("img")).toHaveAttribute("src", "http://ao-artifacts.test:8080/shots/01-home.png?raw=true&v=42");
 	});
 
 	it("shows a too-large fallback instead of attempting to render truncated content", () => {

@@ -37,11 +37,11 @@ export function ReadOnlyFileView({
 	onContentReady,
 	onEditChange,
 	onRevealLineConsumed,
-	rawUrl,
 	revealLine,
 	scope = "combined",
 	sessionId,
 	hostId,
+	imageUrl,
 	side = "after",
 }: {
 	annotation: FileAnnotationModel;
@@ -50,13 +50,12 @@ export function ReadOnlyFileView({
 	onContentReady?: () => void;
 	onEditChange?: (content: string) => void;
 	onRevealLineConsumed?: (requestKey: number) => void;
-	/** Direct bytes URL for files outside the git workspace (artifacts);
-	 * falls back to the workspace blob endpoint. */
-	rawUrl?: string;
 	revealLine?: { line: number; requestKey: number };
 	scope?: WorkspaceDiffScope;
 	sessionId: string;
 	hostId?: string;
+	/** Where to load an image file from, when not the workspace blob route (an artifact's raw URL). */
+	imageUrl?: string;
 	side?: "before" | "after";
 }) {
 	const { t } = useTranslation();
@@ -102,7 +101,7 @@ export function ReadOnlyFileView({
 					<img
 						alt={detail.path}
 						className="max-h-[70vh] max-w-full object-contain"
-						src={rawUrl ?? workspaceRawImageUrl(sessionId, detail.path, side, hostId, remoteBaseUrl)}
+						src={imageUrl ?? workspaceRawImageUrl(sessionId, detail.path, side, hostId, remoteBaseUrl)}
 					/>
 				</div>
 			);
