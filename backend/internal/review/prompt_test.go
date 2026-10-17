@@ -28,7 +28,11 @@ func TestReviewTextsIncludesMultiPRQueue(t *testing.T) {
 		"* 2. https://github.com/o/r/pull/2 (head commit sha2, run run-2)",
 		"After every PR has its own GitHub review from step 1",
 		"printf '%s'",
-		"not use a heredoc",
+		"never a heredoc",
+		// Staging-denial loop guard: a denied stage/submit must switch between
+		// the two sanctioned shapes once, not storm heredoc/redirect variants.
+		"Staging rule:",
+		"switch once between the two sanctioned shapes",
 		`"reviews": [`,
 		"base64-encode",
 		// #6021: payloads are staged via base64 to per-worker /tmp paths and
