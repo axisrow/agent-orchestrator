@@ -968,6 +968,38 @@ func TestTriggerRequestedEnablesAutoInjectOnlyAfterAPassStarts(t *testing.T) {
 	}
 }
 
+// --no-inject is a hard guarantee (#6810): sessions are born with review
+// auto-inject on, so the trigger must turn the policy off rather than leave a
+// birth-state ON value the operator never set.
+func TestTriggerRequestedNoInjectTurnsAutoInjectOff(t *testing.T) {
+	on := true
+	st := &fakeStore{sessionAutoInjectReview: &on}
+	svc := New(nil, st)
+	svc.engineTrigger = func(_ context.Context, _ domain.SessionID, _ reviewcore.TriggerOptions) (reviewcore.TriggerResult, error) {
+		return reviewcore.TriggerResult{Created: true, CreatedRuns: []domain.ReviewRun{{ID: "run-1"}}}, nil
+	}
+
+	out, err := svc.TriggerRequested(context.Background(), "worker-1", TriggerRequest{Source: domain.ReviewTriggerAgent, EnableAutoInject: false})
+	if err != nil {
+		t.Fatalf("TriggerRequested: %v", err)
+	}
+	if !out.AutoInjectDisabled || out.AutoInjectEnabled {
+		t.Fatalf("outcome = %+v, want auto-inject turned off", out)
+	}
+	if len(st.autoInjectSets) != 1 || st.autoInjectSets[0] {
+		t.Fatalf("autoInjectSets = %v, want exactly one write setting it off", st.autoInjectSets)
+	}
+
+	// Already off: nothing to change and nothing to report.
+	out, err = svc.TriggerRequested(context.Background(), "worker-1", TriggerRequest{Source: domain.ReviewTriggerAgent, EnableAutoInject: false})
+	if err != nil {
+		t.Fatalf("second TriggerRequested: %v", err)
+	}
+	if out.AutoInjectDisabled || len(st.autoInjectSets) != 1 {
+		t.Fatalf("outcome = %+v sets = %v, want no second write", out, st.autoInjectSets)
+	}
+}
+
 func TestTriggerRequestedLeavesAutoInjectWhenTheTriggerIsRejected(t *testing.T) {
 	off := false
 	st := &fakeStore{sessionAutoInjectReview: &off}

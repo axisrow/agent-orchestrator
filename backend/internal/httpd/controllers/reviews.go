@@ -30,6 +30,9 @@ type ListReviewsResponse struct {
 	// show one summary across reviewers without this.
 	Runs            []domain.ReviewRun      `json:"runs"`
 	ReviewerSurface *domain.ReviewerSurface `json:"reviewerSurface,omitempty"`
+	// AutoInjectReview is the session's live review auto-inject policy: whether
+	// reviewer feedback observed from now on is delivered to the session.
+	AutoInjectReview bool `json:"autoInjectReview" description:"The session's live review auto-inject policy: whether reviewer feedback observed from now on is delivered to the session."`
 	// ActiveReviewers is every reviewer with a live pane or a running pass,
 	// selected reviewer first. Several reviewers can work on one worker at once.
 	ActiveReviewers []domain.ReviewerSurface `json:"activeReviewers"`
@@ -56,6 +59,10 @@ type TriggerReviewResponse struct {
 	// AutoInjectEnabled is true when this request turned the worker session's
 	// review auto-inject on.
 	AutoInjectEnabled bool `json:"autoInjectEnabled" description:"True when this request turned the worker session's review auto-inject on."`
+	// AutoInjectDisabled is true when this request turned the worker session's
+	// review auto-inject off: --no-inject is a hard guarantee (#6810), so it
+	// flips the policy off instead of leaving it unchanged.
+	AutoInjectDisabled bool `json:"autoInjectDisabled" description:"True when this request turned the worker session's review auto-inject off."`
 }
 
 // CancelReviewResponse is the body of cancel (200). reviews carries the
@@ -225,12 +232,13 @@ func (c *ReviewsController) trigger(w http.ResponseWriter, r *http.Request) {
 		runs = []domain.ReviewRun{}
 	}
 	envelope.WriteJSON(w, status, TriggerReviewResponse{
-		ReviewerHandleID:  res.ReviewerHandleID,
-		Reviews:           reviews,
-		Runs:              runs,
-		Created:           res.Created,
-		AutoInjectEnabled: res.AutoInjectEnabled,
-		ReviewerSurface:   reviewerSurfacePayload(res.ReviewerSurface),
+		ReviewerHandleID:   res.ReviewerHandleID,
+		Reviews:            reviews,
+		Runs:               runs,
+		Created:            res.Created,
+		AutoInjectEnabled:  res.AutoInjectEnabled,
+		AutoInjectDisabled: res.AutoInjectDisabled,
+		ReviewerSurface:    reviewerSurfacePayload(res.ReviewerSurface),
 	})
 }
 
@@ -371,6 +379,7 @@ func reviewsResponse(res reviewcore.SessionReviews, reviews []reviewcore.PRRevie
 		Reviews:               reviews,
 		Runs:                  runs,
 		ReviewerSurface:       reviewerSurfacePayload(res.ReviewerSurface),
+		AutoInjectReview:      res.AutoInjectReview,
 		ActiveReviewers:       activeReviewersPayload(res.ActiveReviewers),
 	}
 }

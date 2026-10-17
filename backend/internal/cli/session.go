@@ -58,6 +58,8 @@ type sessionDTO struct {
 	Branch       string          `json:"branch,omitempty"`
 	BranchState  *branchStateDTO `json:"branchState,omitempty"`
 	PRs          []sessionPRDTO  `json:"prs"`
+	// AutoInjectReview is the session's live review auto-inject policy (#6810).
+	AutoInjectReview bool `json:"autoInjectReview"`
 }
 
 type branchStateDTO struct {
@@ -209,6 +211,7 @@ func newSessionCommand(ctx *commandContext) *cobra.Command {
 	cmd.AddCommand(newSessionRestartAllCommand(ctx))
 	cmd.AddCommand(newSessionResumeAgentCommand(ctx))
 	cmd.AddCommand(newSessionRenameCommand(ctx))
+	cmd.AddCommand(newSessionAutoInjectCommand(ctx))
 	cmd.AddCommand(newSessionCleanupCommand(ctx))
 	cmd.AddCommand(newSessionClaimPRCommand(ctx))
 	cmd.AddCommand(newSessionSwitchAgentCommand(ctx))
@@ -341,6 +344,43 @@ func newSessionRenameCommand(ctx *commandContext) *cobra.Command {
 				return err
 			}
 			return ctx.renameSession(cmd.Context(), cmd, id, args[1], opts)
+		},
+	}
+	addSessionProjectFlag(cmd.Flags(), &opts.project, "Project id to scope the lookup")
+	return cmd
+}
+
+// newSessionAutoInjectCommand turns a session's review auto-inject policy on or
+// off (#6810): the trigger-time --no-inject flag is not a lever for an existing
+// session, and the PATCH endpoint behind this command was CLI-unreachable.
+func newSessionAutoInjectCommand(ctx *commandContext) *cobra.Command {
+	var opts sessionOptions
+	cmd := &cobra.Command{
+		Use:   "auto-inject <id> <on|off>",
+		Short: "Turn a session's review auto-inject on or off",
+		Long: `Turn a session's review auto-inject on or off.
+
+While it is on, unresolved reviewer comments and changes-requested reviews on
+the session's PRs are delivered into the session. Turning it off is the hard
+guarantee that no reviewer feedback is delivered, whatever prior state the
+session was born with. The current policy shows in ` + "`ao session get`" + ` and
+` + "`ao review ls --json`" + `.`,
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := normalizeSessionID(args[0])
+			if err != nil {
+				return err
+			}
+			var enable bool
+			switch strings.ToLower(strings.TrimSpace(args[1])) {
+			case "on", "true":
+				enable = true
+			case "off", "false":
+				enable = false
+			default:
+				return usageError{errors.New("usage: auto-inject takes on or off")}
+			}
+			return ctx.setAutoInject(cmd.Context(), cmd, id, enable, opts)
 		},
 	}
 	addSessionProjectFlag(cmd.Flags(), &opts.project, "Project id to scope the lookup")
@@ -723,6 +763,30 @@ func (c *commandContext) renameSession(ctx context.Context, cmd *cobra.Command, 
 	return err
 }
 
+func (c *commandContext) setAutoInject(ctx context.Context, cmd *cobra.Command, id string, enable bool, opts sessionOptions) error {
+	if opts.project != "" {
+		if _, err := c.fetchScopedSession(ctx, id, opts.project); err != nil {
+			return err
+		}
+	}
+	var res struct {
+		Session          sessionDTO `json:"session"`
+		AutoInjectReview bool       `json:"autoInjectReview"`
+	}
+	body := struct {
+		AutoInjectReview bool `json:"autoInjectReview"`
+	}{AutoInjectReview: enable}
+	if err := c.patchJSON(ctx, "sessions/"+url.PathEscape(id)+"/auto-inject-review", body, &res); err != nil {
+		return err
+	}
+	state := "off"
+	if res.AutoInjectReview {
+		state = "on"
+	}
+	_, err := fmt.Fprintf(cmd.OutOrStdout(), "review auto-inject is %s for session %s\n", state, id)
+	return err
+}
+
 func (c *commandContext) cleanupSessions(ctx context.Context, cmd *cobra.Command, opts sessionCleanupOptions) error {
 	candidates, err := c.previewCleanupSessions(ctx, opts.project)
 	if err != nil {
@@ -1019,6 +1083,7 @@ func writeSessionDetails(cmd *cobra.Command, sess sessionDTO) error {
 		{"issue", sess.IssueID},
 		{"branch", formatBranchState(sess)},
 		{"terminated", fmt.Sprintf("%t", sess.IsTerminated)},
+		{"auto-inject-review", fmt.Sprintf("%t", sess.AutoInjectReview)},
 	}
 	for _, field := range fields {
 		if field[1] == "" {

@@ -156,6 +156,34 @@ ao session rename mer-3 "fix-auth-bug"
 
 ---
 
+### ao session auto-inject
+
+Turn a session's review auto-inject on or off. While it is on, unresolved
+reviewer comments and changes-requested reviews on the session's PRs are
+delivered into the session; off is the hard guarantee that no reviewer feedback
+is delivered. The current policy shows in `ao session get` and
+`ao review ls --json`.
+
+**Syntax:**
+```
+ao session auto-inject <id> <on|off> [flags]
+```
+
+**Flags:**
+
+| Flag | Meaning | Default / Required |
+|---|---|---|
+| `-p, --project string` | Project id to scope the lookup | - |
+
+**Examples:**
+
+```bash
+# Never deliver reviewer feedback into this session
+ao session auto-inject mer-3 off
+```
+
+---
+
 ### ao session restore
 
 Restore a terminated session or resume an exited agent.

@@ -252,6 +252,7 @@ func TestReviewsListIncludesReviewStates(t *testing.T) {
 		ReviewerHandleID:      "review-mer-1",
 		ReviewerHarness:       domain.ReviewerCodex,
 		ReviewerActivityState: domain.ActivityIdle,
+		AutoInjectReview:      true,
 		Runs:                  []domain.ReviewRun{{ID: "run-1", PRURL: "https://github.com/o/r/pull/1", TargetSHA: "sha1", AutoInjectReview: false}},
 		Reviews:               []reviewcore.PRReviewState{{PRURL: "https://github.com/o/r/pull/1", PRNumber: 1, TargetSHA: "sha1", Status: reviewcore.ReviewStateUpToDate}},
 	}})
@@ -264,8 +265,14 @@ func TestReviewsListIncludesReviewStates(t *testing.T) {
 	if !strings.Contains(string(body), `"reviews"`) || !strings.Contains(string(body), `"up_to_date"`) || !strings.Contains(string(body), `"reviewerHandleId":"review-mer-1"`) || !strings.Contains(string(body), `"reviewerHarness":"codex"`) || !strings.Contains(string(body), `"reviewerActivityState":"idle"`) {
 		t.Fatalf("body missing review states/handle: %s", body)
 	}
+	// The run-level stamp and the session-level live policy are both exposed;
+	// they answer different questions (#6810): what was captured vs what will
+	// be delivered from now on.
 	if !strings.Contains(string(body), `"autoInjectReview":false`) {
 		t.Fatalf("body missing stored AO injection decision: %s", body)
+	}
+	if !strings.Contains(string(body), `"autoInjectReview":true`) {
+		t.Fatalf("body missing the session's live auto-inject policy: %s", body)
 	}
 	if strings.Contains(string(body), `"items"`) || strings.Contains(string(body), `"reviewItems"`) || strings.Contains(string(body), `"reviewRuns"`) {
 		t.Fatalf("body contains deprecated review item aliases: %s", body)

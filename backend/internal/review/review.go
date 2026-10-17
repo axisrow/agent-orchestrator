@@ -233,6 +233,9 @@ type SessionReviews struct {
 	Runs                  []domain.ReviewRun
 	Reviews               []PRReviewState
 	ReviewerSurface       domain.ReviewerSurface
+	// AutoInjectReview is the worker session's live review auto-inject policy:
+	// whether reviewer feedback observed from here on is delivered to it (#6810).
+	AutoInjectReview bool
 	// ActiveReviewers lists every reviewer with a live pane or running pass,
 	// selected reviewer first, so clients can open each of several reviewers
 	// working on the same worker at once.
@@ -1506,7 +1509,9 @@ func (e *Engine) List(ctx stdctx.Context, workerID domain.SessionID) (SessionRev
 	if err != nil {
 		return SessionReviews{}, err
 	}
-	return e.listLocked(ctx, workerID, selectedHarness)
+	res, err := e.listLocked(ctx, workerID, selectedHarness)
+	res.AutoInjectReview = worker.AutoInjectReview
+	return res, err
 }
 
 func (e *Engine) listLocked(ctx stdctx.Context, workerID domain.SessionID, selectedHarness domain.ReviewerHarness) (SessionReviews, error) {

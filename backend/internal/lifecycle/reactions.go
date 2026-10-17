@@ -199,7 +199,12 @@ func (m *Manager) ApplyPRObservation(ctx context.Context, id domain.SessionID, o
 			}
 		}
 
-		if hasUnresolvedComments(o.Comments) {
+		// Review feedback reaches the session only while its live auto-inject
+		// policy is on (#6810). The per-comment/per-review stamps below were
+		// snapshotted when the observer last fetched, so a policy turned off
+		// after the fact (ao review trigger --no-inject, or the session
+		// auto-inject command) must still suppress them here.
+		if rec.AutoInjectReview && hasUnresolvedComments(o.Comments) {
 			comments := unresolvedReviewComments(o.Comments)
 			for _, comment := range comments {
 				if !comment.AutoInjectReview {
@@ -223,7 +228,7 @@ func (m *Manager) ApplyPRObservation(ctx context.Context, id domain.SessionID, o
 			}
 		}
 
-		if o.Review == domain.ReviewChangesRequest {
+		if rec.AutoInjectReview && o.Review == domain.ReviewChangesRequest {
 			for _, review := range reviews {
 				if review.State != domain.ReviewChangesRequest || !review.AutoInjectReview {
 					continue

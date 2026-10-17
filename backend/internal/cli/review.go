@@ -51,16 +51,19 @@ type reviewState struct {
 type listReviewsResponse struct {
 	ReviewerHandleID string        `json:"reviewerHandleId"`
 	Reviews          []reviewState `json:"reviews"`
+	// AutoInjectReview is the session's live review auto-inject policy (#6810).
+	AutoInjectReview bool `json:"autoInjectReview"`
 }
 
 // triggerReviewResponse mirrors controllers.TriggerReviewResponse: Created
 // reports whether a new pass started, and the runs name which reviewer and
 // commit it covers.
 type triggerReviewResponse struct {
-	Created           bool          `json:"created"`
-	AutoInjectEnabled bool          `json:"autoInjectEnabled"`
-	Runs              []reviewRun   `json:"runs"`
-	Reviews           []reviewState `json:"reviews"`
+	Created            bool          `json:"created"`
+	AutoInjectEnabled  bool          `json:"autoInjectEnabled"`
+	AutoInjectDisabled bool          `json:"autoInjectDisabled"`
+	Runs               []reviewRun   `json:"runs"`
+	Reviews            []reviewState `json:"reviews"`
 }
 
 // triggerReviewRequest mirrors controllers.TriggerReviewRequest.
@@ -369,8 +372,11 @@ again: the command fails and says why. Pass --rerun to review the same commit
 again, or to add a different --agent alongside one that is still running.
 
 The worker session's review auto-inject is turned on so the reviewer's inline
-review comments are delivered to the worker; pass --no-inject to leave
-that setting unchanged. AO's review is internal: an approval is not a GitHub
+review comments are delivered to the worker; pass --no-inject to turn it off
+instead, so no reviewer comment or thread is ever delivered to the session
+regardless of its prior state. The current policy shows in "ao review ls --json"
+and "ao session get", and "ao session auto-inject" flips it for an existing
+session. AO's review is internal: an approval is not a GitHub
 approval and does not authorize merging.`,
 		Args: atMostOneArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -390,7 +396,7 @@ approval and does not authorize merging.`,
 	f.StringVar(&opts.model, "model", "", "Reviewer model for this pass only")
 	f.StringVar(&opts.effort, "effort", "", "Reviewer reasoning effort for this pass only")
 	f.BoolVar(&opts.rerun, "rerun", false, "Review heads that already have a review again, or add another reviewer alongside a running one")
-	f.BoolVar(&opts.noInject, "no-inject", false, "Leave the session's review auto-inject setting unchanged")
+	f.BoolVar(&opts.noInject, "no-inject", false, "Turn the session's review auto-inject off, so reviewer comments are not delivered to the session")
 	return cmd
 }
 
@@ -441,8 +447,11 @@ func (c *commandContext) triggerReview(cmd *cobra.Command, args []string, opts r
 	case res.AutoInjectEnabled:
 		_, err := fmt.Fprintf(out, "turned on review auto-inject for %s; the reviewer's comments will be delivered to the session, and `ao review ls` shows the verdict\n", session)
 		return err
+	case res.AutoInjectDisabled:
+		_, err := fmt.Fprintf(out, "turned off review auto-inject for %s; reviewer comments will not be delivered to the session\n", session)
+		return err
 	case opts.noInject:
-		_, err := fmt.Fprintf(out, "left review auto-inject unchanged for %s; check results with `ao review ls %s`\n", session, session)
+		_, err := fmt.Fprintf(out, "review auto-inject was already off for %s; check results with `ao review ls %s`\n", session, session)
 		return err
 	}
 	return nil

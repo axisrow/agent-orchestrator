@@ -442,11 +442,15 @@ type TriggerRequest struct {
 	EnableAutoInject bool
 }
 
-// TriggerOutcome is the trigger result plus whether this request turned the
-// session's review auto-inject on.
+// TriggerOutcome is the trigger result plus whether this request changed the
+// session's review auto-inject, and in which direction.
 type TriggerOutcome struct {
 	reviewcore.TriggerResult
 	AutoInjectEnabled bool
+	// AutoInjectDisabled is true when this request turned the session's review
+	// auto-inject off: --no-inject is a hard guarantee (#6810), so it flips the
+	// policy off instead of leaving a birth-state ON value in place.
+	AutoInjectDisabled bool
 }
 
 // TriggerRequested starts a client-requested review pass.
@@ -480,12 +484,9 @@ func (s *Service) TriggerRequested(ctx context.Context, workerID domain.SessionI
 		return TriggerOutcome{}, err
 	}
 	outcome := TriggerOutcome{TriggerResult: result}
-	if !req.EnableAutoInject {
-		return outcome, nil
-	}
 	// Only after a pass exists: a rejected or failed trigger must not change
-	// the session's feedback policy. Delivery reads the session's live setting
-	// when the result arrives, so turning it on now covers this pass.
+	// the session's feedback policy. Delivery consults the session's live
+	// setting when feedback arrives, so the value set here covers this pass.
 	session, ok, err := s.store.GetSession(ctx, workerID)
 	if err != nil {
 		return TriggerOutcome{}, err
@@ -493,14 +494,29 @@ func (s *Service) TriggerRequested(ctx context.Context, workerID domain.SessionI
 	if !ok {
 		return TriggerOutcome{}, fmt.Errorf("%w: worker session %q", ErrNotFound, workerID)
 	}
-	if session.AutoInjectReview {
+	if req.EnableAutoInject {
+		if session.AutoInjectReview {
+			return outcome, nil
+		}
+		updated, err := s.store.SetSessionAutoInjectReview(ctx, workerID, true, s.clock())
+		if err != nil {
+			return TriggerOutcome{}, fmt.Errorf("enable review auto-inject: %w", err)
+		}
+		outcome.AutoInjectEnabled = updated
 		return outcome, nil
 	}
-	updated, err := s.store.SetSessionAutoInjectReview(ctx, workerID, true, s.clock())
-	if err != nil {
-		return TriggerOutcome{}, fmt.Errorf("enable review auto-inject: %w", err)
+	// --no-inject is a hard guarantee (#6810): every session is born with review
+	// auto-inject on, so leaving the setting unchanged would preserve an ON value
+	// the operator never set and reviewer threads would still be delivered. Turn
+	// the policy off instead; the lifecycle delivery gate reads this live value.
+	if !session.AutoInjectReview {
+		return outcome, nil
 	}
-	outcome.AutoInjectEnabled = updated
+	updated, err := s.store.SetSessionAutoInjectReview(ctx, workerID, false, s.clock())
+	if err != nil {
+		return TriggerOutcome{}, fmt.Errorf("disable review auto-inject: %w", err)
+	}
+	outcome.AutoInjectDisabled = updated
 	return outcome, nil
 }
 

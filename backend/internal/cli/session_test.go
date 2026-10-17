@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -100,6 +101,15 @@ func sessionCommandServer(t *testing.T) (*httptest.Server, *sessionRequestLog) {
 				return
 			}
 			_, _ = io.WriteString(w, `{"ok":true,"sessionId":"demo-1","displayName":`+jsonQuote(req.DisplayName)+`}`)
+		case r.Method == http.MethodPatch && r.URL.Path == "/api/v1/sessions/demo-1/auto-inject-review":
+			var req struct {
+				AutoInjectReview bool `json:"autoInjectReview"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			_, _ = io.WriteString(w, `{"ok":true,"session":`+sessionJSON("demo-1", "demo", "worker", "working", false)+`,"autoInjectReview":`+fmt.Sprintf("%t", req.AutoInjectReview)+`}`)
 		case r.Method == http.MethodPatch && r.URL.Path == "/api/v1/sessions/demo-2":
 			w.WriteHeader(http.StatusBadRequest)
 			_, _ = io.WriteString(w, `{"error":"bad_request","code":"ORCHESTRATOR_RENAME_UNSUPPORTED","message":"The project orchestrator cannot be renamed"}`)
@@ -113,16 +123,17 @@ func sessionCommandServer(t *testing.T) (*httptest.Server, *sessionRequestLog) {
 
 func sessionJSON(id, project, kind, status string, terminated bool) string {
 	b, _ := json.Marshal(map[string]any{
-		"id":           id,
-		"projectId":    project,
-		"kind":         kind,
-		"harness":      "codex",
-		"displayName":  "Current Name",
-		"activity":     map[string]any{"state": "idle", "lastActivityAt": "2026-06-02T12:00:00Z"},
-		"isTerminated": terminated,
-		"createdAt":    "2026-06-02T11:00:00Z",
-		"updatedAt":    "2026-06-02T12:00:00Z",
-		"status":       status,
+		"id":               id,
+		"projectId":        project,
+		"kind":             kind,
+		"harness":          "codex",
+		"displayName":      "Current Name",
+		"activity":         map[string]any{"state": "idle", "lastActivityAt": "2026-06-02T12:00:00Z"},
+		"isTerminated":     terminated,
+		"createdAt":        "2026-06-02T11:00:00Z",
+		"updatedAt":        "2026-06-02T12:00:00Z",
+		"status":           status,
+		"autoInjectReview": true,
 	})
 	return string(b)
 }
@@ -402,6 +413,9 @@ func TestSessionGet_SuccessWithProjectScope(t *testing.T) {
 	}
 	if !strings.Contains(out, "id: demo-1") || !strings.Contains(out, "project: demo") {
 		t.Fatalf("unexpected get output:\n%s", out)
+	}
+	if !strings.Contains(out, "auto-inject-review: true") {
+		t.Fatalf("session get must show the review auto-inject policy (#6810):\n%s", out)
 	}
 	want := []string{"GET /api/v1/sessions/demo-1"}
 	if got := log.all(); !reflect.DeepEqual(got, want) {
@@ -802,6 +816,48 @@ func TestSessionRename_OrchestratorRefusalIsRuntimeError(t *testing.T) {
 	}
 	if strings.Contains(out, "renamed") {
 		t.Fatalf("refused rename reported success:\n%s", out)
+	}
+}
+
+func TestSessionAutoInject_TurnsOffAndOn(t *testing.T) {
+	cfg := setConfigEnv(t)
+	srv, log := sessionCommandServer(t)
+	writeRunFileFor(t, cfg, srv)
+
+	out, errOut, err := executeCLI(t, Deps{
+		ProcessAlive: func(int) bool { return true },
+	}, "session", "auto-inject", "demo-1", "off")
+	if err != nil {
+		t.Fatalf("auto-inject off failed: %v\nstderr=%s", err, errOut)
+	}
+	if !strings.Contains(out, "review auto-inject is off for session demo-1") {
+		t.Fatalf("unexpected output:\n%s", out)
+	}
+
+	out, errOut, err = executeCLI(t, Deps{
+		ProcessAlive: func(int) bool { return true },
+	}, "session", "auto-inject", "demo-1", "on")
+	if err != nil {
+		t.Fatalf("auto-inject on failed: %v\nstderr=%s", err, errOut)
+	}
+	if !strings.Contains(out, "review auto-inject is on for session demo-1") {
+		t.Fatalf("unexpected output:\n%s", out)
+	}
+	want := []string{
+		"PATCH /api/v1/sessions/demo-1/auto-inject-review",
+		"PATCH /api/v1/sessions/demo-1/auto-inject-review",
+	}
+	if got := log.all(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("requests = %#v, want %#v", got, want)
+	}
+}
+
+func TestSessionAutoInject_BadStateIsUsageError(t *testing.T) {
+	setConfigEnv(t)
+
+	_, _, err := executeCLI(t, Deps{}, "session", "auto-inject", "demo-1", "maybe")
+	if got := ExitCode(err); got != 2 {
+		t.Fatalf("exit code = %d, want 2; err=%v", got, err)
 	}
 }
 
