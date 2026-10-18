@@ -10,15 +10,17 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 )
 
-// promptBoundaryStore flips the session's checkpoint to a newer human prompt
-// boundary flipAfter after its first read, standing in for the hook events of a
-// prompt a human typed while a send's acceptance wait was pending. Send is
-// synchronous, so plain map access from GetSession is race-free.
+// promptBoundaryStore flips the session flipAfter after its first read: to a
+// newer human prompt checkpoint by default, or to an active pane with
+// flipActive — standing in for hook events landing while a send's acceptance
+// wait is pending. Send is synchronous, so plain map access from GetSession is
+// race-free.
 type promptBoundaryStore struct {
 	*fakeStore
-	flipAfter time.Duration
-	started   time.Time
-	flipped   bool
+	flipActive bool
+	flipAfter  time.Duration
+	started    time.Time
+	flipped    bool
 }
 
 func (s *promptBoundaryStore) GetSession(ctx context.Context, id domain.SessionID) (domain.SessionRecord, bool, error) {
@@ -28,8 +30,12 @@ func (s *promptBoundaryStore) GetSession(ctx context.Context, id domain.SessionI
 	if !s.flipped && time.Since(s.started) >= s.flipAfter {
 		s.flipped = true
 		rec := s.fakeStore.sessions[id]
-		rec.Metadata.ConversationCheckpointState = domain.ConversationCheckpointPrompt
-		rec.Metadata.ConversationCheckpointGeneration = "launch-1"
+		if s.flipActive {
+			rec.Activity.State = domain.ActivityActive
+		} else {
+			rec.Metadata.ConversationCheckpointState = domain.ConversationCheckpointPrompt
+			rec.Metadata.ConversationCheckpointGeneration = "launch-1"
+		}
 		s.fakeStore.sessions[id] = rec
 	}
 	return s.fakeStore.GetSession(ctx, id)
@@ -39,6 +45,12 @@ func (s *promptBoundaryStore) GetSession(ctx context.Context, id domain.SessionI
 // `ao send` to an idle claude-code TUI used to exit 0 even when the TUI
 // swallowed the whole paste, because nothing correlated the wrapped delivery
 // id against the agent's prompt-submit hook.
+
+// semanticOnlyAgent advertises semantic acceptance but neither activity
+// signal: confirmActive is skipped and only the acceptance wait runs.
+type semanticOnlyAgent struct{ fakeAgent }
+
+func (semanticOnlyAgent) EmitsSemanticMessageAcceptance() bool { return true }
 
 // acceptedPastStartup seeds an idle TUI session past the startup input gate,
 // running a harness whose adapter claims semantic acceptance.
@@ -162,12 +174,13 @@ func TestSendIdleTUINeverRepastesAfterHumanPrompt(t *testing.T) {
 	// must not fail.
 	base := newFakeStore()
 	base.sessions["s1"] = acceptedPastStartup("s1")
-	// Flip 8ms after the first read: confirmActive burns its ~6ms Enter budget
-	// before the acceptance wait even starts, so the boundary must land inside
-	// the wait's first 4ms evidence window (1ms polls).
-	st := &promptBoundaryStore{fakeStore: base, flipAfter: 8 * time.Millisecond}
+	// semanticOnlyAgent skips confirmActive entirely (no submit/blocked
+	// signals), so the wait starts within milliseconds and the 2ms flip lands
+	// deterministically inside the 4ms evidence window — no wall-clock race
+	// with the Enter budget (review finding).
+	st := &promptBoundaryStore{fakeStore: base, flipAfter: 2 * time.Millisecond}
 	msg := &fakeMessenger{}
-	m := newSendTestManager(t, semanticSignalingAgent{}, msg, st.fakeStore)
+	m := newSendTestManager(t, semanticOnlyAgent{}, msg, st.fakeStore)
 	// Re-wire the manager onto the wrapper so the acceptance wait observes the
 	// mid-wait boundary flip.
 	m.store = st
@@ -177,6 +190,29 @@ func TestSendIdleTUINeverRepastesAfterHumanPrompt(t *testing.T) {
 	}
 	if writes := nonEmptyWrites(msg.msgs); len(writes) != 1 {
 		t.Fatalf("pane writes = %d, want 1 (no re-paste after a human prompt)", len(writes))
+	}
+}
+
+func TestSendActivePaneEndsWaitWithoutRepaste(t *testing.T) {
+	// Review finding: a busy pane is the visible delivery state. A send into a
+	// session that turns active mid-window must end the wait without a
+	// re-paste and without a false unconfirmed error — a claude-code worker
+	// mid-turn longer than one evidence window would otherwise get duplicate
+	// pastes into a busy composer.
+	base := newFakeStore()
+	base.sessions["s1"] = acceptedPastStartup("s1")
+	// The pane flips to active ~500us in (well inside the 4ms window) and no
+	// hook evidence ever arrives.
+	st := &promptBoundaryStore{fakeStore: base, flipActive: true, flipAfter: 500 * time.Microsecond}
+	msg := &fakeMessenger{}
+	m := newSendTestManager(t, semanticOnlyAgent{}, msg, st.fakeStore)
+	m.store = st
+
+	if err := m.Send(t.Context(), "s1", "mid-turn instruction", nil); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if writes := nonEmptyWrites(msg.msgs); len(writes) != 1 {
+		t.Fatalf("pane writes = %d, want 1 (no re-paste into a busy pane)", len(writes))
 	}
 }
 

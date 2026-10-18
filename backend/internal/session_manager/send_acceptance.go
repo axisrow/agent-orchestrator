@@ -115,6 +115,15 @@ func (m *Manager) awaitSessionDeliveryWindow(ctx context.Context, id domain.Sess
 		if semanticMessageAccepted(rec, deliveryID) {
 			return true, nil
 		}
+		switch rec.Activity.State {
+		case domain.ActivityActive, domain.ActivityBlocked:
+			// The pane is busy: a running turn or a pending decision is itself
+			// the visible delivery state, and the paste is either submitted or
+			// parked in the composer beneath it. Waiting out the window here
+			// only invites a duplicate re-paste into a busy composer and a
+			// false unconfirmed error for delivery that is still pending.
+			return true, nil
+		}
 		if current := deliveryCheckpointIdentityOf(rec); current != baseline {
 			// Another prompt consumed the pane while ours was pending.
 			return true, nil
