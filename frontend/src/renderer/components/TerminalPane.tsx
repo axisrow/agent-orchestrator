@@ -1441,7 +1441,7 @@ function AttachedTerminal({
 						className="terminal-surface absolute inset-0 grid place-items-center font-mono text-control"
 						data-testid="terminal-connecting-cover"
 					>
-						<div className="text-terminal">{t("terminal.connecting")}</div>
+						<div className="text-terminal-plate-foreground">{t("terminal.connecting")}</div>
 					</div>
 				)}
 				{showReplayCover && !isCloudConnecting && (
@@ -1503,7 +1503,7 @@ function ReplayCover({ message }: { message?: string }) {
 			className="bg-terminal-plate pointer-events-none absolute inset-0 grid place-items-center"
 			data-testid="terminal-replay-cover"
 		>
-			{message ? <span className="font-mono text-sm text-terminal-dim">{message}</span> : null}
+			{message ? <span className="font-mono text-sm text-terminal-plate-dim">{message}</span> : null}
 		</div>
 	);
 }
