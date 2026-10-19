@@ -56,6 +56,16 @@ describe("terminal plate palette stability (#6861)", () => {
 		expect(rethemed).toEqual([]);
 	});
 
+	it("re-points the plate tokens for named themes so they keep coordinating their palette", () => {
+		const named = cssBlock(/:root\[data-style-theme\]\s*\{/);
+		expect(named).not.toBe("");
+		for (const name of PLATE_TOKENS) {
+			const line = named.split("\n").find((candidate) => candidate.trim().startsWith(`${name}:`));
+			expect(line, `${name} coordinated for named themes`).toBeDefined();
+			expect(line).toMatch(/var\(--(background|foreground|muted-foreground)\)/);
+		}
+	});
+
 	it("builds both xterm themes from the plate tokens so TUI output keeps its contrast", () => {
 		document.documentElement.style.setProperty("--terminal-plate", "oklch(0.210 0.002 250)");
 		document.documentElement.style.setProperty("--terminal-plate-foreground", "#d6d6d6");
