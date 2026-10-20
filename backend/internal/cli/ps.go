@@ -102,10 +102,15 @@ func writeProcessInventory(cmd *cobra.Command, res processInventoryResponse) err
 	out := cmd.OutOrStdout()
 	if res.Host != nil {
 		host := res.Host
-		memory := fmt.Sprintf("memory       RAM %s / %s   swap %s / %s   disk free %s",
+		memory := fmt.Sprintf("memory       RAM %s / %s   swap %s / %s",
 			formatBytesCLI(host.UsedBytes), formatBytesCLI(host.TotalBytes),
-			formatBytesCLI(host.SwapUsedBytes), formatBytesCLI(host.SwapTotalBytes),
-			formatBytesCLI(host.SwapMaxBytes-host.SwapTotalBytes))
+			formatBytesCLI(host.SwapUsedBytes), formatBytesCLI(host.SwapTotalBytes))
+		// SwapMaxBytes is the honest ceiling swap can grow into; on linux it
+		// equals SwapTotalBytes, so a "disk free" segment would always print
+		// 0 B there — hide it like the renderer's MemoryPopover does.
+		if host.SwapMaxBytes > host.SwapTotalBytes {
+			memory += fmt.Sprintf("   disk free %s", formatBytesCLI(host.SwapMaxBytes-host.SwapTotalBytes))
+		}
 		if _, err := fmt.Fprintln(out, memory); err != nil {
 			return err
 		}
