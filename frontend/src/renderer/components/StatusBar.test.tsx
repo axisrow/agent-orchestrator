@@ -2,7 +2,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import type { HostMemory, ProcessInventory, ProcessTreeRow } from "../hooks/useProcessInventoryQuery";
+import {
+	processInventoryQueryOptions,
+	type HostMemory,
+	type ProcessInventory,
+	type ProcessTreeRow,
+} from "../hooks/useProcessInventoryQuery";
 import { TooltipProvider } from "./ui/tooltip";
 import { StatusBar } from "./StatusBar";
 
@@ -68,6 +73,7 @@ const orphanTree: ProcessTreeRow = {
 function inventory(overrides: Partial<ProcessInventory> = {}): ProcessInventory {
 	return {
 		generatedAt: "2026-09-17T00:00:00Z",
+		disabled: false,
 		daemon: { pid: 4001, present: true, rssBytes: 94371840 },
 		tmux: { pid: 4055, present: true, rssBytes: 46037504 },
 		trees: [ownedTree, orphanTree],
@@ -151,6 +157,17 @@ describe("StatusBar", () => {
 		clean.totals.orphansCount = 0;
 		renderStatusBar(clean);
 		expect(screen.queryByTestId("status-bar")).toBeNull();
+	});
+
+	it("renders nothing and stops polling when the daemon reports the surface disabled", () => {
+		const { refetchInterval } = processInventoryQueryOptions;
+		renderStatusBar(inventory({ disabled: true, trees: [orphanTree] }));
+		expect(screen.queryByTestId("status-bar")).toBeNull();
+		// AO_NO_PROCINVENTORY turns the surface off: no orphan badge bleeding
+		// through and no further refetch ticks.
+		expect(screen.queryByText("orphans")).toBeNull();
+		const stopped = refetchInterval({ state: { data: inventory({ disabled: true }) } } as Parameters<typeof refetchInterval>[0]);
+		expect(stopped).toBe(false);
 	});
 
 	it("opens the popover and kills a single orphan tree with one exact target", async () => {

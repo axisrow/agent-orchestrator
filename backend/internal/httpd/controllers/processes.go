@@ -15,10 +15,13 @@ import (
 
 // ProcessService is the process-footprint surface the daemon wires from
 // backend/internal/procinventory. Nil keeps routes registered but returns
-// OpenAPI-backed 501s, matching the other optional surfaces.
+// OpenAPI-backed 501s, matching the other optional surfaces. Disabled (the
+// AO_NO_PROCINVENTORY runtime gate) answers the same 501s while the list
+// route still reports the disabled state the status bar keys off.
 type ProcessService interface {
 	Inventory(ctx context.Context) (procinventory.Inventory, error)
 	Kill(ctx context.Context, targets []procinventory.KillTarget) (procinventory.KillReport, error)
+	Disabled() bool
 }
 
 // ProcessController owns the /system/processes routes.
@@ -112,6 +115,12 @@ func (c *ProcessController) list(w http.ResponseWriter, r *http.Request) {
 		apispec.NotImplemented(w, r, "GET", "/api/v1/system/processes")
 		return
 	}
+	if c.Processes.Disabled() {
+		// Still a 200: the status bar must learn "off" (and stop polling) in
+		// one round trip, not treat it as an unavailable surface.
+		envelope.WriteJSON(w, http.StatusOK, ProcessInventoryResponse{Disabled: true})
+		return
+	}
 	inv, err := c.Processes.Inventory(r.Context())
 	if err != nil {
 		envelope.WriteAPIError(w, r, http.StatusInternalServerError, "internal", "PROCESS_SCAN_FAILED", "Process table scan failed", nil)
@@ -121,7 +130,7 @@ func (c *ProcessController) list(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *ProcessController) kill(w http.ResponseWriter, r *http.Request) {
-	if c.Processes == nil {
+	if c.Processes == nil || c.Processes.Disabled() {
 		apispec.NotImplemented(w, r, "POST", "/api/v1/system/processes/kill")
 		return
 	}

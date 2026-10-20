@@ -6264,6 +6264,7 @@ export interface components {
         };
         ProcessInventoryResponse: {
             daemon: components["schemas"]["ProcessGroupSummary"];
+            disabled: boolean;
             /** Format: date-time */
             generatedAt: string;
             host?: components["schemas"]["ProcessHostMemory"];

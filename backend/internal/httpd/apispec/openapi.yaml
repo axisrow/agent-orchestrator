@@ -17787,6 +17787,8 @@ components:
       properties:
         daemon:
           $ref: '#/components/schemas/ProcessGroupSummary'
+        disabled:
+          type: boolean
         generatedAt:
           format: date-time
           type: string
@@ -17805,6 +17807,7 @@ components:
             $ref: '#/components/schemas/ProcessTree'
           type: array
       required:
+      - disabled
       - generatedAt
       - daemon
       - tmux

@@ -31,6 +31,10 @@ export function StatusBar() {
 	const [pendingStopSessionId, setPendingStopSessionId] = useState<string | undefined>();
 	const { data } = useProcessInventoryQuery();
 
+	// AO_NO_PROCINVENTORY (the daemon reports disabled): the feature is off —
+	// hide the bar entirely; the shared query stops refetching on its own.
+	if (data?.disabled) return null;
+
 	const orphans = (data?.trees ?? []).filter((tree) => tree.state === "orphan");
 	const idleOwned = (data?.trees ?? []).filter(
 		(tree) => tree.state === "owned" && tree.activityState !== undefined && tree.activityState !== "active",

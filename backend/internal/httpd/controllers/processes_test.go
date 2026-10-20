@@ -17,11 +17,12 @@ import (
 )
 
 type fakeProcessService struct {
-	inv     procinventory.Inventory
-	invErr  error
-	report  procinventory.KillReport
-	killErr error
-	gotKill []procinventory.KillTarget
+	inv      procinventory.Inventory
+	invErr   error
+	report   procinventory.KillReport
+	killErr  error
+	disabled bool
+	gotKill  []procinventory.KillTarget
 }
 
 func (f *fakeProcessService) Inventory(context.Context) (procinventory.Inventory, error) {
@@ -32,6 +33,8 @@ func (f *fakeProcessService) Kill(_ context.Context, targets []procinventory.Kil
 	f.gotKill = targets
 	return f.report, f.killErr
 }
+
+func (f *fakeProcessService) Disabled() bool { return f.disabled }
 
 func processServer(t *testing.T, svc controllers.ProcessService) *httptest.Server {
 	t.Helper()
@@ -64,6 +67,48 @@ func TestProcessRoutes_NilServiceIs501(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNotImplemented {
 		t.Fatalf("POST status = %d, want 501", resp.StatusCode)
+	}
+}
+
+// TestProcessRoutes_DisabledServiceReportsGateAndRefusesKill covers the
+// AO_NO_PROCINVENTORY runtime gate: the list route still answers 200 with
+// disabled=true (one round trip teaches the status bar to hide and stop
+// polling), while the kill route degrades to 501 like a nil service.
+func TestProcessRoutes_DisabledServiceReportsGateAndRefusesKill(t *testing.T) {
+	svc := &fakeProcessService{disabled: true, inv: procinventory.Inventory{
+		Trees: []procinventory.Tree{{SessionID: "should-not-appear"}},
+	}}
+	srv := processServer(t, svc)
+
+	resp, err := http.Get(srv.URL + "/api/v1/system/processes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET status = %d, want 200", resp.StatusCode)
+	}
+	var got controllers.ProcessInventoryResponse
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.Disabled {
+		t.Fatal("list response disabled = false, want true")
+	}
+	if len(got.Trees) != 0 {
+		t.Fatalf("list response trees = %d, want 0 while disabled", len(got.Trees))
+	}
+
+	resp, err = http.Post(srv.URL+"/api/v1/system/processes/kill", "application/json", bytes.NewReader([]byte(`{"targets":[{"sessionId":"s1","rootPid":1,"rootLstart":"x"}]}`)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotImplemented {
+		t.Fatalf("POST status = %d, want 501", resp.StatusCode)
+	}
+	if svc.gotKill != nil {
+		t.Fatal("kill reached the service while disabled")
 	}
 }
 

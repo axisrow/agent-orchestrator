@@ -21,9 +21,13 @@ const (
 // injected as plain functions so tests can drive classification and kill
 // without processes or SQLite; the daemon wires the real ones once.
 type Service struct {
-	deps   Deps
-	killMu chan struct{}
-	invMu  sync.Mutex
+	deps Deps
+	// disabled is the AO_NO_PROCINVENTORY runtime gate, read once at
+	// construction. A disabled service serves empty inventories without
+	// scanning and refuses kills.
+	disabled bool
+	killMu   chan struct{}
+	invMu    sync.Mutex
 	// cached is the last successful inventory with its wall-clock stamp;
 	// served instead of an error when a fresh scan fails or overruns its
 	// budget, so a thrashing machine degrades to slightly-stale numbers
@@ -105,8 +109,14 @@ func New(deps Deps) *Service {
 	if deps.Log == nil {
 		deps.Log = slog.Default()
 	}
-	return &Service{deps: deps, killMu: make(chan struct{}, 1)}
+	return &Service{deps: deps, disabled: EnvDisabled(), killMu: make(chan struct{}, 1)}
 }
+
+// Disabled reports whether the AO_NO_PROCINVENTORY environment variable
+// turned the surface off. A disabled service's Inventory returns an empty
+// inventory without touching the process table; the controller presents the
+// whole surface as unimplemented.
+func (s *Service) Disabled() bool { return s.disabled }
 
 // Inventory snapshots and classifies the current process table. A host
 // memory fetch failure is not an error: the inventory is returned without
@@ -119,6 +129,9 @@ func New(deps Deps) *Service {
 // rather than an error — a thrashing machine degrades to stale numbers, not
 // to a dead status bar.
 func (s *Service) Inventory(ctx context.Context) (Inventory, error) {
+	if s.disabled {
+		return Inventory{}, nil
+	}
 	s.invMu.Lock()
 	defer s.invMu.Unlock()
 

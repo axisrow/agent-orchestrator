@@ -18,14 +18,17 @@ async function fetchProcessInventory(): Promise<ProcessInventory | null> {
 
 // Shared so the status bar and tests read one cache entry. Polls quietly at
 // 15s while the footprint is healthy and drops to 5s once orphaned trees
-// exist, so a kill's aftermath lands on the next tick.
+// exist, so a kill's aftermath lands on the next tick. A disabled surface
+// (AO_NO_PROCINVENTORY) stops the polling entirely.
 export const processInventoryQueryOptions = {
 	queryKey: processInventoryQueryKey,
 	queryFn: fetchProcessInventory,
 	retry: 1,
 	staleTime: 10_000,
-	refetchInterval: (query: Query<ProcessInventory | null>) =>
-		(query.state.data?.totals.orphansCount ?? 0) > 0 ? 5_000 : 15_000,
+	refetchInterval: (query: Query<ProcessInventory | null>) => {
+		if (query.state.data?.disabled) return false;
+		return (query.state.data?.totals.orphansCount ?? 0) > 0 ? 5_000 : 15_000;
+	},
 };
 
 export function useProcessInventoryQuery(): UseQueryResult<ProcessInventory | null, Error> {

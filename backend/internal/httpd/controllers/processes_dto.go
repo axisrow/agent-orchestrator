@@ -71,6 +71,10 @@ type ProcessHostMemoryDTO struct {
 }
 
 type ProcessInventoryResponse struct {
+	// Disabled is the AO_NO_PROCINVENTORY runtime gate (#93): true means the
+	// daemon turned the surface off — clients hide the status bar and stop
+	// polling. The rest of the struct is zero when disabled.
+	Disabled    bool                   `json:"disabled"`
 	GeneratedAt time.Time              `json:"generatedAt"`
 	Daemon      ProcessGroupSummaryDTO `json:"daemon"`
 	Tmux        ProcessGroupSummaryDTO `json:"tmux"`
