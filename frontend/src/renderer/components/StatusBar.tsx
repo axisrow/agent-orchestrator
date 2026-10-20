@@ -7,6 +7,7 @@ import { formatBytes } from "../lib/format-bytes";
 import {
 	processInventoryQueryKey,
 	useProcessInventoryQuery,
+	isStoppableOwnedTree,
 	type ProcessKillTarget,
 } from "../hooks/useProcessInventoryQuery";
 import { workspaceQueryKey } from "../hooks/useWorkspaceQuery";
@@ -36,9 +37,7 @@ export function StatusBar() {
 	if (data?.disabled) return null;
 
 	const orphans = (data?.trees ?? []).filter((tree) => tree.state === "orphan");
-	const idleOwned = (data?.trees ?? []).filter(
-		(tree) => tree.state === "owned" && tree.activityState !== undefined && tree.activityState !== "active",
-	);
+	const idleOwned = (data?.trees ?? []).filter(isStoppableOwnedTree);
 	const stoppableBytes =
 		orphans.reduce((sum, tree) => sum + tree.rssBytes, 0) + idleOwned.reduce((sum, tree) => sum + tree.rssBytes, 0);
 

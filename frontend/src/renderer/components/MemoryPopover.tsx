@@ -1,7 +1,14 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { formatBytes } from "../lib/format-bytes";
-import type { HostMemory, ProcessInventory, ProcessKillTarget, ProcessTreeRow } from "../hooks/useProcessInventoryQuery";
+import {
+	activityStateLabelKey,
+	isStoppableOwnedTree,
+	type HostMemory,
+	type ProcessInventory,
+	type ProcessKillTarget,
+	type ProcessTreeRow,
+} from "../hooks/useProcessInventoryQuery";
 import { Badge } from "./ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
@@ -195,9 +202,7 @@ export function MemoryPopover({
 					<div className="mt-1 max-h-64 space-y-2 overflow-y-auto">
 						{sortedGroups.map(({ project, groupTrees, rssBytes }) => {
 							const groupOrphans = groupTrees.filter((tree) => tree.state === "orphan");
-							const groupIdle = groupTrees.filter(
-								(tree) => tree.state === "owned" && tree.activityState !== undefined && tree.activityState !== "active",
-							);
+							const groupIdle = groupTrees.filter(isStoppableOwnedTree);
 							return (
 								<div key={project}>
 									<div className="flex items-center justify-between gap-2">
@@ -228,8 +233,10 @@ export function MemoryPopover({
 										)}
 									</div>
 									<ul className="space-y-0.5">
-										{groupTrees.map((tree) => (
-											<li key={`${tree.sessionId}-${tree.rootPid}`} className="flex items-center justify-between gap-2">
+										{groupTrees.map((tree) => {
+											const activityKey = activityStateLabelKey(tree.activityState);
+											return (
+												<li key={`${tree.sessionId}-${tree.rootPid}`} className="flex items-center justify-between gap-2">
 												<span className="truncate tabular-nums">
 													{t("statusBar.treeRow", { session: tree.sessionId, pid: tree.rootPid, rss: formatBytes(tree.rssBytes) })}
 												</span>
@@ -243,7 +250,7 @@ export function MemoryPopover({
 													>
 														{pendingKillSessionId === tree.sessionId ? "…" : t("statusBar.killTree")}
 													</button>
-												) : tree.state === "owned" && tree.activityState !== undefined && tree.activityState !== "active" ? (
+												) : isStoppableOwnedTree(tree) ? (
 													<button
 														type="button"
 														aria-label={t("statusBar.stopTreeAria", { session: tree.sessionId })}
@@ -253,17 +260,27 @@ export function MemoryPopover({
 													>
 														{pendingStopSessionId === tree.sessionId ? "…" : t("statusBar.stopTree")}
 													</button>
+												) : tree.state === "owned" ? (
+													<Badge variant="neutral" className="shrink-0">
+														{activityKey ? (
+															<>
+																{t(activityKey)}
+																{!tree.attached && ` · ${t("statusBar.stateAdopted")}`}
+															</>
+														) : tree.attached ? (
+															t("statusBar.stateOwned")
+														) : (
+															`${t("statusBar.stateOwned")} · ${t("statusBar.stateAdopted")}`
+														)}
+													</Badge>
 												) : (
-													<Badge variant={tree.state === "owned" ? "neutral" : "outline"} className="shrink-0">
-														{tree.state === "owned"
-															? tree.attached
-																? t("statusBar.stateOwned")
-																: `${t("statusBar.stateOwned")} · ${t("statusBar.stateAdopted")}`
-															: t("statusBar.stateForeign")}
+													<Badge variant="outline" className="shrink-0">
+														{t("statusBar.stateForeign")}
 													</Badge>
 												)}
 											</li>
-										))}
+											);
+										})}
 									</ul>
 								</div>
 							);

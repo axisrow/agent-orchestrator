@@ -3,6 +3,8 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import {
+	activityStateLabelKey,
+	isStoppableOwnedTree,
 	processInventoryQueryOptions,
 	type HostMemory,
 	type ProcessInventory,
@@ -149,6 +151,40 @@ describe("StatusBar", () => {
 		renderStatusBar(inventory());
 		expect(screen.getByText("orphans")).toBeInTheDocument();
 		expect(screen.getByTestId("status-bar-stop")).toBeInTheDocument();
+	});
+
+	it("never offers stop controls for a session waiting on the user", () => {
+		const blocked: ProcessTreeRow = { ...ownedTree, sessionId: "blocked-1", rootPid: 90112, activityState: "blocked" };
+		const waiting: ProcessTreeRow = { ...ownedTree, sessionId: "waiting-1", rootPid: 90113, activityState: "waiting_input" };
+		renderStatusBar(inventory({ trees: [blocked, waiting] }));
+		expect(screen.queryByTestId("status-bar-stop")).toBeNull();
+		expect(screen.queryByText("idle workers")).toBeNull();
+	});
+
+	it("counts idle and exited owned trees as stoppable workers", () => {
+		const idle: ProcessTreeRow = { ...ownedTree, sessionId: "idle-1", rootPid: 90114, activityState: "idle" };
+		const exited: ProcessTreeRow = { ...ownedTree, sessionId: "exited-1", rootPid: 90115, activityState: "exited" };
+		renderStatusBar(inventory({ trees: [idle, exited] }));
+		expect(screen.getByTestId("status-bar-stop")).toBeInTheDocument();
+		expect(screen.getByText("idle workers")).toBeInTheDocument();
+	});
+
+	it("isStoppableOwnedTree accepts only idle and exited owned trees", () => {
+		for (const [state, want] of [
+			["active", false],
+			["idle", true],
+			["waiting_input", false],
+			["blocked", false],
+			["exited", true],
+			[undefined, false],
+		] as const) {
+			expect(isStoppableOwnedTree({ ...ownedTree, activityState: state })).toBe(want);
+		}
+		// Orphans go through the kill path, never the session stop path.
+		expect(isStoppableOwnedTree({ ...orphanTree, activityState: "idle" })).toBe(false);
+		expect(activityStateLabelKey("waiting_input")).toBe("statusBar.activityWaitingInput");
+		expect(activityStateLabelKey("mystery")).toBe("");
+		expect(activityStateLabelKey(undefined)).toBe("");
 	});
 
 	it("renders nothing when the inventory has no host section and no orphans", () => {

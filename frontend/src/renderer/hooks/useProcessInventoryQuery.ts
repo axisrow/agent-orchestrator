@@ -1,5 +1,6 @@
 import { useQuery, type Query, type UseQueryResult } from "@tanstack/react-query";
 import type { components } from "../../api/schema";
+import type { MessageKey } from "../i18n";
 import { apiClient } from "../lib/api-client";
 
 export type ProcessInventory = components["schemas"]["ProcessInventoryResponse"];
@@ -33,4 +34,32 @@ export const processInventoryQueryOptions = {
 
 export function useProcessInventoryQuery(): UseQueryResult<ProcessInventory | null, Error> {
 	return useQuery(processInventoryQueryOptions);
+}
+
+// Owned trees the batch stop controls may stop: idle or exited only.
+// waiting_input and blocked mean the session stopped on the user (a question
+// or an open permission dialog) — stopping those would mute a session that is
+// waiting for the human, so they are never stoppable. One helper because the
+// predicate is shared by the status bar and both MemoryPopover stop buttons.
+export function isStoppableOwnedTree(tree: ProcessTreeRow): boolean {
+	return tree.state === "owned" && (tree.activityState === "idle" || tree.activityState === "exited");
+}
+
+// I18n key for a tree's tracked activity state (statusBar.activity* keys);
+// empty string when the state is unknown.
+export function activityStateLabelKey(activityState: string | undefined): MessageKey | "" {
+	switch (activityState) {
+		case "active":
+			return "statusBar.activityActive";
+		case "idle":
+			return "statusBar.activityIdle";
+		case "exited":
+			return "statusBar.activityExited";
+		case "waiting_input":
+			return "statusBar.activityWaitingInput";
+		case "blocked":
+			return "statusBar.activityBlocked";
+		default:
+			return "";
+	}
 }
