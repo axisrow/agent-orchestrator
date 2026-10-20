@@ -79,13 +79,15 @@ function buildGetBody(
 
 // overridePath walks the PUT body to the override field for the scope, and the
 // sibling "rest" fields that must survive the wholesale-replace save.
-// apiClient's runtime fast-path passes a Request object straight to fetch, so
-// the method/body live on the Request, not in RequestInit.
 function putBody(handler: ReturnType<typeof fetchMock>) {
-  const bodies = (
-    handler as typeof handler & { putBodies?: Record<string, unknown>[] }
-  ).putBodies;
-  return bodies?.[0] ?? ({} as Record<string, unknown>);
+  const putCall = handler.mock.calls.find(
+    (call) => (call[1]?.method ?? "GET").toUpperCase() === "PUT",
+  );
+  const raw = putCall?.[1]?.body;
+  if (raw === undefined) return {} as Record<string, unknown>;
+  const text =
+    raw instanceof ArrayBuffer ? new TextDecoder().decode(raw) : String(raw);
+  return JSON.parse(text) as Record<string, unknown>;
 }
 
 function workerOverrideOf(scope: Scope, body: Record<string, unknown>) {
@@ -137,17 +139,9 @@ function renderDialog(props: Partial<DialogProps> & { scope?: Scope }) {
 // `error` (non-2xx), so the Response body is the raw object, not wrapped in
 // `{ data }`.
 function fetchMock(getBody: unknown, putBody?: unknown) {
-  const putBodies: Record<string, unknown>[] = [];
   const handler = vi.fn(
-    async (input: RequestInfo | URL, init?: RequestInit) => {
-      const request =
-        input instanceof Request ? input : new Request(input, init);
-      const method = request.method.toUpperCase();
-      if (method === "PUT") {
-        putBodies.push(
-          JSON.parse((await request.text()) || "{}") as Record<string, unknown>,
-        );
-      }
+    async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const method = (init?.method ?? "GET").toUpperCase();
       let body: unknown = getBody;
       if (method === "PUT") body = putBody ?? getBody;
       return new Response(JSON.stringify(body), {
@@ -156,8 +150,6 @@ function fetchMock(getBody: unknown, putBody?: unknown) {
       });
     },
   );
-  (handler as typeof handler & { putBodies: Record<string, unknown>[] }).putBodies =
-    putBodies;
   vi.stubGlobal("fetch", handler);
   return handler;
 }
@@ -326,10 +318,9 @@ describe.each(SCOPES)("PromptOverrideDialog (scope=%s)", (scope) => {
   it("shows a save error when the PUT fails", async () => {
     const user = userEvent.setup();
     const handler = vi.fn(
-      async (input: RequestInfo | URL, init?: RequestInit) => {
-        const request =
-          input instanceof Request ? input : new Request(input, init);
-        if (request.method.toUpperCase() === "PUT") {
+      async (_input: RequestInfo | URL, init?: RequestInit) => {
+        const method = (init?.method ?? "GET").toUpperCase();
+        if (method === "PUT") {
           return new Response(
             JSON.stringify({ code: "internal_error", message: "boom" }),
             { status: 500, headers: { "content-type": "application/json" } },

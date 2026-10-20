@@ -97,7 +97,7 @@ describe("ReviewerSelect", () => {
 
 	it("offers a keyboard-reachable agent default in a non-current harness submenu", async () => {
 		const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-		client.setQueryData(agentModelsQueryKey("codex", "", undefined, "reviewer"), {
+		client.setQueryData(["agent-models", "codex", ""], {
 			agentId: "codex", selectionMode: "catalog", models: [
 				{ id: "gpt-test", label: "GPT Test", isDefault: true },
 				{ id: "gpt-other", label: "GPT Other" },
@@ -120,7 +120,7 @@ describe("ReviewerSelect", () => {
 
 	it("does not duplicate the agent default for the current harness, and marks the default model selected", async () => {
 		const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-		client.setQueryData(agentModelsQueryKey("codex", "", undefined, "reviewer"), {
+		client.setQueryData(["agent-models", "codex", ""], {
 			agentId: "codex", selectionMode: "catalog", models: [
 				{ id: "gpt-test", label: "GPT Test", isDefault: true },
 				{ id: "gpt-other", label: "GPT Other" },
@@ -139,7 +139,7 @@ describe("ReviewerSelect", () => {
 
 	it("offers a single agent default for the current harness while a non-default model is selected without a reported default", async () => {
 		const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-		client.setQueryData(agentModelsQueryKey("codex", "", undefined, "reviewer"), {
+		client.setQueryData(["agent-models", "codex", ""], {
 			agentId: "codex", selectionMode: "catalog", models: [{ id: "gpt-test", label: "GPT Test" }],
 		});
 		render(<QueryClientProvider client={client}><ReviewerSelect
