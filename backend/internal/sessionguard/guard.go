@@ -113,6 +113,12 @@ type Guard struct {
 
 	startupGateMu           sync.RWMutex
 	startupSignalGatesInput func(domain.AgentHarness) bool
+
+	// waitingInputComposerMu guards waitingInputComposerSafe, the adapter
+	// capability predicate declaring that a harness's waiting_input prompt is
+	// a genuine idle composer rather than a masked permission decision.
+	waitingInputComposerMu   sync.RWMutex
+	waitingInputComposerSafe func(domain.AgentHarness) bool
 }
 
 var _ ports.AgentMessenger = (*Guard)(nil)
@@ -134,7 +140,27 @@ func (g *Guard) refuseDeliver(rec domain.SessionRecord) (Outcome, bool) {
 	if rec.Activity.State == domain.ActivityBlocked {
 		return SuppressedAwaitingUser, true
 	}
+	// waiting_input suppresses only when the harness cannot prove the prompt
+	// is a genuine idle composer. Codex maps permission-request to
+	// waiting_input and installs no hook that could clear a blocked state, so
+	// a user send there would paste onto the hidden decision dialog and its
+	// trailing Enter would answer it on the user's behalf — an unrecoverable
+	// action that must surface as a typed error instead of silent ambiguity
+	// (issue #34). An unwired gate keeps the legacy always-deliverable behavior.
+	if rec.Activity.State == domain.ActivityWaitingInput && !g.waitingInputIsComposer(rec.Harness) {
+		return SuppressedAwaitingUser, true
+	}
 	return SuppressedUnknown, false
+}
+
+// waitingInputIsComposer resolves the adapter capability at the write boundary.
+// A nil predicate means "no adapter contract known" and keeps every
+// waiting_input prompt deliverable, exactly as before the gate existed.
+func (g *Guard) waitingInputIsComposer(harness domain.AgentHarness) bool {
+	g.waitingInputComposerMu.RLock()
+	safe := g.waitingInputComposerSafe
+	g.waitingInputComposerMu.RUnlock()
+	return safe == nil || safe(harness)
 }
 
 func (g *Guard) refuseNudge(rec domain.SessionRecord) (Outcome, bool) {
@@ -172,6 +198,20 @@ func (g *Guard) SetStartupSignalGate(pred func(domain.AgentHarness) bool) {
 	g.startupGateMu.Lock()
 	g.startupSignalGatesInput = pred
 	g.startupGateMu.Unlock()
+}
+
+// SetWaitingInputComposerGate supplies the adapter capability predicate that
+// decides whether a harness's waiting_input prompt is a genuine idle composer
+// a user message may address. It must answer true only for harnesses that
+// report a permission dialog AS blocked (ports.BlockedActivitySignaler);
+// harnesses that mask the dialog as waiting_input (codex) answer false, so
+// Deliver refuses there with SuppressedAwaitingUser and the caller sees a
+// typed error instead of a paste landing on the hidden decision. A nil
+// predicate restores the legacy always-deliverable behavior.
+func (g *Guard) SetWaitingInputComposerGate(pred func(domain.AgentHarness) bool) {
+	g.waitingInputComposerMu.Lock()
+	g.waitingInputComposerSafe = pred
+	g.waitingInputComposerMu.Unlock()
 }
 
 // Send satisfies ports.AgentMessenger so a Guard can sit in for the raw

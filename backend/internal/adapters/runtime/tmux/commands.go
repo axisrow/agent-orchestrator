@@ -148,6 +148,21 @@ func sendKeysLiteralArgs(id, chunk string) []string {
 	return []string{"send-keys", "-t", id, "-l", chunk}
 }
 
+// setBufferArgs stages a message in a named tmux buffer. The `--` keeps a
+// message that begins with "-" from being read as flags.
+func setBufferArgs(bufferName, message string) []string {
+	return []string{"set-buffer", "-b", bufferName, "--", message}
+}
+
+// pasteBufferArgs inserts a staged buffer into the pane as a bracketed paste:
+// -p wraps the content in ESC[200~..ESC[201~ when (and only when) the pane's
+// application enabled ?2004; -r keeps \n bytes literal instead of tmux's CR
+// replacement; -d deletes the staged buffer afterwards. Pane-targeting, so a
+// plain session name (see setStatusOffArgs).
+func pasteBufferArgs(id, bufferName string) []string {
+	return []string{"paste-buffer", "-b", bufferName, "-d", "-p", "-r", "-t", id}
+}
+
 // sendEnterArgs builds args for `tmux send-keys -t <id> Enter` to submit the
 // queued input.
 func sendEnterArgs(id string) []string {
