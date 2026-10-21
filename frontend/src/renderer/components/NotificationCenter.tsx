@@ -842,6 +842,10 @@ export function NotificationCenter({ style }: NotificationCenterProps) {
 							// a terminated session behind one of these should stay viewable, not
 							// gated behind a restore action.
 							const offerRestore = sessionReady && terminated && notification.type === "needs_input";
+							// The reap endpoint kills THIS machine's processes, so the Allow
+							// button exists only on local rows; a remote host's report is
+							// deny-only here — its own daemon owns the ask on its own bell.
+							const offerAllow = hostId === LOCAL_HOST && notification.type === "orphan_workers";
 							return (
 								<NotificationItem
 									highlighted={highlightedIds.has(key) || notification.status === "unread"}
@@ -852,6 +856,7 @@ export function NotificationCenter({ style }: NotificationCenterProps) {
 									onClear={() => handleClear(notification, hostId)}
 									onAllow={() => void allowOrphanReap(notification, hostId, key)}
 									allowing={reapingKeys.has(key)}
+									offerAllow={offerAllow}
 									clearing={clearingNotificationIds.has(key)}
 									clearDisabled={clearingNotificationIds.has(key) || clearingAll}
 									restoring={restoringSessionId === sessionKey}
@@ -944,6 +949,7 @@ const NotificationItem = memo(function NotificationItem({
 	onClear,
 	onAllow,
 	allowing,
+	offerAllow,
 	hostLabel,
 	projectName,
 	clearing,
@@ -957,6 +963,7 @@ const NotificationItem = memo(function NotificationItem({
 	highlighted: boolean;
 	notification: NotificationDTO;
 	offerRestore: boolean;
+	offerAllow: boolean;
 	onOpenSession: (notification: NotificationDTO) => void;
 	onRestore: (notification: NotificationDTO) => void;
 	onClear: (notification: NotificationDTO) => void;
@@ -977,8 +984,9 @@ const NotificationItem = memo(function NotificationItem({
 	const sessionId = notification.target.sessionId || notification.sessionId;
 	const canOpenSession = Boolean(sessionId) && sessionsReady && (!terminated || !offerRestore);
 	// The orphan report is the one notification with a decision button: Allow
-	// runs the reap; the X beside it stays the deny.
-	const offerAllow = notification.type === "orphan_workers";
+	// runs the reap; the X beside it stays the deny. The parent gates the flag
+	// on LOCAL_HOST — the reap endpoint kills this machine's processes, so a
+	// remote host's report must not offer it here.
 	const copy = notificationCopy(notification, sessionName);
 	const titleLink = notificationPRTitleLink(notification, copy.title);
 	const showSessionMeta = Boolean(sessionName) && !notificationMentions(copy, sessionName ?? "");
