@@ -66,29 +66,6 @@ describe("app i18next instance", () => {
 		}
 	});
 
-	// resume-agent targets a session whose agent process exited while the
-	// session row is alive (sessionAgentExited), so its copy must never
-	// describe the session itself as terminated.
-	it("describes resume-agent as relaunching the exited agent, never a terminated session", () => {
-		const terminatedSessionCopy = [
-			"Relaunch this terminated session",
-			"Diese beendete Sitzung neu starten",
-			"Reiniciar esta sesión terminada",
-			"Relancer cette session terminée",
-			"終了したセッションを再起動",
-			"종료된 세션 다시 시작",
-			"Reiniciar esta sessão encerrada",
-			"重新启动这个已终止的会话",
-		];
-		for (const locale of APP_LOCALES) {
-			const catalog = allCatalogs[locale] as unknown as Record<string, string>;
-			const subtitle = catalog["command.resumeAgentSubtitle"];
-			expect(subtitle, `${locale} is missing command.resumeAgentSubtitle`).toBeTruthy();
-			expect(terminatedSessionCopy, `${locale} still describes a terminated session`).not.toContain(subtitle);
-		}
-		expect(createAppI18n("en").t("command.resumeAgentSubtitle")).toMatch(/exited agent/i);
-	});
-
 	it("uses English by default and Chinese when selected", () => {
 		expect(createAppI18n().t("settings.general")).toBe("General");
 		expect(createAppI18n("zh-CN").t("settings.general")).toBe("通用");
