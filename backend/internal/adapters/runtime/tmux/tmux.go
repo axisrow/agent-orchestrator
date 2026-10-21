@@ -1003,11 +1003,16 @@ var sendBufferCounter atomic.Uint64
 // pastes it into the pane in one bracketed envelope: -p inserts the
 // ESC[200~..ESC[201~ markers only when the pane's application enabled ?2004,
 // -r keeps the newlines literal either way, and -d deletes the staged buffer
-// after the paste.
+// after the paste. Staging goes in r.chunkSize pieces (set-buffer, then
+// set-buffer -a per further piece) so no single argv approaches the kernel's
+// per-argument ceiling and a very large send keeps the legacy path's absence
+// of a total-size limit.
 func (r *Runtime) pasteMessage(ctx context.Context, id, message string) error {
 	bufferName := fmt.Sprintf("ao-send-%d-%d", os.Getpid(), sendBufferCounter.Add(1))
-	if _, err := r.runForSession(ctx, id, setBufferArgs(bufferName, message)...); err != nil {
-		return fmt.Errorf("stage buffer %s: %w", bufferName, err)
+	for i, piece := range chunks(message, r.chunkSize) {
+		if _, err := r.runForSession(ctx, id, setBufferArgs(bufferName, piece, i > 0)...); err != nil {
+			return fmt.Errorf("stage buffer %s: %w", bufferName, err)
+		}
 	}
 	if _, err := r.runForSession(ctx, id, pasteBufferArgs(id, bufferName)...); err != nil {
 		return fmt.Errorf("paste buffer %s: %w", bufferName, err)

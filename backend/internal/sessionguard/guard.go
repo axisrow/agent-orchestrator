@@ -57,8 +57,10 @@ const (
 	// an agent prompt would execute it as shell input.
 	SuppressedExited
 	// SuppressedAwaitingUser means the session awaits the human — blocked on a
-	// permission decision (Deliver and Nudge), or waiting at the prompt for
-	// the next instruction (Nudge only).
+	// permission decision (Deliver and Nudge), or waiting at the prompt for the
+	// next instruction (Nudge always; Deliver only on a harness whose
+	// waiting_input cannot be proven a genuine composer — see
+	// SetWaitingInputComposerGate).
 	SuppressedAwaitingUser
 	// SuppressedBusy means the session is mid-turn on a harness that cannot
 	// safely steer an active turn (coordination writes only).
@@ -141,12 +143,14 @@ func (g *Guard) refuseDeliver(rec domain.SessionRecord) (Outcome, bool) {
 		return SuppressedAwaitingUser, true
 	}
 	// waiting_input suppresses only when the harness cannot prove the prompt
-	// is a genuine idle composer. Codex maps permission-request to
-	// waiting_input and installs no hook that could clear a blocked state, so
-	// a user send there would paste onto the hidden decision dialog and its
-	// trailing Enter would answer it on the user's behalf — an unrecoverable
-	// action that must surface as a typed error instead of silent ambiguity
-	// (issue #34). An unwired gate keeps the legacy always-deliverable behavior.
+	// is a genuine idle composer. Harnesses with no hook that could clear a
+	// blocked state (codex, agy, primeagent — every adapter opting out of
+	// ports.BlockedActivitySignaler) mask their permission-request dialogs AS
+	// waiting_input, so a user send there would paste onto the hidden decision
+	// dialog and its trailing Enter would answer it on the user's behalf — an
+	// unrecoverable action that must surface as a typed error instead of
+	// silent ambiguity (issue #34). An unwired gate keeps the legacy
+	// always-deliverable behavior.
 	if rec.Activity.State == domain.ActivityWaitingInput && !g.waitingInputIsComposer(rec.Harness) {
 		return SuppressedAwaitingUser, true
 	}
@@ -204,10 +208,10 @@ func (g *Guard) SetStartupSignalGate(pred func(domain.AgentHarness) bool) {
 // decides whether a harness's waiting_input prompt is a genuine idle composer
 // a user message may address. It must answer true only for harnesses that
 // report a permission dialog AS blocked (ports.BlockedActivitySignaler);
-// harnesses that mask the dialog as waiting_input (codex) answer false, so
-// Deliver refuses there with SuppressedAwaitingUser and the caller sees a
-// typed error instead of a paste landing on the hidden decision. A nil
-// predicate restores the legacy always-deliverable behavior.
+// harnesses that mask the dialog as waiting_input answer false — today codex,
+// agy, and primeagent — so Deliver refuses there with SuppressedAwaitingUser
+// and the caller sees a typed error instead of a paste landing on the hidden
+// decision. A nil predicate restores the legacy always-deliverable behavior.
 func (g *Guard) SetWaitingInputComposerGate(pred func(domain.AgentHarness) bool) {
 	g.waitingInputComposerMu.Lock()
 	g.waitingInputComposerSafe = pred
@@ -230,9 +234,11 @@ func (g *Guard) Send(ctx context.Context, id domain.SessionID, msg string) error
 
 // Deliver writes a user-initiated message (or its Enter-only re-submit: an
 // empty msg) into a live agent. Its activity-specific policy refuses when the
-// session is blocked on a pending decision — waiting_input does NOT suppress, because an agent
-// sitting at an idle prompt is exactly where a user message (or the Enter that
-// submits its unsent draft) belongs.
+// session is blocked on a pending decision. waiting_input suppresses when the
+// harness cannot prove the prompt is a genuine idle composer (a masked
+// permission decision — see SetWaitingInputComposerGate); on harnesses that
+// report dialogs AS blocked, an agent sitting at an idle prompt is exactly
+// where a user message (or the Enter that submits its unsent draft) belongs.
 func (g *Guard) Deliver(ctx context.Context, id domain.SessionID, msg string) (Outcome, error) {
 	return g.send(ctx, id, msg, g.refuseDeliver)
 }

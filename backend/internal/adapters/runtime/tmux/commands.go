@@ -148,10 +148,15 @@ func sendKeysLiteralArgs(id, chunk string) []string {
 	return []string{"send-keys", "-t", id, "-l", chunk}
 }
 
-// setBufferArgs stages a message in a named tmux buffer. The `--` keeps a
-// message that begins with "-" from being read as flags.
-func setBufferArgs(bufferName, message string) []string {
-	return []string{"set-buffer", "-b", bufferName, "--", message}
+// setBufferArgs stages a message piece in a named tmux buffer; staged selects
+// the -a form so a large staged message is built piece by piece. The `--`
+// keeps a piece that begins with "-" from being read as flags.
+func setBufferArgs(bufferName, piece string, staged bool) []string {
+	args := []string{"set-buffer", "-b", bufferName}
+	if staged {
+		args = append(args, "-a")
+	}
+	return append(args, "--", piece)
 }
 
 // pasteBufferArgs inserts a staged buffer into the pane as a bracketed paste:

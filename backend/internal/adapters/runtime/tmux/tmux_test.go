@@ -2026,6 +2026,37 @@ func TestSendMessagePastesMultilineViaBracketedBuffer(t *testing.T) {
 	}
 }
 
+// TestSendMessagePastesStagesLargeBuffersInChunks pins the chunked staging
+// contract: every staged piece stays within r.chunkSize so no set-buffer argv
+// approaches the kernel's per-argument ceiling, and the pieces append (-a)
+// into one buffer that pastes as a single bracketed envelope.
+func TestSendMessagePastesStagesLargeBuffersInChunks(t *testing.T) {
+	r, fr := newTestRuntime(5)
+	message := "aaaaa\nbbbb\ncc"
+	if err := r.SendMessage(context.Background(), ports.RuntimeHandle{ID: "sess-1"}, message); err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	// chunks() splits on bytes (rune-aligned): "aaaaa"=5, "\nbbbb"=5, "\ncc"=2
+	// => 3 staged pieces + paste + Enter.
+	if len(fr.calls) != 5 {
+		t.Fatalf("calls = %d, want 5 (3 staged pieces, paste-buffer, Enter)", len(fr.calls))
+	}
+	bufferName := fr.calls[0].args[2]
+	wantPieces := []string{"aaaaa", "\nbbbb", "\ncc"}
+	for i, piece := range wantPieces {
+		wantArgs := []string{"set-buffer", "-b", bufferName, "--", piece}
+		if i > 0 {
+			wantArgs = []string{"set-buffer", "-b", bufferName, "-a", "--", piece}
+		}
+		if got := fr.calls[i].args; !reflect.DeepEqual(got, wantArgs) {
+			t.Fatalf("staged piece %d args = %#v, want %#v", i, got, wantArgs)
+		}
+	}
+	if got, want := fr.calls[3].args, []string{"paste-buffer", "-b", fr.calls[0].args[2], "-d", "-p", "-r", "-t", "sess-1"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("paste-buffer args = %#v, want %#v", got, want)
+	}
+}
+
 // TestSendMessageKeystrokesForSingleLineEvenWithBracketedPaste keeps single-line
 // sends byte-identical to the established keystroke path: without embedded \n
 // there is no parser divergence to paper over, so no paste staging round-trip.

@@ -1010,10 +1010,10 @@ func New(d Deps) *Manager {
 // harnessWaitingInputComposerSafe reports whether the harness surfaces a
 // permission dialog AS blocked (ports.BlockedActivitySignaler) rather than as
 // waiting_input — only then is a waiting_input prompt a genuine idle composer
-// a user message may address. Codex maps permission-request to waiting_input
-// and installs no hook that could clear a blocked state, so ao send into its
-// waiting_input must fail with ErrAwaitingDecision instead of pasting onto the
-// hidden decision (issue #34).
+// a user message may address. Harnesses with no hook that could clear a
+// blocked state mask their permission-request dialogs AS waiting_input (today
+// codex, agy, primeagent), so ao send into their waiting_input must fail with
+// ErrAwaitingDecision instead of pasting onto the hidden decision (issue #34).
 func (m *Manager) harnessWaitingInputComposerSafe(harness domain.AgentHarness) bool {
 	if m.agents == nil {
 		return false

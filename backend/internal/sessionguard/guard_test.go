@@ -245,8 +245,8 @@ func TestGuard_TUIWithoutStartupCapabilityAllowsDelivery(t *testing.T) {
 
 // TestGuard_DeliverRefusesMaskedWaitingInput pins the user-send diagnostics
 // contract for harnesses whose waiting_input is a masked permission decision
-// rather than a genuine idle composer (codex maps permission-request to
-// waiting_input and has no hook to clear a blocked state): a user send must be
+// rather than a genuine idle composer (codex, agy, primeagent — every adapter
+// opting out of ports.BlockedActivitySignaler): a user send must be
 // refused as SuppressedAwaitingUser so ao send returns a typed error instead of
 // pasting into the hidden dialog where the trailing Enter would answer the
 // decision on the user's behalf. Harnesses that report dialogs AS blocked keep
