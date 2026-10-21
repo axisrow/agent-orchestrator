@@ -1161,6 +1161,10 @@ func (f *fakeSessionLifecycle) ReapTerminated(context.Context) error {
 	return nil
 }
 
+func (*fakeSessionLifecycle) ReapOrphanWorkers(context.Context) ([]string, error) {
+	return nil, nil
+}
+
 func (f *fakeSessionLifecycle) SetShellTerminalCloser(sessionmanager.ShellTerminalCloser) {}
 func (f *fakeSessionLifecycle) SetTerminalInputGate(sessionmanager.TerminalInputGate)     {}
 func (f *fakeSessionLifecycle) AcquireSessionInput(domain.SessionID) (func(), bool) {

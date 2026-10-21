@@ -636,6 +636,7 @@ var schemaNames = map[string]string{ //nolint:gosec // Public OpenAPI type names
 	"ControllersProcessKillResponse":      "ProcessKillResponse",
 	"ControllersProcessKillTargetDTO":     "ProcessKillTarget",
 	"ControllersProcessKillResultDTO":     "ProcessKillResult",
+	"ControllersOrphanWorkerReapResponse": "OrphanWorkerReapResponse",
 }
 
 // markRequestBodyRequired sets requestBody.required: true on the operation's
@@ -2596,6 +2597,15 @@ func processOperations() []operation {
 				{http.StatusOK, controllers.ProcessKillResponse{}},
 				{http.StatusBadRequest, envelope.APIError{}},
 				{http.StatusConflict, envelope.APIError{}},
+				{http.StatusNotImplemented, envelope.APIError{}},
+				{http.StatusInternalServerError, envelope.APIError{}},
+			},
+		},
+		{
+			method: http.MethodPost, path: "/api/v1/system/orphan-workers/reap", id: "reapOrphanWorkers", tag: "system",
+			summary: "Kill the orphaned worker trees reported by the boot scan (the allow decision; re-derived from a fresh snapshot)",
+			resps: []respUnit{
+				{http.StatusOK, controllers.OrphanWorkerReapResponse{}},
 				{http.StatusNotImplemented, envelope.APIError{}},
 				{http.StatusInternalServerError, envelope.APIError{}},
 			},

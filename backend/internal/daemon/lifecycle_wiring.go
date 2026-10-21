@@ -226,6 +226,9 @@ type sessionLifecycle interface {
 	// live sessions: their runtimes are the next boot's adoption surface, the
 	// same deliberate boundary that keeps SaveAndTeardownAll out of here.
 	ReapTerminated(ctx context.Context) error
+	// ReapOrphanWorkers is the allow endpoint behind the bell's orphan
+	// notification: a fresh evidence scan and the kill, nothing else.
+	ReapOrphanWorkers(ctx context.Context) ([]string, error)
 	Kill(ctx context.Context, id domain.SessionID) (bool, error)
 	Send(ctx context.Context, id domain.SessionID, message string, attachment *ports.SpawnAttachment) error
 	// SetShellTerminalCloser late-binds Kill/Cleanup to close a session's
@@ -320,6 +323,7 @@ func startSession(ctx context.Context, cfg config.Config, runtime runtimeselect.
 		ReportingPolicy:     reportingPolicy,
 		DaemonRunID:         cfg.AppRunID,
 		Messenger:           messenger,
+		Notifier:            notifications,
 		Chat:                chat,
 		Defaults:            defaults,
 		Lifecycle:           lcm,

@@ -1092,6 +1092,7 @@ func Run() error {
 		AgentAccounts:      agentAccountSvc,
 		SystemChecks:       systemChecks,
 		Processes:          processInventory,
+		Orphans:            wiredSessMgr,
 		Installer:          systemInstall,
 		Sessions:           sessionSvc,
 		Automations:        automationSvc,

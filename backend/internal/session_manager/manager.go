@@ -468,7 +468,11 @@ type Manager struct {
 	// (ps-backed in production); tests substitute a fake.
 	processTable func(ctx context.Context) (*orphanreap.Table, time.Time, error)
 	// orphanKiller terminates decided orphan trees; tests substitute a fake.
-	orphanKiller                orphanreap.Killer
+	orphanKiller orphanreap.Killer
+	// notifier records the boot's orphan-worker report; nil skips the ask.
+	notifier interface {
+		Notify(context.Context, ports.NotificationIntent) error
+	}
 	clock                       func() time.Time
 	reconcileWorkers            int
 	defaultBranchRefreshTimeout time.Duration
@@ -894,6 +898,11 @@ type Deps struct {
 	// CodexOperationGate is shared with account clients and reviewer launches.
 	// Nil preserves focused-test compatibility by disabling device-global gating.
 	CodexOperationGate ports.CodexOperationGate
+	// Notifier records the boot's orphan-worker report in the bell for the
+	// user's allow/deny decision. Nil (tests, embedders) skips the ask.
+	Notifier interface {
+		Notify(context.Context, ports.NotificationIntent) error
+	}
 	// ReconcileWorkers bounds concurrent live-session recovery during daemon
 	// startup. Values below one preserve the serial default for embedders/tests;
 	// production explicitly opts into a small worker pool.
@@ -993,6 +1002,7 @@ func New(d Deps) *Manager {
 	m.bootStartedAt = m.clock()
 	m.processTable = snapshotProcessTable
 	m.orphanKiller = orphanreap.NewKiller()
+	m.notifier = d.Notifier
 	m.statusRecoveries = make(map[domain.SessionID]statusRecovery)
 	m.statusVerificationLimit = statusVerificationLimit
 	if m.reconcileWorkers < 1 {
@@ -4358,6 +4368,7 @@ func (m *Manager) ReconcileBackground(ctx context.Context) (resultErr error) {
 	if err := m.ReapTerminated(ctx); err != nil {
 		m.logger.Error("reconcile: reap pass failed, skipping", "error", err)
 	}
+	m.NotifyOrphanWorkers(ctx)
 	if err := m.deliverAllTransitionMessages(ctx); err != nil {
 		m.logger.Error("reconcile: transition-message delivery deferred for retry", "error", err)
 	}
