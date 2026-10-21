@@ -221,6 +221,11 @@ type sessionLifecycle interface {
 	RestoreAll(ctx context.Context) error
 	WaitBackgroundWorkers(ctx context.Context) error
 	WaitAgentSwitchWorkers(ctx context.Context) error
+	// ReapTerminated destroys the runtimes of already-terminated sessions —
+	// the boot reconcile's reap pass, also run at shutdown. It never touches
+	// live sessions: their runtimes are the next boot's adoption surface, the
+	// same deliberate boundary that keeps SaveAndTeardownAll out of here.
+	ReapTerminated(ctx context.Context) error
 	Kill(ctx context.Context, id domain.SessionID) (bool, error)
 	Send(ctx context.Context, id domain.SessionID, message string, attachment *ports.SpawnAttachment) error
 	// SetShellTerminalCloser late-binds Kill/Cleanup to close a session's

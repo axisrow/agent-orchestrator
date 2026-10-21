@@ -1289,6 +1289,15 @@ func Run() error {
 		log.Error("session background worker shutdown", "err", err)
 	}
 	backgroundStopCancel()
+	// One last terminated-session reap before exit: runtimes whose destroy
+	// failed earlier in this daemon's run (or whose metadata was lost) get a
+	// second chance here, so a graceful shutdown leaves no leftover of a
+	// session the database already calls dead. Live sessions stay untouched.
+	reapStopCtx, reapStopCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+	if err := sessMgr.ReapTerminated(reapStopCtx); err != nil {
+		log.Error("terminated-session runtime reap on shutdown", "err", err)
+	}
+	reapStopCancel()
 	switchStopCtx, switchCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	if err := sessMgr.WaitAgentSwitchWorkers(switchStopCtx); err != nil {
 		if agentSwitchWorkerWaitTimedOut(err) {
