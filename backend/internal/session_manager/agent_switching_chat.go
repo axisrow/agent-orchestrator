@@ -400,7 +400,7 @@ func (m *Manager) executeChatAgentSwitch(
 		ExpectedControllerOwner: credentialRecord.ControllerOwner(),
 		PrepareControllerEnv: func(launchCtx context.Context, expected domain.SessionControllerOwner) (map[string]string, error) {
 			prepared, launchEnv, prepareErr := m.prepareChatControllerEnv(
-				launchCtx, credentialRecord, project.Config.Env, expected,
+				launchCtx, credentialRecord, mergeEnv(project.Config.Env, baseAgentConfig.Env), expected,
 			)
 			if prepareErr != nil {
 				return nil, prepareErr
