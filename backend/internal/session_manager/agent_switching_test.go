@@ -3479,6 +3479,44 @@ func TestSwitchAgentTreatsGlobalClaudeUnauthorizedAsAdvisoryForProjectGateway(t 
 	}
 }
 
+// TestSwitchAgentAppliesRoleEnvToTarget: a switch relaunches the target with
+// the same environment a fresh spawn builds — role-level Env overlays the
+// project's (role wins on collision), while AO-internal names stay reserved:
+// role env must not bypass the built-in AO_ namespace guard.
+func TestSwitchAgentAppliesRoleEnvToTarget(t *testing.T) {
+	runtime := &fakeRestartRuntime{fakeRuntime: &fakeRuntime{}}
+	manager, store, _ := newSwitchTestManager(t, runtime)
+	project := store.projects["proj"]
+	project.Config.Env = map[string]string{
+		"ANTHROPIC_BASE_URL":  "https://project.example",
+		"SWITCH_PROJECT_ONLY": "project",
+	}
+	project.Config.Worker = domain.RoleOverride{AgentConfig: domain.AgentConfig{
+		Env: map[string]string{
+			"ANTHROPIC_BASE_URL": "https://role.example",
+			"AO_SESSION_ID":      "role-injected",
+		},
+	}}
+	store.projects[project.ID] = project
+
+	sw, err := switchAgentSynchronously(context.Background(), manager, "proj-1", SwitchAgentConfig{TargetHarness: domain.HarnessCodex, IdempotencyKey: "role-env-target"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sw.State != domain.AgentSwitchCompleted || runtime.created != 1 {
+		t.Fatalf("switch=%+v runtime creates=%d, want completed target launch", sw, runtime.created)
+	}
+	if got := runtime.lastCfg.Env["ANTHROPIC_BASE_URL"]; got != "https://role.example" {
+		t.Fatalf("target env ANTHROPIC_BASE_URL = %q, want role value overlaying the project value", got)
+	}
+	if got := runtime.lastCfg.Env["SWITCH_PROJECT_ONLY"]; got != "project" {
+		t.Fatalf("target env dropped project-only var: %#v", runtime.lastCfg.Env)
+	}
+	if got := runtime.lastCfg.Env[EnvSessionID]; got != "proj-1" {
+		t.Fatalf("target env AO_SESSION_ID = %q, want the AO-owned value (role env must not bypass the reserved namespace)", got)
+	}
+}
+
 func TestSwitchAgentTreatsFallbackClaudeUnauthorizedAsAdvisoryForProjectGateway(t *testing.T) {
 	runtime := &fakeRestartRuntime{fakeRuntime: &fakeRuntime{}}
 	manager, store, _ := newSwitchTestManager(t, runtime)
