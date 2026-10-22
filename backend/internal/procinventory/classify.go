@@ -58,6 +58,7 @@ type GroupSummary struct {
 	RSSBytes int64
 }
 
+// Totals aggregates the inventory's RSS numbers by bucket.
 type Totals struct {
 	SessionsCount    int
 	SessionsRSSBytes int64
@@ -69,6 +70,8 @@ type Totals struct {
 	TmuxRSSBytes     int64
 }
 
+// Inventory is the whole /system/processes snapshot: per-session trees, the
+// singleton groups, and the rollups.
 type Inventory struct {
 	GeneratedAt time.Time
 	Daemon      GroupSummary

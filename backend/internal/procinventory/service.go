@@ -13,6 +13,7 @@ import (
 type Signal int
 
 const (
+	// SigTerm is the graceful stop signal; SigKill is the last-resort one.
 	SigTerm Signal = iota + 1
 	SigKill
 )
