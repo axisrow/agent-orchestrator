@@ -126,7 +126,7 @@ func superviseSessionID(command string) (domain.SessionID, bool) {
 	return "", false
 }
 
-func isTmuxCommand(command string, tmuxSocketName string) bool {
+func isTmuxCommand(command, tmuxSocketName string) bool {
 	fields := strings.Fields(command)
 	if len(fields) == 0 || path.Base(fields[0]) != "tmux" {
 		return false
