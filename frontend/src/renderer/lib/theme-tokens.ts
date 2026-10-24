@@ -73,7 +73,7 @@ export function deriveThemeTokens(p: ThemePalette, mode: Mode): Record<string, s
 		"--color-text-markdown-link-hover": bright(p.accent),
 
 		"--color-status-working": p.blue,
-		"--color-status-needs-you": p.orange,
+		"--color-status-needs-you": needsYou,
 		"--color-status-validating": p.yellow,
 		"--color-status-in-review": inReview,
 		"--color-status-ready": p.green,
