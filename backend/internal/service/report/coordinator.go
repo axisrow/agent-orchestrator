@@ -31,23 +31,6 @@ const ReportOrchestratorBackoff = time.Minute
 // refreshes the marker) is allowed so a true no-show is not lost forever.
 const ReportEmitTTL = 15 * time.Minute
 
-// emitQuietWindow escalates that window with the batch's durable delivery
-// attempts — 15m, 1h, 6h, then no further visible re-emission. A sleeping
-// recipient never acks, so a flat TTL re-emits the same batch visibly every
-// cycle forever (fork issue #127).
-func (c *Coordinator) emitQuietWindow(attempts int64) time.Duration {
-	switch {
-	case attempts > 6:
-		return 0
-	case attempts > 4:
-		return 6 * time.Hour
-	case attempts > 2:
-		return time.Hour
-	default:
-		return c.emitTTL
-	}
-}
-
 // ErrReportDeliveryModeUnsupported reports a target without semantic delivery.
 var ErrReportDeliveryModeUnsupported = errors.New("report delivery requires a semantic conversation")
 
@@ -117,6 +100,23 @@ func NewCoordinator(d CoordinatorDeps) *Coordinator {
 		d.Log = slog.New(slog.DiscardHandler)
 	}
 	return &Coordinator{store: d.Store, delivery: d.Delivery, log: d.Log, now: d.Now, newToken: d.NewToken, retryDelay: d.RetryDelay, emitTTL: d.EmitTTL, wake: make(chan struct{}, 1)}
+}
+
+// emitQuietWindow escalates that window with the batch's durable delivery
+// attempts — 15m, 1h, 6h, then no further visible re-emission. A sleeping
+// recipient never acks, so a flat TTL re-emits the same batch visibly every
+// cycle forever (fork issue #127).
+func (c *Coordinator) emitQuietWindow(attempts int64) time.Duration {
+	switch {
+	case attempts > 6:
+		return 0
+	case attempts > 4:
+		return 6 * time.Hour
+	case attempts > 2:
+		return time.Hour
+	default:
+		return c.emitTTL
+	}
 }
 
 // EmitVisible gates the batch's single visible emission inside the at-most-once
