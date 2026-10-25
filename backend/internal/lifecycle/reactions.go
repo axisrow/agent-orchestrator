@@ -69,7 +69,8 @@ func (m *Manager) ApplyReviewBatch(ctx context.Context, workerID domain.SessionI
 	})
 	var msg strings.Builder
 	// Mixed batches keep the changes-requested framing: those need action, and
-	// each section below still names its own verdict.
+	// each section below still names its own verdict. The header counts only
+	// the runs that actually request changes.
 	requested := 0
 	for _, r := range results {
 		if r.Verdict == domain.VerdictChangesRequested {
@@ -79,7 +80,7 @@ func (m *Manager) ApplyReviewBatch(ctx context.Context, workerID domain.SessionI
 	if requested == 0 {
 		fmt.Fprintf(&msg, "[AO reviewer] AO's internal code reviewer approved %d review(s). AO's approval is not a GitHub approval and never authorizes merging.\n", len(results))
 	} else {
-		fmt.Fprintf(&msg, "[AO reviewer] AO's internal code reviewer submitted %d review(s) requesting changes.\n", len(results))
+		fmt.Fprintf(&msg, "[AO reviewer] AO's internal code reviewer submitted %d review(s) requesting changes.\n", requested)
 	}
 	var sigParts []string
 	for i, r := range results {
