@@ -167,3 +167,12 @@ a00ef3c770155f8089230621d6da90ccfdbf4893 skipped fix(chat): page by messages, ne
 e7e0fd87d99212140270486f7bb6653789b8c628 skipped feat(chat): draw AO's automation messages as what they are (#7230)
 183f6832456d97d4c6801ca8a08ea5fdc60b8818 skipped fix(desktop): reach the daemon with Node fetch from the main process (#7271) — скип по согласованию 2026-10-26: владелец выпилил фичу «открыть в Finder/Терминале» и ею не пользуется
 733076ffab7c3dd62b6fd258d140eae7b751de89 taken fix(chat): queue relays to a sleeping Chat session instead of waking inline (#7209) — пик 2026-10-26 по согласованию: union полей struct (наши switch-поля + их launchStartWait/inputLeaseSince)
+abfd770269feba46b8b6d0a478fe76c44ec268d4 taken fix(auth): keep unpackaged builds from taking ao-app:// from the installed app (#6818)
+d98dfa0e1c45dd02ba837d393060d34e48414d74 skipped fix(prompt): keep intermediate files, links, and Claude artifacts out of worker artifacts (#7162) — конфликт prompt.go/hooks.go, на разборе
+45d200b29da9124e2bee41547ffd3b2f47e7aeac skipped perf(chat): let finished stream-fade animations end (#7287)
+fefa2e8bebb485d5900f487d6c9b5c212b883b7e taken fix(lifecycle): stop holding the input lease across PR reaction sends (#7197)
+86670711ca86643b91497a2160598ae9c056ff0c skipped fix(cloud): keep the model picker inside the control plane's wait (#7203) — конфликт cloud/workerexec, на разборе
+bb2cae8c5790115fa1e502d9bc38273f190c34a8 skipped fix: verify MiMo and Hermes connections and simplify agent status (#7118) — автоскрип: hermes-адаптера нет в форке (политика [[ao-owner-unwanted-features]])
+a2a981122fbbc407f62e3e2af2948facc8901c2d skipped feat(markdown): render LaTeX math in chat and Markdown previews (#7251)
+fc0b92a9059d1480e700ce275c58bd4fb0bcf494 skipped fix(chat): resume a replacement orchestrator after a restart (#7276) — конфликт service/chat, на разборе
+12e1fd738b6a92847b22b2813f73b01ef93a2936 skipped feat(chat): calm expired-login banner that opens the Harness page (#7147)
