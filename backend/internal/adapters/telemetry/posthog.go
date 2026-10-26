@@ -202,6 +202,16 @@ var remotePayloadAllowlist = map[string]map[string]struct{}{
 		"kind":        {},
 		"operation":   {},
 	},
+	"ao.session.relaunch_failed": {
+		"cause_type":  {},
+		"component":   {},
+		"error_code":  {},
+		"fingerprint": {},
+		"harness":     {},
+		"kind":        {},
+		"operation":   {},
+		"step":        {},
+	},
 	"ao.session.spawned": {
 		"duration_ms":  {},
 		"harness":      {},
