@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   decryptString: vi.fn((value: Buffer) => value.toString("utf8")),
   encryptString: vi.fn((value: string) => Buffer.from(value, "utf8")),
   encryptionAvailable: true,
+  isEncryptionAvailable: vi.fn(() => mocks.encryptionAvailable),
   selectedStorageBackend: "gnome_libsecret",
   getAuthorizationUrlWithPKCE: vi.fn(),
   ipcHandle: vi.fn(),
@@ -57,7 +58,7 @@ vi.mock("electron", () => ({
     decryptString: mocks.decryptString,
     encryptString: mocks.encryptString,
     getSelectedStorageBackend: () => mocks.selectedStorageBackend,
-    isEncryptionAvailable: () => mocks.encryptionAvailable,
+    isEncryptionAvailable: mocks.isEncryptionAvailable,
   },
   shell: { openExternal: mocks.openExternal },
 }));
@@ -328,6 +329,18 @@ describe("native WorkOS authentication", () => {
         user: { email: "person@example.com" },
       });
       expect(mocks.decryptString).not.toHaveBeenCalled();
+    });
+
+    it("starts signed out without touching safeStorage at all", async () => {
+      // No store and no sidecar on disk: a cold open of a rebuilt (unsigned,
+      // self-built) binary must not reach the macOS keychain, and on Electron
+      // 44 even isEncryptionAvailable() derives the keychain key (and pops a
+      // prompt when the rebuilt binary misses the store item's ACL).
+      await expect(getCloudSessionCached(dataDir)).resolves.toBeNull();
+      await expect(readAuthStore(dataDir)).resolves.toEqual({ session: null, pkce: null });
+      expect(mocks.isEncryptionAvailable).not.toHaveBeenCalled();
+      expect(mocks.decryptString).not.toHaveBeenCalled();
+      expect(mocks.encryptString).not.toHaveBeenCalled();
     });
 
     it("does not start a token refresh from the startup read", async () => {
