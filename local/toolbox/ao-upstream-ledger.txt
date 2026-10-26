@@ -163,7 +163,7 @@ af42f6bd487241f7b84065295f37b452ff0b3f4f skipped fix(mobile): keep attachments p
 c91ee431435a99fd2ba5b563111c1239d52ef9b6 skipped ci: shard frontend vitest suite and typecheck in parallel (#7247)
 73c01ef214ff8e90bc62a177cc0dec38678d3e06 skipped fix(desktop): keep swipe arrows visible with window transparency (#7249) — автоскрип: правит компонент из скипнутой фичи свайп-навигации, в форке файла нет
 e81912c11a3ff64ea645792ac7f51753069d56c4 taken fix(desktop): stop the browser runtime link hot-looping on a rejected handshake (#6525) — пик 2026-10-26 по согласованию; стриминг-браузер апстрима не тащили (форк его выпилил), только восстановление линка
-a00ef3c770155f8089230621d6da90ccfdbf4893 skipped fix(chat): page by messages, never split a turn, and stop reloading unchanged chats (#7165) — конфликт conversations.sql+test, на разборе
+a00ef3c770155f8089230621d6da90ccfdbf4893 skipped fix(chat): page by messages, never split a turn, and stop reloading unchanged chats (#7165) — скип по согласованию 2026-10-26: чат-поверхность форка отключена (e78fefdfbc), фикс не нужен
 e7e0fd87d99212140270486f7bb6653789b8c628 skipped feat(chat): draw AO's automation messages as what they are (#7230)
 183f6832456d97d4c6801ca8a08ea5fdc60b8818 skipped fix(desktop): reach the daemon with Node fetch from the main process (#7271) — скип по согласованию 2026-10-26: владелец выпилил фичу «открыть в Finder/Терминале» и ею не пользуется
 733076ffab7c3dd62b6fd258d140eae7b751de89 taken fix(chat): queue relays to a sleeping Chat session instead of waking inline (#7209) — пик 2026-10-26 по согласованию: union полей struct (наши switch-поля + их launchStartWait/inputLeaseSince)
