@@ -87,9 +87,8 @@ func testAsyncChatAnswersBeforeWorkspaceAndController(t *testing.T, kind domain.
 
 	cfg := asyncChatSpawnConfig("do the thing")
 	cfg.Kind = kind
-	if kind == domain.KindOrchestrator {
-		cfg.RequestedMode = ""
-	}
+	// Fork: an orchestrator no longer defaults to Chat (e78fefdfbc), so the
+	// async-Chat machinery is exercised through an explicit chat request.
 	rec, _, _, err := m.Spawn(context.Background(), cfg)
 	if err != nil {
 		t.Fatalf("spawn: %v", err)
@@ -450,9 +449,8 @@ func testResumeFailedAsyncChatSpawn(t *testing.T, kind domain.SessionKind) {
 	ws.createErr = errors.New("temporary git failure")
 	cfg := asyncChatSpawnConfig("do the thing")
 	cfg.Kind = kind
-	if kind == domain.KindOrchestrator {
-		cfg.RequestedMode = ""
-	}
+	// Fork: explicit chat request — see the note in
+	// testAsyncChatAnswersBeforeWorkspaceAndController.
 	rec, _, _, err := m.Spawn(context.Background(), cfg)
 	if err != nil {
 		t.Fatal(err)
