@@ -1,6 +1,7 @@
 import { createWorkOS, type User } from "@workos-inc/node";
 import { app, dialog, ipcMain, safeStorage, shell } from "electron";
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import {
   chmod,
   mkdir,
@@ -205,6 +206,9 @@ function decodeStore(value: Buffer): AuthStore {
 export async function readAuthStore(dataDir: string): Promise<AuthStore> {
   const memoryStore = memoryStores.get(dataDir);
   if (memoryStore) return memoryStore;
+  // No store on disk means nothing to decrypt, so leave safeStorage alone: on
+  // macOS its first use prompts for the login keychain password.
+  if (!existsSync(storePath(dataDir))) return emptyStore();
   if (!protectedStorageAvailable()) {
     await rm(storePath(dataDir), { force: true });
     return emptyStore();

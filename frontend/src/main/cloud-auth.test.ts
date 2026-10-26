@@ -62,6 +62,7 @@ vi.mock("electron", () => ({
   shell: { openExternal: mocks.openExternal },
 }));
 
+import { safeStorage } from "electron";
 import {
   beginCloudSignIn,
   getCloudAccessToken,
@@ -273,6 +274,17 @@ describe("native WorkOS authentication", () => {
         dataDir,
       ),
     ).rejects.toThrow("state did not match");
+  });
+
+  it("does not touch the OS keychain at startup when no auth store exists", async () => {
+    // On macOS the first safeStorage call prompts for the login keychain password.
+    const keychain = vi.spyOn(safeStorage, "isEncryptionAvailable");
+    const getSession = mocks.ipcHandle.mock.calls.find(
+      ([channel]) => channel === "cloud:getSession",
+    )?.[1] as (() => Promise<unknown>) | undefined;
+
+    await expect(getSession?.()).resolves.toBeNull();
+    expect(keychain).not.toHaveBeenCalled();
   });
 
   it("keeps the auth store in memory when OS encryption is unavailable", async () => {
