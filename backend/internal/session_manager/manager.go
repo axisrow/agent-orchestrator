@@ -540,10 +540,8 @@ type Manager struct {
 	startupChatRetryDelays      []time.Duration
 	agentOpMu                   sync.Mutex
 	agentOperations             map[domain.SessionID]agentOperationKind
-	// launchStartWait bounds the wait to see a new supervised launch alive.
-	launchStartWait           time.Duration
-	interfaceRecoveryMu       sync.Mutex
-	deferredInterfaceRecovery map[domain.SessionID]string
+	interfaceRecoveryMu         sync.Mutex
+	deferredInterfaceRecovery   map[domain.SessionID]string
 	// switchDecisionInput opens a narrow human-only terminal lane while the
 	// source is blocked on permission during a mandatory switch.
 	switchDecisionInput map[domain.SessionID]domain.AgentSwitchID
