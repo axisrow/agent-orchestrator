@@ -19977,6 +19977,14 @@ components:
           type: object
         localEnabled:
           type: boolean
+        scmProxyActiveLayer:
+          description: 'Where SCM traffic currently goes: the explicit setting, the
+            process environment, or a direct connection.'
+          enum:
+          - setting
+          - env
+          - direct
+          type: string
         scmProxyUrl:
           description: Outbound proxy URL (http/https/socks5/socks5h) for the daemon's
             GitHub and GitLab clients. Empty uses the standard proxy environment variables.
@@ -19996,6 +20004,7 @@ components:
       - chatHibernationEnabled
       - versionRefresh
       - scmProxyUrl
+      - scmProxyActiveLayer
       - cloudEnabled
       - cloudControlPlaneUrl
       - trackerIntakeEnabled

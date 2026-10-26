@@ -39,6 +39,8 @@ export interface Settings {
 	versionRefresh?: boolean;
 	/** Explicit outbound proxy for the daemon's SCM clients; empty = environment default. */
 	scmProxyUrl?: string;
+	/** Which layer of the SCM proxy resolution chain currently carries SCM traffic. */
+	scmProxyActiveLayer?: "setting" | "env" | "direct";
 }
 
 export function useSettings(hostId?: string, enabled = true) {
@@ -71,6 +73,9 @@ export function useSettings(hostId?: string, enabled = true) {
 				versionRefresh: data?.versionRefresh ?? false,
 				// A daemon that predates the setting has no SCM proxy override.
 				scmProxyUrl: data?.scmProxyUrl ?? "",
+				// A daemon that predates the field reports no active layer; the UI
+				// hides the line instead of guessing.
+				scmProxyActiveLayer: data?.scmProxyActiveLayer,
 			};
 		},
 	});

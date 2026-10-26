@@ -3359,6 +3359,10 @@ type SettingsResponse struct {
 	// ScmProxyURL is the explicit outbound proxy for the daemon's SCM clients.
 	// Empty keeps the standard environment behavior; a set value wins over it.
 	ScmProxyURL string `json:"scmProxyUrl" description:"Outbound proxy URL (http/https/socks5/socks5h) for the daemon's GitHub and GitLab clients. Empty uses the standard proxy environment variables."`
+	// ScmProxyActiveLayer reports which layer of the SCM proxy resolution chain
+	// currently carries the daemon's SCM traffic, so a client can show what is
+	// in effect rather than what is configured.
+	ScmProxyActiveLayer string `json:"scmProxyActiveLayer" enum:"setting,env,direct" description:"Where SCM traffic currently goes: the explicit setting, the process environment, or a direct connection."`
 	// CloudEnabled reports whether the cloud offering is effectively available:
 	// the user's toggle (or the env override) plus a configured control plane.
 	CloudEnabled bool `json:"cloudEnabled"`
