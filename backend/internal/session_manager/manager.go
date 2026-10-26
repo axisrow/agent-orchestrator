@@ -535,8 +535,10 @@ type Manager struct {
 	startupChatRetryDelays      []time.Duration
 	agentOpMu                   sync.Mutex
 	agentOperations             map[domain.SessionID]agentOperationKind
-	interfaceRecoveryMu         sync.Mutex
-	deferredInterfaceRecovery   map[domain.SessionID]string
+	// launchStartWait bounds the wait to see a new supervised launch alive.
+	launchStartWait           time.Duration
+	interfaceRecoveryMu       sync.Mutex
+	deferredInterfaceRecovery map[domain.SessionID]string
 	// switchDecisionInput opens a narrow human-only terminal lane while the
 	// source is blocked on permission during a mandatory switch.
 	switchDecisionInput map[domain.SessionID]domain.AgentSwitchID
@@ -547,6 +549,9 @@ type Manager struct {
 	retainedSwitches map[domain.SessionID]struct{}
 	inputLeases      map[domain.SessionID]int
 	inputDrained     map[domain.SessionID]chan struct{}
+	// inputLeaseSince is when a session's current run of input leases began,
+	// for diagnosing an operation that cannot drain them.
+	inputLeaseSince map[domain.SessionID]time.Time
 	// handoffWait bounds optional source-agent enrichment. Time spent waiting
 	// for a human permission decision is paused and charged only against the
 	// separate switchPermissionDecisionWait budget below.
