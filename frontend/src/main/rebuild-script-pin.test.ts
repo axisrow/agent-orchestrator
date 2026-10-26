@@ -37,10 +37,12 @@ describe("scripts/rebuild-ao.sh node pin", () => {
 // The daemon inherits the .app's environment, and apps launched via `open`
 // only see what this script exports: the standard proxy variables are the
 // documented fallback layer of the SCM proxy resolution chain ("empty SCM
-// proxy setting → ProxyFromEnvironment"). NO_PROXY must ride along so an
-// forwarded HTTPS_PROXY does not bend intentionally-direct traffic (LLM
-// providers) through the proxy too. Same textual-guard rationale as the node
-// pin above: the regression class is "a rewrite loses the wiring".
+// proxy setting → ProxyFromEnvironment"). Exactly the variables Go's daemon
+// honors: HTTP_PROXY/HTTPS_PROXY/NO_PROXY — ALL_PROXY is curl semantics the
+// daemon never reads. NO_PROXY must ride along so a forwarded HTTPS_PROXY
+// does not bend intentionally-direct traffic (LLM providers) through the
+// proxy too. Same textual-guard rationale as the node pin above: the
+// regression class is "a rewrite loses the wiring".
 describe("scripts/rebuild-ao.sh proxy env passthrough", () => {
 	const scriptPath = fileURLToPath(new URL("../../../scripts/rebuild-ao.sh", import.meta.url));
 	const beforeLaunch = () => {
@@ -50,9 +52,9 @@ describe("scripts/rebuild-ao.sh proxy env passthrough", () => {
 		return body.slice(0, launch);
 	};
 
-	it("exports HTTPS_PROXY, HTTP_PROXY, ALL_PROXY and NO_PROXY before launching the app", () => {
+	it("exports HTTPS_PROXY, HTTP_PROXY and NO_PROXY before launching the app", () => {
 		const before = beforeLaunch();
-		expect(before).toMatch(/for proxy_var in HTTPS_PROXY HTTP_PROXY ALL_PROXY NO_PROXY/);
+		expect(before).toMatch(/for proxy_var in HTTPS_PROXY HTTP_PROXY NO_PROXY/);
 		expect(before).toMatch(/export "\$\{proxy_var\}"/);
 	});
 

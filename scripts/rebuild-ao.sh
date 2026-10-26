@@ -58,10 +58,12 @@ ditto "${packaged_app}" "${installed_app}"
 printf '==> launching app\n'
 # Apps launched via `open` only see what this script exports: the standard
 # proxy variables are the fallback layer of the SCM proxy resolution chain
-# ("empty SCM proxy setting → ProxyFromEnvironment" in the daemon). NO_PROXY
-# must ride along so a forwarded HTTPS_PROXY does not also bend
-# intentionally-direct traffic (LLM providers) through the proxy.
-for proxy_var in HTTPS_PROXY HTTP_PROXY ALL_PROXY NO_PROXY; do
+# ("empty SCM proxy setting → ProxyFromEnvironment" in the daemon). Exactly
+# the variables Go honors: HTTP_PROXY/HTTPS_PROXY/NO_PROXY — ALL_PROXY is
+# curl semantics and would be dead weight. NO_PROXY must ride along so a
+# forwarded HTTPS_PROXY does not also bend intentionally-direct traffic
+# (LLM providers) through the proxy.
+for proxy_var in HTTPS_PROXY HTTP_PROXY NO_PROXY; do
 	if [[ -n "${!proxy_var:-}" ]]; then
 		export "${proxy_var}"
 	fi

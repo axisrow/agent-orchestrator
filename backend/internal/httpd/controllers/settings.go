@@ -284,9 +284,11 @@ func (c *SettingsController) response(snapshot settingssvc.Snapshot) SettingsRes
 }
 
 // scmProxyEnvVars are the proxy environment variables Go's ProxyFromEnvironment
-// consults, in both spellings; any non-empty value means the environment layer
-// of the SCM proxy resolution chain is live.
-var scmProxyEnvVars = []string{"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"}
+// consults, in both spellings. Go does not honor ALL_PROXY (that is curl
+// semantics), so it must not count toward the layer: reporting "env" while the
+// daemon dials directly would be a lie. Any non-empty value here means the
+// environment layer of the SCM proxy resolution chain is live.
+var scmProxyEnvVars = []string{"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"}
 
 // scmProxyActiveLayer reports which layer currently carries the daemon's SCM
 // traffic: the explicit setting, the process environment (ProxyFromEnvironment),
