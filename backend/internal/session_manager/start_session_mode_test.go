@@ -9,20 +9,24 @@ import (
 )
 
 // The cloud control plane resolves a cloud session's interface with the same
-// precedence, against the same cases (cloud/internal/domain), so a change to
-// either side fails the other's test until both agree.
+// precedence, against the same contract (cloud/internal/domain): the shared
+// cases carry upstream's precedence, while the fork retires the local Chat
+// interface, so the daemon's own cases live in withDefault.local and
+// withoutDefault.local.
 func TestStartSessionModeMatchesTheSharedCases(t *testing.T) {
 	raw, err := os.ReadFile("../../../contracts/session-start-interface.json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var fixture struct {
-		Cases []struct {
-			Kind      string `json:"kind"`
-			Requested string `json:"requested"`
-			Default   string `json:"default"`
-			Want      string `json:"want"`
-		} `json:"cases"`
+		WithDefault struct {
+			Local []struct {
+				Kind      string `json:"kind"`
+				Requested string `json:"requested"`
+				Default   string `json:"default"`
+				Want      string `json:"want"`
+			} `json:"local"`
+		} `json:"withDefault"`
 		WithoutDefault struct {
 			Local []struct {
 				Kind      string `json:"kind"`
@@ -34,10 +38,10 @@ func TestStartSessionModeMatchesTheSharedCases(t *testing.T) {
 	if err := json.Unmarshal(raw, &fixture); err != nil {
 		t.Fatal(err)
 	}
-	if len(fixture.Cases) == 0 {
-		t.Fatal("no cases")
+	if len(fixture.WithDefault.Local) == 0 {
+		t.Fatal("no local cases with a default")
 	}
-	for _, tc := range fixture.Cases {
+	for _, tc := range fixture.WithDefault.Local {
 		got := startSessionMode(domain.SessionKind(tc.Kind), domain.SessionMode(tc.Requested), domain.SessionMode(tc.Default))
 		if string(got) != tc.Want {
 			t.Errorf("startSessionMode(%s, requested %q, default %q) = %q, want %q", tc.Kind, tc.Requested, tc.Default, got, tc.Want)
