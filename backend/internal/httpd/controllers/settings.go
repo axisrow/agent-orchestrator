@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -275,10 +276,32 @@ func (c *SettingsController) response(snapshot settingssvc.Snapshot) SettingsRes
 		ChatHibernationEnabled: snapshot.ChatHibernationEnabled,
 		VersionRefresh:         snapshot.VersionRefresh,
 		ScmProxyURL:            snapshot.ScmProxyURL,
+		ScmProxyActiveLayer:    scmProxyActiveLayer(snapshot.ScmProxyURL),
 		CloudEnabled:           offering.CloudEnabled(snapshot),
 		CloudControlPlaneURL:   offering.CloudControlPlaneURL,
 		TrackerIntakeEnabled:   offering.TrackerIntakeEnabled,
 	}
+}
+
+// scmProxyEnvVars are the proxy environment variables Go's ProxyFromEnvironment
+// consults, in both spellings; any non-empty value means the environment layer
+// of the SCM proxy resolution chain is live.
+var scmProxyEnvVars = []string{"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"}
+
+// scmProxyActiveLayer reports which layer currently carries the daemon's SCM
+// traffic: the explicit setting, the process environment (ProxyFromEnvironment),
+// or a direct connection. Per-host NO_PROXY carving is not tracked: the value
+// names the configured source, not a per-host routing decision.
+func scmProxyActiveLayer(setting string) string {
+	if strings.TrimSpace(setting) != "" {
+		return "setting"
+	}
+	for _, key := range scmProxyEnvVars {
+		if os.Getenv(key) != "" {
+			return "env"
+		}
+	}
+	return "direct"
 }
 
 func (c *SettingsController) setHarnessDefault(w http.ResponseWriter, r *http.Request) {

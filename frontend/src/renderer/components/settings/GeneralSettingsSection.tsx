@@ -147,17 +147,19 @@ function TerminalShellRows() {
 const COLOR_THEME_OPTIONS = THEMES.map(({ id, label }) => ({ value: id, label })) satisfies SettingsOption<ThemeStyle>[];
 
 /**
- * Explicit outbound proxy for the daemon's SCM clients (GitHub/GitLab): the
- * observer, PR merges, claims, and review publishing all dial through it.
- * Desktop apps launched from Dock/Finder never inherit shell proxy variables,
- * so this persisted setting — not the launch environment — is the reliable way
- * to route provider traffic. Applied per dial: no restart needed.
+/**
+ * Explicit outbound proxy for GitHub/GitLab requests: the observer, PR merges,
+ * claims, and review publishing all dial through it. Desktop apps launched from
+ * Dock/Finder never inherit shell proxy variables, so this persisted setting —
+ * not the launch environment — is the reliable way to route provider traffic.
+ * Applied per dial: no restart needed.
  */
-function ScmProxyRow() {
+export function ScmProxyRow() {
 	const { t } = useTranslation();
 	const { settings } = useSettings();
 	const { update, error } = useUpdateScmProxyURL();
 	const stored = settings?.scmProxyUrl ?? "";
+	const activeLayer = settings?.scmProxyActiveLayer;
 	const [value, setValue] = useState(stored);
 
 	useEffect(() => {
@@ -176,6 +178,11 @@ function ScmProxyRow() {
 				placeholder={t("settings.scmProxy.placeholder")}
 			/>
 			<p className="px-3 pb-2 text-caption leading-4 text-muted-foreground">{t("settings.scmProxy.description")}</p>
+			{activeLayer ? (
+				<p className="px-3 pb-2 text-caption leading-4 text-muted-foreground">
+					{t(activeLayerKeys[activeLayer], { url: stored })}
+				</p>
+			) : null}
 			{error ? (
 				<p role="alert" className="px-3 pb-2 text-caption leading-4 text-error">
 					{error}
@@ -184,6 +191,12 @@ function ScmProxyRow() {
 		</div>
 	);
 }
+
+const activeLayerKeys = {
+	setting: "settings.scmProxy.activeSetting",
+	env: "settings.scmProxy.activeEnv",
+	direct: "settings.scmProxy.activeDirect",
+} as const;
 
 export function GeneralSettingsSection({
 	titleHidden,

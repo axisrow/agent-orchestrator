@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -86,6 +87,77 @@ func TestSCMHTTPClient_EmptySettingDialsDirect(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status=%d, want 200", resp.StatusCode)
+	}
+}
+
+// mutableScmProxySource lets a test flip the setting under a live client, the
+// way a settings write does in the running daemon.
+type mutableScmProxySource struct {
+	mu  sync.Mutex
+	url string
+}
+
+func (m *mutableScmProxySource) ScmProxyURL(context.Context) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.url
+}
+
+func (m *mutableScmProxySource) set(url string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.url = url
+}
+
+// The daemon builds the SCM client once for its whole life, so a settings
+// change must re-route the next dial on that same client — hot-apply, no
+// daemon restart.
+func TestSCMHTTPClient_SettingChangeAppliesWithoutRestart(t *testing.T) {
+	clearProxyEnv(t)
+
+	var proxyGot, directGot int
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		proxyGot++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer proxy.Close()
+
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		directGot++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+
+	src := &mutableScmProxySource{}
+	client := newSCMHTTPClient(src, slog.Default())
+
+	resp, err := client.Get(target.URL)
+	if err != nil {
+		t.Fatalf("unset phase: %v", err)
+	}
+	resp.Body.Close()
+	if directGot != 1 || proxyGot != 0 {
+		t.Fatalf("unset phase: direct=%d proxy=%d, want direct dialing", directGot, proxyGot)
+	}
+
+	src.set(proxy.URL)
+	resp, err = client.Get(target.URL)
+	if err != nil {
+		t.Fatalf("set phase: %v", err)
+	}
+	resp.Body.Close()
+	if proxyGot != 1 {
+		t.Fatalf("set phase: direct=%d proxy=%d, want the request through the proxy", directGot, proxyGot)
+	}
+
+	src.set("")
+	resp, err = client.Get(target.URL)
+	if err != nil {
+		t.Fatalf("cleared phase: %v", err)
+	}
+	resp.Body.Close()
+	if directGot != 2 || proxyGot != 1 {
+		t.Fatalf("cleared phase: direct=%d proxy=%d, want direct dialing again", directGot, proxyGot)
 	}
 }
 
