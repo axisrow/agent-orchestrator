@@ -826,41 +826,6 @@ it("opens a shell tab on Box B without attaching a local or Box A terminal", asy
 	expect(localPost).not.toHaveBeenCalled();
 });
 
-it("switches a remote Terminal session through its host and leaves the terminal for Chat at once", async () => {
-	localGet.mockReset();
-	localPost.mockReset();
-	remoteConnect.mockResolvedValue({ hostId: "box-a", label: "Box A", url: "http://box-a:3001", base: "http://127.0.0.1:4000" });
-	const posts: Array<{ url: string; body: unknown }> = [];
-	let transitionStatus: Record<string, unknown> = { supported: true, targetMode: "chat" };
-	vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-		const request = input instanceof Request ? input : new Request(input);
-		const path = new URL(request.url).pathname;
-		if (path.endsWith("/projects")) return Response.json({ projects: [{ id: "project-1", name: "Remote", path: "/remote" }] });
-		if (path.endsWith("/sessions")) return Response.json({ sessions: [{ id: "session-1", projectId: "project-1", harness: "codex", status: "idle", mode: "tui", terminalHandleId: "worker-terminal", prs: [] }] });
-		if (path.endsWith("/settings")) return Response.json({ chatHarnesses: ["codex"] });
-		if (path.endsWith("/interface-transition") && request.method === "GET") return Response.json(transitionStatus);
-		if (path.endsWith("/interface-transition") && request.method === "POST") {
-			posts.push({ url: request.url, body: await request.json() });
-			const transition = { id: "transition-a", sessionId: "session-1", sourceMode: "tui", targetMode: "chat", policy: "drain", historyPolicy: "strict", phase: "requested", createdAt: "2026-09-28T00:00:00Z", updatedAt: "2026-09-28T00:00:00Z" };
-			transitionStatus = { supported: true, targetMode: "chat", transition };
-			return Response.json({ transition }, { status: 202 });
-		}
-		return Response.json({});
-	}));
-	await connectHost("http://box-a:3001");
-	const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-	renderRemoteSession(queryClient);
-	const terminal = await screen.findByTestId("remote-terminal-base");
-	expect(terminal).toHaveAttribute("data-input-disabled", "false");
-	await userEvent.click(await screen.findByRole("button", { name: "Session actions" }));
-	await userEvent.click(await screen.findByRole("menuitem", { name: "Switch to chat UI" }));
-	await waitFor(() => expect(posts).toEqual([{ url: "http://127.0.0.1:4000/api/v1/sessions/session-1/interface-transition", body: { targetMode: "chat", policy: "drain", historyPolicy: "strict" } }]));
-	await waitFor(() => expect(terminal).not.toBeInTheDocument());
-	expect(await screen.findByRole("combobox", { name: "Message the agent" })).toBeInTheDocument();
-	expect(localGet).not.toHaveBeenCalled();
-	expect(localPost).not.toHaveBeenCalled();
-});
-
 it("requires remote Chat draft confirmation before posting an interface switch", async () => {
 	localPost.mockReset();
 	remoteConnect.mockResolvedValue({ hostId: "box-a", label: "Box A", url: "http://box-a:3001", base: "http://127.0.0.1:4000" });

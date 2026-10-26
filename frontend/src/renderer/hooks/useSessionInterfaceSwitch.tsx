@@ -428,6 +428,10 @@ export function useSessionInterfaceSwitch(sessionId: string, session: WorkspaceS
 
 	const { settings } = useSettings(hostId, !isCloud);
 	const chatHarnesses = settings?.chatHarnesses ?? [];
+	// Fork: entering the Chat interface is retired for local sessions. Gate only
+	// the menu entry — an in-flight or recovering transition keeps its inline
+	// status, and leaving a legacy chat session stays available.
+	const chatEntryDisabled = !isCloud && target === "chat" && session?.mode !== "chat";
 	const unsupported = interfaceSwitch.status?.reasonCode === "CHAT_UNSUPPORTED" ||
 		(!isCloud && target === "chat" && session !== undefined && chatHarnesses.length > 0 && !chatHarnesses.includes(session.provider));
 	const blockedReason = interfaceSwitch.status?.reasonCode === "INTERFACE_HANDOFF_UNSUPPORTED"
@@ -452,7 +456,7 @@ export function useSessionInterfaceSwitch(sessionId: string, session: WorkspaceS
 		onClick={request}
 		onCancel={() => { void interfaceSwitch.cancel().catch(() => {}); }}
 	/> : null;
-	const menuItem = session && showAction && !activeTransition ? <SessionInterfaceSwitchMenuItem
+	const menuItem = session && showAction && !activeTransition && !chatEntryDisabled ? <SessionInterfaceSwitchMenuItem
 		target={target}
 		supported={Boolean(interfaceSwitch.status?.supported) && (isCloud || !chatLeaveLocked)}
 		disabledReason={disabledReason}

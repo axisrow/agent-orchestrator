@@ -459,7 +459,10 @@ func startSessionMode(kind domain.SessionKind, requested, defaultMode domain.Ses
 		return requested
 	}
 	if kind == domain.KindOrchestrator {
-		return domain.SessionModeChat
+		// Fork: the Chat interface is retired for local sessions, so an
+		// orchestrator with no explicit mode starts in the terminal like
+		// everything else (upstream defaults it to Chat here).
+		return domain.SessionModeTUI
 	}
 	return domain.NormalizeSessionMode(defaultMode)
 }

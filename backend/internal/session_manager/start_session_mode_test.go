@@ -43,8 +43,9 @@ func TestStartSessionModeMatchesTheSharedCases(t *testing.T) {
 			t.Errorf("startSessionMode(%s, requested %q, default %q) = %q, want %q", tc.Kind, tc.Requested, tc.Default, got, tc.Want)
 		}
 	}
-	// An unset default is the empty string here; orchestrators still start in
-	// Chat (the cloud's rule for a create without one differs).
+	// An unset default is the empty string here; the fork retires the local Chat
+	// interface, so an orchestrator with no explicit mode starts in tui (the
+	// cloud's rule for a create without one differs).
 	if len(fixture.WithoutDefault.Local) == 0 {
 		t.Fatal("no local cases without a default")
 	}
