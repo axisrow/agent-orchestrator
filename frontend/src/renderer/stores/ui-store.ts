@@ -602,12 +602,19 @@ export const useUiStore = create<UiState>((set, get) => ({
 			return { orchestratorStartupErrors };
 		});
 		// The board that rendered this error inline is gone (#163): surface it
-		// globally instead. The dedupe key replaces a project's previous toast.
+		// globally instead. The dedupe key replaces a project's previous toast,
+		// and clearing the error retires the toast instead of letting it age out.
+		const dedupeKey = `orchestrator-startup-${key}`;
 		if (message) {
 			get().showGlobalToast("Orchestrator did not start", formatOrchestratorStartupError(message), {
 				tone: "error",
-				dedupeKey: `orchestrator-startup-${key}`,
+				dedupeKey,
 			});
+		} else {
+			set((state) => ({
+				globalToast: state.globalToast?.dedupeKey === dedupeKey ? null : state.globalToast,
+				globalToasts: state.globalToasts.filter((toast) => toast.dedupeKey !== dedupeKey),
+			}));
 		}
 	},
 	showGlobalToast: (title, body, style) =>
