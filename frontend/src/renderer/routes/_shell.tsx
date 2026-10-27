@@ -626,7 +626,7 @@ const replacementErrorCount = Object.keys(orchestratorReplacementErrors).length;
 			setProjectProvisioning(workspace.id, false);
 			setOrchestratorStartupError(
 				workspace.id,
-				"Project added, but the orchestrator is taking longer than expected to start. Retry from the board if it does not appear.",
+				"Project added, but the orchestrator is taking longer than expected to start. Retry from the sidebar if it does not appear.",
 			);
 		}, PROVISIONING_TIMEOUT_MS);
 		try {

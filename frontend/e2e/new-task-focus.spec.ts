@@ -125,10 +125,11 @@ async function expectPromptTakesTyping(page: Page) {
 	await expect(prompt).toHaveValue("caret is here");
 }
 
-test("renderer: the board New task button focuses the composer prompt @T0", async ({ page }) => {
+test("renderer: the sidebar project menu New task button focuses the composer prompt @T0", async ({ page }) => {
 	await setup(page);
 	await page.goto(`/#/projects/${projectId}`);
-	await page.getByRole("button", { name: "New task" }).first().click();
+	await openProjectMenu(page);
+	await page.getByRole("menuitem", { name: /New task/ }).click();
 	await expect(page.getByRole("dialog")).toBeVisible();
 	await expectPromptTakesTyping(page);
 });

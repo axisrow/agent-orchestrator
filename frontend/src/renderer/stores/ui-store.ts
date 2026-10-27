@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { aoBridge } from "../lib/bridge";
+import { formatOrchestratorStartupError } from "../lib/orchestrator-startup-error";
 import { developerModeStorageKey, windowTranslucencyStorageKey } from "../lib/window-translucency";
 import { sessionUiKey } from "../lib/hosts";
 import type { ProjectSettingsSection as ProjectFormSection } from "../components/ProjectSettingsForm";
@@ -589,17 +590,33 @@ export const useUiStore = create<UiState>((set, get) => ({
 			}
 			return { orchestratorReplacementErrors };
 		}),
-	setOrchestratorStartupError: (projectId, message, hostId) =>
+	setOrchestratorStartupError: (projectId, message, hostId) => {
+		const key = sessionUiKey(projectId, hostId);
 		set((state) => {
 			const orchestratorStartupErrors = { ...state.orchestratorStartupErrors };
-			const key = sessionUiKey(projectId, hostId);
 			if (message) {
 				orchestratorStartupErrors[key] = message;
 			} else {
 				delete orchestratorStartupErrors[key];
 			}
 			return { orchestratorStartupErrors };
-		}),
+		});
+		// The board that rendered this error inline is gone (#163): surface it
+		// globally instead. The dedupe key replaces a project's previous toast,
+		// and clearing the error retires the toast instead of letting it age out.
+		const dedupeKey = `orchestrator-startup-${key}`;
+		if (message) {
+			get().showGlobalToast("Orchestrator did not start", formatOrchestratorStartupError(message), {
+				tone: "error",
+				dedupeKey,
+			});
+		} else {
+			set((state) => ({
+				globalToast: state.globalToast?.dedupeKey === dedupeKey ? null : state.globalToast,
+				globalToasts: state.globalToasts.filter((toast) => toast.dedupeKey !== dedupeKey),
+			}));
+		}
+	},
 	showGlobalToast: (title, body, style) =>
 		set((state) => {
 			const nonce = state.globalToastSequence + 1;

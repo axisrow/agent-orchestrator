@@ -39,7 +39,7 @@ async function expectOccludes(surface: Locator, underneath: Locator) {
 
 for (const theme of ["dark", "light"]) {
 	for (const transparency of [false, true]) {
-		test(`@P0 sticky project and archive occlude sessions: ${theme}, transparency ${transparency}`, async ({ page }) => {
+		test(`@P0 sticky project header occludes sidebar sessions: ${theme}, transparency ${transparency}`, async ({ page }) => {
 			await page.setViewportSize({ width: 1400, height: 650 });
 			await page.emulateMedia({ reducedMotion: "reduce" });
 			await installFakeAgent(page, {
@@ -55,20 +55,10 @@ for (const theme of ["dark", "light"]) {
 				localStorage.setItem("ao.windowTranslucency", String(transparency));
 			}, { theme, transparency });
 			await page.goto("/#/projects/fake-proj");
-			await expect(page.getByTestId("board")).toBeVisible();
+			await expect(page).toHaveURL(/sessions\//);
+			await expect(page.locator("[data-session-row]").first()).toBeVisible();
 			await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
 			if (transparency) await expect(page.locator("html")).toHaveAttribute("data-window-translucent", "true");
-
-			const toggle = page.getByRole("button", { name: "Archive, 8 sessions", exact: true });
-			const archive = toggle.locator("../..");
-			await expectSurfaceTransparency(archive, transparency);
-			await toggle.click();
-			await expect(toggle).toHaveAttribute("aria-expanded", "true");
-			await expect(page.getByRole("list", { name: "Archived sessions" })).toBeVisible();
-			await expectSurfaceTransparency(archive, transparency);
-			await expectOccludes(archive, page.locator('[data-testid="board-column"] [data-session-id]'));
-			await toggle.click();
-			await expect(toggle).toHaveAttribute("aria-expanded", "false");
 
 			const scroller = page.getByTestId("sidebar-projects-scroller");
 			await scroller.getByRole("button", { name: /Show .* more/ }).click();

@@ -94,14 +94,16 @@ for (const platform of PLATFORMS) {
 		await fakePlatform(page, platform);
 		await installFakeAgent(page, { projectId: "fake-proj", projectName: "fake-proj" });
 		await page.goto("/#/projects/fake-proj");
-		// The sidebar mounts under the startup screen, so the trigger can be attached
-		// while the startup screen still covers it. A forced click then lands on the
-		// startup screen and the menu never opens.
+		// The project route redirects (#163): to the top session, or home for an
+		// orchestrator-only project. Either way the sidebar mounts once the
+		// startup screen is gone — wait for that, then click for real (a forced
+		// click can land through a covering screen and never open the menu).
 		await expect(page.getByTestId("daemon-startup-loader")).toHaveCount(0);
-		await page
+		const projectActions = page
 			.getByRole("button", { name: /Project actions for fake-proj/ })
-			.first()
-			.click({ force: true });
+			.first();
+		await expect(projectActions).toBeVisible();
+		await projectActions.click();
 		await page.getByRole("menuitem", { name: /New task/ }).click();
 		const prompt = page.getByRole("dialog").getByLabel("Task");
 		await expect(prompt).toBeVisible();

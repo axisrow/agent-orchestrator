@@ -13,7 +13,15 @@ import { installFakeAgent } from "./support/fake-bridge";
 
 // #2483 NTF-003.
 test("renderer: notification center shows the correct unread count @T0 @NTF", async ({ page }) => {
-	await installFakeAgent(page, { platform: "Linux x86_64" });
+	// Workers give the project route's redirect (#163) a session to land on —
+	// the topbar bell under test lives on the session screen.
+	await installFakeAgent(page, {
+		platform: "Linux x86_64",
+		workers: [
+			{ id: "fake-a", title: "Worker A", status: "working" },
+			{ id: "fake-b", title: "Worker B", status: "working" },
+		],
+	});
 
 	// The daemon's initial unread list (two, one of them a needs-input alert).
 	await page.route(/\/api\/v1\/notifications\?/, (route) =>
@@ -47,8 +55,8 @@ test("renderer: notification center shows the correct unread count @T0 @NTF", as
 		}),
 	);
 
-	await page.goto("/#/projects/ao-demo");
-	// The global board on Linux renders the bell in its subhead actions.
+	await page.goto("/#/projects/fake-proj");
+	// The topbar bell shows the merged unread count on any route.
 	const bell = page.getByRole("button", { name: "2 unread notifications" });
 	await expect(bell).toBeVisible();
 

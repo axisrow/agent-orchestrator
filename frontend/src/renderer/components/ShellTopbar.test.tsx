@@ -241,7 +241,6 @@ describe("optimistic orchestrator topbar", () => {
 			</QueryClientProvider>,
 		);
 		expect(screen.getByRole("button", { name: "New task" })).toBeDisabled();
-		expect(screen.getByRole("button", { name: "Open Kanban" })).toBeDisabled();
 		expect(screen.queryByRole("button", { name: "Notifications" })).not.toBeInTheDocument();
 	});
 });
@@ -323,7 +322,6 @@ describe("ShellTopbar status pill", () => {
 		expect(identity.textContent).toContain("my-app");
 		expect(identity.textContent).toContain("Working");
 		expect(screen.queryByText("ao/orch-root")).toBeNull();
-		expect(screen.getByRole("button", { name: "Open Kanban" })).toBeInTheDocument();
 		expect(screen.getByRole("button", { name: "New task" })).toBeInTheDocument();
 	});
 
@@ -476,71 +474,6 @@ describe("ShellTopbar orchestrator actions", () => {
 		const actions = screen.getByTestId("workspace-topbar-actions");
 		expect(actions.closest("header")).toHaveClass("workspace-topbar-container");
 		expect(screen.queryByRole("button", { name: "Run a cue" })).not.toBeInTheDocument();
-	});
-
-	it.each([
-		["active", "Working", "bg-status-working", true],
-		["waiting_input", "Input Needed", "bg-status-needs-you", false],
-	] as const)("shows %s orchestrator activity on the project board", (state, label, tone, pulses) => {
-		renderTopbarSessions(
-			[
-				{
-					...orchestrator,
-					activity: { state, lastActivityAt: "2026-06-10T00:00:00Z" },
-				},
-			],
-			"",
-		);
-
-		const button = screen.getByRole("button", { name: `Orchestrator, ${label}` });
-		const indicator = button.querySelector("span.size-dot-sm") as HTMLElement;
-		expect(indicator).toHaveAttribute("aria-hidden", "true");
-		expect(indicator).toHaveClass(tone);
-		expect(indicator).toHaveClass(pulses ? "animate-status-pulse" : "size-dot-sm");
-		if (!pulses) expect(indicator).not.toHaveClass("animate-status-pulse");
-	});
-
-	it("opens an exited orchestrator at once and shows a rejected resume request", async () => {
-		postMock.mockRejectedValueOnce(new Error("resume request failed"));
-		const exitedOrchestrator = {
-			...orchestrator,
-			activity: { state: "exited", lastActivityAt: "2026-06-10T00:00:00Z" },
-			status: "exited",
-		} satisfies WorkspaceSession;
-		renderTopbarSessions([worker, exitedOrchestrator], "");
-
-		await userEvent.click(screen.getByRole("button", { name: "Orchestrator, Exited" }));
-
-		expect(await screen.findByRole("alert")).toHaveTextContent("resume request failed");
-		expect(navigateMock).toHaveBeenCalledTimes(1);
-	});
-
-	it("shows a clear Kanban button on embedded orchestrator sessions", async () => {
-		renderTopbar(orchestrator, true);
-
-		const kanbanButton = screen.getByRole("button", { name: "Open Kanban" });
-		expect(kanbanButton).toHaveTextContent("Open Kanban");
-		expect(kanbanButton).toHaveClass("topbar-control--feature");
-		expect(screen.queryByText("my-app")).not.toBeInTheDocument();
-		await userEvent.click(kanbanButton);
-		expect(navigateMock).toHaveBeenCalledWith({
-			to: "/projects/$projectId",
-			params: { projectId: "proj-1" },
-		});
-	});
-
-	it("opens the board from the Kanban button on the full orchestrator topbar", async () => {
-		renderTopbar(orchestrator);
-
-		const kanbanButton = screen.getByRole("button", { name: "Open Kanban" });
-		expect(kanbanButton).toHaveTextContent("Open Kanban");
-		expect(kanbanButton).toHaveClass("topbar-control--feature");
-		expect(screen.getByRole("button", { name: "New task" })).toHaveClass("bg-raised");
-		await userEvent.click(kanbanButton);
-		expect(navigateMock).toHaveBeenCalledWith({
-			to: "/projects/$projectId",
-			params: { projectId: "proj-1" },
-		});
 	});
 
 	it("opens project settings instead of spawning when no orchestrator agent is configured", async () => {

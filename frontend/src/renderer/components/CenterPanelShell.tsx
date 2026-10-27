@@ -6,11 +6,11 @@ import { sidebarOccupiesLayout, useUiStore } from "../stores/ui-store";
 
 /**
  * Shared inset center panel: sidebar-colored outer frame with a bordered inner
- * surface. Used by the shell's app routes (kanban / session), the welcome board,
+ * surface. Used by the shell's app routes (session), the welcome board,
  * and settings. Chrome lives in `styles.css` (`center-panel-shell` +
  * `center-panel-surface`).
  *
- * `titlebarAlign` (default true) pulls Board/Terminal titles up level with the
+ * `titlebarAlign` (default true) pulls Session/Terminal titles up level with the
  * fixed TitlebarNav cluster on macOS and Linux. Windows keeps those controls in
  * its custom titlebar, so it does not need this clearance.
  */

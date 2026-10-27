@@ -5,8 +5,6 @@ import { Archive, CalendarClock, File, Folder, LayoutDashboard, Plus } from "luc
 import { useState, type ReactNode } from "react";
 import { AwakeControl } from "./AwakeControl";
 import { NotificationCenter } from "./NotificationCenter";
-import { ProjectBoardActions } from "./ProjectBoardActions";
-import { useBoardPresentation } from "../hooks/useBoardPresentation";
 import { useProjectOrchestratorAction } from "../hooks/useProjectOrchestratorAction";
 import {
 	CLOUD_PROJECT_KIND,
@@ -60,8 +58,8 @@ const noDragStyle = isMac ? ({ WebkitAppRegion: "no-drag" } as React.CSSProperti
 // / inspector stay available. The variant is derived from the route, not props:
 // a sessionId in the URL swaps the lead to the session identity (orchestrator
 // crumb + mode badge, or worker branch + status pill) and the actions to
-// board/orchestrator + inspector controls (orchestrators open the Kanban board;
-// workers open their orchestrator); otherwise it's the dashboard crumb plus the
+// orchestrator + inspector controls (workers open their orchestrator);
+// otherwise it's the dashboard crumb plus the
 // Orchestrator launcher when a project is in scope. Embedded mode contributes
 // only session actions to the terminal bar; other routes retain this full bar.
 // Pixel equivalents of the CSS custom properties used for titlebar clearance.
@@ -154,17 +152,8 @@ export function ShellTopbar({
 		if (!supportsProjectActions || startingOrchestrator) return;
 		openOrchestrator();
 	});
-	const { showProjectEmpty } = useBoardPresentation({
-		projectId,
-		isSuccess: workspaceQuery.isSuccess,
-		isError: workspaceQuery.isError,
-		hasProjects: Boolean(project),
-		hasWorkerSessions: workspaceScope?.hasWorkerSessions ?? false,
-	});
 	const orchestratorTooltip = isProjectRestarting ? t("shell.restarting") : isSpawning
 		? t("shell.spawning") : orchestrator ? t("shell.openOrchestrator") : t("shell.spawnOrchestrator");
-
-	const openBoard = () => void navigate(projectId ? projectNavigateTarget(projectId, hostId) : { to: "/" });
 
 	return (
 		<header
@@ -228,10 +217,7 @@ export function ShellTopbar({
 				data-testid="workspace-topbar-actions"
 			>
 				<AwakeControl compact />
-				{isProjectBoardRoute || isOrchestrator ? <ProjectTerminationFeedback projectId={projectId} hostId={hostId} /> : null}
-				{!boardActionsInPanel && isProjectBoardRoute ? (
-					<ProjectBoardActions actions={projectActions} placement="header" quiet={showProjectEmpty} cloud={project?.kind === CLOUD_PROJECT_KIND} style={noDragStyle} />
-				) : null}
+				{isOrchestrator ? <ProjectTerminationFeedback projectId={projectId} hostId={hostId} /> : null}
 				{isSessionRoute ? (
 					<>
 						{isOrchestrator ? (
@@ -258,23 +244,6 @@ export function ShellTopbar({
 										</span>
 									</TooltipTrigger>
 									<TooltipContent side="bottom">{t("shell.newTask")}</TooltipContent>
-								</Tooltip>
-								<Tooltip>
-									<TooltipTrigger asChild>
-										<TopbarButton
-											aria-label={t("shell.openKanban")}
-											disabled={startingOrchestrator}
-											className="topbar-control--labeled"
-											data-priority="secondary"
-											onClick={openBoard}
-											style={noDragStyle}
-											variant="feature"
-										>
-											<LayoutDashboard className="size-icon-md" aria-hidden="true" />
-											<span data-compact-label>{t("shell.openKanban")}</span>
-										</TopbarButton>
-									</TooltipTrigger>
-									<TooltipContent side="bottom">{t("shell.openKanban")}</TooltipContent>
 								</Tooltip>
 							</>
 						) : null}

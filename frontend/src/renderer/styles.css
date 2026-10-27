@@ -2564,7 +2564,7 @@ html.sidebar-reordering * {
 /* Conversation minimap: each dash is a real turn anchor. The rail forwards
    pointer, wheel, and keyboard navigation to the conversation viewport. */
 .cursor-chat-surface {
-	/* Same canvas as the kanban board (`bg-background` → `--color-bg-primary`). */
+	/* Same canvas as the session list cards (`bg-background` → `--color-bg-primary`). */
 	background: var(--color-bg-primary);
 }
 
@@ -2798,7 +2798,7 @@ html.sidebar-reordering * {
 /* The composer has no border; it is told apart from the canvas by its fill alone.
    Focus remains visible on the keyboard-focusable controls inside it. */
 .cursor-chat-composer {
-	/* Same fill as a kanban session card (`bg-surface` → `--color-bg-secondary`). */
+	/* Same fill as a session card (`bg-surface` → `--color-bg-secondary`). */
 	--composer-bg: var(--color-bg-secondary);
 
 	border-radius: var(--radius-chat-composer);
