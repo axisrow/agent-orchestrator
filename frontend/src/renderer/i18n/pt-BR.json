@@ -1823,7 +1823,6 @@
 	"shell.openOrchestrator": "Abrir orchestrator",
 	"shell.orchestrator": "Orchestrator",
 	"shell.orchestratorBoard": "Quadro do orchestrator",
-	"shell.orchestratorWithActivity": "Orchestrator, {{activity}}",
 	"shell.pinned": "Fixado",
 	"shell.projects": "Projetos",
 	"shell.showMore": "Mostrar mais",

@@ -1778,7 +1778,6 @@
 	"shell.openOrchestrator": "打开编排器",
 	"shell.orchestrator": "编排器",
 	"shell.orchestratorBoard": "编排器看板",
-	"shell.orchestratorWithActivity": "编排器，{{activity}}",
 	"shell.pinned": "已固定",
 	"shell.pinSession": "固定会话",
 	"shell.unpinSession": "取消固定会话",

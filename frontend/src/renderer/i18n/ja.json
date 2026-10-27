@@ -1794,7 +1794,6 @@
 	"shell.openOrchestrator": "オーケストレーターを開く",
 	"shell.orchestrator": "オーケストレーター",
 	"shell.orchestratorBoard": "オーケストレーターボード",
-	"shell.orchestratorWithActivity": "オーケストレーター、{{activity}}",
 	"shell.pinned": "ピン留め",
 	"shell.projects": "プロジェクト",
 	"shell.showMore": "さらに表示",

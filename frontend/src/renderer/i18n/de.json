@@ -1794,7 +1794,6 @@
 	"shell.openOrchestrator": "Orchestrator öffnen",
 	"shell.orchestrator": "Orchestrator",
 	"shell.orchestratorBoard": "Orchestrator-Board",
-	"shell.orchestratorWithActivity": "Orchestrator, {{activity}}",
 	"shell.pinned": "Angeheftet",
 	"shell.projects": "Projekte",
 	"shell.showMore": "Mehr anzeigen",

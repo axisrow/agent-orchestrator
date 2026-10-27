@@ -1,7 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useCallback } from "react";
 import { LOCAL_HOST, type HostId } from "./hosts";
-import { STANDALONE_WORKSPACE_ID } from "../types/workspace";
+import { sessionIsActive, sortedWorkerSessions, STANDALONE_WORKSPACE_ID, type WorkspaceSession } from "../types/workspace";
 
 export type SessionNavigateTarget =
 	| { to: "/sessions/$sessionId"; params: { sessionId: string } }
@@ -15,16 +15,11 @@ export function projectNavigateTarget(projectId: string, host: HostId = LOCAL_HO
 		: { to: "/host/$hostId/project/$projectId" as const, params: { hostId: host, projectId } };
 }
 
-/** Id of the most recently updated session; the project route redirects here
- * now that the kanban board is gone (#163). */
-export function latestSessionId(sessions: ReadonlyArray<{ id: string; updatedAt: string }>): string | undefined {
-	let latest: { id: string; updatedAt: string } | undefined;
-	for (const session of sessions) {
-		if (!latest || (Date.parse(session.updatedAt) || 0) > (Date.parse(latest.updatedAt) || 0)) {
-			latest = session;
-		}
-	}
-	return latest?.id;
+/** Id of the session a project click lands on now that the kanban board is
+ * gone (#163): the top of the project's sidebar order — live workers, most
+ * recently messaged first. */
+export function projectLandingSessionId(sessions: WorkspaceSession[]): string | undefined {
+	return sortedWorkerSessions(sessions.filter(sessionIsActive))[0]?.id;
 }
 
 export function sessionNavigateTarget(projectId: string | undefined, sessionId: string, host: HostId = LOCAL_HOST): SessionNavigateTarget {

@@ -30,9 +30,8 @@ test("renderer: reflects daemon data-dir readiness @P0 @DATADIR", async ({ page 
 
 	// A ready daemon on a port ⇒ its data dir + config skeleton initialized.
 	await expect(page.getByTestId("daemon-status")).toHaveAttribute("data-state", "ready");
-	// State backed by that data dir hydrates the board.
-	await expect(page.getByTestId("board")).toBeVisible();
-	await expect(page.getByTestId("board-session-card").first()).toBeVisible();
+	// State backed by that data dir hydrates the redirect target (#163).
+	await expect(page.getByTestId("session-detail")).toBeVisible();
 });
 
 test("renderer: surfaces a not-ready data dir without crashing @P0 @DATADIR", async ({ page }) => {
@@ -41,5 +40,6 @@ test("renderer: surfaces a not-ready data dir without crashing @P0 @DATADIR", as
 	await installFakeBridge(page, { daemonState: "starting" });
 	await page.goto("/#/projects/ao-demo");
 	await expect(page.getByTestId("daemon-status")).not.toHaveAttribute("data-state", "ready");
-	await expect(page.getByTestId("board")).toBeVisible();
+	// Not ready ≠ crash: the shell still paints its navigation.
+	await expect(page.locator('[data-sidebar="menu-button"]').first()).toBeVisible();
 });
