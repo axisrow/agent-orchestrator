@@ -15,6 +15,18 @@ export function projectNavigateTarget(projectId: string, host: HostId = LOCAL_HO
 		: { to: "/host/$hostId/project/$projectId" as const, params: { hostId: host, projectId } };
 }
 
+/** Id of the most recently updated session; the project route redirects here
+ * now that the kanban board is gone (#163). */
+export function latestSessionId(sessions: ReadonlyArray<{ id: string; updatedAt: string }>): string | undefined {
+	let latest: { id: string; updatedAt: string } | undefined;
+	for (const session of sessions) {
+		if (!latest || (Date.parse(session.updatedAt) || 0) > (Date.parse(latest.updatedAt) || 0)) {
+			latest = session;
+		}
+	}
+	return latest?.id;
+}
+
 export function sessionNavigateTarget(projectId: string | undefined, sessionId: string, host: HostId = LOCAL_HOST): SessionNavigateTarget {
 	if (host !== LOCAL_HOST) {
 		if (!projectId || projectId === STANDALONE_WORKSPACE_ID) {

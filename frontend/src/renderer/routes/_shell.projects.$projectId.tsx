@@ -1,11 +1,26 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { SessionsBoard } from "../components/SessionsBoard";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useEffect } from "react";
+import { useWorkspaceQuery } from "../hooks/useWorkspaceQuery";
+import { latestSessionId, sessionNavigateTarget } from "../lib/navigate-to-session";
 
 export const Route = createFileRoute("/_shell/projects/$projectId")({
-	component: ProjectBoardRoute,
+	component: ProjectRoute,
 });
 
-function ProjectBoardRoute() {
+// The kanban board is gone (#163): opening a project lands on its most
+// recently updated session, or home when the project has none.
+function ProjectRoute() {
 	const { projectId } = Route.useParams();
-	return <SessionsBoard projectId={projectId} />;
+	const navigate = useNavigate();
+	const { data: workspaces, isPending } = useWorkspaceQuery();
+	const workspace = workspaces?.find((candidate) => candidate.id === projectId);
+	const sessionId = workspace ? latestSessionId(workspace.sessions) : undefined;
+
+	useEffect(() => {
+		if (isPending) return;
+		if (sessionId) void navigate(sessionNavigateTarget(projectId, sessionId));
+		else void navigate({ to: "/" });
+	}, [isPending, navigate, projectId, sessionId]);
+
+	return null;
 }

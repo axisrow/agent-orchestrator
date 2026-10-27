@@ -162,7 +162,7 @@
 	--font-size-2xs: 10.5px; /* uppercase meta, board footers */
 	--font-size-xs: 10px; /* micro labels, tight pills */
 	--font-size-nano: 8px; /* smallest chrome text — sidebar search label */
-	--font-size-caption: 11px; /* badges, kanban labels */
+	--font-size-caption: 11px; /* badges */
 	--font-size-sm-md: 11.5px; /* inspector tabs, status pills */
 	--font-size-sm: 12px; /* secondary chrome / Tailwind text-xs */
 	--font-size-md-sm: 12.5px; /* kv rows, PR summaries */
@@ -341,7 +341,6 @@
 	 * on each side of it. */
 	--size-resize-handle: 12px;
 	--size-resize-handle-offset: 6px;
-	--size-kanban-glow: 130px;
 	--size-kv-label: 74px;
 	--size-notification-width: 460px;
 	--size-notification-max-height: 420px;

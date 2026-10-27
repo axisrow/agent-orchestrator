@@ -1482,8 +1482,8 @@ const ProjectItem = memo(function ProjectItem({
 	const showGlobalToast = useUiStore((state) => state.showGlobalToast);
 	const projectIsDragging = isDragged;
 	// Keep completed PR sessions reachable while their runtime still exists.
-	// Only termination removes a worker from the sidebar; archived sessions stay
-	// reachable through SessionsBoard.
+	// Only termination removes a worker from the sidebar; archived sessions
+	// stay reachable through the standalone archive view.
 	const visibleSessions = useMemo(
 		() => sortedWorkerSessions(workspace.sessions).filter((session) => session.isTerminated !== true),
 		[workspace.sessions],
