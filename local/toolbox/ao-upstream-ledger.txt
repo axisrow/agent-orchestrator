@@ -181,4 +181,12 @@ fc0b92a9059d1480e700ce275c58bd4fb0bcf494 skipped fix(chat): resume a replacement
 b26c6e16d3a700a2d451fc630872a80e97422ba7 skipped feat(chat): highlight paths and session ids in agent-to-agent messages (#7223)
 ba00eeead7d99e0548150b337ffc96762644843d skipped feat: add model and effort selection to automations (#7113)
 1916c1ad92ec1e562b971c9c425d72bd9d651887 taken fix(chat): restore prompt suggestions after clearing drafts (#7288)
-1042ba27ea8086 taken fix(artifacts): hide dividers for empty menu groups (#7295) [tsx: --ours, intent реализован форк-коммитом trim]
+1042ba27ea8086c01dd08dcfc2fd5e3811167517 taken fix(artifacts): hide dividers for empty menu groups (#7295) [tsx: --ours, intent реализован форк-коммитом trim]
+58ed2983037287b514643bf6869fcc8483e97160 taken fix(httpd): restrict mobile controls to trusted renderer origins (#7106)
+ba97bd56e1adac2e75af4ad5f3721f2ea66fa238 skipped feat(artifacts): add preview galleries, pins, and project sections (#7098)
+71284ea53195090881491fb798bb5020c8a6e4e1 skipped feat(artifacts): preview files in a modal before opening sessions (#7101)
+3229b0f363b07d24f9fe0028b329b4e900de23a6 skipped feat(artifacts): show responsive preview cards in the session sidebar (#7102)
+cab5160d1df4586e31d13da507eb4a612a90806d skipped feat(desktop): rework the agent update notice (#7268)
+6e989cc4447923c043278fddf37924c7edc51c0b taken fix(chat): end Claude turns without waiting for the context usage snapshot (#7305)
+2339cbb41f5d22fa9d74863eac0fe0d65fe871aa taken fix(sessions): report agent relaunch failures as 409 AGENT_RESUME_FAILED and keep them in telemetry (#7252) [service.go: сторона фикса; docs/telemetry.md: сторона форка]
+c7a99e1ad83c0ea9bfc84e35f679fa2a08e6169f skipped feat(cloud): shareable cloud sessions with live presence and a hard lock (#7151)
