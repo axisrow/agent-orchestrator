@@ -84,6 +84,16 @@ SET emitted_at = sqlc.arg(emitted_at)
 WHERE project_id = sqlc.arg(project_id) AND delivery_state = 'claimed'
   AND claim_token = sqlc.arg(claim_token);
 
+-- name: AcknowledgeEmittedPendingReports :many
+-- The synthetic claim token exists only to satisfy the delivery-state CHECK:
+-- acknowledged rows must carry a token, and nothing reads it after the ack.
+UPDATE reports
+SET delivery_state = 'acknowledged', acknowledged_at = sqlc.arg(acknowledged_at),
+    claim_token = 'activity-ack', claimed_at = sqlc.arg(acknowledged_at)
+WHERE project_id = sqlc.arg(project_id) AND delivery_state = 'pending'
+  AND emitted_at IS NOT NULL
+RETURNING id;
+
 -- name: GetReportInterrupt :one
 SELECT last_interrupted_at FROM report_worker_interrupts WHERE session_id = ?;
 

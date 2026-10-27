@@ -182,6 +182,25 @@ func (s *Store) AcknowledgeReportBatch(ctx context.Context, projectID domain.Pro
 	return len(rows), nil
 }
 
+// AcknowledgeEmittedReportBatches settles every shown-but-unacknowledged
+// pending report of a project — the recipient-activity ack. Batches claimed by
+// an in-flight delivery attempt stay untouched: that attempt's own cycle
+// fences them with its token.
+func (s *Store) AcknowledgeEmittedReportBatches(ctx context.Context, projectID domain.ProjectID, at time.Time) (int, error) {
+	if projectID == "" || at.IsZero() {
+		return 0, domain.ErrInvalidReport
+	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	rows, err := s.qw.AcknowledgeEmittedPendingReports(ctx, gen.AcknowledgeEmittedPendingReportsParams{
+		ProjectID: string(projectID), AcknowledgedAt: nullTime(at),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("acknowledge emitted reports for project %s: %w", projectID, err)
+	}
+	return len(rows), nil
+}
+
 // ReleaseReportBatch returns the matching project batch to pending without
 // moving any report's original deadline later.
 func (s *Store) ReleaseReportBatch(ctx context.Context, projectID domain.ProjectID, token string, at time.Time, lastError string) (int, error) {

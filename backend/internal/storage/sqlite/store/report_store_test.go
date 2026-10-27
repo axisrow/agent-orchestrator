@@ -241,6 +241,61 @@ func TestReportStoreDurableBatchIdentityExcludesLaterReportsOnRetry(t *testing.T
 	}
 }
 
+// TestReportStoreSettlesOnlyEmittedPendingReports pins the recipient-activity
+// ack: shown-but-unacknowledged pending reports settle, while a report that
+// was never shown and a batch held by a live claim keep their state.
+func TestReportStoreSettlesOnlyEmittedPendingReports(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	seedProject(t, s, "ao")
+	sess, err := s.CreateSession(ctx, sampleRecord("ao"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	shown := domain.ReportRecord{ID: "rpt_shown", SessionID: sess.ID, ProjectID: "ao", Message: "shown", CreatedAt: now, DeliveryState: domain.ReportPending, AvailableAt: now, RepeatCount: 1}
+	if _, err = s.CreateReport(ctx, shown); err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := s.ClaimPendingReportBatch(ctx, "ao", "emit-token", now)
+	if err != nil || len(claimed) != 1 {
+		t.Fatalf("claimed=%+v err=%v", claimed, err)
+	}
+	if _, err := s.MarkReportBatchEmitted(ctx, "ao", "emit-token", now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ReleaseReportBatch(ctx, "ao", "emit-token", now, "acceptance lost"); err != nil {
+		t.Fatal(err)
+	}
+	// A later report that has never been shown, still pending.
+	unshown := domain.ReportRecord{ID: "rpt_unshown", SessionID: sess.ID, ProjectID: "ao", Message: "unshown", CreatedAt: now.Add(time.Second), DeliveryState: domain.ReportPending, AvailableAt: now, RepeatCount: 1}
+	if _, err = s.CreateReport(ctx, unshown); err != nil {
+		t.Fatal(err)
+	}
+	n, err := s.AcknowledgeEmittedReportBatches(ctx, "ao", now.Add(time.Second))
+	if err != nil || n != 1 {
+		t.Fatalf("settled=%d err=%v, want 1", n, err)
+	}
+	got, ok, err := s.GetReport(ctx, shown.ID)
+	if err != nil || !ok || got.DeliveryState != domain.ReportAcknowledged || got.AcknowledgedAt.IsZero() || got.ClaimToken != "activity-ack" {
+		t.Fatalf("shown=%+v ok=%v err=%v, want acknowledged", got, ok, err)
+	}
+	if got, ok, err = s.GetReport(ctx, unshown.ID); err != nil || !ok || got.DeliveryState != domain.ReportPending {
+		t.Fatalf("unshown=%+v ok=%v err=%v, want pending", got, ok, err)
+	}
+	// A live claim is never touched by the activity ack.
+	next, err := s.ClaimPendingReportBatch(ctx, "ao", "hold-token", now.Add(2*time.Second))
+	if err != nil || len(next) != 1 || next[0].ID != unshown.ID {
+		t.Fatalf("claimed=%+v err=%v", next, err)
+	}
+	if n, err = s.AcknowledgeEmittedReportBatches(ctx, "ao", now.Add(3*time.Second)); err != nil || n != 0 {
+		t.Fatalf("settled=%d err=%v, want 0 while the batch holds a claim", n, err)
+	}
+	if got, _, err = s.GetReport(ctx, unshown.ID); err != nil || got.DeliveryState != domain.ReportClaimed || got.ClaimToken != "hold-token" {
+		t.Fatalf("held=%+v err=%v, want the claim intact", got, err)
+	}
+}
+
 func TestReportStoreInterruptLimitSurvivesRestart(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
