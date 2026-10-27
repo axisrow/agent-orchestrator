@@ -129,7 +129,13 @@ func (s *Service) Steer(
 		return SteerResult{}, err
 	}
 	defer release()
-	return controller.Steer(ctx, msg)
+	result, err := controller.Steer(ctx, msg)
+	if err == nil {
+		// Guidance accepted by a live turn is the same observable activity an
+		// accepted prompt is: delivered report batches have nowhere left to go.
+		s.settleEmittedReports(ctx, id)
+	}
+	return result, err
 }
 
 // RecoverSteer reads only the durable receipt. A missing controller or a changed
@@ -178,7 +184,12 @@ func (s *Service) SteerOrSend(
 		return SteerOrSendResult{}, err
 	}
 	defer release()
-	return controller.SteerOrSend(ctx, msg, recoverOnly)
+	result, err := controller.SteerOrSend(ctx, msg, recoverOnly)
+	if err == nil {
+		// Steered or sent: either outcome is an accepted prompt on the target.
+		s.settleEmittedReports(ctx, id)
+	}
+	return result, err
 }
 
 // PromoteQueuedTurn delivers one already queued turn into the active turn. The

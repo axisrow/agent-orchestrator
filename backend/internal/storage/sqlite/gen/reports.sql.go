@@ -11,6 +11,45 @@ import (
 	"time"
 )
 
+const acknowledgeEmittedPendingReports = `-- name: AcknowledgeEmittedPendingReports :many
+UPDATE reports
+SET delivery_state = 'acknowledged', acknowledged_at = ?1,
+    claim_token = 'activity-ack', claimed_at = ?1
+WHERE project_id = ?2 AND delivery_state = 'pending'
+  AND emitted_at IS NOT NULL
+RETURNING id
+`
+
+type AcknowledgeEmittedPendingReportsParams struct {
+	AcknowledgedAt sql.NullTime
+	ProjectID      string
+}
+
+// The synthetic claim token exists only to satisfy the delivery-state CHECK:
+// acknowledged rows must carry a token, and nothing reads it after the ack.
+func (q *Queries) AcknowledgeEmittedPendingReports(ctx context.Context, arg AcknowledgeEmittedPendingReportsParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, acknowledgeEmittedPendingReports, arg.AcknowledgedAt, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const acknowledgeReport = `-- name: AcknowledgeReport :one
 UPDATE reports
 SET delivery_state = 'acknowledged', acknowledged_at = ?1
