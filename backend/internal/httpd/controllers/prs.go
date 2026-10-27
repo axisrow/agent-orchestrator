@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 	"regexp"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -38,12 +37,9 @@ func (c *PRsController) merge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in MergePRRequest
-	if err := decodeJSON(r, &in); err != nil {
+	// Body is optional: an empty body merges the tracked PR at its tracked head.
+	if err := decodeJSON(r, &in); err != nil && !isEmptyBody(err) {
 		envelope.WriteAPIError(w, r, http.StatusBadRequest, "bad_request", "INVALID_JSON", "Invalid JSON body", nil)
-		return
-	}
-	if strings.TrimSpace(in.PRURL) == "" || strings.TrimSpace(in.ExpectedHeadSHA) == "" {
-		envelope.WriteAPIError(w, r, http.StatusBadRequest, "bad_request", "INVALID_PR", "PR URL and expected head SHA are required", nil)
 		return
 	}
 	res, err := c.Svc.Merge(r.Context(), prsvc.MergeRequest{PRID: prID, PRURL: in.PRURL, ExpectedHeadSHA: in.ExpectedHeadSHA})

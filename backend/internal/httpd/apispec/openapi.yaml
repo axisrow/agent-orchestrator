@@ -17478,14 +17478,13 @@ components:
     MergePRRequest:
       properties:
         expectedHeadSha:
-          minLength: 40
+          description: Expected head SHA observed by the caller. Optional; defaults
+            to the tracked head at merge time.
           type: string
         prUrl:
-          minLength: 1
+          description: PR URL cross-checked against the tracked PR. Optional; omit
+            to resolve the PR by the path number.
           type: string
-      required:
-      - prUrl
-      - expectedHeadSha
       type: object
     MergePRResponse:
       properties:

@@ -27,6 +27,24 @@ func TestPRMergePostsToDaemon(t *testing.T) {
 	}
 }
 
+func TestPRMergePostsHeadSHAFlag(t *testing.T) {
+	cfg := setConfigEnv(t)
+	sha := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	srv, capture := reviewServer(t, http.StatusOK, `{"ok":true,"prNumber":42,"method":"squash"}`)
+	writeRunFileFor(t, cfg, srv)
+
+	if _, errOut, err := executeCLI(t, aliveDeps(), "pr", "merge", "42", "--head-sha", sha); err != nil {
+		t.Fatalf("unexpected error: %v\nstderr=%s", err, errOut)
+	}
+	var req mergePRRequest
+	if err := json.Unmarshal([]byte(capture.body), &req); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if req.PRURL != "" || req.ExpectedHeadSHA != sha {
+		t.Fatalf("body = %q, want only expectedHeadSha=%q", capture.body, sha)
+	}
+}
+
 func TestPRMergeOmitsMissingMethodFromOutput(t *testing.T) {
 	cfg := setConfigEnv(t)
 	srv, _ := reviewServer(t, http.StatusOK, `{"ok":true,"prNumber":42}`)

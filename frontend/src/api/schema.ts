@@ -6143,8 +6143,10 @@ export interface components {
             pressureSource: "psi" | "available_pct" | "memorystatus";
         };
         MergePRRequest: {
-            expectedHeadSha: string;
-            prUrl: string;
+            /** @description Expected head SHA observed by the caller. Optional; defaults to the tracked head at merge time. */
+            expectedHeadSha?: string;
+            /** @description PR URL cross-checked against the tracked PR. Optional; omit to resolve the PR by the path number. */
+            prUrl?: string;
         };
         MergePRResponse: {
             method: string;

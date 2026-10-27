@@ -2383,10 +2383,13 @@ type PRIDParam struct {
 	ID string `path:"id" description:"PR number."`
 }
 
-// MergePRRequest is the body of POST /api/v1/prs/{id}/merge.
+// MergePRRequest is the optional body of POST /api/v1/prs/{id}/merge. Both
+// fields may be omitted: the daemon then merges the tracked PR at its tracked
+// head after re-verifying it against a fresh provider fetch. Supplied values
+// pin the merge to the exact URL and head SHA the caller observed.
 type MergePRRequest struct {
-	PRURL           string `json:"prUrl" minLength:"1"`
-	ExpectedHeadSHA string `json:"expectedHeadSha" minLength:"40"`
+	PRURL           string `json:"prUrl,omitempty" description:"PR URL cross-checked against the tracked PR. Optional; omit to resolve the PR by the path number."`
+	ExpectedHeadSHA string `json:"expectedHeadSha,omitempty" description:"Expected head SHA observed by the caller. Optional; defaults to the tracked head at merge time."`
 }
 
 // MergePRResponse is the body of POST /api/v1/prs/{id}/merge (200).

@@ -88,6 +88,45 @@ func TestPRsRoutes_Merge_200(t *testing.T) {
 	}
 }
 
+// ---- Merge: 200 with empty body (number-only merge) ----
+
+func TestPRsRoutes_Merge_EmptyBodyResolvesByNumber(t *testing.T) {
+	svc := &fakePRService{mergeResult: prsvc.MergeResult{PRNumber: 42, Method: "squash"}}
+	srv := newPRTestServer(t, svc)
+
+	body, status, _ := doRequest(t, srv, "POST", "/api/v1/prs/42/merge", `{}`)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", status, body)
+	}
+	if svc.mergeRequest.PRID != "42" || svc.mergeRequest.PRURL != "" || svc.mergeRequest.ExpectedHeadSHA != "" {
+		t.Fatalf("merge request = %#v", svc.mergeRequest)
+	}
+}
+
+func TestPRsRoutes_Merge_AbsentBodyResolvesByNumber(t *testing.T) {
+	svc := &fakePRService{mergeResult: prsvc.MergeResult{PRNumber: 42, Method: "squash"}}
+	srv := newPRTestServer(t, svc)
+
+	if _, status, _ := doRequest(t, srv, "POST", "/api/v1/prs/42/merge", ""); status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", status)
+	}
+	if svc.mergeRequest.PRID != "42" || svc.mergeRequest.PRURL != "" || svc.mergeRequest.ExpectedHeadSHA != "" {
+		t.Fatalf("merge request = %#v", svc.mergeRequest)
+	}
+}
+
+func TestPRsRoutes_Merge_InvalidJSON(t *testing.T) {
+	svc := &fakePRService{mergeResult: prsvc.MergeResult{PRNumber: 42}}
+	srv := newPRTestServer(t, svc)
+
+	body, status, headers := doRequest(t, srv, "POST", "/api/v1/prs/42/merge", `{"prUrl":`)
+	assertJSON(t, headers)
+	assertErrorCode(t, body, status, http.StatusBadRequest, "INVALID_JSON")
+	if svc.mergeRequest.PRID != "" {
+		t.Fatalf("service reached with request = %#v", svc.mergeRequest)
+	}
+}
+
 // ---- Merge: 404 ----
 
 func TestPRsRoutes_Merge_404(t *testing.T) {

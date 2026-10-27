@@ -437,6 +437,76 @@ func TestActionServiceMerge_MapsProviderConflict(t *testing.T) {
 	}
 }
 
+func TestActionServiceMerge_MergesByNumberWithoutURLorSHA(t *testing.T) {
+	pr, scm := mergeableActionFixture()
+	svc := NewActionService(ActionDeps{Store: &fakeActionStore{pr: pr, ok: true}, Reader: scm, Merger: scm})
+	result, err := svc.Merge(context.Background(), MergeRequest{PRID: "42"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.PRNumber != 42 || result.State != domain.PRStateMerged {
+		t.Fatalf("result = %#v", result)
+	}
+	if scm.mergeCalls != 1 || scm.request.ExpectedHeadSHA != pr.HeadSHA || scm.request.PR.Number != 42 {
+		t.Fatalf("request = %#v, calls = %d", scm.request, scm.mergeCalls)
+	}
+}
+
+func TestActionServiceMerge_ExplicitHeadSHAGuardsNumberLookup(t *testing.T) {
+	pr, scm := mergeableActionFixture()
+	svc := NewActionService(ActionDeps{Store: &fakeActionStore{pr: pr, ok: true}, Reader: scm, Merger: scm})
+	_, err := svc.Merge(context.Background(), MergeRequest{PRID: "42", ExpectedHeadSHA: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"})
+	if !errors.Is(err, ErrPRHeadChanged) || scm.mergeCalls != 0 {
+		t.Fatalf("error = %v, calls = %d", err, scm.mergeCalls)
+	}
+}
+
+func TestActionServiceMerge_DefaultHeadStillGuardsFreshDrift(t *testing.T) {
+	pr, scm := mergeableActionFixture()
+	scm.observation.PR.HeadSHA = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	svc := NewActionService(ActionDeps{Store: &fakeActionStore{pr: pr, ok: true}, Reader: scm, Merger: scm})
+	_, err := svc.Merge(context.Background(), MergeRequest{PRID: "42"})
+	if !errors.Is(err, ErrPRHeadChanged) || scm.mergeCalls != 0 {
+		t.Fatalf("error = %v, calls = %d", err, scm.mergeCalls)
+	}
+}
+
+func TestActionServiceMerge_RejectsMalformedExplicitHeadSHA(t *testing.T) {
+	pr, scm := mergeableActionFixture()
+	svc := NewActionService(ActionDeps{Store: &fakeActionStore{pr: pr, ok: true}, Reader: scm, Merger: scm})
+	_, err := svc.Merge(context.Background(), MergeRequest{PRID: "42", ExpectedHeadSHA: "not-a-sha"})
+	if !errors.Is(err, ErrInvalidPR) || scm.mergeCalls != 0 {
+		t.Fatalf("error = %v, calls = %d", err, scm.mergeCalls)
+	}
+}
+
+func TestActionServiceMerge_RejectsUnknownNumberWithoutURL(t *testing.T) {
+	pr, scm := mergeableActionFixture()
+	svc := NewActionService(ActionDeps{Store: &fakeActionStore{pr: pr}, Reader: scm, Merger: scm})
+	_, err := svc.Merge(context.Background(), MergeRequest{PRID: "42"})
+	if !errors.Is(err, ErrPRNotFound) || scm.mergeCalls != 0 {
+		t.Fatalf("error = %v, calls = %d", err, scm.mergeCalls)
+	}
+}
+
+func TestActionServiceMerge_RejectsAmbiguousNumberWithoutURL(t *testing.T) {
+	pr, scm := mergeableActionFixture()
+	svc := NewActionService(ActionDeps{Store: &fakeActionStore{pr: pr, ok: true, activeCount: 2}, Reader: scm, Merger: scm})
+	_, err := svc.Merge(context.Background(), MergeRequest{PRID: "42"})
+	if !errors.Is(err, ErrPRPreconditions) || scm.mergeCalls != 0 {
+		t.Fatalf("error = %v, calls = %d", err, scm.mergeCalls)
+	}
+}
+
+func TestActionServiceMerge_RejectsURLFromAnotherPR(t *testing.T) {
+	pr, scm := mergeableActionFixture()
+	svc := NewActionService(ActionDeps{Store: &fakeActionStore{pr: pr, ok: true}, Reader: scm, Merger: scm})
+	_, err := svc.Merge(context.Background(), MergeRequest{PRID: "43", PRURL: pr.URL, ExpectedHeadSHA: pr.HeadSHA})
+	if !errors.Is(err, ErrPRNotFound) || scm.mergeCalls != 0 {
+		t.Fatalf("error = %v, calls = %d", err, scm.mergeCalls)
+	}
+}
+
 func TestActionServiceResolveComments_ResolvesRemoteThreadsBeforeWritingLocalState(t *testing.T) {
 	pr, scm := mergeableActionFixture()
 	scm.review = ports.SCMReviewObservation{Threads: []ports.SCMReviewThreadObservation{

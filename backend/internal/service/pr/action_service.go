@@ -123,25 +123,28 @@ func NewActionService(deps ActionDeps) *ActionService {
 
 // Merge re-fetches authoritative SCM state and then squash-merges only the
 // exact head the user saw. The provider repeats the SHA guard atomically.
+// PRURL and ExpectedHeadSHA are optional: an empty URL resolves the tracked
+// PR by number, and an empty ExpectedHeadSHA pins the merge to the tracked
+// head, which the fresh fetch below and the provider re-verify.
 func (s *ActionService) Merge(ctx context.Context, request MergeRequest) (MergeResult, error) {
 	prNumber, err := parsePRNumber(request.PRID)
-	if err != nil || strings.TrimSpace(request.PRURL) == "" {
+	if err != nil {
 		return MergeResult{}, fmt.Errorf("%w: invalid pull request identity", ErrInvalidPR)
 	}
 	if s.store == nil || s.merger == nil || s.reader == nil {
 		return MergeResult{}, errors.New("pr: merge action is not configured")
 	}
 	expectedHead := strings.ToLower(strings.TrimSpace(request.ExpectedHeadSHA))
-	if !gitSHAPattern.MatchString(expectedHead) {
+	if expectedHead != "" && !gitSHAPattern.MatchString(expectedHead) {
 		return MergeResult{}, fmt.Errorf("%w: invalid expected head", ErrInvalidPR)
 	}
 
-	tracked, ok, err := s.store.GetPR(ctx, request.PRURL)
+	tracked, err := s.lookupMergePR(ctx, prNumber, strings.TrimSpace(request.PRURL))
 	if err != nil {
-		return MergeResult{}, fmt.Errorf("load pull request: %w", err)
+		return MergeResult{}, err
 	}
-	if !ok || tracked.Number != prNumber {
-		return MergeResult{}, ErrPRNotFound
+	if expectedHead == "" {
+		expectedHead = strings.ToLower(strings.TrimSpace(tracked.HeadSHA))
 	}
 	if tracked.Draft || tracked.Merged || tracked.Closed {
 		return MergeResult{}, ErrPRNotMergeable
@@ -398,6 +401,10 @@ func (s *ActionService) lookupResolvePR(ctx context.Context, prID string) (domai
 	if err != nil {
 		return domain.PullRequest{}, fmt.Errorf("%w: invalid pull request identity", ErrInvalidPR)
 	}
+	return s.lookupPRByNumber(ctx, number)
+}
+
+func (s *ActionService) lookupPRByNumber(ctx context.Context, number int) (domain.PullRequest, error) {
 	pr, ok, err := s.resolve.GetPRByNumber(ctx, number)
 	if err != nil {
 		return domain.PullRequest{}, fmt.Errorf("load pull request: %w", err)
@@ -415,6 +422,26 @@ func (s *ActionService) lookupResolvePR(ctx context.Context, prID string) (domai
 		return domain.PullRequest{}, ErrPRNotFound
 	}
 	return pr, nil
+}
+
+// lookupMergePR resolves the tracked pull request either by explicit URL
+// cross-checked against the path number, or — when no URL is supplied — by
+// number alone, rejecting numbers tracked in multiple active repositories.
+func (s *ActionService) lookupMergePR(ctx context.Context, prNumber int, prURL string) (domain.PullRequest, error) {
+	if prURL == "" {
+		if s.resolve == nil {
+			return domain.PullRequest{}, errors.New("pr: merge action is not configured")
+		}
+		return s.lookupPRByNumber(ctx, prNumber)
+	}
+	tracked, ok, err := s.store.GetPR(ctx, prURL)
+	if err != nil {
+		return domain.PullRequest{}, fmt.Errorf("load pull request: %w", err)
+	}
+	if !ok || tracked.Number != prNumber {
+		return domain.PullRequest{}, ErrPRNotFound
+	}
+	return tracked, nil
 }
 
 func normalizeThreadIDs(ids []string) []string {
