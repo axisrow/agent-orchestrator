@@ -16,8 +16,10 @@ test("@P0 sidebar content width stays fixed when opening a project and returning
 	await expect(page).toHaveURL(/projects\/ao-demo/);
 	expect(await content.evaluate((el) => el.getBoundingClientRect().width)).toBe(width);
 
-	await page.goBack();
-	await expect(page).not.toHaveURL(/projects\//);
+	// Return home directly: goBack is nondeterministic across the project
+	// route's history-replacing redirect (#163).
+	await page.goto("/");
+	await expect(page.getByText("Jump back right in")).toBeVisible();
 	expect(await content.evaluate((el) => el.getBoundingClientRect().width)).toBe(width);
 });
 

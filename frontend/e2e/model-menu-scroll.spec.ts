@@ -52,7 +52,9 @@ test("renderer: hidden model-menu scrollbar keeps wheel scrolling functional @T0
 	});
 
 	await page.goto(`/#/projects/${projectId}`);
-	await page.getByRole("button", { name: "New task" }).first().click();
+	// The board is gone (#163): New task lives in the sidebar project menu.
+	await page.getByRole("button", { name: `Project actions for ${projectId}` }).first().click();
+	await page.getByRole("menuitem", { name: /New task/ }).click();
 	const dialog = page.getByRole("dialog");
 	await expect(dialog).toBeVisible();
 	await dialog.getByRole("button", { name: "Model" }).click();
