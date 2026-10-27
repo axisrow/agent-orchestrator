@@ -659,6 +659,13 @@ func (c *readinessCoordinator) Invalidate(agentID string, invalidation readiness
 	entry.nextRetryAt = time.Time{}
 }
 
+// Warm fills only the installation cache, through the process-free presence
+// capability. Authentication is deliberately not part of boot: probing every
+// harness's credentials spawns each agent CLI and reads the login keychain on
+// their behalf — work nobody has asked for yet, and on macOS the first of
+// those reads can put a keychain dialog in front of an absent user. The first
+// ensure that needs authentication (a UI refresh, a launch, a retry) fills it
+// exactly as before.
 func (c *readinessCoordinator) Warm() <-chan struct{} {
 	done := make(chan struct{})
 	go func() {
@@ -669,10 +676,6 @@ func (c *readinessCoordinator) Warm() <-chan struct{} {
 		// probe. Adapters without a presence capability retain their existing
 		// installation check behavior.
 		_, _ = c.ensureMode(c.ctx, nil, domain.AgentReadinessPurposeDisplay, readinessInvalidateInstallation, true)
-		// Preserve the warm authentication pass without asking adapters to
-		// resolve installation again. An identity-pending installation yields an
-		// inconclusive auth observation until an explicit normal refresh.
-		_, _ = c.ensureMode(c.ctx, nil, domain.AgentReadinessPurposeDisplay, readinessInvalidateAuthentication, false)
 	}()
 	return done
 }
