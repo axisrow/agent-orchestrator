@@ -447,6 +447,55 @@ func TestCoordinatorPromptActivitySettlesDeliveredBatch(t *testing.T) {
 	}
 }
 
+// TestCoordinatorExpiresStalePendingReports pins the delivery-ledger expiry:
+// a report that sat pending past ReportExpiryAge leaves the schedule in the
+// same cycle — the dispatcher never claims it again — while fresh reports
+// deliver normally, and claimed rows ride out their own attempt.
+func TestCoordinatorExpiresStalePendingReports(t *testing.T) {
+	now := time.Date(2026, 10, 27, 9, 0, 0, 0, time.UTC)
+	store := newCoordinatorStore(now)
+	store.sessions = []domain.SessionRecord{{ID: "orch", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeTUI}}
+	ancient := reportAt("ancient", "worker", now.Add(-8*24*time.Hour), now, "context")
+	ancient.EmittedAt = now.Add(-8 * 24 * time.Hour)
+	fresh := reportAt("fresh", "worker", now, now, "later context")
+	store.add(ancient, fresh)
+	claimedOld := reportAt("claimed-old", "worker", now.Add(-8*24*time.Hour), now, "in flight")
+	claimedOld.ClaimToken, claimedOld.ClaimedAt, claimedOld.DeliveryState = "hold", now, domain.ReportClaimed
+	store.add(claimedOld)
+	delivery := &coordinatorDelivery{}
+	c := NewCoordinator(CoordinatorDeps{Store: store, Delivery: delivery, Now: func() time.Time { return now }})
+	if _, err := c.RunDue(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	stateByID := func(id string) domain.ReportRecord {
+		t.Helper()
+		for _, rec := range store.reports {
+			if rec.ID == id {
+				return rec
+			}
+		}
+		t.Fatalf("report %s vanished from the store", id)
+		return domain.ReportRecord{}
+	}
+	if rec := stateByID("ancient"); rec.DeliveryState != domain.ReportStale {
+		t.Fatalf("ancient = %+v, want stale", rec)
+	}
+	if rec := stateByID("claimed-old"); rec.DeliveryState != domain.ReportClaimed {
+		t.Fatalf("claimed in flight = %+v, want untouched", rec)
+	}
+	if rec := stateByID("fresh"); rec.DeliveryState != domain.ReportAcknowledged {
+		t.Fatalf("fresh = %+v, want delivered normally", rec)
+	}
+	// The stale row never returns to the schedule.
+	store.requeue()
+	if delay, err := c.RunDue(context.Background()); err != nil || delay >= 0 {
+		t.Fatalf("post-expiry delay = %v, err = %v, want an idle schedule", delay, err)
+	}
+	if len(delivery.submissions) != 1 {
+		t.Fatalf("submissions = %d, want 1: a stale report re-emitted", len(delivery.submissions))
+	}
+}
+
 func TestSettleEmittedReportsGatesOnLiveOrchestrator(t *testing.T) {
 	now := time.Date(2026, 10, 26, 9, 0, 0, 0, time.UTC)
 	store := newCoordinatorStore(now)
@@ -777,6 +826,19 @@ func (s *coordinatorStore) AcknowledgeEmittedReportBatches(_ context.Context, pr
 		}
 	}
 	s.acked += count
+	return count, nil
+}
+
+func (s *coordinatorStore) ExpireStaleReportDeliveries(_ context.Context, cutoff time.Time) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	count := 0
+	for i := range s.reports {
+		if s.reports[i].DeliveryState == domain.ReportPending && s.reports[i].CreatedAt.Before(cutoff) {
+			s.reports[i].DeliveryState = domain.ReportStale
+			count++
+		}
+	}
 	return count, nil
 }
 

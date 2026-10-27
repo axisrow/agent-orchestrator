@@ -108,6 +108,10 @@ const (
 	ReportPending      ReportDeliveryState = "pending"
 	ReportClaimed      ReportDeliveryState = "claimed"
 	ReportAcknowledged ReportDeliveryState = "acknowledged"
+	// ReportStale is terminal: a pending report that expired without delivery
+	// (delivery-ledger expiry). It stays readable in projections but the
+	// dispatcher never claims it again.
+	ReportStale ReportDeliveryState = "stale"
 )
 
 // ReportRecord is the durable report and outbox persistence shape. State and
@@ -168,6 +172,10 @@ func (r ReportRecord) Validate() error {
 		}
 	case ReportAcknowledged:
 		if r.ClaimToken == "" || r.ClaimedAt.IsZero() || r.AcknowledgedAt.IsZero() {
+			return ErrInvalidReport
+		}
+	case ReportStale:
+		if r.ClaimToken != "" || !r.ClaimedAt.IsZero() || !r.AcknowledgedAt.IsZero() {
 			return ErrInvalidReport
 		}
 	default:

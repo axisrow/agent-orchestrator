@@ -37,6 +37,11 @@ const ReportEmitTTL = 15 * time.Minute
 // activity ack or a fresh orchestrator retires it (fork issue #159).
 const ReportSilentRetryFloor = 24 * time.Hour
 
+// ReportExpiryAge is the delivery ledger's terminal expiry: a report still
+// pending a week after creation is retired as stale instead of polling the
+// dispatcher forever. Claimed rows ride out their own attempt first.
+const ReportExpiryAge = 7 * 24 * time.Hour
+
 // ErrReportDeliveryModeUnsupported reports a target without semantic delivery.
 var ErrReportDeliveryModeUnsupported = errors.New("report delivery requires a semantic conversation")
 
@@ -51,6 +56,7 @@ type DeliveryStore interface {
 	DeferReportBatch(context.Context, domain.ProjectID, string, time.Time, string) (int, error)
 	MarkReportBatchEmitted(context.Context, domain.ProjectID, string, time.Time) (int, error)
 	AcknowledgeEmittedReportBatches(context.Context, domain.ProjectID, time.Time) (int, error)
+	ExpireStaleReportDeliveries(context.Context, time.Time) (int, error)
 	AcquireReportInterrupt(context.Context, domain.SessionID, time.Time, time.Duration) (bool, time.Time, error)
 }
 
@@ -195,6 +201,14 @@ func (c *Coordinator) RunDue(ctx context.Context) (time.Duration, error) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	// Ledger housekeeping runs once per cycle, before scheduling: expired
+	// reports leave the schedule instead of resurfacing every silent-retry
+	// step forever. A failure never blocks delivery — it only postpones expiry.
+	if expired, err := c.store.ExpireStaleReportDeliveries(ctx, c.now().UTC().Add(-ReportExpiryAge)); err != nil {
+		c.log.Warn("report: stale expiry failed", "err", err)
+	} else if expired > 0 {
+		c.log.Info("report: expired stale deliveries", "reports", expired)
+	}
 	for {
 		pending, err := c.store.ListPendingReportSchedule(ctx, 1)
 		if err != nil {
