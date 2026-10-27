@@ -19,7 +19,7 @@ func (s *Store) CreateReport(ctx context.Context, rec domain.ReportRecord) (doma
 	}
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
-	var row gen.Report
+	var row gen.Delivery
 	err := s.inTx(ctx, "create report", func(q *gen.Queries) error {
 		var err error
 		row, err = q.CreateReport(ctx, gen.CreateReportParams{
@@ -137,7 +137,7 @@ func (s *Store) ClaimPendingReportBatch(ctx context.Context, projectID domain.Pr
 	}
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
-	var rows []gen.Report
+	var rows []gen.Delivery
 	err := s.inTx(ctx, "claim project report batch", func(q *gen.Queries) error {
 		scheduled, err := q.ListPendingReportsByProjectSchedule(ctx, gen.ListPendingReportsByProjectScheduleParams{
 			ProjectID: string(projectID), Limit: 1,
@@ -254,6 +254,23 @@ func (s *Store) MarkReportBatchEmitted(ctx context.Context, projectID domain.Pro
 	return int(n), nil
 }
 
+// ExpireStaleReportDeliveries is the delivery ledger's terminal expiry: report
+// rows created before the cutoff that are still pending stop retrying forever
+// and become stale — readable in projections, never claimed again. Claims held
+// by an in-flight attempt are untouched: that attempt's own cycle fences them.
+func (s *Store) ExpireStaleReportDeliveries(ctx context.Context, cutoff time.Time) (int, error) {
+	if cutoff.IsZero() {
+		return 0, domain.ErrInvalidReport
+	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	rows, err := s.qw.ExpireStalePendingReports(ctx, cutoff)
+	if err != nil {
+		return 0, fmt.Errorf("expire stale report deliveries: %w", err)
+	}
+	return int(rows), nil
+}
+
 // AcquireReportInterrupt durably enforces the per-worker interruption window.
 func (s *Store) AcquireReportInterrupt(ctx context.Context, sessionID domain.SessionID, at time.Time, window time.Duration) (bool, time.Time, error) {
 	if sessionID == "" || at.IsZero() || window <= 0 {
@@ -292,26 +309,26 @@ func (s *Store) ListPendingReports(ctx context.Context, at time.Time, limit int6
 
 // ClaimReport atomically fences one pending report to a delivery attempt token.
 func (s *Store) ClaimReport(ctx context.Context, id, token string, at time.Time) (domain.ReportRecord, bool, error) {
-	return s.updateReportClaim(ctx, id, token, at, "claim", func() (gen.Report, error) {
+	return s.updateReportClaim(ctx, id, token, at, "claim", func() (gen.Delivery, error) {
 		return s.qw.ClaimReport(ctx, gen.ClaimReportParams{ID: id, ClaimToken: token, ClaimedAt: nullTime(at)})
 	})
 }
 
 // AcknowledgeReport completes only the delivery attempt holding the current token.
 func (s *Store) AcknowledgeReport(ctx context.Context, id, token string, at time.Time) (domain.ReportRecord, bool, error) {
-	return s.updateReportClaim(ctx, id, token, at, "acknowledge", func() (gen.Report, error) {
+	return s.updateReportClaim(ctx, id, token, at, "acknowledge", func() (gen.Delivery, error) {
 		return s.qw.AcknowledgeReport(ctx, gen.AcknowledgeReportParams{ID: id, ClaimToken: token, AcknowledgedAt: nullTime(at)})
 	})
 }
 
 // ReleaseReport returns the matching token's claim to pending with retry metadata.
 func (s *Store) ReleaseReport(ctx context.Context, id, token string, availableAt time.Time, lastError string) (domain.ReportRecord, bool, error) {
-	return s.updateReportClaim(ctx, id, token, availableAt, "release", func() (gen.Report, error) {
+	return s.updateReportClaim(ctx, id, token, availableAt, "release", func() (gen.Delivery, error) {
 		return s.qw.ReleaseReport(ctx, gen.ReleaseReportParams{ID: id, ClaimToken: token, AvailableAt: availableAt, LastError: lastError})
 	})
 }
 
-func (s *Store) updateReportClaim(ctx context.Context, id, token string, at time.Time, action string, update func() (gen.Report, error)) (domain.ReportRecord, bool, error) {
+func (s *Store) updateReportClaim(ctx context.Context, id, token string, at time.Time, action string, update func() (gen.Delivery, error)) (domain.ReportRecord, bool, error) {
 	if id == "" || token == "" || at.IsZero() {
 		return domain.ReportRecord{}, false, domain.ErrInvalidReport
 	}
@@ -339,7 +356,7 @@ func (s *Store) RequeueClaimedReports(ctx context.Context) (int64, error) {
 	return count, nil
 }
 
-func (s *Store) reportWithOutputs(ctx context.Context, row gen.Report) (domain.ReportRecord, error) {
+func (s *Store) reportWithOutputs(ctx context.Context, row gen.Delivery) (domain.ReportRecord, error) {
 	outputs, err := s.qr.ListReportOutputs(ctx, row.ID)
 	if err != nil {
 		return domain.ReportRecord{}, fmt.Errorf("list report %s outputs: %w", row.ID, err)
@@ -352,7 +369,7 @@ func (s *Store) reportWithOutputs(ctx context.Context, row gen.Report) (domain.R
 	return rec, nil
 }
 
-func (s *Store) reportsWithOutputs(ctx context.Context, rows []gen.Report) ([]domain.ReportRecord, error) {
+func (s *Store) reportsWithOutputs(ctx context.Context, rows []gen.Delivery) ([]domain.ReportRecord, error) {
 	out := make([]domain.ReportRecord, 0, len(rows))
 	for _, row := range rows {
 		rec, err := s.reportWithOutputs(ctx, row)
@@ -364,7 +381,7 @@ func (s *Store) reportsWithOutputs(ctx context.Context, rows []gen.Report) ([]do
 	return out, nil
 }
 
-func orderedReportRows(rows []gen.Report) []gen.Report {
+func orderedReportRows(rows []gen.Delivery) []gen.Delivery {
 	sort.Slice(rows, func(i, j int) bool {
 		if rows[i].CreatedAt.Equal(rows[j].CreatedAt) {
 			return rows[i].ID < rows[j].ID
@@ -374,7 +391,7 @@ func orderedReportRows(rows []gen.Report) []gen.Report {
 	return rows
 }
 
-func reportFromGen(r gen.Report) domain.ReportRecord {
+func reportFromGen(r gen.Delivery) domain.ReportRecord {
 	return domain.ReportRecord{
 		ID: r.ID, SessionID: domain.SessionID(r.SessionID), ProjectID: domain.ProjectID(r.ProjectID),
 		State: domain.ReportState(r.State), Note: r.Note, Message: r.Message, CreatedAt: r.CreatedAt,
