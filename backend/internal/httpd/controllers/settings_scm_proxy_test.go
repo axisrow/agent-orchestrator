@@ -47,6 +47,41 @@ func TestSettingsScmProxyRoundTrip(t *testing.T) {
 	}
 }
 
+func TestScmProxyActiveLayer(t *testing.T) {
+	t.Run("explicit setting wins over the environment", func(t *testing.T) {
+		t.Setenv("HTTPS_PROXY", "http://127.0.0.1:8118")
+		if got := scmProxyActiveLayer("socks5h://127.0.0.1:10808"); got != "setting" {
+			t.Fatalf("layer=%q, want setting", got)
+		}
+	})
+	t.Run("environment when no setting", func(t *testing.T) {
+		t.Setenv("HTTPS_PROXY", "http://127.0.0.1:8118")
+		for _, key := range []string{"https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"} {
+			t.Setenv(key, "")
+		}
+		if got := scmProxyActiveLayer(""); got != "env" {
+			t.Fatalf("layer=%q, want env", got)
+		}
+	})
+	t.Run("direct when neither is set", func(t *testing.T) {
+		for _, key := range []string{"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"} {
+			t.Setenv(key, "")
+		}
+		if got := scmProxyActiveLayer(""); got != "direct" {
+			t.Fatalf("layer=%q, want direct", got)
+		}
+	})
+	t.Run("ALL_PROXY alone is not an env layer: Go ignores it", func(t *testing.T) {
+		for _, key := range []string{"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "NO_PROXY", "no_proxy"} {
+			t.Setenv(key, "")
+		}
+		t.Setenv("ALL_PROXY", "socks5h://127.0.0.1:10808")
+		if got := scmProxyActiveLayer(""); got != "direct" {
+			t.Fatalf("layer=%q with only ALL_PROXY set, want direct (ProxyFromEnvironment never reads ALL_PROXY)", got)
+		}
+	})
+}
+
 func TestSettingsScmProxyRejectsInvalidURL(t *testing.T) {
 	svc := &scmProxySettingsService{}
 	c := &SettingsController{Svc: svc}

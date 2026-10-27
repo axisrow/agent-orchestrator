@@ -7151,6 +7151,11 @@ export interface components {
                 [key: string]: components["schemas"]["HarnessDefault"];
             };
             localEnabled: boolean;
+            /**
+             * @description Where SCM traffic currently goes: the explicit setting, the process environment, or a direct connection.
+             * @enum {string}
+             */
+            scmProxyActiveLayer: "setting" | "env" | "direct";
             /** @description Outbound proxy URL (http/https/socks5/socks5h) for the daemon's GitHub and GitLab clients. Empty uses the standard proxy environment variables. */
             scmProxyUrl: string;
             trackerIntakeEnabled: boolean;

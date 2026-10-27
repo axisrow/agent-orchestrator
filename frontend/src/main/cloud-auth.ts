@@ -187,6 +187,11 @@ async function readIdentity(dataDir: string): Promise<CloudAccount | null> {
   }
 }
 
+// NOT a cheap flag on macOS: safeStorage.isEncryptionAvailable() derives the
+// keychain key (KeychainPassword::GetPassword) and caches it process-wide, so
+// on a rebuilt (unsigned, self-built) binary every call that misses the ACL
+// pops a keychain prompt. Only call this when a store is actually about to be
+// encrypted or decrypted — never speculatively on a cold start.
 function protectedStorageAvailable(): boolean {
   if (!safeStorage.isEncryptionAvailable()) return false;
   if (process.platform !== "linux") return true;
@@ -205,12 +210,20 @@ function decodeStore(value: Buffer): AuthStore {
 export async function readAuthStore(dataDir: string): Promise<AuthStore> {
   const memoryStore = memoryStores.get(dataDir);
   if (memoryStore) return memoryStore;
+  let raw: Buffer;
+  try {
+    raw = await readFile(storePath(dataDir));
+  } catch {
+    // No store on disk: touch nothing. Probing storage availability here
+    // would reach the macOS keychain on every cold open of a signed-out app.
+    return emptyStore();
+  }
   if (!protectedStorageAvailable()) {
     await rm(storePath(dataDir), { force: true });
     return emptyStore();
   }
   try {
-    return decodeStore(await readFile(storePath(dataDir)));
+    return decodeStore(raw);
   } catch {
     await rm(storePath(dataDir), { force: true });
     return emptyStore();

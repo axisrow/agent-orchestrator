@@ -34,6 +34,35 @@ describe("scripts/rebuild-ao.sh node pin", () => {
 	});
 });
 
+// The daemon inherits the .app's environment, and apps launched via `open`
+// only see what this script exports: the standard proxy variables are the
+// documented fallback layer of the SCM proxy resolution chain ("empty SCM
+// proxy setting → ProxyFromEnvironment"). Exactly the variables Go's daemon
+// honors: HTTP_PROXY/HTTPS_PROXY/NO_PROXY — ALL_PROXY is curl semantics the
+// daemon never reads. NO_PROXY must ride along so a forwarded HTTPS_PROXY
+// does not bend intentionally-direct traffic (LLM providers) through the
+// proxy too. Same textual-guard rationale as the node pin above: the
+// regression class is "a rewrite loses the wiring".
+describe("scripts/rebuild-ao.sh proxy env passthrough", () => {
+	const scriptPath = fileURLToPath(new URL("../../../scripts/rebuild-ao.sh", import.meta.url));
+	const beforeLaunch = () => {
+		const body = readFileSync(scriptPath, "utf8");
+		const launch = body.indexOf('open "${installed_app}"');
+		expect(launch).toBeGreaterThan(-1);
+		return body.slice(0, launch);
+	};
+
+	it("exports HTTPS_PROXY, HTTP_PROXY and NO_PROXY before launching the app", () => {
+		const before = beforeLaunch();
+		expect(before).toMatch(/for proxy_var in HTTPS_PROXY HTTP_PROXY NO_PROXY/);
+		expect(before).toMatch(/export "\$\{proxy_var\}"/);
+	});
+
+	it("exports each variable only when it is set, so unset ones stay out of the app env", () => {
+		expect(beforeLaunch()).toMatch(/if \[\[ -n "\$\{!proxy_var:-\}" \]\]/);
+	});
+});
+
 // The sh pin only covers rebuild-ao.sh. Every OTHER path into packaging — a
 // manual `npm run package` from frontend/ — must fail loudly too, because
 // electron-forge under brew node 26 does not error: it exits 0 with an empty

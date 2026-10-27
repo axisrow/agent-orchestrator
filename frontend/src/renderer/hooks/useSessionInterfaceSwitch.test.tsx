@@ -68,6 +68,7 @@ describe("useSessionInterfaceSwitch Cloud handoff", () => {
 	beforeEach(() => {
 		localStorage.clear();
 		mocks.getSession.mockReset();
+		mocks.getSession.mockResolvedValue({ session: { activityState: "idle", status: "idle" } });
 		mocks.start.mockReset();
 		mocks.start.mockResolvedValue({});
 		mocks.resetStartError.mockReset();
@@ -117,15 +118,29 @@ describe("useSessionInterfaceSwitch Cloud handoff", () => {
 		expect(result.current.controllerTransitioning).toBe(false);
 	});
 
+	// The fork retired the local Chat entry (chatEntryDisabled), so the
+	// refusal-recovery path below is exercised through a Cloud session, where
+	// the switch to Chat still exists.
 	it.each(["claude-code", "codex", "gemini", "cursor"] as const)("shows the terminal again when the daemon refuses a %s switch to Chat", async (provider) => {
 		mocks.status = { supported: true, targetMode: "chat" };
 		mocks.start.mockRejectedValueOnce(new Error("handoff refused"));
-		const { cloud: _cloud, ...localSession } = cloudSession;
-		const { result } = renderHook(() => useSessionInterfaceSwitch("session-1", { ...localSession, provider, mode: "tui", status: "idle" }));
+		const { result } = renderHook(() => useSessionInterfaceSwitch("session-1", {
+			...cloudSession, provider, mode: "tui", status: "idle",
+		}, { orgId: "org-1" }));
 		requestSwitch(result.current.menuItem as ReactElement<{ onClick: () => void }> | null);
 		await waitFor(() => expect(mocks.start).toHaveBeenCalled());
 		await waitFor(() => expect(result.current.optimisticTarget).toBeUndefined());
 		expect(result.current.renderedMode).toBe("tui");
+	});
+
+	it("keeps the retired local Chat entry out of the menu", () => {
+		// Fork delta: a local terminal session offers no switch to Chat.
+		mocks.status = { supported: true, targetMode: "chat" };
+		const { cloud: _cloud, ...localSession } = cloudSession;
+		const { result } = renderHook(() => useSessionInterfaceSwitch("session-1", {
+			...localSession, provider: "claude-code", mode: "tui", status: "idle",
+		}));
+		expect(result.current.menuItem).toBeNull();
 	});
 
 	it.each(["chat", "tui"] as const)("keeps the %s surface and its content during an account move", (mode) => {
