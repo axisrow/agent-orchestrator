@@ -1137,7 +1137,7 @@ func TestReadinessCoordinatorFindInstalledDoesNotStarveLaterHarnesses(t *testing
 	}
 }
 
-func TestReadinessCoordinatorWarmFinishesPresenceBeforeAuthentication(t *testing.T) {
+func TestReadinessCoordinatorWarmLeavesAuthenticationToFirstEnsure(t *testing.T) {
 	t.Parallel()
 	installDone := make(chan struct{})
 	authStarted := make(chan struct{})
@@ -1160,8 +1160,18 @@ func TestReadinessCoordinatorWarmFinishesPresenceBeforeAuthentication(t *testing
 	coordinator := newReadinessCoordinator(readinessCoordinatorConfig{
 		Agents: []agentregistry.HarnessAgent{readinessHarness("codex", "Codex", agent)},
 	})
-	coordinator.Warm()
+	done := coordinator.Warm()
 	<-installDone
+	<-done
+	if got := agent.authCalls.Load(); got != 0 {
+		t.Fatalf("authentication checks during warm = %d, want none", got)
+	}
+
+	// The first ensure that needs authentication runs it; a startup presence
+	// lookup served from the installation cache must not wait behind it.
+	ensureCtx, cancelEnsure := context.WithCancel(context.Background())
+	defer cancelEnsure()
+	go func() { _, _ = coordinator.Ensure(ensureCtx, nil, domain.AgentReadinessPurposeDisplay) }()
 	<-authStarted
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
@@ -1173,12 +1183,10 @@ func TestReadinessCoordinatorWarmFinishesPresenceBeforeAuthentication(t *testing
 	close(authRelease)
 }
 
-func TestReadinessCoordinatorWarmSignalsAfterInstallationAndAuthentication(t *testing.T) {
+func TestReadinessCoordinatorWarmSignalsAfterInstallation(t *testing.T) {
 	t.Parallel()
 	installStarted := make(chan struct{})
 	installRelease := make(chan struct{})
-	authStarted := make(chan struct{})
-	authRelease := make(chan struct{})
 	agent := &readinessTestAgent{
 		resolve: func(context.Context) (string, error) {
 			close(installStarted)
@@ -1186,8 +1194,6 @@ func TestReadinessCoordinatorWarmSignalsAfterInstallationAndAuthentication(t *te
 			return "/bin/codex", nil
 		},
 		auth: func(context.Context) (ports.AgentAuthStatus, error) {
-			close(authStarted)
-			<-authRelease
 			return ports.AgentAuthStatusAuthorized, nil
 		},
 	}
@@ -1202,17 +1208,13 @@ func TestReadinessCoordinatorWarmSignalsAfterInstallationAndAuthentication(t *te
 	default:
 	}
 	close(installRelease)
-	<-authStarted
-	select {
-	case <-done:
-		t.Fatal("warm completed before authentication check")
-	default:
-	}
-	close(authRelease)
 	select {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("warm completion was not signaled")
+	}
+	if got := agent.authCalls.Load(); got != 0 {
+		t.Fatalf("authentication checks during warm = %d, want none", got)
 	}
 }
 

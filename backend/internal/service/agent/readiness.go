@@ -123,8 +123,10 @@ func (s *Service) RecheckAgent(agentID string) {
 }
 
 // WarmReadiness starts the coordinator's bounded asynchronous warm-up and
-// signals after its installation and authentication passes finish. Model
-// catalog updates wait for the first pass; the saved catalog is served before it.
+// signals after its installation pass finishes. Authentication is left to the
+// first ensure that needs it, so boot neither spawns agent CLIs nor reads the
+// login keychain. Model catalog updates wait for the first pass; the saved
+// catalog is served before it.
 func (s *Service) WarmReadiness() <-chan struct{} {
 	done := s.readiness.Warm()
 	if s.readinessWarm == nil {
