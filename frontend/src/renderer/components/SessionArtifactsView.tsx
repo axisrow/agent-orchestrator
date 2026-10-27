@@ -18,7 +18,6 @@ import { cn } from "../lib/utils";
 import type { SessionArtifact, WorkspaceSession } from "../types/workspace";
 import { ArtifactFileView } from "./ArtifactFileView";
 import { ArtifactHistoryMenu, ArtifactVersionPreview } from "./ArtifactHistory";
-import { ConfirmDialog } from "./ConfirmDialog";
 import { Button } from "./ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
@@ -26,7 +25,7 @@ import { PanelMessage } from "./WorkspaceDiffView";
 
 export type ArtifactOpenRequest = { feedback?: boolean; key: number; path: string };
 
-// How long a failed open or copy stays in the header.
+// How long a failed copy stays in the header.
 const ERROR_CLEAR_MS = 5_000;
 
 /** The session's artifacts, newest first. */
@@ -87,32 +86,26 @@ function OpenArtifactsFolderButtons({ sessionId }: { sessionId: string }) {
 }
 
 /**
- * The open artifact's name, as a menu: show it in the file manager or a
- * terminal (local sessions only), copy its contents, or delete it.
+ * The open artifact's name, as a menu: copy its contents to the clipboard
+ * (cloud sessions only — a local or remote-host file can be opened directly),
+ * or delete it right away.
  */
 function ArtifactMenu({ artifact, hostId, session }: { artifact: SessionArtifact; hostId?: string; session: WorkspaceSession }) {
 	const { t } = useTranslation();
 	const queryClient = useQueryClient();
-	const open = useOpenSessionArtifacts();
 	const [copyError, setCopyError] = useState("");
-	const [confirmingDelete, setConfirmingDelete] = useState(false);
-	// The artifact directory is on this machine only for a local session.
-	const local = !hostId && !session.cloud;
+	// A cloud artifact is out of local reach, so copying its contents is the
+	// only way to get text out of it; media has no text to copy.
+	const copyable = session.cloud && !fileMediaKind(artifact.path);
 	// The deleted file leaves the session's artifact list on the next read.
 	const remove = useMutation({
 		mutationFn: () => deleteSessionArtifactFile({ path: artifact.path, sessionId: session.id, hostId }),
 		onSuccess: async () => {
-			setConfirmingDelete(false);
 			await queryClient.invalidateQueries({ queryKey: workspaceQueryKeyForHost(hostId) });
 		},
 	});
 	const markdown = /\.(md|markdown)$/i.test(artifact.path);
-	const reveal = (targetId: OpenArtifactsTargetId) => {
-		setCopyError("");
-		open.mutate({ sessionId: session.id, targetId, path: artifact.path });
-	};
 	const copy = async () => {
-		open.reset();
 		setCopyError("");
 		try {
 			const detail = await queryClient.fetchQuery(sessionArtifactFileQueryOptions(session.id, artifact.path, artifact.rawUrl, t("files.error.loadArtifact")));
@@ -121,16 +114,11 @@ function ArtifactMenu({ artifact, hostId, session }: { artifact: SessionArtifact
 			setCopyError(error instanceof Error ? error.message : String(error));
 		}
 	};
-	const error = open.error?.message || copyError;
-	const resetOpen = open.reset;
 	useEffect(() => {
-		if (!error) return;
-		const timer = setTimeout(() => {
-			resetOpen();
-			setCopyError("");
-		}, ERROR_CLEAR_MS);
+		if (!copyError) return;
+		const timer = setTimeout(() => setCopyError(""), ERROR_CLEAR_MS);
 		return () => clearTimeout(timer);
-	}, [error, resetOpen]);
+	}, [copyError]);
 	return (
 		<>
 			<DropdownMenu>
@@ -141,57 +129,25 @@ function ArtifactMenu({ artifact, hostId, session }: { artifact: SessionArtifact
 					</Button>
 				</DropdownMenuTrigger>
 				<DropdownMenuContent align="start" className="min-w-44" data-browser-native-overlay="true">
-					{local ? (
-						<>
-							<DropdownMenuItem onSelect={() => reveal("file-manager")}>
-								<FolderOpen aria-hidden="true" />
-								{t("artifacts.showIn", { name: fileManagerName() })}
-							</DropdownMenuItem>
-							<DropdownMenuItem onSelect={() => reveal("terminal")}>
-								<SquareTerminal aria-hidden="true" />
-								{t("artifacts.showIn", { name: terminalName() })}
-							</DropdownMenuItem>
-							<DropdownMenuSeparator />
-						</>
-					) : null}
-					{!fileMediaKind(artifact.path) ? (
+					{copyable ? (
 						<DropdownMenuItem onSelect={() => void copy()}>
 							<Copy aria-hidden="true" />
 							{t(markdown ? "artifacts.copyMarkdown" : "artifacts.copyContents")}
 						</DropdownMenuItem>
 					) : null}
-					{/* Cloud sessions keep their artifacts behind the cloud control plane. */}
-					{session.cloud ? null : (
-						<>
-							<DropdownMenuSeparator />
-							<DropdownMenuItem
-								className="text-destructive focus:text-destructive [&_svg]:text-destructive focus:[&_svg]:text-destructive"
-								onSelect={() => {
-									remove.reset();
-									setConfirmingDelete(true);
-								}}
-							>
-								<Trash2 aria-hidden="true" />
-								{t("artifacts.delete")}
-							</DropdownMenuItem>
-						</>
-					)}
+					{copyable ? <DropdownMenuSeparator /> : null}
+					<DropdownMenuItem
+						className="text-destructive focus:text-destructive [&_svg]:text-destructive focus:[&_svg]:text-destructive"
+						onSelect={() => remove.mutate()}
+					>
+						<Trash2 aria-hidden="true" />
+						{t("artifacts.delete")}
+					</DropdownMenuItem>
 				</DropdownMenuContent>
 			</DropdownMenu>
-			<ConfirmDialog
-				busy={remove.isPending}
-				confirmLabel={t("artifacts.delete")}
-				description={t("artifacts.deleteDescription", { name: artifact.name })}
-				destructive
-				error={remove.error?.message ?? null}
-				onConfirm={() => remove.mutate()}
-				onOpenChange={setConfirmingDelete}
-				open={confirmingDelete}
-				title={t("artifacts.deleteTitle")}
-			/>
-			{error ? (
-				<span className="min-w-0 truncate text-caption text-destructive" role="alert" title={error}>
-					{error}
+			{copyError || remove.error?.message ? (
+				<span className="min-w-0 truncate text-caption text-destructive" role="alert" title={copyError || remove.error?.message}>
+					{copyError || remove.error?.message}
 				</span>
 			) : null}
 		</>

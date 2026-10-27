@@ -176,3 +176,9 @@ a2a981122fbbc407f62e3e2af2948facc8901c2d skipped feat(markdown): render LaTeX ma
 fc0b92a9059d1480e700ce275c58bd4fb0bcf494 skipped fix(chat): resume a replacement orchestrator after a restart (#7276) — скип по согласованию 2026-10-26: чат-режим оркестратора в форке отключён, путь мёртв
 12e1fd738b6a92847b22b2813f73b01ef93a2936 skipped feat(chat): calm expired-login banner that opens the Harness page (#7147)
 86670711ca86643b91497a2160598ae9c056ff0c skipped fix(cloud): keep the model picker inside the control plane's wait (#7203) — скип 2026-10-26: строится на апстримной approval-modes фиче (worker.ChatModel.ApprovalModes), в форковом cloud её нет
+79704646f2134a25d2491264b8168a273caf8cef skipped feat(artifacts): preview PDF, CSV/TSV and Mermaid artifacts (#7278)
+74a1e365d58d5ac2a79b1eb97b876381a44f1a1f taken fix(mobile): render chat tables as aligned grids (#7291)
+b26c6e16d3a700a2d451fc630872a80e97422ba7 skipped feat(chat): highlight paths and session ids in agent-to-agent messages (#7223)
+ba00eeead7d99e0548150b337ffc96762644843d skipped feat: add model and effort selection to automations (#7113)
+1916c1ad92ec1e562b971c9c425d72bd9d651887 taken fix(chat): restore prompt suggestions after clearing drafts (#7288)
+1042ba27ea8086 taken fix(artifacts): hide dividers for empty menu groups (#7295) [tsx: --ours, intent реализован форк-коммитом trim]
