@@ -16,17 +16,17 @@ import (
 )
 
 type fakePRService struct {
-	identity       prsvc.PRIdentity
-	identityErr    error
-	identityID     string
-	mergeResult    prsvc.MergeResult
-	mergeErr       error
-	mergeRequest   prsvc.MergeRequest
-	resolveResult  prsvc.ResolveResult
-	resolveErr     error
+	identity      prsvc.Identity
+	identityErr   error
+	identityID    string
+	mergeResult   prsvc.MergeResult
+	mergeErr      error
+	mergeRequest  prsvc.MergeRequest
+	resolveResult prsvc.ResolveResult
+	resolveErr    error
 }
 
-func (f *fakePRService) GetIdentity(_ context.Context, prID string) (prsvc.PRIdentity, error) {
+func (f *fakePRService) GetIdentity(_ context.Context, prID string) (prsvc.Identity, error) {
 	f.identityID = prID
 	return f.identity, f.identityErr
 }
@@ -127,7 +127,7 @@ func TestPRsRoutes_Merge_InvalidJSON(t *testing.T) {
 // ---- Get: 200 ----
 
 func TestPRsRoutes_GetPR_200(t *testing.T) {
-	svc := &fakePRService{identity: prsvc.PRIdentity{Number: 42, URL: "https://github.com/acme/widgets/pull/42", HeadSHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}
+	svc := &fakePRService{identity: prsvc.Identity{Number: 42, URL: "https://github.com/acme/widgets/pull/42", HeadSHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}
 	srv := newPRTestServer(t, svc)
 
 	body, status, _ := doRequest(t, srv, "GET", "/api/v1/prs/42", "")

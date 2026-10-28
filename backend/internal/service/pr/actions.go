@@ -10,14 +10,14 @@ import (
 // ActionManager is the controller-facing contract for guarded PR mutations
 // and PR identity resolution.
 type ActionManager interface {
-	GetIdentity(ctx context.Context, prID string) (PRIdentity, error)
+	GetIdentity(ctx context.Context, prID string) (Identity, error)
 	Merge(ctx context.Context, request MergeRequest) (MergeResult, error)
 	ResolveComments(ctx context.Context, prID string, commentIDs []string) (ResolveResult, error)
 }
 
-// PRIdentity is the tracked pull request identity a caller needs to observe
+// Identity is the tracked pull request identity a caller needs to observe
 // before mutating: the number, its provider URL, and the tracked head SHA.
-type PRIdentity struct {
+type Identity struct {
 	Number  int
 	URL     string
 	HeadSHA string
