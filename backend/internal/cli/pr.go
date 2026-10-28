@@ -10,9 +10,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type mergePRRequest struct {
-	PRURL           string `json:"prUrl,omitempty"`
-	ExpectedHeadSHA string `json:"expectedHeadSha,omitempty"`
+type prIdentity struct {
+	Number  int    `json:"number"`
+	URL     string `json:"url"`
+	HeadSHA string `json:"headSha"`
 }
 
 type mergePRResponse struct {
@@ -41,8 +42,7 @@ func newPRCommand(ctx *commandContext) *cobra.Command {
 }
 
 func newPRMergeCommand(ctx *commandContext) *cobra.Command {
-	var headSHA string
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "merge <pr-number>",
 		Short: "Merge a pull request",
 		Args:  usageArgs(cobra.ExactArgs(1)),
@@ -51,8 +51,17 @@ func newPRMergeCommand(ctx *commandContext) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// The daemon requires the exact observed URL and head SHA on merge;
+			// the thin CLI resolves them from the tracked PR first.
+			var identity prIdentity
+			if err := ctx.getJSON(cmd.Context(), "prs/"+url.PathEscape(prNumber), &identity); err != nil {
+				return err
+			}
 			var res mergePRResponse
-			body := mergePRRequest{ExpectedHeadSHA: strings.TrimSpace(headSHA)}
+			body := struct {
+				PRURL           string `json:"prUrl"`
+				ExpectedHeadSHA string `json:"expectedHeadSha"`
+			}{identity.URL, identity.HeadSHA}
 			if err := ctx.postJSON(cmd.Context(), "prs/"+url.PathEscape(prNumber)+"/merge", body, &res); err != nil {
 				return err
 			}
@@ -64,8 +73,6 @@ func newPRMergeCommand(ctx *commandContext) *cobra.Command {
 			return err
 		},
 	}
-	cmd.Flags().StringVar(&headSHA, "head-sha", "", "Expected head SHA the merge must land on; defaults to the tracked head")
-	return cmd
 }
 
 func newPRResolveCommentsCommand(ctx *commandContext) *cobra.Command {

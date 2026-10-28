@@ -16,11 +16,19 @@ import (
 )
 
 type fakePRService struct {
-	mergeResult   prsvc.MergeResult
-	mergeErr      error
-	mergeRequest  prsvc.MergeRequest
-	resolveResult prsvc.ResolveResult
-	resolveErr    error
+	identity       prsvc.PRIdentity
+	identityErr    error
+	identityID     string
+	mergeResult    prsvc.MergeResult
+	mergeErr       error
+	mergeRequest   prsvc.MergeRequest
+	resolveResult  prsvc.ResolveResult
+	resolveErr     error
+}
+
+func (f *fakePRService) GetIdentity(_ context.Context, prID string) (prsvc.PRIdentity, error) {
+	f.identityID = prID
+	return f.identity, f.identityErr
 }
 
 func (f *fakePRService) Merge(_ context.Context, request prsvc.MergeRequest) (prsvc.MergeResult, error) {
@@ -88,30 +96,19 @@ func TestPRsRoutes_Merge_200(t *testing.T) {
 	}
 }
 
-// ---- Merge: 200 with empty body (number-only merge) ----
+// ---- Merge: 400 missing required fields ----
 
-func TestPRsRoutes_Merge_EmptyBodyResolvesByNumber(t *testing.T) {
-	svc := &fakePRService{mergeResult: prsvc.MergeResult{PRNumber: 42, Method: "squash"}}
+func TestPRsRoutes_Merge_MissingFieldsAreInvalidPR(t *testing.T) {
+	svc := &fakePRService{mergeResult: prsvc.MergeResult{PRNumber: 42}}
 	srv := newPRTestServer(t, svc)
 
-	body, status, _ := doRequest(t, srv, "POST", "/api/v1/prs/42/merge", `{}`)
-	if status != http.StatusOK {
-		t.Fatalf("status = %d, want 200; body=%s", status, body)
+	for _, reqBody := range []string{`{}`, `{"prUrl":"https://github.com/acme/widgets/pull/42"}`, `{"expectedHeadSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`} {
+		resp, status, headers := doRequest(t, srv, "POST", "/api/v1/prs/42/merge", reqBody)
+		assertJSON(t, headers)
+		assertErrorCode(t, resp, status, http.StatusBadRequest, "INVALID_PR")
 	}
-	if svc.mergeRequest.PRID != "42" || svc.mergeRequest.PRURL != "" || svc.mergeRequest.ExpectedHeadSHA != "" {
-		t.Fatalf("merge request = %#v", svc.mergeRequest)
-	}
-}
-
-func TestPRsRoutes_Merge_AbsentBodyResolvesByNumber(t *testing.T) {
-	svc := &fakePRService{mergeResult: prsvc.MergeResult{PRNumber: 42, Method: "squash"}}
-	srv := newPRTestServer(t, svc)
-
-	if _, status, _ := doRequest(t, srv, "POST", "/api/v1/prs/42/merge", ""); status != http.StatusOK {
-		t.Fatalf("status = %d, want 200", status)
-	}
-	if svc.mergeRequest.PRID != "42" || svc.mergeRequest.PRURL != "" || svc.mergeRequest.ExpectedHeadSHA != "" {
-		t.Fatalf("merge request = %#v", svc.mergeRequest)
+	if svc.mergeRequest.PRID != "" {
+		t.Fatalf("service reached with request = %#v", svc.mergeRequest)
 	}
 }
 
@@ -125,6 +122,56 @@ func TestPRsRoutes_Merge_InvalidJSON(t *testing.T) {
 	if svc.mergeRequest.PRID != "" {
 		t.Fatalf("service reached with request = %#v", svc.mergeRequest)
 	}
+}
+
+// ---- Get: 200 ----
+
+func TestPRsRoutes_GetPR_200(t *testing.T) {
+	svc := &fakePRService{identity: prsvc.PRIdentity{Number: 42, URL: "https://github.com/acme/widgets/pull/42", HeadSHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}
+	srv := newPRTestServer(t, svc)
+
+	body, status, _ := doRequest(t, srv, "GET", "/api/v1/prs/42", "")
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", status, body)
+	}
+	var resp struct {
+		Number  int    `json:"number"`
+		URL     string `json:"url"`
+		HeadSHA string `json:"headSha"`
+	}
+	mustJSON(t, body, &resp)
+	if resp.Number != 42 || resp.URL != svc.identity.URL || resp.HeadSHA != svc.identity.HeadSHA {
+		t.Errorf("resp = %+v, want %+v", resp, svc.identity)
+	}
+	if svc.identityID != "42" {
+		t.Fatalf("identity request id = %q, want 42", svc.identityID)
+	}
+}
+
+// ---- Get: 404 / 422 / 400 / 501 ----
+
+func TestPRsRoutes_GetPR_ErrorMapping(t *testing.T) {
+	srv := newPRTestServer(t, &fakePRService{identityErr: prsvc.ErrPRNotFound})
+	body, status, headers := doRequest(t, srv, "GET", "/api/v1/prs/99", "")
+	assertJSON(t, headers)
+	assertErrorCode(t, body, status, http.StatusNotFound, "PR_NOT_FOUND")
+
+	srv = newPRTestServer(t, &fakePRService{identityErr: prsvc.ErrPRPreconditions})
+	body, status, headers = doRequest(t, srv, "GET", "/api/v1/prs/42", "")
+	assertJSON(t, headers)
+	assertErrorCode(t, body, status, http.StatusUnprocessableEntity, "PR_PRECONDITIONS_UNMET")
+
+	srv = newPRTestServer(t, &fakePRService{})
+	for _, id := range []string{"0", "abc", "-1"} {
+		body, status, headers = doRequest(t, srv, "GET", "/api/v1/prs/"+id, "")
+		assertJSON(t, headers)
+		assertErrorCode(t, body, status, http.StatusBadRequest, "INVALID_PR")
+	}
+
+	srv = newPRTestServer(t, nil)
+	body, status, headers = doRequest(t, srv, "GET", "/api/v1/prs/42", "")
+	assertJSON(t, headers)
+	assertErrorCode(t, body, status, http.StatusNotImplemented, "NOT_IMPLEMENTED")
 }
 
 // ---- Merge: 404 ----

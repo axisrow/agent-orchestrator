@@ -1755,6 +1755,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/prs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Resolve a tracked pull request by number */
+        get: operations["getPR"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/prs/{id}/merge": {
         parameters: {
             query?: never;
@@ -5836,6 +5853,14 @@ export interface components {
             model?: string;
             tokenSet: boolean;
         };
+        GetPRResponse: {
+            /** @description Tracked head SHA of the pull request. */
+            headSha: string;
+            /** @description PR number on the provider. */
+            number: number;
+            /** @description Provider URL of the tracked pull request. */
+            url: string;
+        };
         GitHubRepo: {
             clone_url: string;
             default_branch: string;
@@ -6143,10 +6168,10 @@ export interface components {
             pressureSource: "psi" | "available_pct" | "memorystatus";
         };
         MergePRRequest: {
-            /** @description Expected head SHA observed by the caller. Optional; defaults to the tracked head at merge time. */
-            expectedHeadSha?: string;
-            /** @description PR URL cross-checked against the tracked PR. Optional; omit to resolve the PR by the path number. */
-            prUrl?: string;
+            /** @description Expected head SHA the merge must land on. */
+            expectedHeadSha: string;
+            /** @description PR URL of the tracked pull request to merge. */
+            prUrl: string;
         };
         MergePRResponse: {
             method: string;
@@ -13736,6 +13761,65 @@ export interface operations {
             };
             /** @description Internal Server Error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    getPR: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description PR number. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GetPRResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
                 headers: {
                     [name: string]: unknown;
                 };

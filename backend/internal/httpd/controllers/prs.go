@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -22,8 +23,27 @@ type PRsController struct {
 
 // Register mounts the PR action routes on the supplied router.
 func (c *PRsController) Register(r chi.Router) {
+	r.Get("/prs/{id}", c.get)
 	r.Post("/prs/{id}/merge", c.merge)
 	r.Post("/prs/{id}/resolve-comments", c.resolveComments)
+}
+
+func (c *PRsController) get(w http.ResponseWriter, r *http.Request) {
+	if c.Svc == nil {
+		apispec.NotImplemented(w, r, "GET", "/api/v1/prs/{id}")
+		return
+	}
+	prID := chi.URLParam(r, "id")
+	if !prIDPattern.MatchString(prID) {
+		envelope.WriteAPIError(w, r, http.StatusBadRequest, "bad_request", "INVALID_PR", "Invalid PR number", nil)
+		return
+	}
+	identity, err := c.Svc.GetIdentity(r.Context(), prID)
+	if err != nil {
+		writePRError(w, r, err)
+		return
+	}
+	envelope.WriteJSON(w, http.StatusOK, GetPRResponse{Number: identity.Number, URL: identity.URL, HeadSHA: identity.HeadSHA})
 }
 
 func (c *PRsController) merge(w http.ResponseWriter, r *http.Request) {
@@ -37,9 +57,12 @@ func (c *PRsController) merge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in MergePRRequest
-	// Body is optional: an empty body merges the tracked PR at its tracked head.
-	if err := decodeJSON(r, &in); err != nil && !isEmptyBody(err) {
+	if err := decodeJSON(r, &in); err != nil {
 		envelope.WriteAPIError(w, r, http.StatusBadRequest, "bad_request", "INVALID_JSON", "Invalid JSON body", nil)
+		return
+	}
+	if strings.TrimSpace(in.PRURL) == "" || strings.TrimSpace(in.ExpectedHeadSHA) == "" {
+		envelope.WriteAPIError(w, r, http.StatusBadRequest, "bad_request", "INVALID_PR", "PR URL and expected head SHA are required", nil)
 		return
 	}
 	res, err := c.Svc.Merge(r.Context(), prsvc.MergeRequest{PRID: prID, PRURL: in.PRURL, ExpectedHeadSHA: in.ExpectedHeadSHA})

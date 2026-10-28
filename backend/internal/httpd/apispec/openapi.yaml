@@ -4453,6 +4453,51 @@ paths:
       summary: Initialize a selected folder as a Git repository with an initial commit
       tags:
       - projects
+  /api/v1/prs/{id}:
+    get:
+      operationId: getPR
+      parameters:
+      - description: PR number.
+        in: path
+        name: id
+        required: true
+        schema:
+          description: PR number.
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetPRResponse'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Bad Request
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Unprocessable Entity
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: Resolve a tracked pull request by number
+      tags:
+      - prs
   /api/v1/prs/{id}/merge:
     post:
       operationId: mergePR
@@ -16641,6 +16686,22 @@ components:
       required:
       - tokenSet
       type: object
+    GetPRResponse:
+      properties:
+        headSha:
+          description: Tracked head SHA of the pull request.
+          type: string
+        number:
+          description: PR number on the provider.
+          type: integer
+        url:
+          description: Provider URL of the tracked pull request.
+          type: string
+      required:
+      - number
+      - url
+      - headSha
+      type: object
     GitHubRepo:
       properties:
         clone_url:
@@ -17478,13 +17539,16 @@ components:
     MergePRRequest:
       properties:
         expectedHeadSha:
-          description: Expected head SHA observed by the caller. Optional; defaults
-            to the tracked head at merge time.
+          description: Expected head SHA the merge must land on.
+          minLength: 40
           type: string
         prUrl:
-          description: PR URL cross-checked against the tracked PR. Optional; omit
-            to resolve the PR by the path number.
+          description: PR URL of the tracked pull request to merge.
+          minLength: 1
           type: string
+      required:
+      - prUrl
+      - expectedHeadSha
       type: object
     MergePRResponse:
       properties:

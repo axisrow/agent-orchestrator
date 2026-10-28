@@ -2,52 +2,102 @@ package cli
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
 
-func TestPRMergePostsToDaemon(t *testing.T) {
+const pr42IdentityBody = `{"number":42,"url":"https://github.com/acme/widgets/pull/42","headSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`
+
+type prMergeCapture struct {
+	getPath  string
+	postPath string
+	postBody string
+	order    []string
+}
+
+// prMergeServer answers GET /prs/42 with identityBody and the merge POST with
+// mergeBody, recording both requests in order.
+func prMergeServer(t *testing.T, identityBody, mergeBody string) (*httptest.Server, *prMergeCapture) {
+	t.Helper()
+	capture := &prMergeCapture{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqBody, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/prs/42":
+			capture.getPath = r.URL.Path
+			capture.order = append(capture.order, "get")
+			_, _ = io.WriteString(w, identityBody)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/prs/42/merge":
+			capture.postPath = r.URL.Path
+			capture.postBody = string(reqBody)
+			capture.order = append(capture.order, "post")
+			_, _ = io.WriteString(w, mergeBody)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv, capture
+}
+
+func TestPRMergeResolvesIdentityBeforeMerging(t *testing.T) {
 	cfg := setConfigEnv(t)
-	srv, capture := reviewServer(t, http.StatusOK, `{"ok":true,"prNumber":42,"method":"squash"}`)
+	srv, capture := prMergeServer(t, pr42IdentityBody, `{"ok":true,"prNumber":42,"method":"squash"}`)
 	writeRunFileFor(t, cfg, srv)
 
 	out, errOut, err := executeCLI(t, aliveDeps(), "pr", "merge", "#42")
 	if err != nil {
 		t.Fatalf("unexpected error: %v\nstderr=%s", err, errOut)
 	}
-	if capture.method != http.MethodPost || capture.path != "/api/v1/prs/42/merge" {
-		t.Fatalf("request = %s %s", capture.method, capture.path)
+	if strings.Join(capture.order, ",") != "get,post" {
+		t.Fatalf("request order = %v, want get,post", capture.order)
 	}
-	if strings.TrimSpace(capture.body) != "{}" {
-		t.Fatalf("body = %q, want {}", capture.body)
+	if capture.getPath != "/api/v1/prs/42" || capture.postPath != "/api/v1/prs/42/merge" {
+		t.Fatalf("paths = %q, %q", capture.getPath, capture.postPath)
+	}
+	var req struct {
+		PRURL           string `json:"prUrl"`
+		ExpectedHeadSHA string `json:"expectedHeadSha"`
+	}
+	if err := json.Unmarshal([]byte(capture.postBody), &req); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if req.PRURL != "https://github.com/acme/widgets/pull/42" || req.ExpectedHeadSHA != "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
+		t.Fatalf("merge body = %q", capture.postBody)
 	}
 	if !strings.Contains(out, "merged PR #42 using squash") {
 		t.Fatalf("stdout = %q", out)
 	}
 }
 
-func TestPRMergePostsHeadSHAFlag(t *testing.T) {
+func TestPRMergeSurfacesIdentityError(t *testing.T) {
 	cfg := setConfigEnv(t)
-	sha := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-	srv, capture := reviewServer(t, http.StatusOK, `{"ok":true,"prNumber":42,"method":"squash"}`)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = io.WriteString(w, `{"message":"Unknown PR","code":"PR_NOT_FOUND","requestId":"req-9"}`)
+	}))
+	t.Cleanup(srv.Close)
 	writeRunFileFor(t, cfg, srv)
 
-	if _, errOut, err := executeCLI(t, aliveDeps(), "pr", "merge", "42", "--head-sha", sha); err != nil {
-		t.Fatalf("unexpected error: %v\nstderr=%s", err, errOut)
+	_, _, err := executeCLI(t, aliveDeps(), "pr", "merge", "42")
+	if got := ExitCode(err); got != 1 {
+		t.Fatalf("exit code = %d, want 1; err=%v", got, err)
 	}
-	var req mergePRRequest
-	if err := json.Unmarshal([]byte(capture.body), &req); err != nil {
-		t.Fatalf("decode body: %v", err)
-	}
-	if req.PRURL != "" || req.ExpectedHeadSHA != sha {
-		t.Fatalf("body = %q, want only expectedHeadSha=%q", capture.body, sha)
+	for _, want := range []string{"Unknown PR", "PR_NOT_FOUND", "req-9"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("err = %q, want %q", err, want)
+		}
 	}
 }
 
 func TestPRMergeOmitsMissingMethodFromOutput(t *testing.T) {
 	cfg := setConfigEnv(t)
-	srv, _ := reviewServer(t, http.StatusOK, `{"ok":true,"prNumber":42}`)
+	srv, _ := prMergeServer(t, pr42IdentityBody, `{"ok":true,"prNumber":42}`)
 	writeRunFileFor(t, cfg, srv)
 
 	out, errOut, err := executeCLI(t, aliveDeps(), "pr", "merge", "42")
