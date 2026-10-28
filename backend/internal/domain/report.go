@@ -190,8 +190,16 @@ func (r ReportRecord) Validate() error {
 // ValidateReportContent checks the authoritative report payload contract.
 func ValidateReportContent(state ReportState, note, message string, outputs []ReportOutput) error {
 	if message != "" {
-		if state != "" || note != "" || len(outputs) != 0 || strings.TrimSpace(message) == "" || utf8.RuneCountInString(message) > MaxReportTextCharacters {
+		if state != "" || note != "" || strings.TrimSpace(message) == "" || utf8.RuneCountInString(message) > MaxReportTextCharacters {
 			return ErrInvalidReport
+		}
+		// A free-form message may carry artifact outputs only: this is the
+		// CLI spill path, where the full text lives in a session artifact and
+		// the report links to it. PR outputs stay state/note-only.
+		for _, output := range outputs {
+			if output.Kind != ReportOutputArtifact || strings.TrimSpace(output.Reference) == "" {
+				return ErrInvalidReport
+			}
 		}
 		return nil
 	}
