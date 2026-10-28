@@ -78,6 +78,9 @@ func (s *Service) SetBinaryInvalidator(invalidate func(Target)) {
 
 // managedEligible reports whether an update through plan installs side by side.
 func (s *Service) managedEligible(plan Plan) bool {
+	if _, ok := s.officialManagedRecipeFor(plan); ok {
+		return s.managedRoot != "" && !plan.Unsupported
+	}
 	return s.managedRoot != "" && s.installCommands != nil && managedMethods[plan.Method] &&
 		plan.Package != "" && !plan.Unsupported &&
 		// A managed npm copy installs and runs with the npm and Node on PATH,
@@ -156,92 +159,6 @@ func managedBinRel(goos, method, cli string) string {
 		return filepath.Join("bin", cli+".exe")
 	}
 	return filepath.Join("bin", cli)
-}
-
-// managedBinSearchDepth bounds how many node_modules levels the dependency
-// bin search follows; npm deduplicates, so real trees are far shallower.
-const managedBinSearchDepth = 6
-
-// resolveManagedBinRel locates the CLI inside a fresh release directory. It
-// looks first where managedBinRel says method puts it. A package whose
-// executable comes from a dependency — @github/copilot declares only
-// bin/copilot, its Node loader, while the native binary belongs to an
-// @github/copilot-<os>-<arch> optional dependency — has that binary linked
-// only into the dependency's node_modules/.bin instead. The search follows
-// only node_modules and package (or @scope group) directories, so it stays
-// inside the release and bounded.
-func (s *Service) resolveManagedBinRel(releaseDir, method, cli string) (string, error) {
-	fast := managedBinRel(s.goos, method, cli)
-	if _, err := os.Stat(filepath.Join(releaseDir, fast)); err == nil {
-		return fast, nil
-	}
-	names := []string{cli}
-	if s.goos == "windows" {
-		// npm links a .cmd shim (next to a bare sh script); a package may
-		// also ship a real .exe.
-		names = []string{cli + ".cmd", cli + ".exe", cli}
-	}
-	// npm's global tree is lib/node_modules, except on Windows where the
-	// prefix itself is the tree root.
-	root := filepath.Join(releaseDir, "lib", "node_modules")
-	if _, err := os.Stat(root); err != nil {
-		root = filepath.Join(releaseDir, "node_modules")
-	}
-	if found := searchNodeModulesBins(root, names, managedBinSearchDepth); found != "" {
-		if rel, err := filepath.Rel(releaseDir, found); err == nil {
-			return rel, nil
-		}
-	}
-	return "", fmt.Errorf("the install finished but %s is missing", filepath.Join(releaseDir, fast))
-}
-
-// searchNodeModulesBins returns the absolute path of the first regular file
-// named after one of names in a node_modules/.bin directory at or under
-// nodeModules, at most depth node_modules levels deep; "" when there is none.
-// npm hoists non-conflicting dependencies and links their bins into the
-// level's own .bin, so that is checked first; a nested package's .bin appears
-// only on a version conflict.
-func searchNodeModulesBins(nodeModules string, names []string, depth int) string {
-	if depth == 0 {
-		return ""
-	}
-	for _, name := range names {
-		bin := filepath.Join(nodeModules, ".bin", name)
-		if info, err := os.Stat(bin); err == nil && info.Mode().IsRegular() {
-			return bin
-		}
-	}
-	entries, err := os.ReadDir(nodeModules)
-	if err != nil {
-		return ""
-	}
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		base, pkgs := nodeModules, []string{entry.Name()}
-		if strings.HasPrefix(entry.Name(), "@") {
-			// An @scope group: its entries are the packages.
-			scoped, err := os.ReadDir(filepath.Join(nodeModules, entry.Name()))
-			if err != nil {
-				continue
-			}
-			base = filepath.Join(nodeModules, entry.Name())
-			pkgs = pkgs[:0]
-			for _, scopedPkg := range scoped {
-				if scopedPkg.IsDir() {
-					pkgs = append(pkgs, scopedPkg.Name())
-				}
-			}
-		}
-		for _, pkg := range pkgs {
-			// Transitive dependencies; the recursion checks each level's .bin first.
-			if found := searchNodeModulesBins(filepath.Join(base, pkg, "node_modules"), names, depth-1); found != "" {
-				return found
-			}
-		}
-	}
-	return ""
 }
 
 // managedInstallCommand builds the install of pkgSpec into dir for method.
@@ -348,20 +265,27 @@ func (s *Service) runManagedInstall(ctx context.Context, plan Plan, baseline *in
 			pin = baseline.latest
 		}
 	}
-	argv, extraEnv := managedInstallCommand(plan.Method, pkg, pin, dir)
-	if argv == nil {
-		return installFailed(fmt.Sprintf("%s cannot install a side-by-side copy.", installMethodLabel(plan.Method)), nil)
-	}
-	_, _ = fmt.Fprintf(out, "Installing %s into %s\n", pkg, dir)
-	if err := s.installCommands.RunInstall(ctx, ports.InstallCommand{Argv: argv, Env: append(append([]string(nil), env...), extraEnv...)}, out, out); err != nil {
-		return installFailed("The install command failed.", err)
+	binRel := managedBinRel(s.goos, plan.Method, cli)
+	if recipe, ok := s.officialManagedRecipeFor(plan); ok {
+		if err := s.runOfficialManagedInstall(ctx, plan, recipe, pin, dir, env, out); err != nil {
+			return err
+		}
+		binRel = recipe.binRel
+	} else {
+		argv, extraEnv := managedInstallCommand(plan.Method, pkg, pin, dir)
+		if argv == nil {
+			return installFailed(fmt.Sprintf("%s cannot install a side-by-side copy.", installMethodLabel(plan.Method)), nil)
+		}
+		_, _ = fmt.Fprintf(out, "Installing %s into %s\n", pkg, dir)
+		if err := s.installCommands.RunInstall(ctx, ports.InstallCommand{Argv: argv, Env: append(append([]string(nil), env...), extraEnv...)}, out, out); err != nil {
+			return installFailed("The install command failed.", err)
+		}
 	}
 
-	binRel, err := s.resolveManagedBinRel(dir, plan.Method, cli)
-	if err != nil {
-		return installFailed(fmt.Sprintf("Installed, but %s was not found.", cli), err)
-	}
 	binary := filepath.Join(dir, binRel)
+	if _, err := os.Stat(binary); err != nil {
+		return installFailed(fmt.Sprintf("Installed, but %s was not found.", cli), fmt.Errorf("%s is missing", binary))
+	}
 	version, err := s.probeManagedVersion(ctx, plan.Target, cli, binary)
 	if err != nil {
 		return err
