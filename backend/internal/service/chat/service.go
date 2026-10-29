@@ -122,6 +122,28 @@ func (s *Service) SetReportCoordinator(coordinator *reportsvc.Coordinator) {
 	s.reports = coordinator
 }
 
+// SettleEmittedReports retires the recipient's already-shown report batches
+// once an accepted prompt proves the conversation is being read (fork issue
+// #159). Session Manager calls it after a pane-delivered prompt; Chat's own
+// accepted-send paths call the same coordinator method inline.
+func (s *Service) SettleEmittedReports(ctx context.Context, id domain.SessionID) error {
+	if s.reports == nil {
+		return nil
+	}
+	if _, err := s.reports.SettleEmittedReports(ctx, id); err != nil {
+		return fmt.Errorf("settle emitted reports for %s: %w", id, err)
+	}
+	return nil
+}
+
+// settleEmittedReports is the best-effort inline form: a settle failure never
+// fails the accepted prompt that triggered it.
+func (s *Service) settleEmittedReports(ctx context.Context, id domain.SessionID) {
+	if err := s.SettleEmittedReports(ctx, id); err != nil {
+		s.log.Warn("settle emitted worker reports failed", "session", id, "err", err)
+	}
+}
+
 // controllerGate serializes start/stop for one session without making provider
 // I/O for that session block lookups or commands for every other Chat session.
 type controllerGate chan struct{}
@@ -2603,6 +2625,7 @@ func (s *Service) relayChatTurn(
 			if err == nil {
 				if turn.ID != "" {
 					s.startBackgroundWake(id)
+					s.settleEmittedReports(ctx, id)
 				}
 				return turn.ID, nil
 			}
@@ -2625,6 +2648,7 @@ func (s *Service) relayChatTurn(
 		if err != nil {
 			return "", err
 		}
+		s.settleEmittedReports(ctx, id)
 		return turn.ID, nil
 	}
 }

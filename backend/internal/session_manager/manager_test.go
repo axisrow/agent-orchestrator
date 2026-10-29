@@ -12350,6 +12350,52 @@ func TestSendRecordsInteractionOnlyForDirectTerminalSender(t *testing.T) {
 	}
 }
 
+type settleCountingLauncher struct {
+	recordingLauncher
+	calls []domain.SessionID
+	err   error
+}
+
+func (l *settleCountingLauncher) SettleEmittedReports(_ context.Context, id domain.SessionID) error {
+	l.calls = append(l.calls, id)
+	return l.err
+}
+
+// TestSendSettlesEmittedReportsOnPaneDelivery pins the fork issue #159 probe:
+// a prompt that reached a TUI pane settles the recipient's shown report
+// batches through the optional chat-launcher settle port, best-effort, and a
+// chat session — which settles inside the relay — never takes the pane probe.
+func TestSendSettlesEmittedReportsOnPaneDelivery(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		chat     bool
+		settleEr error
+		want     int
+	}{
+		{name: "terminal prompt settles", want: 1},
+		{name: "chat prompt settles in the relay", chat: true},
+		{name: "settle failure never fails the send", settleEr: context.DeadlineExceeded, want: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			st := newFakeStore()
+			rec := pastStartupGate(domain.SessionRecord{ID: "s1", Harness: "claude-code"})
+			if tc.chat {
+				rec.Mode = domain.SessionModeChat
+			}
+			st.sessions["s1"] = rec
+			m := newSendTestManager(t, fakeAgent{}, &fakeMessenger{}, st)
+			launcher := &settleCountingLauncher{err: tc.settleEr}
+			m.chat = launcher
+			if err := m.send(context.Background(), "s1", "direction", "", ports.MessageDeliveryOptions{AuthoredByUser: true}); err != nil {
+				t.Fatalf("send: %v", err)
+			}
+			if len(launcher.calls) != tc.want {
+				t.Fatalf("settle calls=%v want=%d", launcher.calls, tc.want)
+			}
+		})
+	}
+}
+
 func (f *fakeStore) UpsertSessionCleanupFacts(_ context.Context, rec domain.SessionCleanupRecord) error {
 	f.cleanupMu.Lock()
 	defer f.cleanupMu.Unlock()

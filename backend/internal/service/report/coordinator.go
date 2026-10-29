@@ -31,6 +31,17 @@ const ReportOrchestratorBackoff = time.Minute
 // refreshes the marker) is allowed so a true no-show is not lost forever.
 const ReportEmitTTL = 15 * time.Minute
 
+// ReportSilentRetryFloor is the silent-retry step for a batch whose quiet
+// window is exhausted: once visible re-emission has stopped (#127), the batch
+// still polls — at a day's pace rather than every emit TTL — until a recipient
+// activity ack or a fresh orchestrator retires it (fork issue #159).
+const ReportSilentRetryFloor = 24 * time.Hour
+
+// ReportExpiryAge is the delivery ledger's terminal expiry: a report still
+// pending a week after creation is retired as stale instead of polling the
+// dispatcher forever. Claimed rows ride out their own attempt first.
+const ReportExpiryAge = 7 * 24 * time.Hour
+
 // ErrReportDeliveryModeUnsupported reports a target without semantic delivery.
 var ErrReportDeliveryModeUnsupported = errors.New("report delivery requires a semantic conversation")
 
@@ -44,6 +55,8 @@ type DeliveryStore interface {
 	ReleaseReportBatch(context.Context, domain.ProjectID, string, time.Time, string) (int, error)
 	DeferReportBatch(context.Context, domain.ProjectID, string, time.Time, string) (int, error)
 	MarkReportBatchEmitted(context.Context, domain.ProjectID, string, time.Time) (int, error)
+	AcknowledgeEmittedReportBatches(context.Context, domain.ProjectID, time.Time) (int, error)
+	ExpireStaleReportDeliveries(context.Context, time.Time) (int, error)
 	AcquireReportInterrupt(context.Context, domain.SessionID, time.Time, time.Duration) (bool, time.Time, error)
 }
 
@@ -188,6 +201,14 @@ func (c *Coordinator) RunDue(ctx context.Context) (time.Duration, error) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	// Ledger housekeeping runs once per cycle, before scheduling: expired
+	// reports leave the schedule instead of resurfacing every silent-retry
+	// step forever. A failure never blocks delivery — it only postpones expiry.
+	if expired, err := c.store.ExpireStaleReportDeliveries(ctx, c.now().UTC().Add(-ReportExpiryAge)); err != nil {
+		c.log.Warn("report: stale expiry failed", "err", err)
+	} else if expired > 0 {
+		c.log.Info("report: expired stale deliveries", "reports", expired)
+	}
 	for {
 		pending, err := c.store.ListPendingReportSchedule(ctx, 1)
 		if err != nil {
@@ -270,12 +291,16 @@ func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.Proje
 		// further re-emission. Ack fencing and its counters stay untouched.
 		// The suppression evidence is also the DB defer reason on the batch
 		// rows; this Info line keeps daemon.log greppable with the same text.
-		next := batch.emittedAt().Add(c.emitQuietWindow(batch.MaxDeliveryAttempts()))
+		// The silent step follows the same escalation as the visible window —
+		// 15m, 1h, 6h — then rests at the floor instead of re-trying every
+		// emit TTL for as long as the batch lives.
+		quiet := c.emitQuietWindow(batch.MaxDeliveryAttempts())
+		if quiet == 0 {
+			quiet = ReportSilentRetryFloor
+		}
+		next := batch.emittedAt().Add(quiet)
 		if next.Before(c.now().UTC()) {
-			// Window exhausted (or the marker is stale): recheck on the plain
-			// emit cadence so a woken recipient can still settle the batch
-			// silently via its piggyback ack.
-			next = c.now().UTC().Add(c.emitTTL)
+			next = c.now().UTC().Add(quiet)
 		}
 		c.log.Info("report: batch already emitted; repeat suppressed until emit TTL", "batch", batch.IdempotencyKey(), "project", batch.ProjectID, "target", target.ID, "attempts", batch.MaxDeliveryAttempts())
 		_, deferErr := c.store.DeferReportBatch(ctx, batch.ProjectID, batch.Token, next, "report batch already emitted; repeat suppressed until emit TTL")
@@ -380,6 +405,35 @@ func (c *Coordinator) PreparePiggyback(ctx context.Context, target domain.Sessio
 		return PreparedBatch{}, nil
 	}
 	return c.claim(ctx, rec.ProjectID)
+}
+
+// SettleEmittedReports retires every already-shown pending batch of the
+// target's project when the recipient shows observable prompt activity: the
+// report was delivered, and an accepted prompt proves the recipient is reading
+// the conversation, so silent retries have nothing left to say (fork issue
+// #159). The orchestrator-only gate mirrors activeOrchestrator — batches are
+// delivered to the project's orchestrator, so activity anywhere else settles
+// nothing — and never-emitted batches stay scheduled: a recipient that has not
+// seen the report yet must still get it.
+func (c *Coordinator) SettleEmittedReports(ctx context.Context, target domain.SessionID) (int, error) {
+	if c == nil || c.store == nil || target == "" {
+		return 0, nil
+	}
+	rec, ok, err := c.store.GetSession(ctx, target)
+	if err != nil || !ok {
+		return 0, err
+	}
+	if rec.Kind != domain.KindOrchestrator || rec.IsTerminated {
+		return 0, nil
+	}
+	n, err := c.store.AcknowledgeEmittedReportBatches(ctx, rec.ProjectID, c.now().UTC())
+	if err != nil {
+		return 0, err
+	}
+	if n > 0 {
+		c.log.Info("report: delivered batches settled by recipient prompt activity", "project", rec.ProjectID, "target", target, "reports", n)
+	}
+	return n, nil
 }
 
 // AcceptPiggyback acknowledges reports after the combined user turn is accepted.

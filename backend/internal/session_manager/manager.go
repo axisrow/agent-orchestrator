@@ -5244,6 +5244,18 @@ func (m *Manager) send(ctx context.Context, id domain.SessionID, message, client
 	case sessionguard.SuppressedInputGated:
 		return fmt.Errorf("send %s: %w", id, ErrSwitchInProgress)
 	}
+	// A prompt that reached the pane proves the recipient is being driven, so
+	// its already-shown report batches are settled (fork issue #159). Chat
+	// sessions never reach this path — sendChat handled them above with the
+	// same settle inline — and the optional interface keeps chat-less fakes
+	// intact. Best-effort: a settle failure never fails the delivered send.
+	if settler, ok := m.chat.(interface {
+		SettleEmittedReports(context.Context, domain.SessionID) error
+	}); ok {
+		if err := settler.SettleEmittedReports(ctx, id); err != nil {
+			m.logger.Warn("send: settle emitted worker reports failed", "sessionID", id, "error", err)
+		}
+	}
 	// Chat and transition queues persist interaction in their acceptance transaction.
 	// Only direct terminal sends need this separate fact; outbox replay already has it.
 	if options.SenderSessionID != "" && clientMessageID == "" {

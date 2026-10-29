@@ -394,9 +394,7 @@ func TestMigrateRecognizesRenumberedAddColumnFromEarlierBuild(t *testing.T) {
 		t.Fatalf("seed emitted_at column from earlier build: %v", err)
 	}
 
-	if err := migrate(db); err != nil {
-		t.Fatalf("migrate database with pre-existing emitted_at column: %v", err)
-	}
+	upTo(t, db, emittedVersion)
 
 	var columns, applied int
 	if err := db.QueryRow(
@@ -411,6 +409,21 @@ func TestMigrateRecognizesRenumberedAddColumnFromEarlierBuild(t *testing.T) {
 	}
 	if columns != 1 || applied != 1 {
 		t.Fatalf("renumbered report_emitted_at state = columns %d, applied rows %d; want 1, 1", columns, applied)
+	}
+
+	if err := migrate(db); err != nil {
+		t.Fatalf("migrate through the delivery ledger: %v", err)
+	}
+	// The phase-1 delivery ledger renames reports; the marker must survive the
+	// rename inside the deliveries rows.
+	var ledgerColumns int
+	if err := db.QueryRow(
+		`SELECT COUNT(*) FROM pragma_table_info('deliveries') WHERE name = 'emitted_at'`,
+	).Scan(&ledgerColumns); err != nil {
+		t.Fatal(err)
+	}
+	if ledgerColumns != 1 {
+		t.Fatalf("delivery ledger carries emitted_at columns %d; want 1", ledgerColumns)
 	}
 
 	if err := migrate(db); err != nil {

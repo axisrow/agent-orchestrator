@@ -1027,7 +1027,7 @@ function workerPreviewLines(session: WorkspaceSession | undefined, provider: str
 			`$ ${provider} --continue`,
 			"Reading renderer board and inspector components...",
 			"Updated demo workspace data for README screenshots",
-			"$ npm --prefix frontend test -- SessionsBoard SessionInspector",
+			"$ npm --prefix frontend test -- SessionInspector",
 			"PASS 18 tests passed",
 			"DONE board has Working, Needs you, In review, and Ready to merge populated",
 		];

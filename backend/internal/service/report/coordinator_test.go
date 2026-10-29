@@ -401,6 +401,164 @@ func TestCoordinatorEscalatesQuietWindowAndStopsReemission(t *testing.T) {
 	}
 }
 
+// TestCoordinatorPromptActivitySettlesDeliveredBatch reproduces fork issue
+// #159: a delivered batch whose acceptance once failed re-enters the emit-TTL
+// suppression loop, and a TUI orchestrator has no chat piggyback to exit it —
+// attempts grew for 18h at a 15-minute step while the recipient kept
+// submitting prompts. An accepted prompt on the recipient must settle every
+// shown batch of its project, stopping the retries within the same dispatcher
+// cycle.
+func TestCoordinatorPromptActivitySettlesDeliveredBatch(t *testing.T) {
+	now := time.Date(2026, 10, 26, 7, 42, 0, 0, time.UTC)
+	store := newCoordinatorStore(now)
+	store.sessions = []domain.SessionRecord{{ID: "orch", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeTUI}}
+	store.add(reportAt("loop", "worker", now, now, "context"))
+	delivery := &coordinatorDelivery{submitErr: errors.New("prompt submission was not observed")}
+	c := NewCoordinator(CoordinatorDeps{Store: store, Delivery: delivery, Now: func() time.Time { return now }})
+	ctx := context.Background()
+	if _, err := c.RunDue(ctx); err == nil {
+		t.Fatal("first attempt should surface the submit error")
+	}
+	// Minutes later the retry stays silent and defers: the loop's resting state.
+	now = now.Add(2 * time.Minute)
+	delivery.submitErr = nil
+	if delay, err := c.RunDue(ctx); err != nil || delay <= 0 {
+		t.Fatalf("suppressed retry delay = %v, err = %v", delay, err)
+	}
+	if len(delivery.submissions) != 1 {
+		t.Fatalf("submissions = %d, want 1", len(delivery.submissions))
+	}
+	// The recipient submits prompts and every shown batch of its project
+	// settles at once, acknowledged without a claim token.
+	if n, err := c.SettleEmittedReports(ctx, "orch"); err != nil || n != 1 {
+		t.Fatalf("settle = %d, err = %v, want 1 report settled", n, err)
+	}
+	for _, rec := range store.reports {
+		if rec.DeliveryState != domain.ReportAcknowledged {
+			t.Fatalf("record = %+v, want acknowledged", rec)
+		}
+	}
+	// The dispatcher cycle finds nothing left to retry.
+	if delay, err := c.RunDue(ctx); err != nil || delay >= 0 {
+		t.Fatalf("post-settle delay = %v, err = %v, want an idle schedule", delay, err)
+	}
+	if len(delivery.submissions) != 1 {
+		t.Fatalf("submissions = %d, want 1: a settled batch was re-emitted", len(delivery.submissions))
+	}
+}
+
+// TestCoordinatorExpiresStalePendingReports pins the delivery-ledger expiry:
+// a report that sat pending past ReportExpiryAge leaves the schedule in the
+// same cycle — the dispatcher never claims it again — while fresh reports
+// deliver normally, and claimed rows ride out their own attempt.
+func TestCoordinatorExpiresStalePendingReports(t *testing.T) {
+	now := time.Date(2026, 10, 27, 9, 0, 0, 0, time.UTC)
+	store := newCoordinatorStore(now)
+	store.sessions = []domain.SessionRecord{{ID: "orch", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeTUI}}
+	ancient := reportAt("ancient", "worker", now.Add(-8*24*time.Hour), now, "context")
+	ancient.EmittedAt = now.Add(-8 * 24 * time.Hour)
+	fresh := reportAt("fresh", "worker", now, now, "later context")
+	store.add(ancient, fresh)
+	claimedOld := reportAt("claimed-old", "worker", now.Add(-8*24*time.Hour), now, "in flight")
+	claimedOld.ClaimToken, claimedOld.ClaimedAt, claimedOld.DeliveryState = "hold", now, domain.ReportClaimed
+	store.add(claimedOld)
+	delivery := &coordinatorDelivery{}
+	c := NewCoordinator(CoordinatorDeps{Store: store, Delivery: delivery, Now: func() time.Time { return now }})
+	if _, err := c.RunDue(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	stateByID := func(id string) domain.ReportRecord {
+		t.Helper()
+		for _, rec := range store.reports {
+			if rec.ID == id {
+				return rec
+			}
+		}
+		t.Fatalf("report %s vanished from the store", id)
+		return domain.ReportRecord{}
+	}
+	if rec := stateByID("ancient"); rec.DeliveryState != domain.ReportStale {
+		t.Fatalf("ancient = %+v, want stale", rec)
+	}
+	if rec := stateByID("claimed-old"); rec.DeliveryState != domain.ReportClaimed {
+		t.Fatalf("claimed in flight = %+v, want untouched", rec)
+	}
+	if rec := stateByID("fresh"); rec.DeliveryState != domain.ReportAcknowledged {
+		t.Fatalf("fresh = %+v, want delivered normally", rec)
+	}
+	// The stale row never returns to the schedule.
+	store.requeue()
+	if delay, err := c.RunDue(context.Background()); err != nil || delay >= 0 {
+		t.Fatalf("post-expiry delay = %v, err = %v, want an idle schedule", delay, err)
+	}
+	if len(delivery.submissions) != 1 {
+		t.Fatalf("submissions = %d, want 1: a stale report re-emitted", len(delivery.submissions))
+	}
+}
+
+func TestSettleEmittedReportsGatesOnLiveOrchestrator(t *testing.T) {
+	now := time.Date(2026, 10, 26, 9, 0, 0, 0, time.UTC)
+	store := newCoordinatorStore(now)
+	store.sessions = []domain.SessionRecord{
+		{ID: "orch", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeTUI},
+		{ID: "gone", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeTUI, IsTerminated: true},
+	}
+	shown := reportAt("shown", "worker", now, now, "context")
+	shown.EmittedAt = now
+	store.add(shown)
+	elsewhere := reportAt("elsewhere", "worker2", now, now, "other project")
+	elsewhere.ProjectID = "q"
+	store.add(elsewhere)
+	c := NewCoordinator(CoordinatorDeps{Store: store, Delivery: &coordinatorDelivery{}, Now: func() time.Time { return now }})
+	ctx := context.Background()
+	// Activity on a non-recipient session, a terminated orchestrator, and an
+	// unknown session settles nothing.
+	for _, target := range []domain.SessionID{"elsewhere", "gone", "missing"} {
+		if n, err := c.SettleEmittedReports(ctx, target); err != nil || n != 0 {
+			t.Fatalf("settle %s = %d, err = %v, want 0", target, n, err)
+		}
+	}
+	if n, err := c.SettleEmittedReports(ctx, "orch"); err != nil || n != 1 {
+		t.Fatalf("settle orch = %d, err = %v, want 1", n, err)
+	}
+	if store.reports[0].DeliveryState != domain.ReportAcknowledged {
+		t.Fatalf("shown batch = %+v, want acknowledged", store.reports[0])
+	}
+	if store.reports[1].DeliveryState != domain.ReportPending {
+		t.Fatalf("other project = %+v, want untouched", store.reports[1])
+	}
+}
+
+// TestCoordinatorSilentRetriesRestAtFloor pins the silent-retry escalation:
+// once visible re-emission has stopped (attempts past the quiet ladder), the
+// suppressed batch defers at the day-scale floor instead of re-claiming every
+// emit TTL for as long as the batch lives.
+func TestCoordinatorSilentRetriesRestAtFloor(t *testing.T) {
+	now := time.Date(2026, 10, 26, 10, 0, 0, 0, time.UTC)
+	store := newCoordinatorStore(now)
+	store.sessions = []domain.SessionRecord{{ID: "orch", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeTUI}}
+	worn := reportAt("worn", "worker", now, now, "context")
+	worn.DeliveryAttempts = 7
+	worn.EmittedAt = now.Add(-time.Hour)
+	store.add(worn)
+	delivery := &coordinatorDelivery{}
+	c := NewCoordinator(CoordinatorDeps{Store: store, Delivery: delivery, Now: func() time.Time { return now }})
+	delay, err := c.RunDue(context.Background())
+	if err != nil || delay <= 0 {
+		t.Fatalf("silent retry delay = %v, err = %v", delay, err)
+	}
+	if delay < time.Hour {
+		t.Fatalf("delay = %v, want the exhausted batch resting well past an emit TTL", delay)
+	}
+	if len(delivery.submissions) != 0 {
+		t.Fatalf("submissions = %d, want 0: exhausted batches never re-emit", len(delivery.submissions))
+	}
+	rec := store.reports[0]
+	if rec.DeliveryState != domain.ReportPending || rec.LastError == "" || rec.AvailableAt != now.Add(23*time.Hour) {
+		t.Fatalf("record = %+v, want pending deferred to emitted_at+24h", rec)
+	}
+}
+
 func TestCoordinatorEmissionLogsEvidence(t *testing.T) {
 	now := time.Date(2026, 10, 22, 12, 30, 0, 0, time.UTC)
 	store := newCoordinatorStore(now)
@@ -651,6 +809,33 @@ func (s *coordinatorStore) MarkReportBatchEmitted(_ context.Context, project dom
 	for i := range s.reports {
 		if s.reports[i].ProjectID == project && s.reports[i].DeliveryState == domain.ReportClaimed && s.reports[i].ClaimToken == token {
 			s.reports[i].EmittedAt = at
+			count++
+		}
+	}
+	return count, nil
+}
+
+func (s *coordinatorStore) AcknowledgeEmittedReportBatches(_ context.Context, project domain.ProjectID, at time.Time) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	count := 0
+	for i := range s.reports {
+		if s.reports[i].ProjectID == project && s.reports[i].DeliveryState == domain.ReportPending && !s.reports[i].EmittedAt.IsZero() {
+			s.reports[i].DeliveryState, s.reports[i].AcknowledgedAt = domain.ReportAcknowledged, at
+			count++
+		}
+	}
+	s.acked += count
+	return count, nil
+}
+
+func (s *coordinatorStore) ExpireStaleReportDeliveries(_ context.Context, cutoff time.Time) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	count := 0
+	for i := range s.reports {
+		if s.reports[i].DeliveryState == domain.ReportPending && s.reports[i].CreatedAt.Before(cutoff) {
+			s.reports[i].DeliveryState = domain.ReportStale
 			count++
 		}
 	}

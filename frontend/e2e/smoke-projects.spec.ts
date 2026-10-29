@@ -21,9 +21,9 @@ test("renderer: added project appears in the sidebar and board @T0 @PRJ", async 
 	const projectRow = page.locator('[data-sidebar="menu-button"]').filter({ hasText: "ao-demo" }).first();
 	await expect(projectRow).toBeVisible();
 
-	// Opening it renders that project's board with its session cards.
+	// Opening it lands on that project's top session (the board is gone, #163;
+	// the project route redirects).
 	await projectRow.click();
-	await expect(page).toHaveURL(/projects\/ao-demo/);
-	await expect(page.getByTestId("board")).toBeVisible();
-	await expect(page.getByTestId("board-session-card").first()).toBeVisible();
+	await expect(page).toHaveURL(/sessions\//);
+	await expect(page.getByTestId("session-detail")).toBeVisible();
 });

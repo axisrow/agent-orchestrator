@@ -98,22 +98,23 @@ test("renderer: reflects the daemon reaching ready on app start @T0 @DMN", async
 });
 
 // #2483 DMN-002.
-test("renderer: daemon health reflected with a hydrated board @T0 @DMN", async ({ page }) => {
+test("renderer: daemon health reflected with a hydrated workspace @T0 @DMN", async ({ page }) => {
 	// A responsive daemon → the renderer is ready AND has data to paint: the
-	// board hydrates with sessions rather than an error/empty shell.
+	// project route redirects to a real session rather than an error/empty
+	// shell.
 	//
-	// Use installFakeAgent so the session card is served through the
+	// Use installFakeAgent so the session is served through the
 	// window.__aoFakeAgent.snapshot() workspace seam (the daemon-backed source),
-	// not the static mockWorkspaces fallback — otherwise the card would render
-	// regardless of the daemon and the "daemon → has data" link would be a false
-	// green.
+	// not the static mockWorkspaces fallback — otherwise the session would
+	// render regardless of the daemon and the "daemon → has data" link would be
+	// a false green.
 	await installFakeAgent(page, {
 		daemonPort: 8080,
 		workers: [{ id: "dmn002", title: "Active worker", status: "working" }],
 	});
 	await page.goto("/#/projects/fake-proj");
 	await expect(page.getByTestId("daemon-status")).toHaveAttribute("data-state", "ready");
-	await expect(page.getByTestId("board-session-card").first()).toBeVisible();
+	await expect(page.getByTestId("session-detail")).toBeVisible();
 });
 
 // #2483 DMN-005.
@@ -123,19 +124,20 @@ test("renderer: daemon stop surfaced cleanly with no renderer crash @T0 @DMN", a
 	// is surfaced as a stopped status and the app stays alive (no crash/blank),
 	// which is the visible half of a clean shutdown.
 	await installFakeBridge(page, { daemonState: "stopped" });
-	await page.goto("/#/projects/fake-proj");
+	await page.goto("/");
 	await expect(page.getByTestId("daemon-status")).toHaveAttribute("data-state", "stopped");
-	await expect(page.getByTestId("board")).toBeVisible();
+	// The shell still paints its navigation — the app did not blank out.
+	await expect(page.locator('[data-sidebar="menu-button"]').first()).toBeVisible();
 });
 
 // #2483 DMN-009.
-test("renderer: board state rehydrates after a renderer relaunch @T0 @DMN", async ({ page }) => {
+test("renderer: session state rehydrates after a renderer relaunch @T0 @DMN", async ({ page }) => {
 	// The real DMN-009 ("create state, restart the daemon, all state survives") is
 	// a daemon/storage persistence check for the pod. The renderer slice we can
-	// lock: state present on the board rehydrates after a full renderer relaunch
+	// lock: the landed session rehydrates after a full renderer relaunch
 	// (reload), i.e. the app rebuilds from the daemon rather than in-memory state.
 	//
-	// Use installFakeAgent (not installFakeBridge): its board data is read through
+	// Use installFakeAgent (not installFakeBridge): its data is read through
 	// the `window.__aoFakeAgent.snapshot()` workspace seam — the same source the
 	// real daemon fills — so the reload genuinely re-reads from the daemon-backed
 	// source. installFakeBridge alone would fall back to the static mockWorkspaces
@@ -145,50 +147,13 @@ test("renderer: board state rehydrates after a renderer relaunch @T0 @DMN", asyn
 		workers: [{ id: "dmn009", title: "Persisted worker", status: "working" }],
 	});
 	await page.goto("/#/projects/fake-proj");
-	const firstCard = page.getByTestId("board-session-card").first();
-	await expect(firstCard).toBeVisible();
-	const before = await firstCard.textContent();
+	await expect(page).toHaveURL(/sessions\/dmn009/);
+	await expect(page.getByTestId("session-detail")).toBeVisible();
 
 	await page.reload();
 	await expect(page.getByTestId("daemon-status")).toHaveAttribute("data-state", "ready");
-	await expect(page.getByTestId("board-session-card").first()).toBeVisible();
-	expect(await page.getByTestId("board-session-card").first().textContent()).toBe(before);
-});
-
-// ── BRD: board ──────────────────────────────────────────────────────────────
-
-// #2483 BRD-001.
-test("renderer: board renders all status columns @T0 @BRD", async ({ page }) => {
-	await page.goto("/#/projects/ao-demo");
-	const columns = page.getByTestId("board-column");
-	await expect(columns).toHaveCount(4);
-	// Left→right delivery flow: building → validating → in review → ready.
-	await expect(columns.nth(0)).toContainText("Building");
-	await expect(columns.nth(1)).toContainText("Validating");
-	await expect(columns.nth(2)).toContainText("In review");
-	await expect(columns.nth(3)).toContainText("Ready");
-});
-
-// #2483 BRD-012.
-test("renderer: route nav home to board to session detail and back @T0 @BRD", async ({ page }) => {
-	// home
-	await page.goto("/");
-	await expect(page.getByText("Jump back right in")).toBeVisible();
-
-	// → project board
-	await page.locator('[data-sidebar="menu-button"]').filter({ hasText: "ao-demo" }).first().click();
-	await expect(page).toHaveURL(/projects\/ao-demo/);
-	await expect(page.getByTestId("board")).toBeVisible();
-
-	// → session detail (open the first card on the board)
-	await page.getByTestId("board-session-card").first().click();
-	await expect(page).toHaveURL(/sessions\//);
+	await expect(page).toHaveURL(/sessions\/dmn009/);
 	await expect(page.getByTestId("session-detail")).toBeVisible();
-
-	// ← back to the project board
-	await page.goBack();
-	await expect(page).toHaveURL(/projects\/ao-demo$/);
-	await expect(page.getByTestId("board")).toBeVisible();
 });
 
 // ── SET: settings ────────────────────────────────────────────────────────────

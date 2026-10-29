@@ -108,6 +108,10 @@ const (
 	ReportPending      ReportDeliveryState = "pending"
 	ReportClaimed      ReportDeliveryState = "claimed"
 	ReportAcknowledged ReportDeliveryState = "acknowledged"
+	// ReportStale is terminal: a pending report that expired without delivery
+	// (delivery-ledger expiry). It stays readable in projections but the
+	// dispatcher never claims it again.
+	ReportStale ReportDeliveryState = "stale"
 )
 
 // ReportRecord is the durable report and outbox persistence shape. State and
@@ -170,6 +174,10 @@ func (r ReportRecord) Validate() error {
 		if r.ClaimToken == "" || r.ClaimedAt.IsZero() || r.AcknowledgedAt.IsZero() {
 			return ErrInvalidReport
 		}
+	case ReportStale:
+		if r.ClaimToken != "" || !r.ClaimedAt.IsZero() || !r.AcknowledgedAt.IsZero() {
+			return ErrInvalidReport
+		}
 	default:
 		return ErrInvalidReport
 	}
@@ -182,8 +190,16 @@ func (r ReportRecord) Validate() error {
 // ValidateReportContent checks the authoritative report payload contract.
 func ValidateReportContent(state ReportState, note, message string, outputs []ReportOutput) error {
 	if message != "" {
-		if state != "" || note != "" || len(outputs) != 0 || strings.TrimSpace(message) == "" || utf8.RuneCountInString(message) > MaxReportTextCharacters {
+		if state != "" || note != "" || strings.TrimSpace(message) == "" || utf8.RuneCountInString(message) > MaxReportTextCharacters {
 			return ErrInvalidReport
+		}
+		// A free-form message may carry artifact outputs only: this is the
+		// CLI spill path, where the full text lives in a session artifact and
+		// the report links to it. PR outputs stay state/note-only.
+		for _, output := range outputs {
+			if output.Kind != ReportOutputArtifact || strings.TrimSpace(output.Reference) == "" {
+				return ErrInvalidReport
+			}
 		}
 		return nil
 	}

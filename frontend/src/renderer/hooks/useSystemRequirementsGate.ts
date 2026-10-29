@@ -30,8 +30,7 @@ export const systemRequirementsQueryOptions = {
 	queryFn: fetchSystemRequirements,
 	refetchOnWindowFocus: false,
 	// The preview build (VITE_NO_ELECTRON) has no real daemon behind it, so
-	// there is nothing to probe — mirrors isDaemonReady's short-circuit for
-	// the same flag in SessionsBoard.
+	// there is nothing to probe — mirrors isDaemonReady's short-circuit.
 	enabled: !usesPreviewWorkspaceData,
 };
 
@@ -120,9 +119,9 @@ export function useGitHubAuthAutoLoginOffered() {
 }
 
 /** Single source of truth for whether the machine satisfies AO's startup
- *  requirements. Shared by SessionsBoard (which must keep the startup screen
- *  mounted while blocked) and DaemonStartupLoader (which renders the gate) so
- *  both read the same react-query cache entry and never disagree. */
+ *  requirements. Shared by DaemonStartupLoader (which renders the gate) and
+ *  the route surfaces that stay mounted while blocked so all of them read the
+ *  same react-query cache entry and never disagree. */
 export function useSystemRequirementsGate() {
 	const baseUrl = useSyncExternalStore(subscribeApiBaseUrl, getApiBaseUrl, getApiBaseUrl);
 	const query = useQuery({

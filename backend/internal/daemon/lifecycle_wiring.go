@@ -747,6 +747,13 @@ func (c chatLauncher) RelaySessionChatTurn(ctx context.Context, id domain.Sessio
 	return c.svc.RelaySessionChatTurn(ctx, id, text, clientMessageID, options)
 }
 
+// SettleEmittedReports satisfies Session Manager's optional settle probe: a
+// pane-delivered prompt proves the recipient is active, and its shown report
+// batches stop retrying (fork issue #159).
+func (c chatLauncher) SettleEmittedReports(ctx context.Context, id domain.SessionID) error {
+	return c.svc.SettleEmittedReports(ctx, id)
+}
+
 func (c chatLauncher) QueueChatPrompt(ctx context.Context, id domain.SessionID, text string) (string, error) {
 	turn, err := c.svc.QueueUserMessage(ctx, id, ports.ChatUserMessage{
 		Text: text,

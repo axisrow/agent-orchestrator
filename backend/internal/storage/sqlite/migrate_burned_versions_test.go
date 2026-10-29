@@ -222,6 +222,7 @@ var shippedMigrations = map[int64]string{
 	20261020173311321: "20261020173311321_preview_poll_sessions.sql",
 	20261022172135182: "20261022172135182_report_emitted_at.sql",
 	20261022172135183: "20261022172135183_review_run_current_head_lookup.sql",
+	20261027143000000: "20261027143000000_delivery_ledger.sql",
 	9001:              "9001_add_user_config.sql",
 	9006:              "9006_session_provider_stamp.sql",
 	9011:              "9011_gateway_entries.sql",

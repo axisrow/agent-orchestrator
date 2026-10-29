@@ -419,6 +419,29 @@ type Cue struct {
 	UpdatedAt time.Time
 }
 
+type Delivery struct {
+	ID                 string
+	Kind               string
+	SessionID          string
+	ProjectID          string
+	RecipientSessionID sql.NullString
+	State              string
+	Note               string
+	Message            string
+	CreatedAt          time.Time
+	DeliveryState      string
+	AvailableAt        time.Time
+	SettlementDeadline sql.NullTime
+	RepeatCount        int64
+	ClaimToken         string
+	ClaimedAt          sql.NullTime
+	DeliveryAttempts   int64
+	AcknowledgedAt     sql.NullTime
+	LastError          string
+	EmittedAt          sql.NullTime
+	DeliveryBatchID    string
+}
+
 type GatewayEntry struct {
 	Scope     string
 	ProjectID string
@@ -585,27 +608,6 @@ type Project struct {
 	ArchivedAt    sql.NullTime
 	Config        sql.NullString
 	Kind          string
-}
-
-type Report struct {
-	ID                 string
-	SessionID          string
-	ProjectID          string
-	State              string
-	Note               string
-	Message            string
-	CreatedAt          time.Time
-	DeliveryState      string
-	AvailableAt        time.Time
-	SettlementDeadline sql.NullTime
-	RepeatCount        int64
-	ClaimToken         string
-	ClaimedAt          sql.NullTime
-	DeliveryAttempts   int64
-	AcknowledgedAt     sql.NullTime
-	LastError          string
-	DeliveryBatchID    string
-	EmittedAt          sql.NullTime
 }
 
 type ReportOutput struct {

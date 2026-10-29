@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import {
@@ -8,11 +7,9 @@ import {
 	type BoardPullRequestLabels,
 	type BoardPullRequestProgress,
 	type BoardSessionPresentation,
-	type BoardColumnLabels,
-	type BoardUsagePresentation,
 	type ProductUITranslator,
 } from "@aoagents/product-ui";
-import { Archive, Check, Copy, File, GitBranch, LoaderCircle, RotateCcw } from "lucide-react";
+import { Check, Copy, GitBranch, RotateCcw } from "lucide-react";
 import type { MessageKey } from "../i18n";
 import { aoBridge } from "../lib/bridge";
 import { sessionBranchPresentation } from "../lib/session-branch";
@@ -24,21 +21,12 @@ import {
 	deriveSessionAgentSwitchPresentation,
 } from "../lib/agent-switch-presentation";
 import { agentLabel } from "../lib/agent-options";
-import type { SessionArtifact, WorkspaceSession } from "../types/workspace";
-import { canonicalTrackerIssueId, sessionArtifacts } from "../types/workspace";
-import { formatCPU, formatMemory, type SessionMemoryReading } from "../hooks/useSessionMemory";
-import type { ChipTone } from "@aoagents/product-ui";
+import type { WorkspaceSession } from "../types/workspace";
+import { canonicalTrackerIssueId } from "../types/workspace";
 import { useSessionScmSummary } from "../hooks/useSessionScmSummary";
-import {
-	clearTerminateSessionState,
-	useTerminateSessionState,
-} from "../hooks/useTerminateSession";
 import { cn } from "../lib/utils";
 import { AgentAvatar } from "./AgentAvatar";
 import { ProductExternalLink } from "./ProductExternalLink";
-import { SessionArchiveDialog, type SessionArchiveChoice } from "./SessionArchiveDialog";
-import { ArtifactPreviewCard } from "./SessionLinkPreviewCard";
-import { HoverCard, HoverCardTrigger } from "./ui/hover-card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 
 export function toBoardSessionPresentation(
@@ -92,42 +80,6 @@ export function toBoardSessionPresentation(
 	};
 }
 
-export function sessionsBoardLabels(t: TFunction): BoardColumnLabels {
-	return {
-		columnAria: (label) => t("shell.sessionsAria", { label }),
-	};
-}
-
-export function BoardSessionCardAdapter({
-	memory,
-	memoryTone,
-	onOpen,
-	onOpenArtifact,
-	onTerminate,
-	session,
-}: {
-	/** Live reading of the session's process tree, for the card's resource chip. */
-	memory?: SessionMemoryReading;
-	/** Colour for the chip; neutral unless this card is part of the fix. */
-	memoryTone?: ChipTone;
-	onOpen: () => void;
-	/** Opens the session with this artifact (by path) shown in the inspector. */
-	onOpenArtifact?: (path: string) => void;
-	onTerminate?: (choice: SessionArchiveChoice) => void;
-	session: WorkspaceSession;
-}) {
-	return (
-		<DesktopSessionCard
-			memory={memory}
-			memoryTone={memoryTone}
-			onOpen={onOpen}
-			onOpenArtifact={onOpenArtifact}
-			onTerminate={onTerminate}
-			session={session}
-		/>
-	);
-}
-
 export function ArchivedSessionCardAdapter({
 	hideTerminatedStatus = false,
 	isRestoreDisabled,
@@ -166,7 +118,6 @@ export function ArchivedSessionCardAdapter({
 				) : undefined
 			}
 			footer={<ArchiveRestoreError message={restoreError} />}
-			interactive={false}
 			session={session}
 		/>
 	);
@@ -177,108 +128,34 @@ function DesktopSessionCard({
 	branchAction,
 	footer,
 	hideTerminatedStatus = false,
-	interactive = true,
-	memory,
-	memoryTone,
-	onOpen,
-	onOpenArtifact,
-	onTerminate,
 	session,
 }: {
 	action?: ReactNode;
 	branchAction?: ReactNode;
 	footer?: ReactNode;
 	hideTerminatedStatus?: boolean;
-	interactive?: boolean;
-	memory?: SessionMemoryReading;
-	memoryTone?: ChipTone;
-	onOpen?: () => void;
-	onOpenArtifact?: (path: string) => void;
-	onTerminate?: (choice: SessionArchiveChoice) => void;
 	session: WorkspaceSession;
 }) {
 	const { t } = useTranslation();
-	const queryClient = useQueryClient();
-	const [confirmOpen, setConfirmOpen] = useState(false);
 	const summaries = sessionPRDisplaySummaries(
 		session,
 		useSessionScmSummary(session.id, true, session.cloud?.orgId, session.cloud?.orgId ? session.autoInjectCI === true : false, session.hostId).data?.prs,
 	);
-	const termination = useTerminateSessionState(session.id, session.hostId);
-	const showTerminate = interactive && session.isTerminated !== true && onTerminate;
-	const keepTerminateVisible = session.status === "merged";
-	const resourcePresentation = toResourcePresentation(memory, session.activity?.state === "active", memoryTone, t);
 	const translate: ProductUITranslator = (key, values) => t(key as MessageKey, values);
-
-	const terminationOverlay = showTerminate ? (
-		<Tooltip>
-			<TooltipTrigger asChild>
-				<span className="inline-flex">
-					<SessionArchiveDialog
-						onConfirm={(choice) => {
-							setConfirmOpen(false);
-							onTerminate(choice);
-						}}
-						onOpenChange={setConfirmOpen}
-						open={confirmOpen}
-						session={session}
-						trigger={
-							<button
-								aria-label={
-									termination.isPending
-										? t("shell.archivingNamedAria", { title: session.title })
-										: t("shell.archiveNamed", { title: session.title })
-								}
-								className={cn(
-									"inline-flex size-control-md items-center justify-center rounded-sm text-passive transition-[color,background-color,opacity] hover:bg-interactive-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
-									keepTerminateVisible || termination.isPending
-										? "opacity-100"
-										: "pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100",
-								)}
-								onClick={(event) => {
-									event.stopPropagation();
-									clearTerminateSessionState(queryClient, session.id, session.hostId);
-									// Always open the confirm; the modal owns its own dismissal.
-									setConfirmOpen(true);
-								}}
-								disabled={termination.isPending}
-								type="button"
-							>
-								{termination.isPending ? (
-									<LoaderCircle className="size-icon-sm animate-spin" aria-hidden="true" />
-								) : (
-									<Archive className="size-icon-sm" aria-hidden="true" />
-								)}
-							</button>
-						}
-					/>
-				</span>
-			</TooltipTrigger>
-			<TooltipContent side="bottom">
-				{termination.isPending ? t("shell.archivingSession") : t("shell.archiveSession")}
-			</TooltipContent>
-		</Tooltip>
-	) : undefined;
 
 	return (
 		<SessionCardView
 			action={action}
-			artifacts={
-				interactive && onOpenArtifact ? (
-					<BoardArtifactLinks artifacts={sessionArtifacts(session)} onOpen={onOpenArtifact} session={session} />
-				) : undefined
-			}
 			branchAction={branchAction}
 			branchLabel={sessionBranchPresentation(session).naming ? <BranchNamingLabel /> : undefined}
 			branchIcon={<GitBranch aria-hidden="true" className="size-icon-2xs shrink-0" />}
-			error={termination.error ?? undefined}
 			externalLink={ProductExternalLink}
 			footer={
 				<>
 					{footer}
 				</>
 			}
-			interactive={interactive}
+			interactive={false}
 			labels={{
 				formatTime: formatTimeCompact,
 				intakeIssue: (id) => t("shell.intakeIssue", { id }),
@@ -286,9 +163,6 @@ function DesktopSessionCard({
 				updatedAt: (timestamp: string) =>
 					t("shell.lastMessageAt", { time: formatTimeCompact(timestamp) }),
 			}}
-			onOpen={onOpen}
-			resource={resourcePresentation}
-			overlay={terminationOverlay}
 			prs={summaries.map((pr) => ({
 				commentCount: pr.review.unresolvedBy.reduce((count, reviewer) => count + reviewer.count, 0),
 				number: pr.number,
@@ -311,61 +185,6 @@ function DesktopSessionCard({
 			}
 			translate={translate}
 		/>
-	);
-}
-
-const BOARD_ARTIFACT_LIMIT = 2;
-
-/** The session's most recently updated artifacts, newest first. */
-export function latestSessionArtifacts(artifacts: SessionArtifact[], limit = BOARD_ARTIFACT_LIMIT): SessionArtifact[] {
-	return [...artifacts]
-		.sort(
-			(a, b) =>
-				(Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0) || a.path.localeCompare(b.path),
-		)
-		.slice(0, limit);
-}
-
-function BoardArtifactLinks({
-	artifacts,
-	onOpen,
-	session,
-}: {
-	artifacts: SessionArtifact[];
-	onOpen: (path: string) => void;
-	session: WorkspaceSession;
-}) {
-	const { t } = useTranslation();
-	if (artifacts.length === 0) return null;
-	const latest = latestSessionArtifacts(artifacts);
-	const hidden = artifacts.length - latest.length;
-	return (
-		<div className="flex min-w-0 flex-col gap-0.5" data-testid="board-session-artifacts">
-			{latest.map((artifact) => (
-				<HoverCard key={artifact.path}>
-					<HoverCardTrigger asChild>
-						<button
-							aria-label={t("shell.openArtifactNamed", { name: artifact.name })}
-							className="flex min-w-0 max-w-full items-center gap-1.5 self-start rounded-sm py-0.5 text-left text-2xs text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-							onClick={(event) => {
-								event.stopPropagation();
-								onOpen(artifact.path);
-							}}
-							type="button"
-						>
-							<File aria-hidden="true" className="size-icon-2xs shrink-0 text-muted-foreground" />
-							<span className="truncate">{artifact.name}</span>
-						</button>
-					</HoverCardTrigger>
-					<ArtifactPreviewCard artifact={artifact} session={session} />
-				</HoverCard>
-			))}
-			{hidden > 0 ? (
-				<span className="pl-[18px] text-2xs text-muted-foreground">
-					{t("shell.moreArtifacts", { count: hidden })}
-				</span>
-			) : null}
-		</div>
 	);
 }
 
@@ -411,27 +230,6 @@ function pullRequestProgressLabel(
 	]
 		.filter((part): part is string => part !== undefined)
 		.join(" · ");
-}
-
-/** "1.4 GB · 82%" while working, just "240 MB" while idle: an idle agent is
- * always at 0% and printing it is noise. */
-function toResourcePresentation(
-	memory: SessionMemoryReading | undefined,
-	working: boolean,
-	tone: ChipTone | undefined,
-	t: TFunction,
-): (BoardUsagePresentation & { tone?: ChipTone }) | undefined {
-	if (!memory || memory.rssBytes <= 0) return undefined;
-	const size = formatMemory(memory.rssBytes);
-	if (!working) {
-		return { accessibleLabel: t("shell.sessionMemoryAria", { size }), compactLabel: size, tone };
-	}
-	const cpu = formatCPU(memory.cpuPercent);
-	return {
-		accessibleLabel: t("shell.sessionResourceAria", { size, cpu }),
-		compactLabel: `${size} · ${cpu}`,
-		tone,
-	};
 }
 
 function ArchiveRestoreButton({

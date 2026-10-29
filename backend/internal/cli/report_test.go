@@ -5,14 +5,18 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
+	"unicode/utf8"
+
+	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 )
 
 func TestReportValidation(t *testing.T) {
 	t.Setenv("AO_SESSION_ID", "worker-1")
-	long := strings.Repeat("x", 1001)
 	tests := []struct {
 		name string
 		args []string
@@ -26,8 +30,6 @@ func TestReportValidation(t *testing.T) {
 		{"free form with state", []string{"report", "hello", "--done", "--note", "x"}},
 		{"free form with output", []string{"report", "hello", "--artifact", "ref"}},
 		{"note with output only", []string{"report", "--note", "x", "--artifact", "ref"}},
-		{"free form too long", []string{"report", long}},
-		{"note too long", []string{"report", "--checkpoint", "--note", long}},
 		{"empty artifact", []string{"report", "--artifact="}},
 		{"invalid created PR", []string{"report", "--pr-created", "git://github.com/o/r/pull/1"}},
 		{"invalid reviewed PR host", []string{"report", "--pr-reviewed", "https://example.com/o/r/pull/1"}},
@@ -82,6 +84,105 @@ func TestReportModesAndBoundaries(t *testing.T) {
 				t.Fatalf("request=%+v want=%+v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestSpillReportText(t *testing.T) {
+	cfg := setConfigEnv(t)
+	short, path, err := spillReportText("hello", "worker-1")
+	if err != nil || short != "hello" || path != "" {
+		t.Fatalf("short: %q %q %v", short, path, err)
+	}
+
+	long := strings.Repeat("ab\n", 500)
+	inline, path, err := spillReportText(long, "worker-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(path, cfg.dataDir) {
+		t.Fatalf("spill path %q outside data dir", path)
+	}
+	written, err := os.ReadFile(path)
+	if err != nil || string(written) != long {
+		t.Fatalf("spilled file: %v", err)
+	}
+	link := "\n[full report: " + path + "]"
+	if !strings.HasSuffix(inline, link) {
+		t.Fatal("missing link")
+	}
+	if n := utf8.RuneCountInString(inline); n > domain.MaxReportTextCharacters {
+		t.Fatalf("inline too long: %d", n)
+	}
+	if body := strings.TrimSuffix(inline, link); !strings.HasSuffix(body, "\n") {
+		t.Fatal("inline not cut at a line boundary")
+	}
+
+	multibyte := strings.Repeat("щ", 1001)
+	inline, path, err = spillReportText(multibyte, "worker-1")
+	if err != nil || path == "" || !strings.HasSuffix(inline, "\n[full report: "+path+"]") {
+		t.Fatalf("multibyte: %q %q %v", inline, path, err)
+	}
+	written, err = os.ReadFile(path)
+	if err != nil || string(written) != multibyte {
+		t.Fatalf("multibyte file: %v", err)
+	}
+}
+
+func TestReportSpillsLongTextToArtifact(t *testing.T) {
+	t.Setenv("AO_SESSION_ID", "worker-1")
+	cfg := setConfigEnv(t)
+	var mu sync.Mutex
+	var got []reportAPIRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/reports" {
+			var req reportAPIRequest
+			_ = json.NewDecoder(r.Body).Decode(&req)
+			mu.Lock()
+			got = append(got, req)
+			mu.Unlock()
+		}
+		w.WriteHeader(http.StatusCreated)
+		_, _ = io.WriteString(w, `{"id":"rpt_1"}`)
+	}))
+	defer srv.Close()
+	writeRunFileFor(t, cfg, srv)
+
+	long := strings.Repeat("ab ", 400)
+	_, _, err := executeCLI(t, Deps{ProcessAlive: func(int) bool { return true }}, "report", long)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	if len(got) != 1 || got[0].State != "" || got[0].Note != "" ||
+		utf8.RuneCountInString(got[0].Message) > domain.MaxReportTextCharacters ||
+		!strings.Contains(got[0].Message, "[full report: ") ||
+		len(got[0].Outputs) != 1 || got[0].Outputs[0].Kind != "artifact" {
+		t.Fatalf("message post=%+v", got)
+	}
+	written, err := os.ReadFile(got[0].Outputs[0].Reference)
+	if err != nil || string(written) != long {
+		t.Fatalf("spilled file: %v", err)
+	}
+	mu.Unlock()
+
+	got = nil
+	note := strings.Repeat("line\n", 300)
+	_, _, err = executeCLI(t, Deps{ProcessAlive: func(int) bool { return true }}, "report", "--done", "--note", note, "--artifact", "ref")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(got) != 1 || got[0].State != "done" ||
+		!strings.Contains(got[0].Note, "[full report: ") ||
+		utf8.RuneCountInString(got[0].Note) > domain.MaxReportTextCharacters ||
+		!reflect.DeepEqual(got[0].Outputs[:1], []reportAPIOutput{{Kind: "artifact", Reference: "ref"}}) ||
+		len(got[0].Outputs) != 2 {
+		t.Fatalf("note post=%+v", got)
+	}
+	written, err = os.ReadFile(got[0].Outputs[1].Reference)
+	if err != nil || string(written) != note {
+		t.Fatalf("note spill file: %v", err)
 	}
 }
 

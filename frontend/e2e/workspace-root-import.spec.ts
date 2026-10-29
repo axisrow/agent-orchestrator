@@ -80,7 +80,8 @@ test(`renderer: workspace import preserves the root branch and explains unresolv
 	await expect(page.getByRole("button", { name: /Set up|Hide setup/ })).not.toBeVisible();
 	await page.getByRole("button", { name: "Continue", exact: true }).click();
 	await page.getByRole("button", { name: "Create workspace and start", exact: true }).click();
-	await expect(page).toHaveURL(/projects\/local-root/);
+	// The board that rendered the startup explanation inline is gone (#163):
+	// the error now surfaces as a global toast, on any redirect target.
 	await expect(page.getByText(/AO could not determine the default branch for the workspace root repository/)).toBeVisible();
 	await expect(page.getByText(/Details:.*remote did not advertise a symbolic HEAD/)).toBeVisible();
 	expect(created).toBe(true);

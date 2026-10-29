@@ -3,13 +3,18 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 
+	"github.com/aoagents/agent-orchestrator/backend/internal/config"
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
+	"github.com/aoagents/agent-orchestrator/backend/internal/sessionartifacts"
 )
 
 type reportOptions struct {
@@ -98,9 +103,6 @@ func (c *commandContext) report(ctx context.Context, args []string, o reportOpti
 	if strings.TrimSpace(message) == "" && selected == "" && len(outputs) == 0 {
 		return usageError{errors.New("usage: free-form text, a state flag, or at least one output option is required")}
 	}
-	if utf8.RuneCountInString(message) > domain.MaxReportTextCharacters || utf8.RuneCountInString(o.note) > domain.MaxReportTextCharacters {
-		return usageError{errors.New("usage: report text must be at most 1000 characters")}
-	}
 	for _, output := range outputs {
 		if strings.TrimSpace(output.Reference) == "" {
 			return usageError{errors.New("usage: output references must be non-empty")}
@@ -116,12 +118,75 @@ func (c *commandContext) report(ctx context.Context, args []string, o reportOpti
 	if sessionID == "" {
 		return usageError{errors.New("usage: AO_SESSION_ID is required")}
 	}
-	apiOutputs := make([]reportAPIOutput, len(outputs))
-	for i, output := range outputs {
-		apiOutputs[i] = reportAPIOutput{Kind: string(output.Kind), Reference: output.Reference}
+	var apiOutputs []reportAPIOutput
+	for _, output := range outputs {
+		apiOutputs = append(apiOutputs, reportAPIOutput{Kind: string(output.Kind), Reference: output.Reference})
+	}
+	text := message
+	if message == "" {
+		text = o.note
+	}
+	inline, spilledPath, err := spillReportText(text, sessionID)
+	if err != nil {
+		return err
+	}
+	if spilledPath != "" {
+		apiOutputs = append(apiOutputs, reportAPIOutput{Kind: string(domain.ReportOutputArtifact), Reference: spilledPath})
+	}
+	req := reportAPIRequest{SessionID: sessionID, State: string(selected), Outputs: apiOutputs}
+	if message != "" {
+		req.Message = inline
+	} else {
+		req.Note = inline
 	}
 	var response reportAPIResponse
-	return c.postJSON(ctx, "reports", reportAPIRequest{SessionID: sessionID, State: string(selected), Note: o.note, Message: message, Outputs: apiOutputs}, &response)
+	return c.postJSON(ctx, "reports", req, &response)
+}
+
+// spillReportText keeps reports short: text longer than MaxReportTextCharacters
+// is written whole to the session artifact directory and the report carries
+// leading whole lines plus a visible link to the file instead. It returns the
+// inline text and, when spilled, the artifact path.
+func spillReportText(text, sessionID string) (string, string, error) {
+	if utf8.RuneCountInString(text) <= domain.MaxReportTextCharacters {
+		return text, "", nil
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return "", "", err
+	}
+	dir := sessionartifacts.Dir(cfg.DataDir, domain.SessionID(sessionID))
+	if dir == "" {
+		return "", "", errors.New("report: cannot resolve the session artifact directory")
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", "", err
+	}
+	path := filepath.Join(dir, fmt.Sprintf("report-%d.md", time.Now().UnixNano()))
+	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+		return "", "", err
+	}
+	link := "[full report: " + path + "]"
+	budget := domain.MaxReportTextCharacters - utf8.RuneCountInString(link) - 1
+	if budget < 1 {
+		return "", "", fmt.Errorf("report: artifact link does not fit the %d character limit", domain.MaxReportTextCharacters)
+	}
+	runes := []rune(text)
+	cut := budget
+	if i := lastNewline(runes[:cut]); i > 0 {
+		// Keep the newline: the inline part ends with a complete line.
+		cut = i + 1
+	}
+	return strings.TrimRight(string(runes[:cut]), " \t") + "\n" + link, path, nil
+}
+
+func lastNewline(runes []rune) int {
+	for i := len(runes) - 1; i > 0; i-- {
+		if runes[i] == '\n' {
+			return i
+		}
+	}
+	return -1
 }
 
 func legacyReportStatus(value string) bool {
