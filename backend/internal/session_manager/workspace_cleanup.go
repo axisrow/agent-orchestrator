@@ -14,6 +14,7 @@ import (
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/agentlaunch"
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
+	"github.com/aoagents/agent-orchestrator/backend/internal/envfilter"
 	aoprocess "github.com/aoagents/agent-orchestrator/backend/internal/process"
 )
 
@@ -169,7 +170,10 @@ func runWorkspaceStep(ctx context.Context, workspacePath, command string, env ma
 	}
 	aoprocess.ConfigureTreeCancellation(cmd)
 	cmd.Dir = workspacePath
-	cmd.Env = os.Environ()
+	// Ambient commit identity (an enclosing environment's GIT_AUTHOR_*/GIT_COMMITTER_*,
+	// for example a cloud workspace export) must not author setup/cleanup
+	// scripts' commits; the project env overlay below is the opt-in.
+	cmd.Env = envfilter.StripGitIdentity(os.Environ())
 	for key, value := range env {
 		cmd.Env = append(cmd.Env, key+"="+value)
 	}
