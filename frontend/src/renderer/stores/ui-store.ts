@@ -1,5 +1,4 @@
 import { create } from "zustand";
-import { aoBridge } from "../lib/bridge";
 import { formatOrchestratorStartupError } from "../lib/orchestrator-startup-error";
 import { developerModeStorageKey, windowTranslucencyStorageKey } from "../lib/window-translucency";
 import { sessionUiKey } from "../lib/hosts";
@@ -198,10 +197,6 @@ export type UiState = {
 	setSideChats: (enabled: boolean) => void;
 	setWindowTranslucency: (enabled: boolean) => void;
 	setTerminalCopyOnSelect: (enabled: boolean) => void;
-	/** True while the restart-to-update confirmation is open. */
-	updateInstallPromptOpen: boolean;
-	openUpdateInstallPrompt: () => void;
-	closeUpdateInstallPrompt: () => void;
 	openGlobalSettings: (section?: GlobalSettingsSection, options?: { focusAgentId?: string; hostId?: string; harnessView?: "local" | "cloud"; startLogin?: boolean; showDiagnostics?: HarnessDiagnosticsRequest; preserveProject?: boolean }) => void;
 	/** `options` as a string is the owning daemon's host ID (remote projects). */
 	openProjectSettings: (projectId: string, options?: string | { section?: ProjectSettingsSection; cloudOrgId?: string }) => void;
@@ -289,11 +284,6 @@ function initialWindowTranslucency() {
 
 function initialTerminalCopyOnSelect() {
 	return getLocalStorage()?.getItem(terminalCopyOnSelectStorageKey) !== "false";
-}
-
-function syncDeveloperModeToUpdater(enabled: boolean): void {
-	const request = aoBridge.updateSettings?.setMacDifferentialUpdates?.(enabled);
-	void request?.catch(() => undefined);
 }
 
 function inspectorState(sessions: Record<string, InspectorSessionState>, sessionId: string): InspectorSessionState {
@@ -393,7 +383,6 @@ export const useUiStore = create<UiState>((set, get) => ({
 	setDeveloperMode: (developerMode) => {
 		getLocalStorage()?.setItem(developerModeStorageKey, String(developerMode));
 		set({ developerMode });
-		syncDeveloperModeToUpdater(developerMode);
 	},
 	setRemoteHosts: (remoteHosts) => {
 		getLocalStorage()?.setItem(remoteHostsStorageKey, String(remoteHosts));
@@ -415,9 +404,6 @@ export const useUiStore = create<UiState>((set, get) => ({
 		getLocalStorage()?.setItem(terminalCopyOnSelectStorageKey, String(terminalCopyOnSelect));
 		set({ terminalCopyOnSelect });
 	},
-	updateInstallPromptOpen: false,
-	openUpdateInstallPrompt: () => set({ updateInstallPromptOpen: true }),
-	closeUpdateInstallPrompt: () => set({ updateInstallPromptOpen: false }),
 	openGlobalSettings: (section, options) => set((state) => ({
 		settingsModal: {
 			scope: "global",
@@ -682,10 +668,6 @@ export const useUiStore = create<UiState>((set, get) => ({
 			return { visibleTerminalKindBySession };
 		}),
 }));
-
-// Hydration synchronizes legacy renderer-only Developer Mode state into the
-// main-process updater mirror. Until this completes, the updater is fail-closed.
-syncDeveloperModeToUpdater(initialDeveloperModeValue);
 
 export function useResolvedTheme(): Theme {
 	return useUiStore((state) => state.resolvedTheme);

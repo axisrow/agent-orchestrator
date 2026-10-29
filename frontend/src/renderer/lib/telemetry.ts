@@ -83,22 +83,11 @@ export type DailyActiveHeartbeatOptions = {
 };
 
 /**
- * Release channel, read from the user's own Updates setting.
- *
- * Previously this had to be inferred by looking for "-nightly." inside the
- * version string, which broke for anyone pinned to a feature build and told you
- * nothing about someone who had switched channels but not yet updated. The
- * setting is the truth; the version is a consequence of it.
+ * Release channel. The updater that let a user opt into a channel is gone from
+ * the fork; the field stays so event schemas and the Sentry release tag keep
+ * their shape. Everything reports "unknown".
  */
 export type ReleaseChannel = "stable" | "nightly" | "feature" | "unknown";
-
-export function releaseChannelFrom(settings: { channel?: unknown; feature?: unknown } | null | undefined): ReleaseChannel {
-	if (!settings) return "unknown";
-	if (settings.feature != null) return "feature";
-	if (settings.channel === "nightly") return "nightly";
-	if (settings.channel === "latest") return "stable";
-	return "unknown";
-}
 
 /**
  * Channel of the build actually running, read from the version string.
@@ -139,25 +128,6 @@ export function buildTelemetryContext(
 		build_mode: import.meta.env.DEV ? "dev" : "packaged",
 		telemetry_schema_version: TELEMETRY_SCHEMA_VERSION,
 	};
-}
-
-/** Refreshes the channel in context after the user changes it, without a restart. */
-export function setReleaseChannelContext(channel: ReleaseChannel): void {
-	telemetryContext = { ...telemetryContext, release_channel: channel };
-}
-
-/**
- * Best-effort read of the Updates setting for the initial context.
- *
- * Never throws and never blocks startup: if the bridge is unavailable the
- * channel reports "unknown" rather than delaying the first heartbeat.
- */
-async function readUpdateSettingsForTelemetry(): Promise<{ channel?: unknown; feature?: unknown } | null> {
-	try {
-		return (await aoBridge.updateSettings.get()) as { channel?: unknown; feature?: unknown };
-	} catch {
-		return null;
-	}
 }
 
 export function withTelemetryContext(properties: TelemetryProperties): TelemetryProperties {
@@ -750,41 +720,10 @@ export async function sanitizeRendererProperties(
 				safe.error_code = properties.error_code;
 			}
 			break;
-		case "ao.renderer.update_failed":
-		case "ao.renderer.update_downloaded":
-		case "ao.renderer.update_unsupported":
-			// Version strings are release identifiers, not user data. The updater's
-			// raw error message is deliberately absent: it can carry feed URLs and
-			// local paths, so update-telemetry.ts maps it to error_category first.
-			if (typeof properties?.to_version === "string") safe.to_version = properties.to_version;
-			if (typeof properties?.error_category === "string") safe.error_category = properties.error_category;
-			if (properties?.phase === "check" || properties?.phase === "download") safe.phase = properties.phase;
-			if (properties?.trigger === "automatic" || properties?.trigger === "manual") safe.trigger = properties.trigger;
-			for (const key of ["differential_eligible", "fallback"] as const) {
-				if (typeof properties?.[key] === "boolean") safe[key] = properties[key];
-			}
-			if (properties?.transfer_mode === "differential" || properties?.transfer_mode === "full") {
-				safe.transfer_mode = properties.transfer_mode;
-			}
-			for (const key of ["transferred_bytes", "target_bytes"] as const) {
-				const value = properties?.[key];
-				if (typeof value === "number" && Number.isFinite(value) && value >= 0) safe[key] = value;
-			}
-			break;
 		case "ao.renderer.mobile_connect_opened":
 			// Whether the bridge was already on when the modal opened separates
 			// "came to set this up" from "came back to re-scan the QR".
 			if (typeof properties?.bridge_enabled === "boolean") safe.bridge_enabled = properties.bridge_enabled;
-			break;
-		case "ao.renderer.update_channel_changed":
-			// Closed vocabulary on both ends. A feature build's PR number or branch
-			// name is deliberately absent: it names unreleased work.
-			for (const key of ["from_channel", "to_channel"] as const) {
-				const value = properties?.[key];
-				if (value === "stable" || value === "nightly" || value === "feature" || value === "unknown") {
-					safe[key] = value;
-				}
-			}
 			break;
 		case "ao.renderer.support_opened":
 			break;
@@ -937,8 +876,7 @@ export async function initTelemetry(): Promise<boolean> {
 		// unpackaged build that has not opted in. The client is never created.
 		if (!bootstrap) return false;
 		disabledEventMatchers = bootstrap.disabledEvents ?? [];
-		const channel = releaseChannelFrom(await readUpdateSettingsForTelemetry());
-		telemetryContext = buildTelemetryContext(bootstrap.appVersion, bootstrap.platform, channel);
+		telemetryContext = buildTelemetryContext(bootstrap.appVersion, bootstrap.platform);
 		posthog = await loadPostHog();
 		posthog.init(POSTHOG_KEY, buildPostHogConfig(bootstrap.distinctId));
 		posthog.register({
@@ -949,7 +887,7 @@ export async function initTelemetry(): Promise<boolean> {
 		// product analytics are intentionally independent of that preference.
 		void initSentry({
 			release: bootstrap.appVersion,
-			channel,
+			channel: "unknown",
 			platform: bootstrap.platform,
 			distinctId: bootstrap.distinctId,
 		});

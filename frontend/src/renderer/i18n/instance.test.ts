@@ -148,11 +148,6 @@ describe("app i18next instance", () => {
 		expect(chinese.t("createProject.gitSetupNotice")).toBe(
 			"如果此文件夹需要设置 Git，AO 会先初始化仓库并创建首次提交，然后再启动。",
 		);
-		expect(chinese.t("settings.updates.currentVersion", { version: "v1.2.3" })).toBe("当前版本 - v1.2.3");
-		expect(chinese.t("settings.updates.updateTo", { version: "v1.2.3" })).toBe("更新至 v1.2.3");
-		expect(chinese.t("settings.updates.updateToLatest")).toBe("更新至最新版本");
-		expect(chinese.t("settings.updates.restartInstall")).toBe("重启并安装");
-		expect(chinese.t("settings.updates.noFeatureReleases")).toBe("暂无可用的功能版本。");
 		expect(chinese.t("settings.language.saveFailed")).toBe("无法保存语言偏好设置。");
 	});
 
@@ -165,7 +160,6 @@ describe("app i18next instance", () => {
 		expect(chinese.t("report.cancel")).toBe("取消");
 		expect(chinese.t("shell.openProjectDashboard", { name: "AO" })).toBe("打开 AO 看板");
 		expect(chinese.t("shell.renameSession", { title: "任务" })).toBe("重命名任务");
-		expect(chinese.t("shell.versionReady", { version: "9.9.9" })).toBe("v9.9.9 已就绪");
 		expect(chinese.t("pr.unresolvedComments", { count: 2, name: "小明" })).toBe("小明有 2 条未解决的评论");
 	});
 

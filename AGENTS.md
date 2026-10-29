@@ -98,11 +98,11 @@ For code entry points:
 
 ## Distribution
 
-- The **desktop app** (GitHub Releases) is the canonical, auto-updating install path. Point users there first.
+- The **desktop app** (GitHub Releases) is the canonical install path. Point users there first.
 - **npm still works but is no longer recommended.** `0.10.0` is the final version published to npm; the `@aoagents/ao` package is frozen and will not receive further updates. It remains a legacy on-ramp for users who already have `ao` on their PATH, where `ao start` fetches and opens the desktop build. Do not add features, docs, or flows that treat npm as the intended way to install AO.
 - **Exactly one publisher.** Only the designated release conductor runs a real publish, on any channel. Divergent artifacts from multiple publishers made the 28-29 Jul macOS incident unreadable. Use the fork dev loop for test builds. Full rule and rationale: `frontend/docs/desktop-release.md`, "Hard rule: exactly one publisher".
 - **Verify macOS artifacts with `frontend/scripts/verify-mac-artifact.sh`, never by hand.** It extracts with `ditto -x -k` and runs `codesign --verify --deep --strict`, `spctl -a -vv -t exec`, `xcrun stapler validate`. Plain `unzip` breaks the seal and yields a convincing false failure; `spctl` without `-vv` prints nothing at all on success.
-- **macOS ships both a `.zip` and a `.dmg`.** The dmg is first install only. The zip and `latest-mac.yml` must keep publishing forever: electron-updater cannot install an update from a dmg. macOS differential updates are permanently disabled (full download only); see issues #3151 and #3267.
+- **The desktop app does not auto-update.** The fork has no updater module (removed 2026-10-29); updates are manual rebuilds, and GitHub Releases are a distribution channel only, not an update feed. macOS ships a `.dmg` as the first-install artifact.
 
 ## Coding conventions
 

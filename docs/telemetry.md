@@ -177,12 +177,6 @@ that waitlist as described in the [privacy policy](https://orchestrator.inc/priv
   daemon's API error code, or `DAEMON_NOT_READY`, `REQUEST_FAILED` or
   `NO_PROJECT` when the request never reached a usable response. A clone the
   user cancels emits nothing.
-- An updater failure streak emits one `ao.renderer.update_failed` until a
-  successful download of that target, or a successful check for a check-phase
-  streak, clears it. Retries in the streak do not emit again. Each install
-  also emits one `ao.renderer.update_failures_daily` event, with the UTC day
-  and failure count, after that day ends. A rejected capture leaves the streak
-  unsent. A restart keeps the open streak.
 - `ao.review.triggered` counts a newly created or restarted run and does not
   include a `reused` property. Reused sweeps are not events, and
   `trigger_failed` is no longer a subset of `triggered`. The series breaks on

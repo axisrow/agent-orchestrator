@@ -1,4 +1,4 @@
-import { Activity, BadgeCheck, Bot, CircleHelp, Coffee, CreditCard, Globe2, Keyboard, Network, RefreshCw, Server, Settings2, Smartphone, type LucideIcon } from "lucide-react";
+import { Activity, BadgeCheck, Bot, CircleHelp, Coffee, CreditCard, Globe2, Keyboard, Network, Server, Settings2, Smartphone, type LucideIcon } from "lucide-react";
 import { lazy, type ReactNode } from "react";
 import type { TFunction } from "i18next";
 import type { GlobalSettingsSection, HarnessDiagnosticsRequest } from "../../stores/ui-store";
@@ -23,11 +23,6 @@ import { StayAwakeSection } from "./StayAwakeSection";
 const MemoryDiagnostics = lazy(async () => {
 	const module = await import("../SessionMemoryPanel");
 	return { default: module.MemoryDiagnostics };
-});
-
-const UpdatesSection = lazy(async () => {
-	const module = await import("./UpdatesSection");
-	return { default: module.UpdatesSection };
 });
 
 type CatalogContext = {
@@ -159,12 +154,6 @@ const globalSettingsCatalog: SettingsCatalogItem[] = [
 				<MemoryDiagnostics />
 			</SettingsSection>
 		),
-	},
-	{
-		id: "updates",
-		icon: RefreshCw,
-		label: (t) => t("settings.updates"),
-		render: (_t, titleHidden) => <UpdatesSection titleHidden={titleHidden} />,
 	},
 	{
 		id: "help",

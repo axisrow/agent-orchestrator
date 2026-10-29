@@ -16,7 +16,6 @@ import {
 	sanitizeRendererProperties,
 	startDailyActiveHeartbeat,
 	withTelemetryContext,
-	releaseChannelFrom,
 	versionChannelFrom,
 } from "./telemetry";
 import { ORCHESTRATOR_SPAWN_SOURCES } from "./orchestrator-spawn-sources";
@@ -103,40 +102,6 @@ describe("telemetry sanitizers", () => {
 			supported_count: 23,
 			authorized_agents: "claude-code,codex",
 		});
-	});
-
-	it("allowlists only enum-like fields on update events", async () => {
-		const safe = await sanitizeRendererProperties("ao.renderer.update_failed", {
-			to_version: "0.11.2",
-			error_category: "network",
-			phase: "download",
-			trigger: "automatic",
-			// Must be dropped: raw updater text can carry feed URLs and local paths.
-			message: "EACCES /Users/someone/Library/Caches/ao-updater",
-			stack: "at Object.<anonymous>",
-		});
-		expect(safe).toEqual({
-			to_version: "0.11.2",
-			error_category: "network",
-			phase: "download",
-			trigger: "automatic",
-		});
-
-		// An unrecognized phase is not passed through as-is.
-		const bogus = await sanitizeRendererProperties("ao.renderer.update_failed", { phase: "sideload" });
-		expect(bogus.phase).toBeUndefined();
-	});
-
-	it("retains bounded update transfer observations and drops untrusted values", async () => {
-		const observation = {
-			differential_eligible: true, transfer_mode: "differential", fallback: true,
-			transferred_bytes: 12345, target_bytes: 99999,
-		};
-		expect(await sanitizeRendererProperties("ao.renderer.update_downloaded", observation)).toEqual(observation);
-		expect(await sanitizeRendererProperties("ao.renderer.update_failed", {
-			differential_eligible: "true", transfer_mode: "https://secret", fallback: 1,
-			transferred_bytes: -1, target_bytes: Infinity, url: "https://secret",
-		})).toEqual({});
 	});
 
 	it("reports a support submission with only the destination and outcome", async () => {
@@ -669,35 +634,6 @@ describe("daily active heartbeat", () => {
 		// opted into nightly, still running a stable binary: the gap is the signal.
 		expect(ctx.release_channel).toBe("nightly");
 		expect(ctx.version_channel).toBe("stable");
-	});
-
-	it("maps the Updates setting to a release channel, not the version string", () => {
-		expect(releaseChannelFrom({ channel: "latest", feature: null })).toBe("stable");
-		expect(releaseChannelFrom({ channel: "nightly", feature: null })).toBe("nightly");
-		// A pinned feature build wins regardless of the underlying channel, which
-		// is what version-string parsing got wrong.
-		expect(releaseChannelFrom({ channel: "latest", feature: 1234 })).toBe("feature");
-		expect(releaseChannelFrom({ channel: "nightly", feature: 1234 })).toBe("feature");
-		expect(releaseChannelFrom(null)).toBe("unknown");
-		expect(releaseChannelFrom({})).toBe("unknown");
-	});
-
-	it("reports only the two channel names on a switch", async () => {
-		const safe = await sanitizeRendererProperties("ao.renderer.update_channel_changed", {
-			from_channel: "stable",
-			to_channel: "nightly",
-			feature: 1234,
-			branch: "feat/secret-thing",
-		});
-		expect(safe).toEqual({ from_channel: "stable", to_channel: "nightly" });
-	});
-
-	it("drops an unrecognised channel value", async () => {
-		const safe = await sanitizeRendererProperties("ao.renderer.update_channel_changed", {
-			from_channel: "canary",
-			to_channel: "nightly",
-		});
-		expect(safe).toEqual({ to_channel: "nightly" });
 	});
 
 	it("reserves one active capture per UTC day, not per six-hour slot", () => {

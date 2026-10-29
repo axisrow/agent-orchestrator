@@ -1,7 +1,5 @@
 import { syncMacWindowButtons } from "./main/window-chrome";
 import { MAC_TITLEBAR_HEIGHT, MAC_WINDOW_BUTTON_X, MAC_WINDOW_BUTTON_RADIUS } from "./shared/window-chrome";
-import { acknowledgeMacUpdateRestart } from "./main/mac-update-progress";
-import { consumeUpdateRelaunchFlag } from "./main/update-relaunch-flag";
 import {
 	app,
 	BaseWindow,
@@ -24,27 +22,11 @@ import {
 	type WebContents,
 	type OpenDialogOptions,
 } from "electron";
-import {
-	setRendererSink,
-	startAutoUpdates,
-	ensureUpdatePrefs,
-	checkForUpdatesNow,
-	downloadUpdateNow,
-	quitAndInstallUpdate,
-	setUpdateRestartFailureHandler,
-	getUpdateStatus,
-	setUpdateSettings,
-	setMacDifferentialUpdates,
-	returnToHome,
-	type UpdateCheckOptions,
-} from "./main/auto-updater";
-import { listFeatureBuilds, getActiveFeatureBuild } from "./main/feature-builds";
 import { initMainSentry, sanitizeRendererCapture } from "./main/sentry-main";
 import { TelemetryPolicyAuthority, resolveDesktopDataDir } from "./main/telemetry-policy-file";
 import { DaemonTelemetryPolicyClient } from "./main/daemon-telemetry-policy-client";
 import { DesktopTelemetryController } from "./main/desktop-telemetry-controller";
 import { AgentSwitchVisibilityController } from "./main/agent-switch-observability";
-import { readUpdateSettings, type UpdateSettings, type UpdateStatus } from "./main/update-settings";
 import { readKeybindingOverrides, writeKeybindingOverrides } from "./main/keybinding-settings";
 import { readEditorSettings, writeEditorPreference } from "./main/editor-settings";
 import { createEditorHandoff } from "./main/editor-handoff";
@@ -2979,23 +2961,6 @@ ipcMain.handle("appState:setMigration", async (_event, migration: MigrationState
 	await updateMigration({ stateDir: path.dirname(runFile), migration, now: () => new Date() });
 });
 
-ipcMain.handle("updateSettings:get", async (): Promise<UpdateSettings> => {
-	const runFile = runFilePath();
-	if (!runFile) return { enabled: false, channel: "latest", nightlyAck: false, feature: null, macDifferentialUpdates: false };
-	return readUpdateSettings(path.dirname(runFile));
-});
-ipcMain.handle("updateSettings:set", async (_event, settings: UpdateSettings) => {
-	const runFile = runFilePath();
-	if (!runFile) return;
-	await setUpdateSettings(path.dirname(runFile), settings);
-});
-ipcMain.handle("updateSettings:setMacDifferentialUpdates", async (_event, enabled: unknown) => {
-	if (typeof enabled !== "boolean") return;
-	const runFile = runFilePath();
-	if (!runFile) return;
-	await setMacDifferentialUpdates(path.dirname(runFile), enabled);
-});
-
 ipcMain.handle("uiSettings:get", async (): Promise<UiSettings> => {
 	const runFile = runFilePath();
 	if (!runFile) return { ...DEFAULT_UI_SETTINGS };
@@ -3023,51 +2988,6 @@ ipcMain.handle("keybindings:setRecording", (event, active: unknown): void => {
 	if (event.sender !== getShellWebContents() || typeof active !== "boolean") return;
 	keybindingRecordingActive = active;
 });
-
-ipcMain.handle("featureBuilds:list", () => listFeatureBuilds());
-ipcMain.handle("featureBuilds:getActive", () => getActiveFeatureBuild());
-
-ipcMain.handle("updates:getStatus", (): UpdateStatus => getUpdateStatus());
-ipcMain.handle("updates:check", async (_event, options?: UpdateCheckOptions) => {
-	const runFile = runFilePath();
-	if (!runFile) return;
-	await checkForUpdatesNow(path.dirname(runFile), options);
-});
-ipcMain.handle("updates:returnHome", async (_event, requestId?: string) => {
-	const runFile = runFilePath();
-	if (!runFile) return;
-	await returnToHome(path.dirname(runFile), requestId);
-});
-ipcMain.handle("updates:download", async (_event, requestId?: string) => {
-	await downloadUpdateNow(requestId);
-});
-ipcMain.handle("updates:install", (_event, confirmedVersion?: string) => quitAndInstallUpdate(confirmedVersion));
-// Retry after a failed macOS preparation: Squirrel can't reset a stalled staging
-// in-process, so restart AO like a manual quit-and-reopen. install-on-quit is
-// already off on the failed path, so quitting can't apply a half-prepared build.
-ipcMain.handle("updates:relaunch", () => {
-	app.relaunch();
-	app.quit();
-});
-
-// Whether THIS boot is a post-update relaunch, so the startup loader can show
-// "Updating / Restarting" copy instead of the normal "Connecting" phrases. The
-// marker is written on the quitAndInstall path (auto-updater.ts) on every OS and
-// consumed exactly once here; a corrupt/stale/mismatched marker reads as false
-// (see consumeUpdateRelaunchFlag). Cached so every renderer that asks during the
-// same boot gets the same answer and the marker is deleted only once.
-let postUpdateRelaunchPromise: Promise<boolean> | undefined;
-function detectPostUpdateRelaunch(): Promise<boolean> {
-	if (!postUpdateRelaunchPromise) {
-		const runFile = runFilePath();
-		postUpdateRelaunchPromise =
-			app.isPackaged && runFile
-				? consumeUpdateRelaunchFlag({ stateDir: path.dirname(runFile), version: app.getVersion() }).catch(() => false)
-				: Promise.resolve(false);
-	}
-	return postUpdateRelaunchPromise;
-}
-ipcMain.handle("updates:isPostUpdateRelaunch", () => detectPostUpdateRelaunch());
 
 function cancelDockBounce(): void {
 	if (pendingBounce === null) return;
@@ -3233,16 +3153,6 @@ ipcMain.on(TRAY_SET_ATTENTION_STATE_CHANNEL, (event, state) => {
 
 ipcMain.on(TRAY_RENDERER_READY_CHANNEL, (event) => {
 	trayLifecycle.handleRendererReady(event);
-	// This existing handshake comes from TrayRuntime after the React shell has
-	// mounted. Loading the HTML or merely observing a new PID is not success.
-	if (app.isPackaged && process.platform === "darwin" && event.sender === getShellWebContents()) {
-		const runFile = runFilePath();
-		if (runFile) void acknowledgeMacUpdateRestart({
-			stateDir: path.dirname(runFile),
-			appPath: resolveBundlePath(),
-			version: app.getVersion(),
-		});
-	}
 
 	if (pendingFolderPath && event.sender === getShellWebContents()) {
 		event.sender.send(OPEN_FOLDER_PATH_CHANNEL, pendingFolderPath);
@@ -3362,23 +3272,6 @@ app.on("second-instance", (_event, argv) => {
 	window.show();
 	window.focus();
 });
-// (see forge.config.ts publishers). In dev there is no feed, so it is skipped.
-// A live updater additionally requires a signed + notarized build — see
-// frontend/docs/desktop-release.md.
-function initAutoUpdates(): void {
-	if (!app.isPackaged) return;
-	const runFile = runFilePath();
-	if (!runFile) return;
-	const stateDir = path.dirname(runFile);
-	// Route update pushes at the shell WebContents, the same target daemon status
-	// uses. The shell is a BaseWindow + WebContentsView (#3750), which
-	// BrowserWindow.getAllWindows() does not return, so the updater cannot find
-	// the renderer on its own. Resolved lazily so a recreated window still gets
-	// pushes.
-	setRendererSink(() => getShellWebContents());
-	void ensureUpdatePrefs(stateDir).then(() => startAutoUpdates(stateDir));
-}
-
 // Resolve the bundle path `ao start` will later `open` and stat as a usable app.
 // On macOS process.execPath is .../Agent Orchestrator.app/Contents/MacOS/<exe>;
 // the thing `ao start` opens is the enclosing `.app` directory, so walk up three
@@ -3426,12 +3319,6 @@ async function writeAppStateOnLaunch(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
-	if (app.isPackaged) {
-		const { checkDesktopVersionFloor } = await import("./main/desktop-version-floor");
-		await checkDesktopVersionFloor().catch((err) =>
-			console.warn("desktop version floor check failed:", err),
-		);
-	}
 	void refreshGitHubOwners();
 	const visibilityKillSwitched = (process.env.AO_TELEMETRY_DISABLED_EVENTS ?? "").split(",").some((name) => name.trim() === "ao.agent_switch.visibility_failure");
 	// The approved release gate is intentionally closed. Tests inject the
@@ -3583,7 +3470,6 @@ app.whenReady().then(async () => {
 		isWindows: process.platform === "win32",
 		shouldAbort: () => browserQuitRequested,
 	});
-	initAutoUpdates();
 
 	// Windows/Linux: on first launch, the deep-link URL may arrive as a
 	// process.argv entry (e.g. ao-app://callback?token=...).
@@ -3612,9 +3498,6 @@ app.whenReady().then(async () => {
 // Quit is never swallowed: desktopQuit runs the browser-quit cleanup once
 // under a deadline, then the app really exits and the dropped socket stops
 // the app-owned daemon after its grace period. Sessions survive.
-setUpdateRestartFailureHandler(() => {
-	if (!browserQuitRequested) focusMainWindow();
-});
 
 app.on("before-quit", (event) => {
 	if (chatDraftRisks.length > 0 && !chatDraftQuitConfirmed) {

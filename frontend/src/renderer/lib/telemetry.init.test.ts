@@ -37,7 +37,6 @@ describe("initTelemetry recovery", () => {
 						return { appVersion: "1.2.3", platform: "darwin", distinctId: "ins_test", disabledEvents: [], eventsEnabled: true, consentGeneration: "generation-1" };
 					}),
 				},
-				updateSettings: { get: vi.fn(async () => ({})) },
 			},
 		}));
 
@@ -57,7 +56,6 @@ describe("initTelemetry recovery", () => {
 		vi.doMock("./bridge", () => ({
 			aoBridge: {
 				telemetry: { getBootstrap },
-				updateSettings: { get: vi.fn(async () => ({})) },
 			},
 		}));
 
@@ -78,7 +76,6 @@ describe("initTelemetry recovery", () => {
 						disabledEvents: [], eventsEnabled: false, consentGeneration: "generation-off",
 					})),
 				},
-				updateSettings: { get: vi.fn(async () => ({})) },
 			},
 		}));
 
