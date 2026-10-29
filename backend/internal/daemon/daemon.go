@@ -516,9 +516,6 @@ func Run() error {
 	chatSvc.SetRenderCheck(renderViaDesktop(browserBroker, "__render-check"))
 	chatSvc.SetRenderMeasure(renderViaDesktop(browserBroker, "__render-measure"))
 
-	if err := chatSvc.InitializeSideChats(ctx); err != nil {
-		log.Warn("side chat initialization failed", "error", err)
-	}
 	codexModelPlugin := codexagent.New()
 	codexModelDriver := codexappserver.New(codexModelPlugin, log)
 	modelDiscoverer := modelcatalog.Discoverer{

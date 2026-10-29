@@ -76,7 +76,6 @@ type Service struct {
 	renderMeasure    RenderMeasure
 	// renderMeasures tracks background measures, so tests can wait for them.
 	renderMeasures     sync.WaitGroup
-	sides              *sideManager
 	wakeChat           func(context.Context, domain.SessionID) error
 	hibernationEnabled func() bool
 	// versionRefresh reports whether open sessions move to a newly installed
@@ -253,7 +252,6 @@ func New(opts Options) *Service {
 		backgroundWakes:        make(map[domain.SessionID]bool),
 		promptSuggestionSlots:  make(chan struct{}, 2),
 	}
-	svc.sides = newSideManager(svc, newMemorySideStore(), opts.AppRunID)
 	return svc
 }
 
@@ -1647,12 +1645,6 @@ func (s *Service) Stop(ctx context.Context, id domain.SessionID) error {
 		return err
 	}
 	defer gate.unlock()
-	// Each side is marked closed before its host stops, and a host that fails to
-	// stop stays queued for the periodic cleanup retry. Stopping the main chat
-	// (Exit agent, agent switch, spawn rollback) must not depend on it.
-	if err := s.closeSessionSides(ctx, id); err != nil {
-		s.log.Warn("side chat cleanup deferred while stopping session", "session", id, "error", err)
-	}
 	s.viewMu.Lock()
 	delete(s.viewClosedAt, id)
 	delete(s.viewLeases, id)
@@ -1755,9 +1747,6 @@ func (s *Service) StopForOwner(ctx context.Context, owner domain.ConversationOwn
 
 // StopAll closes every controller, for daemon shutdown.
 func (s *Service) StopAll(ctx context.Context) {
-	if s.sides != nil {
-		s.sides.stopAll()
-	}
 	s.mu.Lock()
 	type shutdownTarget struct {
 		owner      domain.ConversationOwner
