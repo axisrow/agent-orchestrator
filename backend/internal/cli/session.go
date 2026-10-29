@@ -1034,7 +1034,6 @@ func writeSessionDetails(cmd *cobra.Command, sess sessionDTO) error {
 	return nil
 }
 
-
 func sessionRole(sess sessionDTO) string {
 	if sess.Kind == "orchestrator" {
 		return "orchestrator"
