@@ -553,6 +553,7 @@ var schemaNames = map[string]string{ //nolint:gosec // Public OpenAPI type names
 	// httpd/controllers — PR wire envelopes
 	"ControllersMergePRRequest":          "MergePRRequest",
 	"ControllersMergePRResponse":         "MergePRResponse",
+	"ControllersGetPRResponse":           "GetPRResponse",
 	"ControllersResolveCommentsRequest":  "ResolveCommentsRequest",
 	"ControllersResolveCommentsResponse": "ResolveCommentsResponse",
 	// httpd/controllers — review wire envelopes
@@ -3695,6 +3696,18 @@ func sessionOperations() []operation {
 // PRService (SCM not configured) returns 501 for both routes.
 func prOperations() []operation {
 	return []operation{
+		{
+			method: http.MethodGet, path: "/api/v1/prs/{id}", id: "getPR", tag: "prs",
+			summary:    "Resolve a tracked pull request by number",
+			pathParams: []any{controllers.PRIDParam{}},
+			resps: []respUnit{
+				{http.StatusOK, controllers.GetPRResponse{}},
+				{http.StatusBadRequest, envelope.APIError{}},
+				{http.StatusNotFound, envelope.APIError{}},
+				{http.StatusUnprocessableEntity, envelope.APIError{}},
+				{http.StatusNotImplemented, envelope.APIError{}},
+			},
+		},
 		{
 			method: http.MethodPost, path: "/api/v1/prs/{id}/merge", id: "mergePR", tag: "prs",
 			summary:    "Squash-merge a pull request",

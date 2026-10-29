@@ -121,6 +121,27 @@ func NewActionService(deps ActionDeps) *ActionService {
 	}
 }
 
+// GetIdentity resolves a tracked pull request by number for callers that must
+// observe the exact URL and head SHA before mutating. An unknown head is a
+// precondition failure: the caller cannot pin a merge to an unobserved head.
+func (s *ActionService) GetIdentity(ctx context.Context, prID string) (Identity, error) {
+	if s.resolve == nil {
+		return Identity{}, errors.New("pr: identity action is not configured")
+	}
+	number, err := parsePRNumber(strings.TrimSpace(prID))
+	if err != nil {
+		return Identity{}, fmt.Errorf("%w: invalid pull request identity", ErrInvalidPR)
+	}
+	pr, err := s.lookupPRByNumber(ctx, number)
+	if err != nil {
+		return Identity{}, err
+	}
+	if !gitSHAPattern.MatchString(strings.TrimSpace(pr.HeadSHA)) {
+		return Identity{}, fmt.Errorf("%w: pull request head is unknown", ErrPRPreconditions)
+	}
+	return Identity{Number: pr.Number, URL: pr.URL, HeadSHA: pr.HeadSHA}, nil
+}
+
 // Merge re-fetches authoritative SCM state and then squash-merges only the
 // exact head the user saw. The provider repeats the SHA guard atomically.
 func (s *ActionService) Merge(ctx context.Context, request MergeRequest) (MergeResult, error) {
@@ -398,6 +419,10 @@ func (s *ActionService) lookupResolvePR(ctx context.Context, prID string) (domai
 	if err != nil {
 		return domain.PullRequest{}, fmt.Errorf("%w: invalid pull request identity", ErrInvalidPR)
 	}
+	return s.lookupPRByNumber(ctx, number)
+}
+
+func (s *ActionService) lookupPRByNumber(ctx context.Context, number int) (domain.PullRequest, error) {
 	pr, ok, err := s.resolve.GetPRByNumber(ctx, number)
 	if err != nil {
 		return domain.PullRequest{}, fmt.Errorf("load pull request: %w", err)

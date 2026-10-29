@@ -10,6 +10,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+type prIdentity struct {
+	Number  int    `json:"number"`
+	URL     string `json:"url"`
+	HeadSHA string `json:"headSha"`
+}
+
 type mergePRResponse struct {
 	OK       bool   `json:"ok"`
 	PRNumber int    `json:"prNumber"`
@@ -45,8 +51,18 @@ func newPRMergeCommand(ctx *commandContext) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// The daemon requires the exact observed URL and head SHA on merge;
+			// the thin CLI resolves them from the tracked PR first.
+			var identity prIdentity
+			if err := ctx.getJSON(cmd.Context(), "prs/"+url.PathEscape(prNumber), &identity); err != nil {
+				return err
+			}
 			var res mergePRResponse
-			if err := ctx.postJSON(cmd.Context(), "prs/"+url.PathEscape(prNumber)+"/merge", struct{}{}, &res); err != nil {
+			body := struct {
+				PRURL           string `json:"prUrl"`
+				ExpectedHeadSHA string `json:"expectedHeadSha"`
+			}{identity.URL, identity.HeadSHA}
+			if err := ctx.postJSON(cmd.Context(), "prs/"+url.PathEscape(prNumber)+"/merge", body, &res); err != nil {
 				return err
 			}
 			if method := strings.TrimSpace(res.Method); method != "" {

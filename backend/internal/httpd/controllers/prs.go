@@ -23,8 +23,27 @@ type PRsController struct {
 
 // Register mounts the PR action routes on the supplied router.
 func (c *PRsController) Register(r chi.Router) {
+	r.Get("/prs/{id}", c.get)
 	r.Post("/prs/{id}/merge", c.merge)
 	r.Post("/prs/{id}/resolve-comments", c.resolveComments)
+}
+
+func (c *PRsController) get(w http.ResponseWriter, r *http.Request) {
+	if c.Svc == nil {
+		apispec.NotImplemented(w, r, "GET", "/api/v1/prs/{id}")
+		return
+	}
+	prID := chi.URLParam(r, "id")
+	if !prIDPattern.MatchString(prID) {
+		envelope.WriteAPIError(w, r, http.StatusBadRequest, "bad_request", "INVALID_PR", "Invalid PR number", nil)
+		return
+	}
+	identity, err := c.Svc.GetIdentity(r.Context(), prID)
+	if err != nil {
+		writePRError(w, r, err)
+		return
+	}
+	envelope.WriteJSON(w, http.StatusOK, GetPRResponse{Number: identity.Number, URL: identity.URL, HeadSHA: identity.HeadSHA})
 }
 
 func (c *PRsController) merge(w http.ResponseWriter, r *http.Request) {
