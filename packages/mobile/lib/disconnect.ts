@@ -6,7 +6,6 @@ import { clearOnboardingSkipped } from "./onboardingStore";
 import { retryPendingUnpairs, unpairFromServer } from "./push";
 import { markMachineUnpaired } from "./pendingUnpair";
 import { clearEventCursorsForHost } from "./chat/eventCursor";
-import { forgetRememberedTurnOptions } from "./chat/lastTurnOptions";
 
 /** Forget one saved machine without disturbing the currently selected machine. */
 export async function forgetPairedHost(host: HostMetadata, options?: { ignoreAccount?: boolean }): Promise<void> {
@@ -18,7 +17,6 @@ export async function forgetPairedHost(host: HostMetadata, options?: { ignoreAcc
 		if (accountId) await ignoreAccountHost(accountId, host.id);
 	}
 
-	forgetRememberedTurnOptions();
 	const cleanup = await Promise.allSettled([
 		removeHost(host.id).then(() => markMachineUnpaired(host.id)),
 		clearEventCursorsForHost(host),
@@ -58,7 +56,6 @@ export async function forgetServer(target?: HostMetadata): Promise<void> {
 	// Each local deletion is independent. A rejected SecureStore operation must
 	// not prevent the config, event cursor, or onboarding flag from being
 	// cleared; otherwise "forget" can leave a partially paired phone behind.
-	forgetRememberedTurnOptions();
 	const cleanup = await Promise.allSettled([
 		host ? removeHost(host.id).then(() => markMachineUnpaired(host.id)) : Promise.resolve(),
 		host ? clearEventCursorsForHost(host) : Promise.resolve(),
