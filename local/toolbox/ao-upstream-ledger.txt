@@ -191,7 +191,7 @@ cab5160d1df4586e31d13da507eb4a612a90806d skipped feat(desktop): rework the agent
 2339cbb41f5d22fa9d74863eac0fe0d65fe871aa taken fix(sessions): report agent relaunch failures as 409 AGENT_RESUME_FAILED and keep them in telemetry (#7252) [service.go: сторона фикса; docs/telemetry.md: сторона форка]
 c7a99e1ad83c0ea9bfc84e35f679fa2a08e6169f skipped feat(cloud): shareable cloud sessions with live presence and a hard lock (#7151)
 9c2faa63ec1da5780e50de4aa52ea8a4a22dacca skipped fix(mobile): shrink the Settings notifications toggle (#7324) — применён скриптом чисто, сброшен по политике mobile-скип (packages/mobile), владелец подтвердил
-4ed070283f0b3c0b836bae9abb91e08481157780 skipped fix(chat): keep usage-limit refusals through wake replay, and let a new chat switch account (#7293) — конфликт conversation_auto_resume_test.go (DU: в форке файл удалён), отложен
+4ed070283f0b3c0b836bae9abb91e08481157780 taken fix(chat): keep usage-limit refusals through wake replay, and let a new chat switch account (#7293) — взят 0c946fb64f: код и agent_account_test авто-слились; DU-тест conversation_auto_resume_test.go остался удалён (сторона форка)
 4b627a940c6ed25dee4cf2ef635a24bf441f4d95 skipped fix(files): bound large reviews and guide safe PR checkouts (#7290) — конфликт WorkspaceReviewPane.tsx + useSessionWorkspaceFiles.ts (UU, fork-дельта +1/-1 и +9/-2), отложен
 a81f681475ecf1627c6c854c1989f9771fa261d8 skipped fix(desktop): revert the cloud startup changes that hid the Coder loader (#7322) — конфликт SessionView.test.tsx (UU, fork-дельта +187/-198); фикс cloud-startup (Coder), похоже, не нужен по cloud→selfhosted — отложен
 af1299f29c27b7dd9a45c2f1fa8fb599855efd51 skipped fix(cloud): run any Coder template first Chat start without errors (#7329) — конфликт CloudSessionChatSurface.tsx/.test.tsx (UU, fork-дельта крупная); cloud-фикс, кандидат на скип по cloud→selfhosted — отложен
@@ -232,7 +232,7 @@ dfe2d752a1da6711ea42c0cd852a993fa40ada56 skipped feat(ui): swipe or drag notific
 49951ca73e431bc79fd6e4b4c5ce3ba9414c86c0 skipped perf(frontend): use Pierre's WASM highlighter and skip layout for hidden file tabs (#7369)
 ad553ec6d4d03aea9fd0c5f18cdb4f65792e92d7 skipped feat: add more sidebar and board context menu actions (#7372)
 927bfe7fa439ff5677fa4a05e056a2010deff214 skipped feat: pick the default editor in settings (#7373)
-8c269417876ee3effa41b58224d22d2dfbcec603 taken fix(mobile): keep the model picker on chats that were hibernated (#7339)
+8c269417876ee3effa41b58224d22d2dfbcec603 skipped fix(mobile): keep the model picker on chats that were hibernated (#7339) — применён чисто и отреверчен 0278f18b0e по политике mobile-скип
 1e478c51f0d31ea84f2636e38bab2de2cd61ef2c skipped feat: list other open targets in the editor row submenu (#7374)
 c8be3cbd452eccabdc7001536b917e0572cf5b89 taken fix(codex): find node for npm Codex during login and auth probe (#6371)
 8c269417876ee3effa41b58224d22d2dfbcec603 skipped fix(mobile): keep the model picker on chats that were hibernated (#7339) — применён скриптом чисто (встал в середину истории), отреверчен 0278f18b0e по политике mobile-скип (packages/mobile)
@@ -243,7 +243,7 @@ d869fb31199bb91717602de16afd692fe35d031a skipped fix(telemetry): prune all expir
 4d406ccd9efaf1cee58816ba0175c03131a7fa3b skipped feat(harness): update official-installer and single-binary cask harnesses beside running sessions (#6934)
 144c32f93774b62d262fd4436d2132d7e940559f skipped fix(mobile): connect the scanned machine instead of rejecting it during reconnect (#7347) — конфликт packages/mobile/* + автоскрип по mobile-политике (packages/mobile)
 b692d6c7f3e4aa85435ac6148c15d74b0665d882 skipped feat(computer-use): Added Computer Use Agents via Cua Driver, ao mcp
-ee7475c93db325976a68b271a38b857d276f41d8 taken fix(mobile): send terminal-composer messages as the user's own words (#7390)
+ee7475c93db325976a68b271a38b857d276f41d8 skipped fix(mobile): send terminal-composer messages as the user's own words (#7390) — применён чисто и отреверчен 2f6e7f4ffc по политике mobile-скип
 c3e53c978b539f12ad5fbc8e9ed8baf8919d0065 skipped chore(mobile): bump app version to 2.2.0 and keep package.json scripts out of the fingerprint (#7396)
 04835c8cff079e506f900e06eae09e1b11ad0b7d skipped chore: move the AO Cloud control plane to its own private repository (#7352)
 dfd3cecd1e8cceef239469ca9f45f7c2473e6a03 skipped ci: fail PRs that make a breaking change to the cloud contract (#7356)
