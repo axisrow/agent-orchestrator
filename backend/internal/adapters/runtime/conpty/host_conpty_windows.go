@@ -8,9 +8,10 @@ import (
 	"os"
 	"sync"
 
-	"github.com/aoagents/agent-orchestrator/backend/internal/envfilter"
 	gopty "github.com/aymanbagabas/go-pty"
 	"golang.org/x/sys/windows"
+
+	"github.com/aoagents/agent-orchestrator/backend/internal/envfilter"
 )
 
 // conptyConn is the real ptyConn implementation backed by go-pty's ConPty

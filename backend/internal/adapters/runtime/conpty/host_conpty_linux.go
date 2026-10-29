@@ -15,8 +15,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/aoagents/agent-orchestrator/backend/internal/envfilter"
 	"github.com/creack/pty"
+
+	"github.com/aoagents/agent-orchestrator/backend/internal/envfilter"
 )
 
 // linuxPTYConn is a native Linux pseudoterminal owned by the detached host.
