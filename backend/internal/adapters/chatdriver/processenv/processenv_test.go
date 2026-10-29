@@ -132,3 +132,31 @@ func TestMergeWindowsExactPATHWinsConflictingOverlaySpelling(t *testing.T) {
 		}
 	}
 }
+
+// An inherited commit identity (for example a cloud profile export in the
+// daemon's environment) must not author a chat session's commits; the overlay
+// is explicit session configuration and remains the opt-in.
+func TestMergeDropsInheritedGitIdentityAndKeepsOverlay(t *testing.T) {
+	t.Setenv("GIT_AUTHOR_NAME", "Cloud Profile")
+	t.Setenv("GIT_AUTHOR_EMAIL", "cloud@example.com")
+	t.Setenv("GIT_COMMITTER_NAME", "Cloud Profile")
+	t.Setenv("GIT_COMMITTER_EMAIL", "cloud@example.com")
+	t.Setenv("GIT_CONFIG_GLOBAL", "/tmp/session.gitconfig")
+
+	got := Merge(map[string]string{"GIT_AUTHOR_EMAIL": "opt-in@example.com"})
+	for _, entry := range got {
+		key, value, _ := strings.Cut(entry, "=")
+		switch key {
+		case "GIT_AUTHOR_NAME", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL":
+			t.Fatalf("inherited %s=%s leaked into chat launch env", key, value)
+		case "GIT_AUTHOR_EMAIL":
+			if value != "opt-in@example.com" {
+				t.Fatalf("GIT_AUTHOR_EMAIL = %q, want the overlay value", value)
+			}
+		case "GIT_CONFIG_GLOBAL":
+			if value != "/tmp/session.gitconfig" {
+				t.Fatalf("GIT_CONFIG_GLOBAL = %q, want the inherited AO value", value)
+			}
+		}
+	}
+}

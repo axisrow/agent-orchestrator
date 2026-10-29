@@ -118,6 +118,11 @@ func stripEnvAssignments(argv []string) (assignments, rest []string) {
 // or an `env NO_COLOR=...` argv prefix. The native PTY and its xterm clients
 // support 24-bit SGR color, so advertise that capability consistently with the
 // legacy tmux runtime.
+//
+// Ambient git identity overrides are dropped for the same reason: the daemon
+// must not inherit an enclosing environment's commit identity (for example
+// inside an AO Cloud workspace shell) into an agent's commits. An explicitly
+// configured value is the opt-in and survives.
 func interactiveTerminalEnv(base []string, configured map[string]string, assignments []string) []string {
 	env := make([]string, 0, len(base)+len(configured)+len(assignments)+2)
 	appendEntry := func(entry string, explicit bool) {
@@ -126,10 +131,10 @@ func interactiveTerminalEnv(base []string, configured map[string]string, assignm
 			env = append(env, entry)
 			return
 		}
-		switch key {
-		case "TERM", "COLORTERM":
+		switch {
+		case key == "TERM" || key == "COLORTERM":
 			return
-		case "NO_COLOR":
+		case key == "NO_COLOR" || envfilter.IsGitIdentityKey(key):
 			if !explicit {
 				return
 			}

@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/chatdriver/persistenthost"
+	"github.com/aoagents/agent-orchestrator/backend/internal/envfilter"
 )
 
 func newChatHostCommand() *cobra.Command {
@@ -34,7 +35,7 @@ func newChatHostCommand() *cobra.Command {
 				SessionID:            strings.TrimSpace(args[0]),
 				DataDir:              args[1],
 				Workdir:              args[2],
-				Env:                  os.Environ(),
+				Env:                  envfilter.StripGitIdentity(os.Environ()),
 				Argv:                 args[separator+1:],
 				Protocol:             protocol,
 				OwnershipFingerprint: fingerprint,
