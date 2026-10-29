@@ -251,3 +251,6 @@ dfd3cecd1e8cceef239469ca9f45f7c2473e6a03 skipped ci: fail PRs that make a breaki
 3f35c52e94bd94f69dd18b15867bd619ec3e6801 taken fix: keep archived sessions out of Cmd+K Needs attention (#7414)
 4466230555177c98a0866c3c40be10fe71c88d39 skipped docs(readme): replace the banner with a logo and name header (#7342)
 ee7475c93db325976a68b271a38b857d276f41d8 skipped fix(mobile): send terminal-composer messages as the user own words (#7390) — применён скриптом чисто, отреверчен 2f6e7f4ffc по политике mobile-скип (packages/mobile)
+96cd425bd33a5187ff5891731cc7114fe12a7ed6 skipped fix: unify the session pane tab strip (#7371) — клэш с параллельной fork-реализацией таб-стрипа (ChatWorkspace/CenterPane/SessionFileTabs), TerminalAgentControls удалён в форке
+1d7882ae87b58e443d72f6df4c797b420fbf7cc3 skipped fix(desktop): give the macOS dmg a real install window layout (#7418) — forge update-helper/maker-dmg выпилены вместе с апдейтером, dmг-раскладка не нужна
+de4a47da9eaaed314d03d6b8ed12de804f146b79 skipped feat(cloud): ~3 s Freestyle session start: repository snapshots at connect and after deploys, warmed snapshots, prewarmed agent, in-place start (#7208)
