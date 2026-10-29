@@ -345,6 +345,61 @@ func TestInteractiveTerminalEnvPreservesExplicitNoColor(t *testing.T) {
 	}
 }
 
+// A cloud login must never re-attribute an agent's commits: an inherited
+// identity export dies here, while the same key arriving through explicit
+// session configuration is the user's opt-in and survives.
+func TestInteractiveTerminalEnvDropsAmbientGitIdentity(t *testing.T) {
+	env := interactiveTerminalEnv(
+		[]string{
+			"PATH=/usr/bin",
+			"GIT_AUTHOR_NAME=Cloud Profile",
+			"GIT_AUTHOR_EMAIL=cloud@example.com",
+			"GIT_COMMITTER_NAME=Cloud Profile",
+			"GIT_COMMITTER_EMAIL=cloud@example.com",
+		},
+		map[string]string{"AO_SESSION_ID": "sess-1"},
+		nil,
+	)
+	if !slices.Contains(env, "PATH=/usr/bin") || !slices.Contains(env, "AO_SESSION_ID=sess-1") {
+		t.Fatalf("ordinary ambient entries lost: %#v", env)
+	}
+	for _, banned := range []string{
+		"GIT_AUTHOR_NAME=Cloud Profile",
+		"GIT_AUTHOR_EMAIL=cloud@example.com",
+		"GIT_COMMITTER_NAME=Cloud Profile",
+		"GIT_COMMITTER_EMAIL=cloud@example.com",
+	} {
+		if slices.Contains(env, banned) {
+			t.Fatalf("ambient git identity %q leaked into interactive terminal env: %#v", banned, env)
+		}
+	}
+}
+
+func TestInteractiveTerminalEnvPreservesExplicitGitIdentity(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		configured  map[string]string
+		assignments []string
+	}{
+		{name: "runtime config", configured: map[string]string{"GIT_AUTHOR_EMAIL": "opt-in@example.com"}},
+		{name: "argv env assignment", assignments: []string{"GIT_AUTHOR_EMAIL=opt-in@example.com"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			env := interactiveTerminalEnv(
+				[]string{"GIT_AUTHOR_EMAIL=cloud@example.com"},
+				tt.configured,
+				tt.assignments,
+			)
+			if !slices.Contains(env, "GIT_AUTHOR_EMAIL=opt-in@example.com") {
+				t.Fatalf("explicit git identity not preserved: %#v", env)
+			}
+			if slices.Contains(env, "GIT_AUTHOR_EMAIL=cloud@example.com") {
+				t.Fatalf("ambient git identity survived an explicit override: %#v", env)
+			}
+		})
+	}
+}
+
 func TestCreatePassesHostOptionsToSpawner(t *testing.T) {
 	isolateRegistry(t)
 	spawnErr := errors.New("stop after capturing the options")

@@ -234,8 +234,12 @@ func (execRunner) Run(ctx context.Context, env []string, name string, args ...st
 	// The first call here auto-starts tmux's persistent server, which keeps
 	// whatever env it's given for its entire lifetime — so without this,
 	// every worker's claude-code process misidentifies itself as a child of
-	// that unrelated parent session. See envfilter for what's dropped and why.
-	cmd.Env = envfilter.DropParentSessionMarkers(append(append([]string(nil), os.Environ()...), env...))
+	// that unrelated parent session. The same ambient base also loses git
+	// commit-identity overrides: every pane shell inherits the server env, so
+	// an enclosing environment's GIT_AUTHOR_*/GIT_COMMITTER_* must not reach
+	// it. Explicit values still arrive through buildLaunchCommand's per-pane
+	// exports, not this ambient base. See envfilter for what's dropped and why.
+	cmd.Env = envfilter.DropParentSessionMarkers(append(envfilter.StripGitIdentity(os.Environ()), env...))
 	// Run from a stable directory, not whatever the daemon process's cwd happens
 	// to be. The first tmux CLI call auto-starts tmux's persistent server, which
 	// inherits ITS launching process's cwd and keeps it for the server's entire

@@ -269,6 +269,33 @@ func TestExecRunnerDropsParentSessionMarkers(t *testing.T) {
 	}
 }
 
+// The tmux server started by the first Run call passes its environment to every
+// pane shell, so an inherited commit identity (for example a cloud profile
+// export) must be dropped from the ambient base. The runner's explicit env
+// parameter stays untouched: it is AO's own per-command configuration.
+func TestExecRunnerStripsAmbientGitIdentity(t *testing.T) {
+	t.Setenv("GIT_AUTHOR_NAME", "Cloud Profile")
+	t.Setenv("GIT_AUTHOR_EMAIL", "cloud@example.com")
+	t.Setenv("GIT_COMMITTER_NAME", "Cloud Profile")
+	t.Setenv("GIT_COMMITTER_EMAIL", "cloud@example.com")
+
+	out, err := (execRunner{}).Run(context.Background(), nil, "sh", "-c", `printf '%s|%s|%s|%s' "$GIT_AUTHOR_NAME" "$GIT_AUTHOR_EMAIL" "$GIT_COMMITTER_NAME" "$GIT_COMMITTER_EMAIL"`)
+	if err != nil {
+		t.Fatalf("execRunner.Run: %v", err)
+	}
+	if got := strings.TrimSpace(string(out)); got != "|||" {
+		t.Fatalf("ambient git identity reached the tmux server env: %q", got)
+	}
+
+	out, err = (execRunner{}).Run(context.Background(), []string{"GIT_AUTHOR_EMAIL=keep@example.com"}, "sh", "-c", "printf '%s' \"$GIT_AUTHOR_EMAIL\"")
+	if err != nil {
+		t.Fatalf("execRunner.Run with explicit env: %v", err)
+	}
+	if got := strings.TrimSpace(string(out)); got != "keep@example.com" {
+		t.Fatalf("explicit env entry = %q, want keep@example.com", got)
+	}
+}
+
 // -- command builder tests --
 
 func TestCommandBuilders(t *testing.T) {

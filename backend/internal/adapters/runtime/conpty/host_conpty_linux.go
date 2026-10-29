@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/creack/pty"
+
+	"github.com/aoagents/agent-orchestrator/backend/internal/envfilter"
 )
 
 // linuxPTYConn is a native Linux pseudoterminal owned by the detached host.
@@ -44,7 +46,9 @@ func newConPTY(cwd, shellCmd string, shellArgs []string, cols, rows uint16) (pty
 	//nolint:forbidigo // Interactive ConPTY children require direct process control.
 	cmd := exec.Command(shellCmd, shellArgs...) // #nosec G702 -- intentional direct argv execution
 	cmd.Dir = cwd
-	cmd.Env = os.Environ()
+	// The host may have been adopted from a daemon whose environment carried
+	// foreign commit identity; the agent child must not inherit it.
+	cmd.Env = envfilter.StripGitIdentity(os.Environ())
 
 	f, err := pty.StartWithSize(cmd, &pty.Winsize{
 		Cols: cols,
