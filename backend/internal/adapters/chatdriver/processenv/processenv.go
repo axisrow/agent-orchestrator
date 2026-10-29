@@ -18,15 +18,17 @@ import (
 // happens to have been started from inside a Claude Code session, its own
 // CLAUDECODE/CLAUDE_CODE_SESSION_ID/etc must not leak into a worker's process,
 // or the worker's own claude-code misidentifies itself as a child session.
+// The ambient base also loses git commit-identity overrides; the overlay is
+// explicit session configuration and keeps them.
 func Merge(overlay map[string]string) []string {
-	return merge(os.Environ(), overlay, runtime.GOOS == "windows")
+	return merge(envfilter.StripGitIdentity(os.Environ()), overlay, runtime.GOOS == "windows")
 }
 
 func merge(environ []string, overlay map[string]string, caseInsensitive bool) []string {
 	merged := make(map[string]string, len(environ)+len(overlay))
 	for _, entry := range environ {
 		if key, _, ok := strings.Cut(entry, "="); ok {
-			if envfilter.IsParentSessionMarker(key) {
+			if envfilter.IsParentSessionMarker(key) || envfilter.IsGitIdentityKey(key) {
 				continue
 			}
 			if caseInsensitive {

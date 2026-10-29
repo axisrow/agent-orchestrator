@@ -58,3 +58,41 @@ func DropParentSessionMarkers(env []string) []string {
 	}
 	return out
 }
+
+// gitIdentityEnvKeys are the variables that override the author and committer
+// git records on every commit a child makes. AO never injects them, and an
+// ambient export from an enclosing environment (an AO Cloud workspace shell,
+// launchctl setenv, a login hook) must not silently re-attribute workers'
+// commits: a cloud account identity that reached the daemon's environment once
+// authored commits under a Google profile the user never chose for git. Git
+// keeps resolving identity from the user's config as usual. This is the same
+// denylist discipline as the parent-session markers above: keys a session was
+// explicitly configured with (project env, `env K=V` argv prefixes) are the
+// opt-in and reach children through those overlays, not through these spawn
+// filters.
+var gitIdentityEnvKeys = map[string]struct{}{
+	"GIT_AUTHOR_NAME":     {},
+	"GIT_AUTHOR_EMAIL":    {},
+	"GIT_COMMITTER_NAME":  {},
+	"GIT_COMMITTER_EMAIL": {},
+}
+
+// IsGitIdentityKey reports whether key overrides commit authorship identity.
+func IsGitIdentityKey(key string) bool {
+	_, blocked := gitIdentityEnvKeys[key]
+	return blocked
+}
+
+// StripGitIdentity removes the commit-identity override variables from an
+// inherited environment without disturbing entry order or mutating the input.
+func StripGitIdentity(env []string) []string {
+	out := make([]string, 0, len(env))
+	for _, entry := range env {
+		key, _, ok := strings.Cut(entry, "=")
+		if ok && IsGitIdentityKey(key) {
+			continue
+		}
+		out = append(out, entry)
+	}
+	return out
+}

@@ -8,6 +8,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/aoagents/agent-orchestrator/backend/internal/envfilter"
 	gopty "github.com/aymanbagabas/go-pty"
 	"golang.org/x/sys/windows"
 )
@@ -50,8 +51,9 @@ func newConPTY(cwd, shellCmd string, shellArgs []string, cols, rows uint16) (pty
 
 	cmd := cp.Command(shellCmd, shellArgs...)
 	cmd.Dir = cwd
-	// Inherit parent env so PATH, HOME, etc. are available.
-	cmd.Env = os.Environ()
+	// Inherit parent env so PATH, HOME, etc. are available, minus commit
+	// identity overrides the host may have adopted from a polluted daemon.
+	cmd.Env = envfilter.StripGitIdentity(os.Environ())
 
 	if err := cmd.Start(); err != nil {
 		_ = cp.Close()

@@ -62,3 +62,60 @@ func TestDropParentSessionMarkersPreservesMalformedEntries(t *testing.T) {
 		t.Fatalf("DropParentSessionMarkers(%v) = %v, want malformed entry preserved", in, got)
 	}
 }
+
+func TestIsGitIdentityKeyBlocksOnlyIdentityKeys(t *testing.T) {
+	for _, key := range []string{"GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"} {
+		if !IsGitIdentityKey(key) {
+			t.Errorf("IsGitIdentityKey(%q) = false, want true", key)
+		}
+	}
+	// AO's own GIT_* plumbing and unrelated keys must survive: only the four
+	// commit-identity overrides are blocked.
+	for _, key := range []string{"GIT_CONFIG_GLOBAL", "GIT_TERMINAL_PROMPT", "GIT_EDITOR", "GIT_AUTHOR", "PATH", "HOME"} {
+		if IsGitIdentityKey(key) {
+			t.Errorf("IsGitIdentityKey(%q) = true, want false", key)
+		}
+	}
+}
+
+// An empty cloud profile must leave nothing behind: the filter is a pure
+// removal, and every other entry survives in order.
+func TestStripGitIdentityRemovesOnlyIdentityKeys(t *testing.T) {
+	in := []string{
+		"GIT_AUTHOR_NAME=Cloud Profile",
+		"PATH=/usr/bin:/bin",
+		"GIT_AUTHOR_EMAIL=cloud@example.com",
+		"GIT_CONFIG_GLOBAL=/tmp/session.gitconfig",
+		"GIT_COMMITTER_NAME=Cloud Profile",
+		"HOME=/Users/dev",
+		"GIT_COMMITTER_EMAIL=cloud@example.com",
+		"GIT_TERMINAL_PROMPT=0",
+		"GIT_EDITOR=true",
+	}
+	got := StripGitIdentity(in)
+	want := []string{
+		"PATH=/usr/bin:/bin",
+		"GIT_CONFIG_GLOBAL=/tmp/session.gitconfig",
+		"HOME=/Users/dev",
+		"GIT_TERMINAL_PROMPT=0",
+		"GIT_EDITOR=true",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("StripGitIdentity(%v) = %v, want %v", in, got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("StripGitIdentity(%v) = %v, want %v", in, got, want)
+		}
+	}
+	// The input must be untouched: callers still own their slice.
+	if in[0] != "GIT_AUTHOR_NAME=Cloud Profile" || len(in) != 9 {
+		t.Fatalf("StripGitIdentity mutated its input: %v", in)
+	}
+}
+
+func TestStripGitIdentityKeepsEmptyEnvironment(t *testing.T) {
+	if got := StripGitIdentity(nil); got == nil || len(got) != 0 {
+		t.Fatalf("StripGitIdentity(nil) = %v, want an empty slice", got)
+	}
+}
