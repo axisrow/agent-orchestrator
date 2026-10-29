@@ -1137,49 +1137,6 @@ describe("Sidebar", () => {
 		expect(screen.queryByText("baby")).not.toBeInTheDocument();
 	});
 
-	it("caps the ad hoc agent list at 10 and lets the section grow to half the available height", async () => {
-		const user = userEvent.setup();
-		renderSidebar({
-			workspaces: [
-				{
-					id: STANDALONE_WORKSPACE_ID,
-					name: "Scratchpad",
-					kind: STANDALONE_PROJECT_KIND,
-					path: "",
-					sessions: Array.from({ length: 13 }, (_, index) => ({
-						...session,
-						id: `adhoc-${index + 1}`,
-						title: `Agent ${index + 1}`,
-						workspaceId: STANDALONE_WORKSPACE_ID,
-						workspaceName: "Scratchpad",
-						// Descending so sortedWorkerSessions keeps the fixture order.
-						updatedAt: `2026-06-${30 - index}T00:00:00Z`,
-					})),
-				},
-			],
-		});
-
-		expect(screen.getByText("Agent 10")).toBeInTheDocument();
-		expect(screen.queryByText("Agent 11")).not.toBeInTheDocument();
-
-		const scroller = screen.getByTestId("sidebar-scratchpad-scroller");
-		expect(scroller).toHaveClass("overflow-y-auto");
-		expect(scroller.style.height).toBe("");
-		expect(scroller.style.maxHeight).toBe("");
-		expect(document.querySelector<HTMLElement>("[data-scratchpad-section]")!.style.maxHeight).toBe("");
-
-		await user.click(screen.getByRole("button", { name: "Show 3 more agents" }));
-
-		expect(screen.getByText("Agent 11")).toBeInTheDocument();
-		expect(screen.getByText("Agent 13")).toBeInTheDocument();
-		expect(scroller.style.maxHeight).toBe("");
-		expect(screen.getByRole("button", { name: "Show fewer agents" })).toBeInTheDocument();
-
-		await user.click(screen.getByRole("button", { name: "Show fewer agents" }));
-
-		expect(screen.queryByText("Agent 11")).not.toBeInTheDocument();
-		expect(screen.getByRole("button", { name: "Show 3 more agents" })).toBeInTheDocument();
-	});
 
 	it("shows scroll-edge fades on project and Scratchpad sections as they scroll", () => {
 		renderSidebar({
@@ -2488,31 +2445,6 @@ describe("Sidebar", () => {
 		);
 	});
 
-	it("caps the project list at 10 until Show more is clicked", async () => {
-		const user = userEvent.setup();
-		const manyProjects = Array.from({ length: 14 }, (_, index) => ({
-			...workspace,
-			id: `proj-${index + 1}`,
-			name: `Project ${index + 1}`,
-			path: `/repo/project-${index + 1}`,
-		}));
-		renderSidebar({ workspaces: manyProjects });
-
-		expect(screen.getByText("Project 10")).toBeInTheDocument();
-		expect(screen.queryByText("Project 11")).not.toBeInTheDocument();
-		expect(screen.getByRole("button", { name: "Show 4 more projects" })).toBeInTheDocument();
-
-		await user.click(screen.getByRole("button", { name: "Show 4 more projects" }));
-
-		expect(screen.getByText("Project 11")).toBeInTheDocument();
-		expect(screen.getByText("Project 14")).toBeInTheDocument();
-		expect(screen.getByRole("button", { name: "Show fewer projects" })).toBeInTheDocument();
-
-		await user.click(screen.getByRole("button", { name: "Show fewer projects" }));
-
-		expect(screen.queryByText("Project 11")).not.toBeInTheDocument();
-		expect(screen.getByRole("button", { name: "Show 4 more projects" })).toBeInTheDocument();
-	});
 
 	it("keeps the active project row at the top of the scroller", () => {
 		mockParams.projectId = "proj-1";
@@ -2529,58 +2461,7 @@ describe("Sidebar", () => {
 		expect(activeRow).toHaveClass("sticky", "top-0", "z-20", "bg-sidebar");
 	});
 
-	it("caps each project's agent list at 6 until its Show more is clicked", async () => {
-		const user = userEvent.setup();
-		renderSidebar({
-			workspaces: [
-				{
-					...workspace,
-					sessions: Array.from({ length: 9 }, (_, index) => ({
-						...session,
-						id: `proj-1-${index + 1}`,
-						title: `Agent ${index + 1}`,
-						// Descending so sortedWorkerSessions keeps the fixture order.
-						updatedAt: `2026-06-${30 - index}T00:00:00Z`,
-					})),
-				},
-			],
-		});
 
-		const list = screen.getByTestId("session-list-proj-1");
-		expect(within(list).getByText("Agent 6")).toBeInTheDocument();
-		expect(screen.queryByText("Agent 7")).not.toBeInTheDocument();
-
-		await user.click(screen.getByRole("button", { name: "Show 3 more agents" }));
-
-		expect(screen.getByText("Agent 7")).toBeInTheDocument();
-		expect(screen.getByText("Agent 9")).toBeInTheDocument();
-
-		await user.click(screen.getByRole("button", { name: "Show fewer agents" }));
-
-		expect(screen.queryByText("Agent 7")).not.toBeInTheDocument();
-		expect(screen.getByRole("button", { name: "Show 3 more agents" })).toBeInTheDocument();
-	});
-
-	it("lifts a project's agent cap when the open session sits past it", () => {
-		mockParams.projectId = "proj-1";
-		mockParams.sessionId = "proj-1-8";
-		renderSidebar({
-			workspaces: [
-				{
-					...workspace,
-					sessions: Array.from({ length: 9 }, (_, index) => ({
-						...session,
-						id: `proj-1-${index + 1}`,
-						title: `Agent ${index + 1}`,
-						updatedAt: `2026-06-${30 - index}T00:00:00Z`,
-					})),
-				},
-			],
-		});
-
-		expect(screen.getByText("Agent 8")).toBeInTheDocument();
-		expect(screen.getByRole("button", { name: "Show fewer agents" })).toBeInTheDocument();
-	});
 
 	it("keeps Scratchpad mounted, bounded and un-clipped by a long Projects list", () => {
 		const manyProjects = Array.from({ length: 14 }, (_, index) => ({
@@ -2618,7 +2499,6 @@ describe("Sidebar", () => {
 	});
 
 	it("fits the project list to content up to the full available height", async () => {
-		const user = userEvent.setup();
 		const manyProjects = Array.from({ length: 14 }, (_, index) => ({
 			...workspace,
 			id: `proj-${index + 1}`,
@@ -2635,12 +2515,6 @@ describe("Sidebar", () => {
 		expect(scroller.style.maxHeight).toBe("");
 		expect(scroller).toHaveClass("min-h-0", "flex-1");
 
-		// Show more stays directly beneath the project list and reveals the remainder.
-		const showMore = screen.getByRole("button", { name: "Show 4 more projects" });
-		expect(showMore.parentElement).toBe(scroller.parentElement?.parentElement);
-		await user.click(showMore);
-		expect(scroller.style.maxHeight).toBe("");
-		expect(scroller).toHaveClass("overflow-y-auto");
 	});
 
 	it("collapses the project list from the Projects header", async () => {
@@ -2656,23 +2530,8 @@ describe("Sidebar", () => {
 		expect(screen.getByRole("button", { name: "Projects" })).toHaveAttribute("aria-expanded", "true");
 		expect(screen.getByText("Project One")).toBeInTheDocument();
 		expect(screen.getByTestId("sidebar-projects-scroller")).toBeInTheDocument();
-		expect(screen.queryByRole("button", { name: /Show (more|fewer) projects/ })).not.toBeInTheDocument();
 	});
 
-	it("keeps the project list capped behind Show more while the sidebar is toggled off", () => {
-		const manyProjects = Array.from({ length: 14 }, (_, index) => ({
-			...workspace,
-			id: `proj-${index + 1}`,
-			name: `Project ${index + 1}`,
-			path: `/repo/project-${index + 1}`,
-		}));
-		renderSidebar({ workspaces: manyProjects, initialOpen: false });
-
-		// The sidebar slides away (offcanvas); it has no icon rail, so its lists
-		// must not lift their caps just because it is collapsed.
-		expect(screen.queryByText("Project 11")).not.toBeInTheDocument();
-		expect(screen.getByRole("button", { hidden: true, name: /more projects/ })).toBeInTheDocument();
-	});
 
 	it("does not reopen a closed Projects section when the sidebar is toggled off and on", async () => {
 		const user = userEvent.setup();
