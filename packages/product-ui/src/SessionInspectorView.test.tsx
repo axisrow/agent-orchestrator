@@ -72,15 +72,6 @@ const tabs = [
 ];
 
 describe("SessionInspectorShellView", () => {
-  it("lets side chat own its scrolling and composer padding", () => {
-    render(<SessionInspectorShellView
-      activeView="sideChat" ariaLabel="Session inspector" browserPoppedOut={false}
-      sideChatView={<div data-testid="side-slot" />} tabs={tabs} onViewChange={vi.fn()}
-    />);
-    const body = screen.getByTestId("side-slot").parentElement;
-    expect(body).toHaveClass("p-0", "overflow-hidden");
-    expect(body).not.toHaveClass("p-3", "pb-4", "overflow-y-auto");
-  });
   it("renders the artifacts view under its own tab", () => {
     const withArtifacts = [...tabs, { id: "artifacts" as const, icon: <svg />, label: "Artifacts" }];
     render(<SessionInspectorShellView

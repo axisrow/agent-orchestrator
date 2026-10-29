@@ -35,8 +35,6 @@ for (const theme of ["dark", "light"]) {
 				["Send and selected text", "Send message", "lucide-arrow-up"],
 				["Stop", "Stop turn", "lucide-square"],
 				["Continue", "Continue turn", "lucide-play"],
-				["Side-chat send", "Send message", "lucide-arrow-up"],
-				["Side-chat stop", "Stop turn", "lucide-square"],
 				["Message-edit send", "Send edited message", "lucide-arrow-up"],
 			];
 			for (const [section, label, icon] of cases) {

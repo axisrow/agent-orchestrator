@@ -332,7 +332,6 @@ function useQueuedMessages(snapshot: ConversationSnapshot, excludeTurnId?: strin
 }
 
 export interface ChatWorkspaceProps {
-	onAddToSideChat?: (excerpt: ChatDraftExcerptReference) => void | Promise<void>;
 	annotationNavigationRequest?: { id: string; text: string; messageId?: string; revision?: number };
 	snapshot: ConversationSnapshot;
 	promptSuggestion?: ComposerPromptSuggestion;
@@ -622,7 +621,6 @@ export function ChatWorkspace(props: ChatWorkspaceProps) {
 }
 
 function ChatWorkspaceContent({
-	onAddToSideChat,
 	annotationNavigationRequest,
 	snapshot,
 	promptSuggestion,
@@ -1732,7 +1730,6 @@ function ChatWorkspaceContent({
 							<ChatImageSourceProvider sessionId={snapshot.sessionId} assetBaseUrl={assetBaseUrl} remoteHost={Boolean(activeRemoteHostId)} artifacts={session?.artifactFiles}>
 
 								<Timeline
-							onAddToSideChat={onAddToSideChat}
 									annotationNavigationRef={annotationNavigationRef}
 									key={draftScopeKey}
 									snapshot={snapshot}
@@ -2433,7 +2430,6 @@ const CHAT_INITIAL_VIEWPORT_HEIGHT = 800;
  * this behavior while keeping its own composer.
  */
 export function Timeline({
-	onAddToSideChat,
 	onAddToChat,
 	onForeignAnnotation,
 	annotationNavigationRef,
@@ -2465,7 +2461,6 @@ export function Timeline({
 	startup,
 	arriving = false,
 }: {
-	onAddToSideChat?: ChatWorkspaceProps["onAddToSideChat"];
 	/** Replaces the default "Add to chat" (write to this draft scope's composer). */
 	onAddToChat?: (excerpt: ChatDraftExcerptReference) => void;
 	/** Handles annotations whose source is another conversation. */
@@ -3856,7 +3851,6 @@ export function Timeline({
 					<button type="button" onClick={() => void addSelectionToChat()} className={cn(actionMenuItemClass, "shrink-0 whitespace-nowrap hover:bg-interactive-hover hover:text-foreground")}>
 						<MessageSquarePlus aria-hidden="true" className="size-3.5" /> Add to chat
 					</button>
-					{onAddToSideChat ? <button type="button" className={cn(actionMenuItemClass, "shrink-0 whitespace-nowrap hover:bg-interactive-hover")} onClick={() => { void onAddToSideChat(selectionAction.excerpt); clearSelectionAction(); window.getSelection()?.removeAllRanges(); }}><MessageSquarePlus aria-hidden="true" className="size-3.5" /> {t("sideChat.addToSideChat")}</button> : null}
 				</div>
 			) : null}
 			<div

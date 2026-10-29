@@ -201,7 +201,6 @@ if (typeof window !== "undefined") {
 			restart: async () => ({ state: "starting" }),
 			onStatus: () => () => undefined,
 		},
-		sideChats: { capture: async () => undefined },
 	editorHandoff: {
 			getState: async () => ({
 				targets: [

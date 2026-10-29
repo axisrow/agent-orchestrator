@@ -1,4 +1,4 @@
-import { File, FileText, FolderClosed, MessageSquare } from "lucide-react";
+import { File, FileText, FolderClosed } from "lucide-react";
 import { AppLink } from "./AppLink";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -119,7 +119,7 @@ export type { InspectorView } from "@aoagents/product-ui";
 
 const VIEW_DEFS: {
 	id: InspectorView;
-	labelKey: "inspector.summary" | "inspector.reviewTab" | "inspector.browser" | "inspector.sideChat" | "inspector.files" | "artifacts.title";
+	labelKey: "inspector.summary" | "inspector.reviewTab" | "inspector.browser" | "inspector.files" | "artifacts.title";
 	icon: ReactNode;
 }[] = [
 	{
@@ -152,7 +152,6 @@ const VIEW_DEFS: {
 			</svg>
 		),
 	},
-	{ id: "sideChat", labelKey: "inspector.sideChat", icon: <MessageSquare aria-hidden="true" /> },
 	{
 		id: "files",
 		labelKey: "inspector.files",
@@ -189,7 +188,6 @@ export const SessionInspector = memo(function SessionInspector({
 	onWorkerMessageSent,
 	filesView,
 	browserView,
-	sideChatView,
 	view: viewProp,
 	onViewChange,
 }: {
@@ -211,7 +209,6 @@ export const SessionInspector = memo(function SessionInspector({
 	onWorkerMessageSent?: () => void;
 	filesView?: ReactNode;
 	browserView?: BrowserViewModel;
-	sideChatView?: ReactNode;
 	/** Controlled active tab. Omit to let the inspector own its own selection. */
 	view?: InspectorView;
 	onViewChange?: (view: InspectorView) => void;
@@ -263,8 +260,6 @@ export const SessionInspector = memo(function SessionInspector({
 	const reviewsAvailable = reviewsTabVisible(session);
 	const availableViewDefs = onlyBrowser ? VIEW_DEFS.filter((entry) => entry.id === "browser")
 		: VIEW_DEFS.filter((entry) => (!hostId || entry.id !== "browser" || browserView) && (reviewsAvailable || entry.id !== "reviews")
-			// The host passes a side chat view only where side chats can run.
-			&& (entry.id !== "sideChat" || sideChatView !== undefined)
 			// The Artifacts tab shows only when the session has artifact files to list.
 			&& (entry.id !== "artifacts" || (session?.artifactFiles?.length ?? 0) > 0 || artifactRequestPending));
 	const view: InspectorView = onlyBrowser ? "browser" : availableViewDefs.some((entry) => entry.id === requestedView) ? requestedView : "summary";
@@ -296,7 +291,6 @@ export const SessionInspector = memo(function SessionInspector({
 		// layout/flex entirely — it exists purely as a CSS selector anchor.
 		<div className="session-inspector contents">
 			<SessionInspectorShellView
-				sideChatView={sideChatView ?? <p className="p-4 text-xs text-muted-foreground">{t("sideChat.unavailable")}</p>}
 				activeView={view}
 				ariaLabel={t("inspector.aria")}
 				artifactsView={

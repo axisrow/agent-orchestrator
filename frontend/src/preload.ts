@@ -387,9 +387,6 @@ const api = {
 			};
 		},
 	},
-	sideChats: {
-		capture: (closedSideId?: string, cancelClose = false) => ipcRenderer.invoke("sideChats:capture", closedSideId, cancelClose) as Promise<void>,
-	},
 	editorHandoff: {
 		getState: (sessionId: string, options?: EditorHandoffStateOptions) =>
 			ipcRenderer.invoke("editorHandoff:getState", sessionId, options) as Promise<EditorHandoffState>,

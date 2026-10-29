@@ -195,7 +195,7 @@ c7a99e1ad83c0ea9bfc84e35f679fa2a08e6169f skipped feat(cloud): shareable cloud se
 4b627a940c6ed25dee4cf2ef635a24bf441f4d95 skipped fix(files): bound large reviews and guide safe PR checkouts (#7290) — клэш с параллельной fork-реализацией панели ревью (форк: commit/scope-модель + CommitBrowser; фикс: target-модель + пейджинг); порт пейджинга — отдельная задача, не синк
 a81f681475ecf1627c6c854c1989f9771fa261d8 skipped fix(desktop): revert the cloud startup changes that hid the Coder loader (#7322) — cloud не используем (cloud→selfhosted), решение владельца 2026-10-29
 af1299f29c27b7dd9a45c2f1fa8fb599855efd51 skipped fix(cloud): run any Coder template first Chat start without errors (#7329) — cloud не используем (cloud→selfhosted), решение владельца 2026-10-29
-5bb1fc847dd6ce54f320525ef0095c00575a823d skipped fix(chat): keep the composer pickers in place and responsive (#7309) — отложен на следующий цикл; AgentSwitchPicker.* в форке нет (композер-пикер #6588-семьи не переносился, фича живёт в SwitchAgentDialog/TerminalSwitchAgentButton); ChatWorkspace/TurnSettingsBar — параллельная fork-эволюция настроек тёрна; взятие = перенос апстримной эволюции меню композера, не баг-фикс
+5bb1fc847dd6ce54f320525ef0095c00575a823d skipped fix(chat): keep the composer pickers in place and responsive (#7309) — скип навсегда: композер-пикер не переносим, остаётся SwitchAgentDialog (решение владельца 2026-10-29)
 fdea8d15a52d0ef9375be147255919d5295e4003 skipped feat(browser): consistent Chromium identity, and Chrome mode for agents in the user's own Chrome (#6876)
 bb870bd11c42cf108e889a7c8cbb154f544fb1e9 skipped docs: require before/after evidence in PR descriptions (#7330)
 9d77fb23af06d29e8f44e25e3f3856e79da3fc75 skipped feat(desktop): let the new chat page take pasted images and files (#7313)
@@ -227,7 +227,7 @@ d20217661668cd2887ab0e893fe30be11fbc61e9 skipped feat(desktop): give the dev app
 eb7aa6253e4ce4e2a138e1afe4013c39dda9bf9c skipped fix(desktop): mouse-drag dismiss and fade-out for harness update notice (#7367) — useSwipeToDismiss.ts удалён в форке (DU); зависимость от скипнутого редизайна update notice #7268, отложен
 de13bd2397fcf0d1c11d942dc398ebe6d17c338a skipped feat: unify Add to chat annotations and source status (#6939)
 36beb12e823bd4e1494f7f69e178e77234c8888b skipped feat: navigate file annotations with safe relocation and fallbacks (#6940)
-70e92a80c67a16e0dcfac6716177b362d718152f skipped fix: make side-chat handoffs and close recovery reliable (#7088) — конфликт preload.ts (UU, fork-дельта +16/-1, у форка свои правки preload/userData) — отложен
+70e92a80c67a16e0dcfac6716177b362d718152f skipped fix: make side-chat handoffs and close recovery reliable (#7088) — side chats выпилены из форка целиком (desktop+backend), решение владельца 2026-10-29
 dfe2d752a1da6711ea42c0cd852a993fa40ada56 skipped feat(ui): swipe or drag notification panel rows right to clear them (#7368)
 49951ca73e431bc79fd6e4b4c5ce3ba9414c86c0 skipped perf(frontend): use Pierre's WASM highlighter and skip layout for hidden file tabs (#7369)
 ad553ec6d4d03aea9fd0c5f18cdb4f65792e92d7 skipped feat: add more sidebar and board context menu actions (#7372)
