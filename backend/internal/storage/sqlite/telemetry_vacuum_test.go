@@ -19,7 +19,7 @@ func TestTelemetryIncrementalVacuumUpgrade(t *testing.T) {
 	// Apply the pre-PR schema in one pass; no intermediate snapshots are needed.
 	// Everything below the vacuum migration's version, then migrate() applies
 	// the vacuum upgrade itself.
-	if err := migrateUpTo(db, migrationsFS, 20261028124744440); err != nil {
+	if err := migrateUpTo(db, migrationsFS, migrationVersion(t, "telemetry_incremental_vacuum")-1); err != nil {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
