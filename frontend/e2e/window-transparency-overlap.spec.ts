@@ -17,6 +17,20 @@ async function expectSurfaceTransparency(target: Locator, transparent: boolean) 
 	expect(alpha).toBe(transparent ? 0 : 255);
 }
 
+// A screenshot taken during the sidebar's mount transition can catch a
+// half-painted frame (row composite still fading in), which then reads as
+// "underneath affecting pixels". Wait until two consecutive shots agree.
+async function stableScreenshot(surface: Locator): Promise<Buffer> {
+	let shot = await surface.screenshot({ animations: "disabled" });
+	for (let i = 0; i < 10; i++) {
+		await new Promise((resolve) => setTimeout(resolve, 200));
+		const next = await surface.screenshot({ animations: "disabled" });
+		if (shot.equals(next)) return next;
+		shot = next;
+	}
+	return shot;
+}
+
 async function expectOccludes(surface: Locator, underneath: Locator) {
 	const bounds = await surface.boundingBox();
 	expect(bounds).not.toBeNull();
@@ -26,11 +40,11 @@ async function expectOccludes(surface: Locator, underneath: Locator) {
 	}));
 	expect(cards.some((rect) => rect.top < bounds!.y + bounds!.height && rect.bottom > bounds!.y
 		&& rect.left < bounds!.x + bounds!.width && rect.right > bounds!.x)).toBe(true);
-	const before = await surface.screenshot({ animations: "disabled" });
+	const before = await stableScreenshot(surface);
 	await underneath.evaluateAll((elements) => {
 		for (const element of elements) (element as HTMLElement).style.visibility = "hidden";
 	});
-	const after = await surface.screenshot({ animations: "disabled" });
+	const after = await stableScreenshot(surface);
 	expect(before.equals(after), "content underneath must not affect the surface's pixels").toBe(true);
 	await underneath.evaluateAll((elements) => {
 		for (const element of elements) (element as HTMLElement).style.removeProperty("visibility");
