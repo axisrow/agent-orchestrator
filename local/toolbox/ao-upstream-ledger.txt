@@ -193,8 +193,8 @@ c7a99e1ad83c0ea9bfc84e35f679fa2a08e6169f skipped feat(cloud): shareable cloud se
 9c2faa63ec1da5780e50de4aa52ea8a4a22dacca skipped fix(mobile): shrink the Settings notifications toggle (#7324) — применён скриптом чисто, сброшен по политике mobile-скип (packages/mobile), владелец подтвердил
 4ed070283f0b3c0b836bae9abb91e08481157780 taken fix(chat): keep usage-limit refusals through wake replay, and let a new chat switch account (#7293) — взят 0c946fb64f: код и agent_account_test авто-слились; DU-тест conversation_auto_resume_test.go остался удалён (сторона форка)
 4b627a940c6ed25dee4cf2ef635a24bf441f4d95 skipped fix(files): bound large reviews and guide safe PR checkouts (#7290) — клэш с параллельной fork-реализацией панели ревью (форк: commit/scope-модель + CommitBrowser; фикс: target-модель + пейджинг); порт пейджинга — отдельная задача, не синк
-a81f681475ecf1627c6c854c1989f9771fa261d8 skipped fix(desktop): revert the cloud startup changes that hid the Coder loader (#7322) — конфликт SessionView.test.tsx (UU, fork-дельта +187/-198); фикс cloud-startup (Coder), похоже, не нужен по cloud→selfhosted — отложен
-af1299f29c27b7dd9a45c2f1fa8fb599855efd51 skipped fix(cloud): run any Coder template first Chat start without errors (#7329) — конфликт CloudSessionChatSurface.tsx/.test.tsx (UU, fork-дельта крупная); cloud-фикс, кандидат на скип по cloud→selfhosted — отложен
+a81f681475ecf1627c6c854c1989f9771fa261d8 skipped fix(desktop): revert the cloud startup changes that hid the Coder loader (#7322) — cloud не используем (cloud→selfhosted), решение владельца 2026-10-29
+af1299f29c27b7dd9a45c2f1fa8fb599855efd51 skipped fix(cloud): run any Coder template first Chat start without errors (#7329) — cloud не используем (cloud→selfhosted), решение владельца 2026-10-29
 5bb1fc847dd6ce54f320525ef0095c00575a823d skipped fix(chat): keep the composer pickers in place and responsive (#7309) — конфликт (ChatWorkspace/ModelMenuChoices/TurnSettingsBar/dropdown-menu/useConversation); правит AgentSwitchPicker.* , удалённые в форке (switch-agents не взят) — зависит от скипнутой фичи, отложен
 fdea8d15a52d0ef9375be147255919d5295e4003 skipped feat(browser): consistent Chromium identity, and Chrome mode for agents in the user's own Chrome (#6876)
 bb870bd11c42cf108e889a7c8cbb154f544fb1e9 skipped docs: require before/after evidence in PR descriptions (#7330)
@@ -213,13 +213,13 @@ f2ef7e90192c5afae069fc99b079726d9666b3dc skipped feat(cli): add chat transcript 
 9416ed3f9b8fa9f4567a6adf8fcfd07916edf7bc taken fix(chat): stop showing Claude compaction summaries as user messages (#7328)
 83bb06c741177ad63152170f7285ebb8c5496134 skipped docs(integrations): link the public Orchestrator Bot template and use the Orchestrator name (#7343)
 136d240756a3fc3021fada12d655ed42af194a9f skipped feat(chat): give turns one ending, follow live work, redesign the plan panel (#6884)
-82894fcf9bd1903433feaec71d551b548c0ce3b0 skipped fix(new-chat): stop the Scratchpad composer showing a project-ID validation error (#7321) — конфликт TaskComposer.tsx + SessionChatSurface.tsx + useRememberProjectPermissions.ts (UU), отложен
+82894fcf9bd1903433feaec71d551b548c0ce3b0 skipped fix(new-chat): stop the Scratchpad composer showing a project-ID validation error (#7321) — модуль Scratchpad будет выпилен отдельным циклом (решение владельца 2026-10-29, резать и remote standalone)
 289ea750e3be9c551a68ad5fbc0d5ec89c18fcab skipped feat(mobile): tell a bad phone connection apart from an unreachable machine (#7336)
 121fc2712611572461a18a0ba797e30888ef10e8 skipped feat(mobile): draw AO's automation messages and worker reports as desktop does (#7331)
 0b7d96c67bffc1a3b6d5c78e797102b2eb5e2712 skipped feat(integrations): install and onboard Orchestrator.inc from Orchestrator Bot (#7351)
-161462f0750be3a7454c7d4ad8c8c155fc6e2c4a skipped fix(updater): keep checking after a disk-space refusal and show the offered build notes (#6609) — конфликт auto-updater.ts (UU, fork-дельта +90/-3: у форка свои правки апдейтера, updates off) — отложен
+161462f0750be3a7454c7d4ad8c8c155fc6e2c4a skipped fix(updater): keep checking after a disk-space refusal and show the offered build notes (#6609) — модуль автообновления выпилен из форка целиком 2026-10-29
 7c31f3ad065f2b7bca3d45a7434b034658db6176 skipped fix(cloud): serve artifact byte ranges so video and audio can seek (#7353) — все 4 файла (cloud/internal/artifactstore, httpapi) удалены в форке; автоскрип по cloud→selfhosted
-c3d4cfcaf2e07ea43462fc62d279f5ca199c385f skipped fix(cloud): load cloud artifact media without a CORS request (#7354) — конфликт FileMediaPreview.tsx/.test.tsx (UU, fork-дельта +4/-4 и +5/-0); cloud-фикс, кандидат на скип по cloud→selfhosted — отложен
+c3d4cfcaf2e07ea43462fc62d279f5ca199c385f skipped fix(cloud): load cloud artifact media without a CORS request (#7354) — cloud не используем (cloud→selfhosted), решение владельца 2026-10-29
 b05f69be9849e62a1011e141581934d5f166f682 taken fix: remember sidebar section open state across launches (#7360)
 5f0dc5e0a98005c85a6bf1620fba61f7fc33a343 taken fix(daemon): find Homebrew tmux when a macOS daemon's PATH omits it (#7345)
 418b0227aa60fe42f35ae45f1344b8e8c94a10c8 skipped feat(artifacts): unify Markdown rendering and themed text previews (#7104)
@@ -236,10 +236,10 @@ ad553ec6d4d03aea9fd0c5f18cdb4f65792e92d7 skipped feat: add more sidebar and boar
 1e478c51f0d31ea84f2636e38bab2de2cd61ef2c skipped feat: list other open targets in the editor row submenu (#7374)
 c8be3cbd452eccabdc7001536b917e0572cf5b89 taken fix(codex): find node for npm Codex during login and auth probe (#6371)
 8c269417876ee3effa41b58224d22d2dfbcec603 skipped fix(mobile): keep the model picker on chats that were hibernated (#7339) — применён скриптом чисто (встал в середину истории), отреверчен 0278f18b0e по политике mobile-скип (packages/mobile)
-6e81b7868ad1ab0c451e11c1cc00ef1ecb806fdf skipped fix(desktop): make killed-session page explain itself and offer a visible restore (#5242) — конфликт BrowserPanel.tsx (UU, fork-дельта +9/-9), отложен
-d43a84a29d6226154bdcc30df727453a60af6168 skipped fix(updater): persist local preparation diagnostics (#6856) — конфликт auto-updater.ts (UU, fork-дельта +90/-3, updates off) — тот же класс, что 161462f075, отложен
+6e81b7868ad1ab0c451e11c1cc00ef1ecb806fdf taken fix(desktop): make killed-session page explain itself and offer a visible restore (#5242) — свод 2026-10-29: конфликт контекстный, сторона апстрима; токены форка (accent-strong) не задеты
+d43a84a29d6226154bdcc30df727453a60af6168 skipped fix(updater): persist local preparation diagnostics (#6856) — модуль автообновления выпилен из форка целиком 2026-10-29
 f230a47d94663add09469c9a0564bc84656d502c taken fix(desktop): retry the Node download when building the ACP runtime (#7382)
-d869fb31199bb91717602de16afd692fe35d031a skipped fix(telemetry): prune all expired rows and reclaim disk space (#5178) — конфликт только docs/telemetry.md (UU, fork-дельта +42/-6), код авто-слился; отложен целиком, сводить код+доки вместе
+d869fb31199bb91717602de16afd692fe35d031a taken fix(telemetry): prune all expired rows and reclaim disk space (#5178) — взят 2026-10-29 (d0888ae820): код авто; доки = prune-текст апстрима + agent-switch-секция форка; vacuum-тест адаптирован на форк-раннер (goose снесён)
 4d406ccd9efaf1cee58816ba0175c03131a7fa3b skipped feat(harness): update official-installer and single-binary cask harnesses beside running sessions (#6934)
 144c32f93774b62d262fd4436d2132d7e940559f skipped fix(mobile): connect the scanned machine instead of rejecting it during reconnect (#7347) — конфликт packages/mobile/* + автоскрип по mobile-политике (packages/mobile)
 b692d6c7f3e4aa85435ac6148c15d74b0665d882 skipped feat(computer-use): Added Computer Use Agents via Cua Driver, ao mcp
