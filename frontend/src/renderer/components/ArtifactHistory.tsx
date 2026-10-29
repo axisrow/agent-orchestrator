@@ -13,9 +13,6 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { PanelMessage } from "./WorkspaceDiffView";
 
-// Version rows shown before "Show more".
-const VERSIONS_SHOWN = 8;
-
 // How long after the menu closes the button ignores a tooltip request.
 const TOOLTIP_AFTER_MENU_MS = 400;
 
@@ -110,7 +107,6 @@ export function ArtifactHistoryMenu({
 	const { t } = useTranslation();
 	const [menuOpen, setMenuOpen] = useState(false);
 	const [tooltipOpen, setTooltipOpen] = useState(false);
-	const [showAll, setShowAll] = useState(false);
 	const closedAtRef = useRef(0);
 	const versions = useArtifactVersions({ enabled: true, hostId, path, sessionId });
 	const syncVersions = useSyncArtifactVersions({ hostId, path, sessionId });
@@ -118,7 +114,6 @@ export function ArtifactHistoryMenu({
 	const { data: github } = useQuery({ queryKey: ["github-status"], queryFn: getGitHubStatus, staleTime: 5 * 60_000 });
 	const login = github?.login;
 	const list = versions.data ?? [];
-	const shown = showAll ? list : list.slice(0, VERSIONS_SHOWN);
 	const currentVersion = list[0]?.version;
 	// A restore says which version it came from; the source may have been pruned since.
 	const restoredNoteOf = (version: ArtifactVersionSummary) => {
@@ -163,7 +158,7 @@ export function ArtifactHistoryMenu({
 				) : versions.isSuccess && list.length === 0 ? (
 					<div className="px-2 py-1.5 text-control text-muted-foreground">{t("artifacts.history.empty")}</div>
 				) : (
-					shown.map((version) => {
+					list.map((version) => {
 						const isCurrent = version.version === currentVersion;
 						return (
 							<VersionItem
@@ -179,18 +174,6 @@ export function ArtifactHistoryMenu({
 						);
 					})
 				)}
-				{!showAll && list.length > VERSIONS_SHOWN ? (
-					<DropdownMenuItem
-						className="text-caption text-passive"
-						// Showing the rest keeps the menu open.
-						onSelect={(event) => {
-							event.preventDefault();
-							setShowAll(true);
-						}}
-					>
-						{t("artifacts.history.showMore")}
-					</DropdownMenuItem>
-				) : null}
 			</DropdownMenuContent>
 		</DropdownMenu>
 	);

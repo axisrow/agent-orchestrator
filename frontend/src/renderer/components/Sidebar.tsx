@@ -310,7 +310,7 @@ function useGrabbingCursor(active: boolean) {
 
 /** How the sidebar collapses. Only the "icon" mode shows a rail where every list
  *  must be fully open; "offcanvas" slides the whole sidebar away, and its lists
- *  must keep their open/closed and Show more state while it is hidden. */
+ *  must keep their open/closed state while it is hidden. */
 const SIDEBAR_COLLAPSIBLE: "offcanvas" | "icon" = "offcanvas";
 export const SIDEBAR_DEFAULT_WIDTH = 240;
 /** Floor/ceiling for sidebar resize — pass the same values to useResizable. */
@@ -339,44 +339,9 @@ function sidebarMinWidth(): number {
 		: Math.ceil(brand.getBoundingClientRect().left + brand.scrollWidth + SIDEBAR_BRAND_TRAILING_GAP);
 	return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, fit));
 }
-/** Initial item count shown in expanded sections; Show more/less toggles the remainder.
- *  Collapsed icon rail always shows the full list so projects stay reachable. */
-const SIDEBAR_INITIAL_SECTION_LIMIT = 10;
-/** Initial agent count listed under each expanded project before its own Show more. */
-const SIDEBAR_PROJECT_SESSION_LIMIT = 6;
 /** Section scrollers fill the height their flex parent leaves them and scroll inside it. */
 const SECTION_SCROLLER_CLASS =
 	"scrollbar-none overflow-y-auto overflow-x-hidden overscroll-contain group-data-[collapsible=icon]:overflow-visible";
-
-/** Caps a sidebar list at `limit` behind Show more/less. The cap lifts on its
- *  own when the active item sits past it, until the user collapses it again. */
-function useShowMoreCap<T extends { id: string }>(
-	items: T[],
-	limit: number,
-	activeId: string | undefined,
-	isCollapsed = false,
-) {
-	const [showAll, setShowAll] = useState(false);
-	const [showAllDismissed, setShowAllDismissed] = useState(false);
-	const activeBeyondLimit = useMemo(() => {
-		if (showAll || items.length <= limit || !activeId) return false;
-		return items.findIndex((item) => item.id === activeId) >= limit;
-	}, [activeId, items, limit, showAll]);
-	useEffect(() => setShowAllDismissed(false), [activeId]);
-	useEffect(() => {
-		if (activeBeyondLimit && !showAllDismissed) setShowAll(true);
-	}, [activeBeyondLimit, showAllDismissed]);
-	const listed = useMemo(
-		() => (isCollapsed || showAll || items.length <= limit ? items : items.slice(0, limit)),
-		[isCollapsed, items, limit, showAll],
-	);
-	const toggleShowAll = () => {
-		const next = !showAll;
-		setShowAll(next);
-		setShowAllDismissed(!next);
-	};
-	return { listed, hiddenCount: Math.max(0, items.length - limit), showAll, toggleShowAll };
-}
 
 function SidebarSectionScroller({
 	children,
@@ -662,8 +627,8 @@ export function Sidebar({
 	const selection = useSelection();
 	const { state, setOpen, toggleSidebar } = useSidebar();
 	const isCollapsed = state === "collapsed";
-	// List behavior (force-open sections, lifted Show more caps) belongs to the
-	// icon rail only; toggling an offcanvas sidebar must not change any list.
+	// List behavior (force-open sections) belongs to the icon rail only;
+	// toggling an offcanvas sidebar must not change any list.
 	const isIconRail = isCollapsed && SIDEBAR_COLLAPSIBLE === "icon";
 	const [expandedChromeVisible, setExpandedChromeVisible] = useState(!isCollapsed);
 	// Daemon status for the smoke suite's sr-only mirror in the footer. Null when
@@ -833,12 +798,6 @@ export function Sidebar({
 		() => workspaces.find((workspace) => workspace.kind === STANDALONE_PROJECT_KIND),
 		[workspaces],
 	);
-	const {
-		listed: visibleWorkspaces,
-		hiddenCount: hiddenProjectCount,
-		showAll: showAllProjects,
-		toggleShowAll: toggleShowAllProjects,
-	} = useShowMoreCap(projectWorkspaces, SIDEBAR_INITIAL_SECTION_LIMIT, selection.activeProjectId, isIconRail);
 	const projectContentOpen = (projectWorkspaces.length > 0 || remoteHosts.length > 0) && (projectsOpen || isIconRail);
 	const projectIds = useMemo(
 		() => projectWorkspaces.map((workspace) => workspace.id),
@@ -1141,7 +1100,7 @@ export function Sidebar({
 								>
 									<SidebarMenu className="relative gap-0.5 rounded-lg group-data-[collapsible=icon]:gap-1 group-data-[collapsible=icon]:rounded-none">
 										<AnimatePresence initial={false}>
-											{!workspaceError && visibleWorkspaces.map((workspace) => (
+											{!workspaceError && projectWorkspaces.map((workspace) => (
 												<ProjectItem
 													key={workspace.id}
 													workspace={workspace}
@@ -1209,24 +1168,12 @@ export function Sidebar({
 										/>
 									</SidebarMenu>
 								</SidebarSectionScroller>
-								{!isIconRail && hiddenProjectCount > 0 ? (
-									<ShowMoreRow
-										expanded={showAllProjects}
-										label={
-											showAllProjects
-												? t("shell.showLessProjects")
-												: t("shell.showMoreProjects", { count: hiddenProjectCount })
-										}
-											onClick={toggleShowAllProjects}
-									/>
-								) : null}
 							</AnimatedSectionBody>
 						) : null}
 						{!workspaceError && standaloneWorkspace ? (
 							<ScratchpadSection
 								workspace={standaloneWorkspace}
 								selection={selection}
-								isCollapsed={isIconRail}
 								open={scratchpadOpen}
 								onToggle={() => toggleSection("scratchpad", scratchpadOpen, setScratchpadOpen)}
 							/>
@@ -1483,12 +1430,6 @@ const ProjectItem = memo(function ProjectItem({
 		useSidebarOrderStore.getState().setSessionOrder(projectKey, sessionIds);
 		return () => useSidebarOrderStore.getState().clearSessionOrder(projectKey);
 	}, [projectKey, sessions]);
-	const {
-		listed: listedSessions,
-		hiddenCount: hiddenSessionCount,
-		showAll: showAllSessions,
-		toggleShowAll: toggleShowAllSessions,
-	} = useShowMoreCap(sessions, SIDEBAR_PROJECT_SESSION_LIMIT, selection.activeSessionId);
 	useLayoutEffect(() => {
 		const header = projectHeaderRef.current;
 		const content = projectSessionsRef.current;
@@ -1510,18 +1451,15 @@ const ProjectItem = memo(function ProjectItem({
 			observer?.disconnect();
 			content.style.removeProperty("clip-path");
 		};
-	}, [activeProjectMatches, expanded, showAllSessions]);
+	}, [activeProjectMatches, expanded]);
 	// Stable while the ids are: a rebuilt array would invalidate every sortable row.
-	const listedSessionIds = useStableArray(useMemo(() => listedSessions.map((session) => session.id), [listedSessions]));
+	const sessionIds = useStableArray(useMemo(() => sessions.map((session) => session.id), [sessions]));
 	const commitSessionOrder = useCallback(
 		(next: string[] | null) => {
 			if (!next) return;
-			// Only the listed slice is draggable, so keep the still-hidden tail
-			// behind it rather than letting applyOrder float it to the front.
-			const listed = new Set(next);
-			setSessionOrder([...next, ...sessions.filter((session) => !listed.has(session.id)).map((session) => session.id)]);
+			setSessionOrder(next);
 		},
-		[sessions],
+		[],
 	);
 	// Stable row handlers: selection changes on every session switch, and a new
 	// handler would re-render every row (with its menus, tooltips, and dialogs).
@@ -1924,33 +1862,15 @@ const ProjectItem = memo(function ProjectItem({
 											<SessionReorderList
 										dndId={sessionDndId(projectKey)}
 										testId={`session-list-${projectKey}`}
-												className={cn(
-													"mx-0 ml-3.5 translate-x-0 gap-px border-l-0 px-0 pt-1",
-													hiddenSessionCount > 0 ? "pb-px" : "pb-1",
-												)}
-												sessions={listedSessions}
-												sessionIds={listedSessionIds}
+												className="mx-0 ml-3.5 translate-x-0 gap-px border-l-0 px-0 pt-1 pb-1"
+												sessions={sessions}
+												sessionIds={sessionIds}
 												activeSessionId={selection.activeSessionId}
 												plain={projectDragInProgress}
 												onReorder={commitSessionOrder}
 												onKilled={handleSessionKilled}
 												onOpen={openSession}
 											/>
-											{hiddenSessionCount > 0 ? (
-												// Indented to the session list so its label starts on the status-dot column.
-												<div className="pl-4">
-													<ShowMoreRow
-														className="px-3"
-														expanded={showAllSessions}
-														label={
-															showAllSessions
-																? t("shell.showLessAgents")
-																: t("shell.showMoreAgents", { count: hiddenSessionCount })
-														}
-														onClick={toggleShowAllSessions}
-													/>
-												</div>
-											) : null}
 								</motion.div>
 							</div>
 							</motion.div>
@@ -2004,18 +1924,16 @@ const ProjectItem = memo(function ProjectItem({
 }, projectItemPropsEqual);
 
 /** Projectless ("ad hoc") agents. Their own section under Projects — same
- *  header chrome, own capped scroller, own Show more — instead of a project row
- *  appended to the project list. */
+ *  header chrome, own scroller — instead of a project row appended to the
+ *  project list. */
 function ScratchpadSection({
 	workspace,
 	selection,
-	isCollapsed,
 	open,
 	onToggle,
 }: {
 	workspace: WorkspaceSummary;
 	selection: Selection;
-	isCollapsed: boolean;
 	open: boolean;
 	onToggle: () => void;
 }) {
@@ -2039,24 +1957,12 @@ function ScratchpadSection({
 		useSidebarOrderStore.getState().setSessionOrder(scratchpadKey, sessionIds);
 		return () => useSidebarOrderStore.getState().clearSessionOrder(scratchpadKey);
 	}, [scratchpadKey, sessions]);
-	const {
-		listed: listedSessions,
-		hiddenCount: hiddenSessionCount,
-		showAll,
-		toggleShowAll,
-	} = useShowMoreCap(sessions, SIDEBAR_INITIAL_SECTION_LIMIT, selection.activeSessionId, isCollapsed);
 	// Stable while the ids are: a rebuilt array would invalidate every sortable row.
-	const listedSessionIds = useStableArray(useMemo(() => listedSessions.map((session) => session.id), [listedSessions]));
-	const commitSessionOrder = useCallback(
-		(next: string[] | null) => {
-			if (!next) return;
-			// Only the listed slice is draggable, so keep the still-hidden tail
-			// behind it rather than letting applyOrder float it to the front.
-			const listed = new Set(next);
-			setSessionOrder([...next, ...sessions.filter((session) => !listed.has(session.id)).map((session) => session.id)]);
-		},
-		[sessions],
-	);
+	const sessionIds = useStableArray(useMemo(() => sessions.map((session) => session.id), [sessions]));
+	const commitSessionOrder = useCallback((next: string[] | null) => {
+		if (!next) return;
+		setSessionOrder(next);
+	}, []);
 	const openSession = useLatestCallback((sessionId: string) => {
 		recordManualWorkerOpen(sessionId);
 		selection.goSession(STANDALONE_WORKSPACE_ID, sessionId);
@@ -2130,7 +2036,7 @@ function ScratchpadSection({
 					</div>
 				}
 			/>
-			<AnimatedSectionBody open={open && listedSessions.length > 0} className="min-h-0 flex-1">
+			<AnimatedSectionBody open={open && sessions.length > 0} className="min-h-0 flex-1">
 				<SidebarSectionScroller
 					className={`${SECTION_SCROLLER_CLASS} min-h-0 flex-1`}
 					testId="sidebar-scratchpad-scroller"
@@ -2140,8 +2046,8 @@ function ScratchpadSection({
 						dndId={sessionDndId(STANDALONE_WORKSPACE_ID)}
 						testId={`session-list-${STANDALONE_WORKSPACE_ID}`}
 						className="mx-0 ml-0 translate-x-0 gap-0.5 border-l-0 px-0 py-0.5"
-						sessions={listedSessions}
-						sessionIds={listedSessionIds}
+						sessions={sessions}
+						sessionIds={sessionIds}
 						activeSessionId={selection.activeSessionId}
 						indented={false}
 						onReorder={commitSessionOrder}
@@ -2149,13 +2055,6 @@ function ScratchpadSection({
 						onOpen={openSession}
 					/>
 				</SidebarSectionScroller>
-				{!isCollapsed && hiddenSessionCount > 0 ? (
-					<ShowMoreRow
-						expanded={showAll}
-						label={showAll ? t("shell.showLessAgents") : t("shell.showMoreAgents", { count: hiddenSessionCount })}
-						onClick={toggleShowAll}
-					/>
-				) : null}
 			</AnimatedSectionBody>
 		</div>
 	);
@@ -2884,46 +2783,6 @@ function CloudAccountRailButton({ tabIndex }: { tabIndex: number }) {
 				})}
 			</TooltipContent>
 		</Tooltip>
-	);
-}
-
-/** Releases a section's initial cap. Sits below its section's scroller so the
- *  cap can never hide the control that lifts it. */
-function ShowMoreRow({
-	label,
-	expanded,
-	onClick,
-	className,
-}: {
-	label: string;
-	expanded: boolean;
-	onClick: () => void;
-	className?: string;
-}) {
-	const { t } = useTranslation();
-	const prefersReducedMotion = useReducedMotion();
-	return (
-		<AnimatePresence initial={false} mode="wait">
-			<motion.button
-				key={expanded ? "show-less" : "show-more"}
-				aria-label={label}
-				className={cn(
-					SECTION_ROW_CLASS,
-					NAV_ROW_HIGHLIGHT_HOST_CLASS,
-					"mb-1 shrink-0 rounded-lg text-left text-muted-foreground",
-					className,
-				)}
-				initial={{ opacity: 0, y: 4 }}
-				animate={{ opacity: 1, y: 0 }}
-				exit={{ opacity: 0, y: -4 }}
-				onClick={onClick}
-				transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.14, ease: [0.25, 0.46, 0.45, 0.94] }}
-				type="button"
-			>
-				<NavRowHighlight />
-				<span className="relative z-[1] truncate">{t(expanded ? "shell.showLess" : "shell.showMore")}</span>
-			</motion.button>
-		</AnimatePresence>
 	);
 }
 
