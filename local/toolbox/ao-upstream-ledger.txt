@@ -58,7 +58,7 @@ a7374fd3c3ad7030010f39a02e92bdf6b4416006 taken fix(desktop): only stop an orphan
 beaf8950b5b2f48ea9bb269253398ad3eed3785b skipped perf(storage): bound forked chat-history reads by conversation and cap the WAL file size (#6846)
 01b32837aea888e5886b84b69d48246509d80f64 skipped fix(browser): detect wedged runtime via ping/pong liveness (#5369) (#5603) — у форка своя реализация wedge-детекта, clash с дельтой frontend/src/main
 deff9b1efdd21f9de4d21485d413d06b7b26614e skipped perf(chat): batch streamed text deltas into one SQLite write per flush (#6806)
-6e4860deba648a4ca252548458ce7bd47eb362f4 skipped feat(daemon): hold an exclusive data-dir lock so two daemons never share ao.db (#6799)
+6e4860deba648a4ca252548458ce7bd47eb362f4 taken feat(daemon): hold an exclusive data-dir lock so two daemons never share ao.db (#6799) — порт по решению владельца 2026-10-29 (лечит известную боль SQLITE_BUSY от двух демонов)
 35b406f150c97e9779222c961bd8eb14af634a58 taken fix(settings): show readable local time and UTC in problem reports (#7086)
 fd3b840501902eafe456d3974bc385581e1fa5d5 taken fix(models): cache agent model catalogs per device, not per project (#7049)
 1ceea3a10a934365c471192cf93f031d4168db7d taken fix(chat): cap accumulated tool output and file text before storing it (#6824)
