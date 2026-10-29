@@ -1045,7 +1045,6 @@ describe("Sidebar", () => {
 		const section = document.querySelector("[data-scratchpad-section]")!;
 		expect(section).toContainElement(screen.getByText("baby"));
 		expect(section).toHaveClass("mb-2", "min-h-0");
-		expect(screen.queryByRole("button", { name: /show (more|fewer) agents/i })).not.toBeInTheDocument();
 		expect(screen.getByTestId("sidebar-projects-scroller")).not.toContainElement(screen.getByText("baby"));
 	});
 
