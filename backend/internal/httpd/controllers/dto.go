@@ -3414,7 +3414,7 @@ type UpdateVersionRefreshRequest struct {
 // UpdateScmProxyURLRequest sets or clears the explicit outbound proxy for the
 // daemon's SCM clients. An empty string clears the override.
 type UpdateScmProxyURLRequest struct {
-	URL string `json:"url" example:"socks5h://127.0.0.1:10808"`
+	URL string `json:"url"`
 }
 
 // UpdateChatHibernationRequest flips the daemon-owned idle Chat gate.

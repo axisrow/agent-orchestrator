@@ -58,7 +58,6 @@ import { useCloudScriptRuns } from "../hooks/useCloudScriptRuns";
 import { latestScriptRun } from "../lib/cloud-script-runs";
 import { ResumeAgentControl } from "./ResumeAgentControl";
 import { AwakeControl } from "./AwakeControl";
-import { SessionBranchSummary } from "./SessionBranchSummary";
 import { SessionAccountSummary } from "./SessionAccountSummary";
 import {
 	sessionScmSummaryQueryKey,
@@ -254,7 +253,6 @@ export const SessionInspector = memo(function SessionInspector({
 		if (next !== "artifacts" && artifactRequest) setSettledArtifactRequestKey(artifactRequest.key);
 	}, [artifactRequest, onOpenFiles, onViewChange]);
 	const openReviews = useCallback(() => setView("reviews"), [setView]);
-	const openFilesView = useCallback(() => setView("files"), [setView]);
 	// A persisted/controlled Reviews selection can outlive the last reviewable PR.
 	// Keep the shell on a real, visible tab instead of rendering an empty, unlabelled body.
 	const reviewsAvailable = reviewsTabVisible(session);
@@ -344,7 +342,6 @@ export const SessionInspector = memo(function SessionInspector({
 							hostId={hostId}
 							key={sessionUiKey(session.id, hostId)}
 							onOpenArtifact={onOpenArtifact}
-							onOpenFiles={openFilesView}
 							onOpenReviews={openReviews}
 							session={session}
 						/>
@@ -378,14 +375,12 @@ const SummaryView = memo(function SummaryView({
 	canOpenReviews,
 	onOpenArtifact,
 	hostId,
-	onOpenFiles,
 	onOpenReviews,
 	session,
 }: {
 	canOpenReviews: boolean;
 	onOpenArtifact?: (target: { feedback?: boolean; path: string }) => void;
 	hostId?: string;
-	onOpenFiles: () => void;
 	onOpenReviews: () => void;
 	session: WorkspaceSession;
 }) {
@@ -408,12 +403,10 @@ const SummaryView = memo(function SummaryView({
 	const hasPRs = prCount > 0;
 	const artifacts = sessionArtifacts(session);
 	const hasArtifacts = artifacts.length > 0;
-	const opensPR = hasPRs || session.outputType === "pr" || session.outputType === "pr_artifact";
-	const prSectionTitle = prCount > 1 ? t("inspector.pullRequests", { count: prCount }) : opensPR ? t("inspector.pullRequest") : t("inspector.branch");
+	const prSectionTitle = prCount > 1 ? t("inspector.pullRequests", { count: prCount }) : t("inspector.pullRequest");
 	const artifactSectionTitle = artifacts.length > 1
 		? t("inspector.artifacts", { count: artifacts.length })
 		: t("inspector.artifact");
-	const openPRNumber = prSummaries.find((pr) => pr.state === "open" || pr.state === "draft")?.number;
 	// CI, review, and merge policies act on a PR. Standalone sessions keep the row for Archive.
 	const showSessionControls = hasPRs || session.workspaceId === STANDALONE_WORKSPACE_ID;
 	// Cloud orchestrators list the workers they spawned; local orchestrators
@@ -450,32 +443,24 @@ const SummaryView = memo(function SummaryView({
 				) : undefined
 			}
 			artifactTitle={hasArtifacts ? artifactSectionTitle : undefined}
-			branch={
-				<SessionBranchSummary
-					hostId={hostId}
-					onOpenFiles={onOpenFiles}
-					openPRNumber={openPRNumber}
-					pullRequests={hasPRs ? (
-						<>
-							{prSummaries.map((pr) => (
-								<PRSummaryCard
-									canOpenReviews={canOpenReviews}
-									key={pr.url || pr.htmlUrl || pr.number}
-									showRepository={prsSpanRepositories(prSummaries)}
-									onOpenReviews={onOpenReviews}
-									pr={pr}
-									hostId={hostId}
-									sessionId={session.id}
-									cloudOrgId={session.cloud?.orgId}
-								/>
-							))}
-							{linkedPRs.map((pr) => <LinkedPRCard external={isExternalRepository(pr, projectQuery.data)} key={pr.url} pr={pr} />)}
-						</>
-					) : null}
-					session={session}
-					title={prSectionTitle}
-				/>
-			}
+			pullRequestCards={hasPRs ? (
+				<>
+					{prSummaries.map((pr) => (
+						<PRSummaryCard
+							canOpenReviews={canOpenReviews}
+							key={pr.url || pr.htmlUrl || pr.number}
+							showRepository={prsSpanRepositories(prSummaries)}
+							onOpenReviews={onOpenReviews}
+							pr={pr}
+							hostId={hostId}
+							sessionId={session.id}
+							cloudOrgId={session.cloud?.orgId}
+						/>
+					))}
+					{linkedPRs.map((pr) => <LinkedPRCard external={isExternalRepository(pr, projectQuery.data)} key={pr.url} pr={pr} />)}
+				</>
+			) : undefined}
+			pullRequestTitle={hasPRs ? prSectionTitle : undefined}
 			completion={showSessionControls ? <SessionControls hostId={hostId} session={session} /> : undefined}
 			scripts={session.cloud ? <CloudScriptRunSections cloud={session.cloud} sessionId={session.id} /> : undefined}
 			workers={showWorkers ? <OrchestratorChildrenSection session={session} /> : undefined}
@@ -1057,14 +1042,15 @@ type SortableTimelineEvent = InspectorTimelineEvent & { sortTime: number };
 const TIMELINE_COMMIT_LIMIT = 5;
 
 function ActivityTimeline({ hostId, prs, session }: { hostId?: string; prs: SessionPRSummary[]; session: WorkspaceSession }) {
-	// Keyed on the daemon's commit count, not the shared history query that every
-	// file edit invalidates, so only a new commit refetches.
-	const commitCount = session.branchState?.commits ?? 0;
+	// Refetch on every mount of the Summary tab: the daemon's commit count (the
+	// old invalidation key) is gone with the branch panel, and the shared
+	// history query is invalidated by every file edit.
 	const history = useQuery({
-		queryKey: ["session-activity-commits", hostId ?? "", session.id, commitCount],
+		queryKey: ["session-activity-commits", hostId ?? "", session.id],
 		queryFn: sessionWorkspaceHistoryQueryOptions(session.id, undefined, hostId).queryFn,
 		staleTime: Infinity,
 		placeholderData: (previous) => previous,
+		refetchOnMount: "always",
 		enabled: !session.cloud && session.kind !== "orchestrator",
 	});
 	const events: SortableTimelineEvent[] = [];

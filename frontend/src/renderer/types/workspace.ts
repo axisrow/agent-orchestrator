@@ -105,10 +105,7 @@ export type SessionProvisionStep = {
 	endedAt?: string;
 };
 
-/** The daemon's observed branch facts. `unpushed` equals `commits` until the branch reaches its remote. */
-export type SessionBranchState = { commits: number; remoteBranch?: string; unpushed: number };
-
-/** The session's current launch still runs a harness release an update has replaced. */
+	/** The session's current launch still runs a harness release an update has replaced. */
 export type SessionStaleBinary = { version: string; since: string; switchFailedAt?: string };
 
 export type WorkspaceSession = {
@@ -181,8 +178,6 @@ export type WorkspaceSession = {
 	 * "running" on a failed session is the step that failed.
 	 */
 	provisionSteps?: SessionProvisionStep[];
-	/** The daemon's observed branch facts: commits on top of the base and whether they reached the remote. */
-	branchState?: SessionBranchState;
 	/** Set while the task's generated branch name is on the way; keep `branch` private meanwhile. */
 	branchNaming?: boolean;
 	/** Set while this launch runs a harness release an update replaced; it moves to `version` when idle. */

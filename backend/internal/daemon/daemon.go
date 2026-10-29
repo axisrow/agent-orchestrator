@@ -901,7 +901,7 @@ func Run() error {
 		}()
 		lcStack.LCM.SetUsageFinalizer(usageCollector)
 	}
-	lcStack.scmDone = startSCMObserver(ctx, store, lcStack.LCM, sessionSvc, cfg.GitLab, log, scmHTTP)
+	lcStack.scmDone = startSCMObserver(ctx, store, lcStack.LCM, cfg.GitLab, log, scmHTTP)
 	var prActions prsvc.ActionManager
 	prReader := newMultiSCMProvider(cfg.GitLab, log, scmHTTP)
 	prMerger := newMultiSCMMerger(cfg.GitLab, log, scmHTTP)

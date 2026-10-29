@@ -14287,8 +14287,6 @@ components:
           type: string
         branchNaming:
           type: boolean
-        branchState:
-          $ref: '#/components/schemas/SessionBranchState'
         chatProviderPreserved:
           type: boolean
         createdAt:
@@ -18232,18 +18230,6 @@ components:
       - size
       - updatedAt
       type: object
-    SessionBranchState:
-      properties:
-        commits:
-          type: integer
-        remoteBranch:
-          type: string
-        unpushed:
-          type: integer
-      required:
-      - commits
-      - unpushed
-      type: object
     SessionInterfaceTransition:
       properties:
         completedAt:
@@ -20041,8 +20027,6 @@ components:
     UpdateScmProxyURLRequest:
       properties:
         url:
-          examples:
-          - socks5h://127.0.0.1:10808
           type: string
       required:
       - url

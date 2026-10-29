@@ -70,7 +70,7 @@ func newSCMHTTPClient(src scmProxySource, logger *slog.Logger) *http.Client {
 // for one provider do not prevent the other from starting; the observer is
 // disabled only when no provider has usable credentials. A nil httpClient
 // leaves both providers on their default clients.
-func startSCMObserver(ctx context.Context, store *sqlite.Store, lcm *lifecycle.Manager, branchStates scmobserve.BranchStateReconciler, gitlabCfg config.GitLabConfig, logger *slog.Logger, httpClient *http.Client) <-chan struct{} {
+func startSCMObserver(ctx context.Context, store *sqlite.Store, lcm *lifecycle.Manager, gitlabCfg config.GitLabConfig, logger *slog.Logger, httpClient *http.Client) <-chan struct{} {
 	var named []scmmulti.NamedProvider
 
 	ghProvider, ghErr := newGitHubSCMProvider(logger, httpClient)
@@ -92,7 +92,7 @@ func startSCMObserver(ctx context.Context, store *sqlite.Store, lcm *lifecycle.M
 		return closedDone()
 	}
 	provider := scmmulti.New(named...)
-	observer := scmobserve.New(provider, store, lcm, scmobserve.Config{Logger: logger, ScopedIdentityResolver: provider, BranchStates: branchStates})
+	observer := scmobserve.New(provider, store, lcm, scmobserve.Config{Logger: logger, ScopedIdentityResolver: provider})
 	return observer.Start(ctx)
 }
 

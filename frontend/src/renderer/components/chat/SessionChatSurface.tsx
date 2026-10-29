@@ -616,7 +616,17 @@ export const SessionChatSurface = memo(function SessionChatSurface({
 				onLoadOlder={loadOlder}
 				busy={commands.busy}
 				excerptsEnabled
-				onSend={commands.send}
+				onSend={(text, attachments, clientMessageId, excerpts) => commands.send({
+					text,
+					attachments,
+					clientMessageId,
+					excerpts: excerpts?.map((excerpt) => ({
+						conversationId: excerpt.conversationId,
+						messageId: excerpt.messageId,
+						revision: excerpt.revision,
+						text: excerpt.text,
+					})),
+				})}
 				commandError={commands.error}
 				onDecide={commands.resolve}
 				onResolveInput={commands.resolveInput}

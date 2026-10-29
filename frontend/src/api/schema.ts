@@ -4971,7 +4971,6 @@ export interface components {
             autoReviewEnabled: boolean;
             branch?: string;
             branchNaming?: boolean;
-            branchState?: components["schemas"]["SessionBranchState"];
             chatProviderPreserved: boolean;
             /** Format: date-time */
             createdAt: string;
@@ -6474,11 +6473,6 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
-        SessionBranchState: {
-            commits: number;
-            remoteBranch?: string;
-            unpushed: number;
-        };
         SessionInterfaceTransition: {
             /** Format: date-time */
             completedAt?: null | string;
@@ -7180,7 +7174,6 @@ export interface components {
             displayName: string;
         };
         UpdateScmProxyURLRequest: {
-            /** @example socks5h://127.0.0.1:10808 */
             url: string;
         };
         UpdateSessionInterfaceRequest: {

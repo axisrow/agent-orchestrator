@@ -282,7 +282,6 @@ var schemaNames = map[string]string{ //nolint:gosec // Public OpenAPI type names
 	"DomainIssueID":                   "IssueID",
 	"DomainSession":                   "Session",
 	"DomainSessionProvisionStep":      "SessionProvisionStep",
-	"DomainSessionBranchState":        "SessionBranchState",
 	"DomainSessionStaleBinary":        "SessionStaleBinary",
 	"DomainSessionWait":               "SessionWait",
 	"DomainProjectConfig":             "ProjectConfig",

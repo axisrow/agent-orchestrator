@@ -266,7 +266,6 @@ export function SessionInspectorSummaryView({
 	activityTitle,
 	artifactCards,
 	artifactTitle,
-	branch,
 	completion,
 	context,
 	pullRequestCards,
@@ -281,7 +280,6 @@ export function SessionInspectorSummaryView({
 	/** Omit alongside {@link artifactTitle} to skip the artifacts section entirely. */
 	artifactCards?: ReactNode;
 	artifactTitle?: string;
-	branch?: ReactNode;
 	completion?: ReactNode;
 	context?: ReactNode;
 	/** Omit alongside {@link pullRequestTitle} to skip the PR section entirely (e.g. no known PR output). */
@@ -301,7 +299,6 @@ export function SessionInspectorSummaryView({
 		<div role="tabpanel">
 			{workers}
 			{context}
-			{branch}
 			{pullRequestTitle ? (
 				<InspectorSection surface={false} title={pullRequestTitle}>
 					<div className="flex flex-col gap-1.5">{pullRequestCards}</div>

@@ -223,10 +223,6 @@ type Service struct {
 	// independently spawn its own git subprocesses for identical work.
 	workspaceGroup singleflight.Group
 	manifestGroup  singleflight.Group
-	// branchStateMu serializes branch-state reconciles and guards branchTips,
-	// each session's last reconciled branch, remote, and base tips.
-	branchStateMu sync.Mutex
-	branchTips    map[domain.SessionID]string
 	// resolveStampOverride injects provider-stamp resolution for tests so
 	// staleness never reads the developer's real ~/.claude. nil uses agentcreds.
 	resolveStampOverride func(ctx context.Context, workingDir string, projectEnv map[string]string) (string, string)
