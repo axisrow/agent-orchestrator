@@ -84,7 +84,13 @@ SET emitted_at = sqlc.arg(emitted_at)
 WHERE project_id = sqlc.arg(project_id) AND delivery_state = 'claimed'
   AND claim_token = sqlc.arg(claim_token);
 
--- name: AcknowledgeEmittedPendingReports :many
+-- name: AcknowledgeAcceptedPendingReports :many
+-- The acceptance-gated settle (fork issue #179): only batches whose durable
+-- correlation id is named by the recipient's current coordination checkpoint
+-- settle - that checkpoint is the semantic acceptance of THIS batch, possibly
+-- after the emit window closed. A truncated tail has no opening tag, credits
+-- no coordination id, and plain prompt activity names no batch: such rows
+-- stay pending and re-emit instead of passing as delivered.
 -- The synthetic claim token exists only to satisfy the delivery-state CHECK:
 -- acknowledged rows must carry a token, and nothing reads it after the ack.
 UPDATE deliveries
@@ -92,6 +98,7 @@ SET delivery_state = 'acknowledged', acknowledged_at = sqlc.arg(acknowledged_at)
     claim_token = 'activity-ack', claimed_at = sqlc.arg(acknowledged_at)
 WHERE project_id = sqlc.arg(project_id) AND delivery_state = 'pending'
   AND emitted_at IS NOT NULL
+  AND delivery_batch_id = sqlc.arg(delivery_batch_id)
 RETURNING id;
 
 -- name: ExpireStalePendingReports :execrows
