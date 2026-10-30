@@ -1,5 +1,6 @@
 import type { SessionPRSummary } from "../hooks/useSessionScmSummary";
 import { sortedPRs, type PRState, type PullRequestFacts, type WorkspaceSession } from "../types/workspace";
+import type { PRReviewState } from "./session-reviews";
 import { appI18n, type PluralMessageKey } from "../i18n";
 import type {
 	PRCardPresentation,
@@ -174,7 +175,7 @@ export function prStatusRows(pr: SessionPRSummary): PRStatusRow[] {
  * The detailed three-row presentation remains available for dense reports,
  * but cards should not repeat the same blocker under Merge and Review.
  */
-export function prCardPresentation(pr: SessionPRSummary): PRCardPresentation {
+export function prCardPresentation(pr: SessionPRSummary, aoReview?: PRReviewState): PRCardPresentation {
 	let primary: PRCardStatus;
 	if (pr.state === "merged") {
 		primary = cardStatus("lifecycle", "pr.card.merged", "success");
@@ -235,6 +236,10 @@ export function prCardPresentation(pr: SessionPRSummary): PRCardPresentation {
 			statusRows.push(cardStatus("ci", pr.ci.state === "pending" ? "pr.card.checksPending" : "pr.card.checksLoading", "neutral", undefined, [], prChecksUrl(pr), true));
 		}
 		statusRows.push(cardStatus("review", "pr.card.reviewStatus", reviewTone(pr.review.decision, pr.review.hasUnresolvedHumanComments), reviewStatusDetail(pr)));
+		// Independent of the review status above: the GitHub requirement and the
+		// AO reviewer verdict are separate facts and never merge into one row.
+		const aoRow = aoReviewCardRow(pr, aoReview);
+		if (aoRow) statusRows.push(aoRow);
 		const mergeable = prCanMerge(pr);
 		if (mergeReasons(pr).includes("github_checks_unavailable")) {
 			return { primary, supporting, statusRows, readiness: {
@@ -279,7 +284,11 @@ function cardStatus(
 		| "pr.card.reviewApproved"
 		| "pr.card.open"
 		| "pr.card.checksPassing"
-		| "pr.card.reviewStatus",
+		| "pr.card.reviewStatus"
+		| "pr.card.aoReviewApproved"
+		| "pr.card.aoReviewChangesRequested"
+		| "pr.card.aoReviewRunning"
+		| "pr.card.aoReviewOutdated",
 	tone: PRDisplayTone,
 	detail?: string,
 	links: PRSummaryLink[] = [],
@@ -310,6 +319,43 @@ function reviewStatusDetail(pr: SessionPRSummary): string {
 		case "review_required": return appI18n.t("pr.review.requiredNotSubmitted");
 		case "none": return appI18n.t("pr.review.notRequired");
 	}
+}
+
+// A run recorded against a different head than the summary's current one is
+// outdated. This re-checks `target_sha` locally because the PR summary and the
+// reviews query refresh on different schedules; a stale approval must never
+// present as current just because the reviews response lags a push.
+function aoRunStale(pr: SessionPRSummary, targetSha: string | undefined): boolean {
+	return Boolean(targetSha && pr.headSha && targetSha.toLowerCase() !== pr.headSha.toLowerCase());
+}
+
+function aoReviewCardRow(pr: SessionPRSummary, ao: PRReviewState | undefined): PRCardStatus | undefined {
+	if (!ao) return undefined;
+	// `ao_review` keeps this row's React key and reviewDetailsAction handling
+	// distinct from the GitHub review-decision row above.
+	const latestStale = aoRunStale(pr, ao.latestRun?.targetSha);
+	if (ao.status === "running" && !latestStale) {
+		return cardStatus("ao_review", "pr.card.aoReviewRunning", "neutral", undefined, [], undefined, true);
+	}
+	if (ao.status === "up_to_date" && !latestStale) {
+		return cardStatus("ao_review", "pr.card.aoReviewApproved", "success");
+	}
+	if (ao.status === "changes_requested" && !latestStale) {
+		return cardStatus("ao_review", "pr.card.aoReviewChangesRequested", "warning");
+	}
+	// A completed verdict against an older head: show it as outdated, never as
+	// current. `previousRun` is the plan's freshest completed verdict on some
+	// other head; a locally-stale latestRun wins because it is the newer one.
+	const outdated = latestStale ? ao.latestRun : ao.previousRun;
+	if (outdated?.verdict === "approved" || outdated?.verdict === "changes_requested") {
+		return cardStatus(
+			"ao_review",
+			"pr.card.aoReviewOutdated",
+			"passive",
+			appI18n.t(outdated.verdict === "approved" ? "pr.card.aoReviewApproved" : "pr.card.aoReviewChangesRequested"),
+		);
+	}
+	return undefined;
 }
 
 function mergeReadinessDetail(pr: SessionPRSummary): string {

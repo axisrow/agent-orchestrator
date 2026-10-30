@@ -400,6 +400,12 @@ const SummaryView = memo(function SummaryView({
 	const prSummaries = sessionPRDisplaySummaries(session, query.data?.prs);
 	const prCount = prSummaries.length + linkedPRs.length;
 	const hasPRs = prCount > 0;
+	// The AO reviewer verdict is a second, independent PR fact (the review-run
+	// table), fetched through the same shared query the Reviews tab uses. Local
+	// sessions only: cloud sessions read review state from the control plane.
+	const reviewsQuery = useQuery(sessionReviewsQueryOptions(session, hasPRs && !session.cloud, undefined, hostId));
+	const aoReviewFor = (pr: SessionPRSummary): PRReviewState | undefined =>
+		reviewsQuery.data?.reviews.find((review) => review.prUrl === pr.url);
 	const artifacts = sessionArtifacts(session);
 	const hasArtifacts = artifacts.length > 0;
 	const prSectionTitle = prCount > 1 ? t("inspector.pullRequests", { count: prCount }) : t("inspector.pullRequest");
@@ -451,6 +457,7 @@ const SummaryView = memo(function SummaryView({
 							showRepository={prsSpanRepositories(prSummaries)}
 							onOpenReviews={onOpenReviews}
 							pr={pr}
+							aoReview={aoReviewFor(pr)}
 							hostId={hostId}
 							sessionId={session.id}
 							cloudOrgId={session.cloud?.orgId}
@@ -880,6 +887,7 @@ function PRSummaryCard({
 	cloudOrgId,
 	onOpenReviews,
 	pr,
+	aoReview,
 	sessionId,
 	showRepository = false,
 }: {
@@ -888,6 +896,8 @@ function PRSummaryCard({
 	cloudOrgId?: string;
 	onOpenReviews: () => void;
 	pr: SessionPRSummary;
+	/** AO reviewer verdict for this PR, from the shared reviews query. */
+	aoReview?: PRReviewState;
 	sessionId: string;
 	/** Label the card with its repository: the session has PRs on several. */
 	showRepository?: boolean;
@@ -896,7 +906,7 @@ function PRSummaryCard({
 	const queryClient = useQueryClient();
 	const workspaceKey = workspaceQueryKeyForHost(hostId);
 	const { client: cloudClient, baseUrl: cloudBaseUrl } = useCloudCp();
-	const presentation = prCardPresentation(pr);
+	const presentation = prCardPresentation(pr, aoReview);
 	const canMerge = prCanMerge(pr) && Boolean(pr.url && pr.headSha);
 	const mergePr = useMutation({
 		mutationFn: async () => {

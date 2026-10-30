@@ -30,7 +30,7 @@ export type PRSummaryPart = {
 };
 
 export type PRCardStatus = {
-	key: "ci" | "merge" | "review" | "lifecycle";
+	key: "ci" | "merge" | "review" | "lifecycle" | "ao_review";
 	label: string;
 	detail?: string;
 	href?: string;
