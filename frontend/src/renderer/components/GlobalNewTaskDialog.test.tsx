@@ -111,18 +111,6 @@ describe("GlobalNewTaskDialog", () => {
 		});
 	});
 
-	it("routes a remote standalone task back to its host", async () => {
-		const user = userEvent.setup();
-		renderDialog();
-		act(() => useUiStore.getState().requestNewTask("__standalone__", "box-b"));
-		expect(await screen.findByTestId("new-task-dialog")).toHaveAttribute("data-host", "box-b");
-		await user.click(screen.getByRole("button", { name: "create" }));
-		expect(navigateMock).toHaveBeenCalledWith({
-			to: "/host/$hostId/session/$sessionId",
-			params: { hostId: "box-b", sessionId: "sess-9" },
-		});
-	});
-
 	it("navigates to the project selected in the new task dialog", async () => {
 		const user = userEvent.setup();
 		renderDialog();

@@ -65,8 +65,6 @@ import {
 	resolveNextNavigationAfterSessionKill,
 	workerSessions,
 	CLOUD_PROJECT_KIND,
-	STANDALONE_PROJECT_KIND,
-	STANDALONE_WORKSPACE_ID,
 } from "../types/workspace";
 import { getOrchestratorStatusDotView, getSessionStatusDotView } from "../lib/session-presentation";
 import { deriveSessionAgentSwitchPresentation } from "../lib/agent-switch-presentation";
@@ -436,11 +434,11 @@ function readExpandedProjectIds(): ReadonlySet<string> {
 }
 
 const sectionsStorageKey = "ao.sidebar.sections";
-type SidebarSection = "pinned" | "projects" | "scratchpad";
+type SidebarSection = "pinned" | "projects";
 
 /** Saved open state per section. A missing entry means open. */
 function readSectionsOpen(): Record<SidebarSection, boolean> {
-	const open = { pinned: true, projects: true, scratchpad: true };
+	const open = { pinned: true, projects: true };
 	if (typeof window === "undefined" || !window.localStorage) return open;
 	try {
 		const saved: unknown = JSON.parse(window.localStorage.getItem(sectionsStorageKey) ?? "null");
@@ -500,7 +498,6 @@ function useSelection() {
 	const goHome = useCallback(() => void navigate({ to: "/" }), [navigate]);
 	const goAutomations = useCallback(() => void navigate({ to: "/automations" }), [navigate]);
 	const goArtifacts = useCallback(() => void navigate({ to: "/artifacts" }), [navigate]);
-	const goStandaloneBoard = useCallback(() => void navigate({ to: "/sessions" }), [navigate]);
 	const goGlobalSettings = useCallback(() => openGlobalSettings(), [openGlobalSettings]);
 	const goConnectMobile = useCallback(() => openGlobalSettings("mobile"), [openGlobalSettings]);
 	const goSettings = useCallback((projectId: string, cloudOrgId?: string) => openProjectSettings(projectId, { cloudOrgId }), [openProjectSettings]);
@@ -510,10 +507,6 @@ function useSelection() {
 	);
 	const goSession = useCallback(
 		(projectId: string, sessionId: string) => {
-			if (projectId === STANDALONE_WORKSPACE_ID) {
-				void navigate({ to: "/sessions/$sessionId", params: { sessionId } });
-				return;
-			}
 			void navigate({
 				to: "/projects/$projectId/sessions/$sessionId",
 				params: { projectId, sessionId },
@@ -533,7 +526,6 @@ function useSelection() {
 		goHome,
 		goAutomations,
 		goArtifacts,
-		goStandaloneBoard,
 		// Settings is a modal — open it in place so the current page (session
 		// terminal, board, etc.) stays underneath.
 		goGlobalSettings,
@@ -541,7 +533,7 @@ function useSelection() {
 		goSettings,
 		goProject,
 		goSession,
-	}), [goArtifacts, goAutomations, goConnectMobile, goGlobalSettings, goHome, goProject, goSession, goSettings, goStandaloneBoard, params.hostId, params.projectId, params.sessionId, pathname]);
+	}), [goArtifacts, goAutomations, goConnectMobile, goGlobalSettings, goHome, goProject, goSession, goSettings, params.hostId, params.projectId, params.sessionId, pathname]);
 }
 
 // Colour tracks the session's board section, preserving SCM state while the
@@ -640,16 +632,13 @@ export function Sidebar({
 	const artifactTotal = useMemo(() => artifactCount(groupArtifactsByProject(workspaces)), [workspaces]);
 	const existingProjectPaths = useMemo(
 		() => workspaces
-			.filter((workspace) => workspace.kind !== STANDALONE_PROJECT_KIND)
 			.map((workspace) => workspace.path)
 			.filter((path): path is string => Boolean(path)),
 		[workspaces],
 	);
 	const openExistingProject = useCallback(
 		(path: string) => {
-			const workspace = workspaces.find(
-				(candidate) => candidate.kind !== STANDALONE_PROJECT_KIND && candidate.path === path,
-			);
+			const workspace = workspaces.find((candidate) => candidate.path === path);
 			if (workspace) selection.goProject(workspace.id);
 		},
 		[selection, workspaces],
@@ -695,7 +684,6 @@ export function Sidebar({
 	// Header clicks are saved. Opening a section to reveal the active session is not.
 	const [pinnedOpen, setPinnedOpen] = useState(() => readSectionsOpen().pinned);
 	const [projectsOpen, setProjectsOpen] = useState(() => readSectionsOpen().projects);
-	const [scratchpadOpen, setScratchpadOpen] = useState(() => readSectionsOpen().scratchpad);
 	const toggleSection = (section: SidebarSection, open: boolean, setOpen: (open: boolean) => void) => {
 		setOpen(!open);
 		saveSectionOpen(section, !open);
@@ -730,15 +718,10 @@ export function Sidebar({
 				return;
 			}
 			// Not rendered yet: its section may be closed. Open only the sections
-			// that hold it, once, then retry. An orchestrator has no row (its
-			// button sits on the project row), so it must not open Scratchpad.
+			// that hold it, once, then retry.
 			if (attempts === 0) {
 				if (pinnedSessions.some((session) => session.id === activeSessionKey)) setPinnedOpen(true);
-				if (standaloneWorkspace?.sessions.some((session) => session.id === activeSessionKey)) {
-					setScratchpadOpen(true);
-				} else {
-					setProjectsOpen(true);
-				}
+				setProjectsOpen(true);
 			}
 			if (attempts++ < 3) frame = requestAnimationFrame(reveal);
 		};
@@ -791,18 +774,7 @@ export function Sidebar({
 		() => applyOrder(workspaces, (workspace) => workspace.id, projectOrder, "start"),
 		[projectOrder, workspaces],
 	);
-
-	// The ad hoc group is a bucket for projectless sessions, not a project: it
-	// gets its own Scratchpad section below the project list rather than a
-	// project row appended to the end of it.
-	const projectWorkspaces = useMemo(
-		() => orderedWorkspaces.filter((workspace) => workspace.kind !== STANDALONE_PROJECT_KIND),
-		[orderedWorkspaces],
-	);
-	const standaloneWorkspace = useMemo(
-		() => workspaces.find((workspace) => workspace.kind === STANDALONE_PROJECT_KIND),
-		[workspaces],
-	);
+	const projectWorkspaces = orderedWorkspaces;
 	const projectContentOpen = (projectWorkspaces.length > 0 || remoteHosts.length > 0) && (projectsOpen || isIconRail);
 	const projectIds = useMemo(
 		() => projectWorkspaces.map((workspace) => workspace.id),
@@ -913,7 +885,6 @@ export function Sidebar({
 				const workspace = remoteWorkspaces.find((candidate) => candidate.hostId === killedSession.hostId && candidate.id === killedSession.workspaceId);
 				const nextRoute = resolveNextNavigationAfterSessionKill(workspace, killedSession.id);
 				if (nextRoute.target === "session") void remoteNavigate(sessionNavigateTarget(killedSession.workspaceId, nextRoute.sessionId, killedSession.hostId));
-				else if (killedSession.workspaceId === STANDALONE_WORKSPACE_ID) selection.goHome();
 				else onOpenRemoteProject(killedSession.hostId, killedSession.workspaceId);
 				return;
 			}
@@ -1175,14 +1146,6 @@ export function Sidebar({
 								</SidebarSectionScroller>
 							</AnimatedSectionBody>
 						) : null}
-						{!workspaceError && standaloneWorkspace ? (
-							<ScratchpadSection
-								workspace={standaloneWorkspace}
-								selection={selection}
-								open={scratchpadOpen}
-								onToggle={() => toggleSection("scratchpad", scratchpadOpen, setScratchpadOpen)}
-							/>
-						) : null}
 					</SidebarGroupContent>
 				</SidebarGroup>
 			</SidebarContent>
@@ -1384,7 +1347,6 @@ const ProjectItem = memo(function ProjectItem({
 }: ProjectItemProps) {
 	const { t } = useTranslation();
 	const nameWithHost = hostLabel ? `${workspace.name} · ${hostLabel}` : workspace.name;
-	const isStandalone = workspace.id === STANDALONE_WORKSPACE_ID;
 	const prefersReducedMotion = useReducedMotion();
 	const activeProjectMatches = selection.activeProjectId === workspace.id;
 	const projectHeaderRef = useRef<HTMLDivElement>(null);
@@ -1418,8 +1380,7 @@ const ProjectItem = memo(function ProjectItem({
 	const showGlobalToast = useUiStore((state) => state.showGlobalToast);
 	const projectIsDragging = isDragged;
 	// Keep completed PR sessions reachable while their runtime still exists.
-	// Only termination removes a worker from the sidebar; archived sessions
-	// stay reachable through the standalone archive view.
+	// Only termination removes a worker from the sidebar.
 	const visibleSessions = useMemo(
 		() => sortedWorkerSessions(workspace.sessions).filter((session) => session.isTerminated !== true),
 		[workspace.sessions],
@@ -1477,8 +1438,6 @@ const ProjectItem = memo(function ProjectItem({
 		const nextRoute = resolveNextNavigationAfterSessionKill(workspace, killedSession.id, sessions);
 		if (nextRoute.target === "session") {
 			selection.goSession(workspace.id, nextRoute.sessionId);
-		} else if (workspace.id === STANDALONE_WORKSPACE_ID) {
-			selection.goHome();
 		} else {
 			selection.goProject(workspace.id);
 		}
@@ -1569,10 +1528,6 @@ const ProjectItem = memo(function ProjectItem({
 	// one-click path back from the orchestrator button.
 	const onProjectClick = () => {
 		if (consumeDragClick(workspace.id)) return;
-		if (isStandalone) {
-			toggleDisclosure();
-			return;
-		}
 		if (!expanded) {
 			toggleDisclosure();
 			selection.goProject(workspace.id);
@@ -1656,7 +1611,7 @@ const ProjectItem = memo(function ProjectItem({
 							<div>
 								{/* project-sidebar__proj-row */}
 								<SidebarMenuButton
-									aria-label={hostLabel ? t(isStandalone ? "shell.toggleProject" : "shell.openProjectDashboard", { name: nameWithHost }) : undefined}
+									aria-label={hostLabel ? t("shell.openProjectDashboard", { name: nameWithHost }) : undefined}
 									aria-current={dashboardActive ? "page" : undefined}
 									aria-expanded={expanded}
 									isActive={projectActive}
@@ -1748,7 +1703,7 @@ const ProjectItem = memo(function ProjectItem({
 							{/* Per-project actions: orchestrator and kebab menu. Inside the scaled visual
 		row, but outside its navigation surface so their own presses stay independent.
 		Always visible (not hover-gated) to avoid CSS :hover group propagation in Chromium. */}
-						{!isStandalone && <div
+						<div
 								className={cn(
 									"sidebar-expanded-chrome z-chrome",
 									ROW_ACTIONS_CLASS,
@@ -1824,7 +1779,7 @@ const ProjectItem = memo(function ProjectItem({
 										</DropdownMenuItem>
 									</DropdownMenuContent>
 								</DropdownMenu>
-							</div>}
+							</div>
 						</div>
 						{/* end outer relative */}
 					</div>
@@ -1911,159 +1866,22 @@ const ProjectItem = memo(function ProjectItem({
 					<Plus aria-hidden="true" />
 					{t("shell.newTask")}
 				</ContextMenuItem>
-				{!isStandalone && <ContextMenuItem onSelect={() => selection.goSettings(workspace.id, workspace.cloudOrgId)}>
+				<ContextMenuItem onSelect={() => selection.goSettings(workspace.id, workspace.cloudOrgId)}>
 					<Settings aria-hidden="true" />
 					{t("shell.projectSettings")}
-				</ContextMenuItem>}
-				{!isStandalone && <ContextMenuItem
+				</ContextMenuItem>
+				<ContextMenuItem
 					className="text-destructive focus:text-destructive [&_svg]:text-destructive focus:[&_svg]:text-destructive"
 					disabled={isRemoving}
 					onSelect={() => void removeProject()}
 				>
 					<Trash2 aria-hidden="true" />
 					{t("shell.removeProjectTitle")}
-				</ContextMenuItem>}
+				</ContextMenuItem>
 			</ContextMenuContent>
 		</ContextMenu>
 	);
 }, projectItemPropsEqual);
-
-/** Projectless ("ad hoc") agents. Their own section under Projects — same
- *  header chrome, own scroller — instead of a project row appended to the
- *  project list. */
-function ScratchpadSection({
-	workspace,
-	selection,
-	open,
-	onToggle,
-}: {
-	workspace: WorkspaceSummary;
-	selection: Selection;
-	open: boolean;
-	onToggle: () => void;
-}) {
-	const { t } = useTranslation();
-	const requestNewTask = useUiStore((state) => state.requestNewTask);
-	// Mirrors the project tree: only termination removes an agent from the
-	// sidebar, so a completed PR session stays reachable.
-	const visibleSessions = useMemo(
-		() => sortedWorkerSessions(workspace.sessions).filter((session) => session.isTerminated !== true),
-		[workspace.sessions],
-	);
-	const [sessionOrder, setSessionOrder] = useState<string[]>([]);
-	const sessions = useMemo(
-		() => applyOrder(visibleSessions, (session) => session.id, sessionOrder, "start"),
-		[sessionOrder, visibleSessions],
-	);
-	// Publish the order shown here so keyboard navigation follows it.
-	const scratchpadKey = sessionUiKey(workspace.id, workspace.hostId);
-	useEffect(() => {
-		const sessionIds = sessions.map((session) => session.id);
-		useSidebarOrderStore.getState().setSessionOrder(scratchpadKey, sessionIds);
-		return () => useSidebarOrderStore.getState().clearSessionOrder(scratchpadKey);
-	}, [scratchpadKey, sessions]);
-	// Stable while the ids are: a rebuilt array would invalidate every sortable row.
-	const sessionIds = useStableArray(useMemo(() => sessions.map((session) => session.id), [sessions]));
-	const commitSessionOrder = useCallback((next: string[] | null) => {
-		if (!next) return;
-		setSessionOrder(next);
-	}, []);
-	const openSession = useLatestCallback((sessionId: string) => {
-		recordManualWorkerOpen(sessionId);
-		selection.goSession(STANDALONE_WORKSPACE_ID, sessionId);
-	});
-	const handleSessionKilled = useLatestCallback((killedSession: WorkspaceSession) => {
-		if (selection.activeSessionId !== killedSession.id) return;
-		const nextRoute = resolveNextNavigationAfterSessionKill(workspace, killedSession.id, sessions);
-		// An ad hoc agent has no project board to fall back to.
-		if (nextRoute.target === "session") {
-			selection.goSession(STANDALONE_WORKSPACE_ID, nextRoute.sessionId);
-		} else {
-			selection.goHome();
-		}
-	});
-
-	return (
-		<div
-			className="sidebar-expanded-chrome mb-2 flex min-h-0 flex-col overflow-hidden group-data-[collapsible=icon]:hidden"
-			data-scratchpad-section=""
-		>
-			<SectionDisclosure
-				label={workspace.name}
-				open={open}
-				onToggle={onToggle}
-				className="group/scratchpad mt-1"
-				trailing={
-					<div className="relative inline-flex items-center">
-						<span
-							className={cn(
-								"pointer-events-none absolute right-full top-0 flex h-full origin-center pr-1.5 scale-[0.8] items-center opacity-0",
-								"transition-[scale] duration-normal ease-[var(--ease-out)]",
-								"motion-reduce:transition-none",
-								"group-has-[:focus-visible]/scratchpad:pointer-events-auto group-has-[:focus-visible]/scratchpad:scale-100 group-has-[:focus-visible]/scratchpad:opacity-100",
-							)}
-							data-scratchpad-archive-action=""
-						>
-							<Tooltip>
-								<TooltipTrigger asChild>
-									<span className="inline-flex">
-										<button
-											aria-label={t("shell.archivedSessions")}
-											className={ROW_ACTION_BUTTON_CLASS}
-											onClick={(event) => {
-												event.stopPropagation();
-												selection.goStandaloneBoard();
-											}}
-											type="button"
-										>
-											<Archive aria-hidden="true" />
-										</button>
-									</span>
-								</TooltipTrigger>
-								<TooltipContent>{t("shell.archivedSessions")}</TooltipContent>
-							</Tooltip>
-						</span>
-						<Tooltip>
-							<TooltipTrigger asChild>
-								<span className="inline-flex">
-									<button
-										aria-label={t("shell.openNewAgent")}
-										className={ROW_ACTION_BUTTON_CLASS}
-										onClick={() => requestNewTask(STANDALONE_WORKSPACE_ID)}
-										type="button"
-									>
-										<Plus aria-hidden="true" />
-									</button>
-								</span>
-							</TooltipTrigger>
-							<TooltipContent>{t("shell.openNewAgent")}</TooltipContent>
-						</Tooltip>
-					</div>
-				}
-			/>
-			<AnimatedSectionBody open={open && sessions.length > 0} className="min-h-0 flex-1">
-				<SidebarSectionScroller
-					className={`${SECTION_SCROLLER_CLASS} min-h-0 flex-1`}
-					testId="sidebar-scratchpad-scroller"
-					wrapperClassName="flex flex-col flex-1"
-				>
-					<SessionReorderList
-						dndId={sessionDndId(STANDALONE_WORKSPACE_ID)}
-						testId={`session-list-${STANDALONE_WORKSPACE_ID}`}
-						className="mx-0 ml-0 translate-x-0 gap-0.5 border-l-0 px-0 py-0.5"
-						sessions={sessions}
-						sessionIds={sessionIds}
-						activeSessionId={selection.activeSessionId}
-						indented={false}
-						onReorder={commitSessionOrder}
-						onKilled={handleSessionKilled}
-						onOpen={openSession}
-					/>
-				</SidebarSectionScroller>
-			</AnimatedSectionBody>
-		</div>
-	);
-}
 
 const PinnedSessionRow = memo(function PinnedSessionRow({
 	session,
@@ -2131,9 +1949,9 @@ const SortableSessionRow = memo(function SortableSessionRow({
 	);
 });
 
-/** The reorderable session list shared by a project's tree and the Scratchpad
- *  section. It owns the drag context; the committed order stays with the caller
- *  so each list keeps its own persistence and slicing rules. */
+/** The reorderable session list for a project's tree. It owns the drag
+ *  context; the committed order stays with the caller so each list keeps its
+ *  own persistence and slicing rules. */
 function SessionReorderList({
 	dndId,
 	testId,
@@ -2999,7 +2817,6 @@ function CreateProjectButton({
 	// reuses this flow via requestCreateProject().
 	const createProjectNonce = useUiStore((state) => state.createProjectNonce);
 	const folderDropRequest = useUiStore((state) => state.folderDropRequest);
-	const requestNewTask = useUiStore((state) => state.requestNewTask);
 	const [hostId, setHostId] = useState<string>();
 	const host = remoteHosts?.find((candidate) => candidate.hostId === hostId);
 	return (
@@ -3020,7 +2837,6 @@ function CreateProjectButton({
 					setHostId(undefined);
 				} else await onCreateProject(input);
 			}}
-			onCreateStandaloneAgent={() => requestNewTask(STANDALONE_WORKSPACE_ID, hostId)}
 			onInitializeProject={(path) => hostId ? onInitializeRemoteProject(hostId, path) : onInitializeProject(path)}
 			onOpenExistingProject={onOpenExistingProject}
 			openSignal={createProjectNonce}

@@ -1,7 +1,7 @@
 import { useWindowZoomFactor } from "../hooks/useWindowZoomFactor";
 import { AppBrowserLinkContext } from "../components/AppLink";
 import { useSessionBrowserLink } from "../hooks/useSessionBrowserLink";
-import { CatchBoundary, createFileRoute, Outlet, useMatch, useMatchRoute, useNavigate, useParams, useRouter } from "@tanstack/react-router";
+import { createFileRoute, Outlet, useMatchRoute, useNavigate, useParams, useRouter } from "@tanstack/react-router";
 import { isCancelledError, useQueryClient } from "@tanstack/react-query";
 import { lazy, memo, Suspense, type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FolderPlus } from "lucide-react";
@@ -33,7 +33,7 @@ import { TitlebarNav } from "../components/TitlebarNav";
 import { WindowTitlebar } from "../components/WindowTitlebar";
 import { preloadXtermTerminal, TerminalCacheProvider } from "../components/TerminalPane";
 import { scheduleIdle } from "../lib/idle";
-import { LazyChunkBoundary, LazyChunkErrorPanel } from "../components/LazyChunkBoundary";
+import { LazyChunkBoundary } from "../components/LazyChunkBoundary";
 import { loadSessionView } from "../lib/session-view-chunk";
 import { agentModelsQueryOptions } from "../hooks/useAgentModelsQuery";
 import { useDaemonStatus } from "../hooks/useDaemonStatus";
@@ -66,7 +66,7 @@ import {
 	hidesShellTopbar,
 } from "../lib/platform";
 import { sidebarIsVisible, sidebarOccupiesLayout, useUiStore } from "../stores/ui-store";
-import { CLOUD_PROJECT_KIND, hasConfiguredOrchestratorAgent, newestActiveOrchestrator, sessionIsActive, STANDALONE_WORKSPACE_ID, toProjectKind, type WorkspaceSession, type WorkspaceSummary } from "../types/workspace";
+import { CLOUD_PROJECT_KIND, hasConfiguredOrchestratorAgent, newestActiveOrchestrator, sessionIsActive, toProjectKind, type WorkspaceSession, type WorkspaceSummary } from "../types/workspace";
 import type { components } from "../../api/schema";
 import { useAgentInventoryTelemetry } from "../hooks/useAgentInventoryTelemetry";
 import { useSessionSwitchSnap } from "../hooks/useSessionSwitchSnap";
@@ -93,7 +93,6 @@ const OrchestratorStartingChat = lazy(() =>
 function preloadOrchestratorStartingChat(): void {
 	void loadOrchestratorStartingChat().catch(() => undefined);
 }
-const SessionView = lazy(() => loadSessionView().then((module) => ({ default: module.SessionView })));
 function preloadSessionView(): void {
 	void loadSessionView().catch(() => undefined);
 }
@@ -138,45 +137,11 @@ function ShellOutlet({ startingChat }: { startingChat: ReactNode }) {
 	return (
 		<>
 			<div className={cn("relative flex min-h-0 flex-1 flex-col", settingsOpen && "hidden")}>
-				<div className={startingChat ? "absolute inset-0 invisible pointer-events-none" : "contents"} inert={startingChat ? true : undefined}><Outlet /><LocalSessionHost /></div>
+				<div className={startingChat ? "absolute inset-0 invisible pointer-events-none" : "contents"} inert={startingChat ? true : undefined}><Outlet /></div>
 				{startingChat}
 			</div>
 			<SettingsPane />
 		</>
-	);
-}
-
-function captureSessionViewCrash(error: Error) {
-	void captureRendererException(error, { source: "react-error-boundary", operation: "session_view" });
-}
-
-/**
- * Project sessions and scratchpads are separate routes, so rendering
- * SessionView from each route remounted the whole session surface (chat,
- * terminals, inspector) on every switch between them. Both routes render
- * nothing; this host keeps one SessionView mounted at a stable position and
- * only swaps its props. Remote host routes stay keyed per session.
- */
-function LocalSessionHost() {
-	const scratchpadSessionId = useMatch({
-		from: "/_shell/sessions/$sessionId",
-		shouldThrow: false,
-		select: (match) => match.params.sessionId,
-	});
-	const projectSession = useMatch({
-		from: "/_shell/projects/$projectId_/sessions/$sessionId",
-		shouldThrow: false,
-		select: (match) => match.params,
-	});
-	const { org } = useCloudOrg();
-	const sessionId = projectSession?.sessionId ?? scratchpadSessionId;
-	if (!sessionId) return null;
-	return (
-		<CatchBoundary errorComponent={LazyChunkErrorPanel} getResetKey={() => sessionId} onCatch={captureSessionViewCrash}>
-			<Suspense fallback={null}>
-				<SessionView cloudOrgId={org?.id} projectId={projectSession?.projectId} sessionId={sessionId} />
-			</Suspense>
-		</CatchBoundary>
 	);
 }
 
@@ -499,7 +464,7 @@ function ShellLayout() {
 	// looking at the project, so the picker never shows a loading flash the
 	// first time they actually open the dialog.
 	useEffect(() => {
-		if (!scopedProjectId || scopedProjectId === STANDALONE_WORKSPACE_ID) return;
+		if (!scopedProjectId) return;
 		const projectQueryKey = ["project", scopedProjectId];
 		void queryClient
 			.prefetchQuery({
@@ -563,7 +528,7 @@ const replacementErrorCount = Object.keys(orchestratorReplacementErrors).length;
 		!daemonStatus.code &&
 		(daemonStatus.state !== "ready" || workspaceStartupState === "loading" || (!workspaceQuery.isSuccess && !workspaceQuery.isError));
 	// Session shortcuts walk the sidebar's own order (pinned, projects in the
-	// user's drag order, scratchpad), not the daemon's raw list, so "next" always
+	// user's drag order), not the daemon's raw list, so "next" always
 	// means the row below the current one on screen.
 	const sidebarSessionOrder = useCallback(() => {
 		const { projectOrder, sessionOrders } = useSidebarOrderStore.getState();
@@ -1227,19 +1192,16 @@ const replacementErrorCount = Object.keys(orchestratorReplacementErrors).length;
 	// New session (⌘N / Ctrl+Shift+N) is detected in the main process and
 	// delivered here, so it fires even when focus is inside xterm or a native
 	// Browser-preview view. The shell owns the routing: open the New Task flow
-	// for the in-scope project, or a standalone agent when no project is in scope.
+	// for the in-scope project (local or remote).
 	useEffect(
 		() =>
 			aoBridge.app.onNewSessionShortcut(() => {
 			if (routeParams.hostId) {
 				if (routeParams.projectId) requestNewTask(routeParams.projectId, routeParams.hostId);
-				else requestNewTask(STANDALONE_WORKSPACE_ID, routeParams.hostId);
 				return;
 			}
 				if (scopedProjectId) {
 					requestNewTask(scopedProjectId);
-				} else {
-					requestNewTask(STANDALONE_WORKSPACE_ID);
 				}
 			}),
 		[routeParams.hostId, routeParams.projectId, scopedProjectId, requestNewTask],

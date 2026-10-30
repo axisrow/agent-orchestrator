@@ -1,7 +1,7 @@
 import { useRouter } from "@tanstack/react-router";
 import { useEffect } from "react";
 
-// Local, scratchpad, and remote session routes.
+// Local and remote session routes.
 const SESSION_PATH = /\/sessions?\/[^/]+\/?$/;
 export const SESSION_SWITCHING_ATTR = "data-session-switching";
 // Upper bound when a navigation never reports rendered (blocked or superseded).

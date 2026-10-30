@@ -16,7 +16,6 @@ import {
 	Globe,
 	LoaderCircle,
 	Lock,
-	MessageSquarePlus,
 	X,
 	XCircle,
 } from "lucide-react";
@@ -157,7 +156,6 @@ export function CreateProjectFlow({
 	mode = "single_repo",
 	onCreateProject,
 	onInitializeProject,
-	onCreateStandaloneAgent,
 	onDismiss,
 	onOpenExistingProject,
 	onSelectHost,
@@ -184,7 +182,6 @@ export function CreateProjectFlow({
 	onCloneProject?: (input: CloneProjectInput) => Promise<void>;
 	onCreateProject: (input: CreateProjectInput) => Promise<void>;
 	onInitializeProject: (path: string) => Promise<void>;
-	onCreateStandaloneAgent?: () => void;
 	onDismiss?: () => void;
 	onOpenExistingProject?: (path: string) => void | Promise<void>;
 	onSelectHost?: (hostId?: string) => void;
@@ -785,7 +782,7 @@ export function CreateProjectFlow({
 							<CloudSignInPanel disabled={isBusy} onBack={() => setOffering("local")} onSignIn={cloudSignIn} />
 						)
 					) : (
-						<ImportSourcePicker cloudEnabled={!hostId && cloudEnabled} disabled={isBusy || !connected} onCloudSelect={() => setOffering("cloud")} onSelect={selectSource} onCreateStandaloneAgent={onCreateStandaloneAgent} hostId={hostId} hostLabel={hostLabel} remoteHosts={remoteHosts} onSelectHost={onSelectHost} />
+						<ImportSourcePicker cloudEnabled={!hostId && cloudEnabled} disabled={isBusy || !connected} onCloudSelect={() => setOffering("cloud")} onSelect={selectSource} hostId={hostId} hostLabel={hostLabel} remoteHosts={remoteHosts} onSelectHost={onSelectHost} />
 					)}
 					{error && !folderPickerOpen && selectedPath === null && (
 						<p className="text-caption leading-body text-error" role="status">
@@ -810,7 +807,6 @@ export function CreateProjectFlow({
 						onCloudSelect={() => setOffering("cloud")}
 						onCloudBack={() => setOffering("local")}
 						onSignIn={cloudSignIn}
-						onCreateStandaloneAgent={onCreateStandaloneAgent}
 						open={modePickerOpen && !settingsOpen}
 						onOpenChange={(open) => {
 							if (isBusy) return;
@@ -1193,7 +1189,6 @@ function CreateProjectSourceDialog({
 	onCloudBack,
 	onSignIn,
 	onOpenChange,
-	onCreateStandaloneAgent,
 	onSelect,
 	onSelectHost,
 	open,
@@ -1212,7 +1207,6 @@ function CreateProjectSourceDialog({
 	onCloudSelect: () => void;
 	onCloudBack: () => void;
 	onOpenChange: (open: boolean) => void;
-	onCreateStandaloneAgent?: () => void;
 	onSelect: (source: ProjectSource) => void;
 	onSelectHost?: (hostId?: string) => void;
 	open: boolean;
@@ -1240,7 +1234,7 @@ function CreateProjectSourceDialog({
 								<CloudSignInPanel dialog disabled={disabled} onBack={onCloudBack} onSignIn={onSignIn} />
 							)
 						) : (
-							<ImportSourcePicker cloudEnabled={cloudEnabled} closeDisabled={closeDisabled} disabled={disabled} hostId={hostId} hostLabel={hostLabel} remoteHosts={remoteHosts} onSelectHost={onSelectHost} onCloudSelect={onCloudSelect} onClose={() => onOpenChange(false)} onSelect={onSelect} onCreateStandaloneAgent={onCreateStandaloneAgent} dialog />
+							<ImportSourcePicker cloudEnabled={cloudEnabled} closeDisabled={closeDisabled} disabled={disabled} hostId={hostId} hostLabel={hostLabel} remoteHosts={remoteHosts} onSelectHost={onSelectHost} onCloudSelect={onCloudSelect} onClose={() => onOpenChange(false)} onSelect={onSelect} dialog />
 						)}
 					</div>
 				</Dialog.Content>
@@ -2047,7 +2041,6 @@ function ImportSourcePicker({
 	remoteHosts = [],
 	onCloudSelect,
 	onClose,
-	onCreateStandaloneAgent,
 	onSelect,
 	onSelectHost,
 }: {
@@ -2060,15 +2053,10 @@ function ImportSourcePicker({
 	remoteHosts?: readonly RemoteHost[];
 	onCloudSelect?: () => void;
 	onClose?: () => void;
-	onCreateStandaloneAgent?: () => void;
 	onSelect: (source: ProjectSource) => void;
 	onSelectHost?: (hostId?: string) => void;
 }) {
 	const { t } = useTranslation();
-	const createStandaloneAgent = () => {
-		onClose?.();
-		onCreateStandaloneAgent?.();
-	};
 	const localSources: Array<{ source: ProjectSource; icon: ReactNode; label: string; description: string }> = [
 		{
 			source: "clone",
@@ -2153,14 +2141,6 @@ function ImportSourcePicker({
 								</span>
 							</button>
 						))}
-						{onCreateStandaloneAgent ? (
-							<button type="button" className="group flex min-h-[76px] items-center gap-3 px-3.5 py-3 text-left hover:bg-accent/50 active:bg-accent disabled:pointer-events-none disabled:opacity-50" aria-label={t("home.newStandaloneAgent")} disabled={disabled} onClick={createStandaloneAgent}>
-								<span className="grid w-9 shrink-0 place-items-center text-muted-foreground group-hover:text-foreground">
-									<MessageSquarePlus className="size-5" aria-hidden="true" strokeWidth={1.8} />
-								</span>
-								<span><span className="block text-sm font-medium">{t("home.newStandaloneAgent")}</span><span className="mt-0.5 block text-[12px] leading-5 text-muted-foreground">{t("createProject.standaloneDesc")}</span></span>
-							</button>
-						) : null}
 					</div>
 				</div>
 			</div>

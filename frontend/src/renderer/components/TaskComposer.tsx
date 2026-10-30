@@ -33,8 +33,6 @@ import { createCloudSession } from "../lib/cloud-session-create";
 import { agentModelDisplayLabel, isConcreteModelID, modelChoiceLabel, splitClaudeModels } from "../lib/agent-model-choices";
 import { fallbackEffort } from "../lib/effort";
 import {
-	buildRankedAgentOptions,
-	DEFAULT_AGENT_PRIORITY_RANK,
 	isLaunchableAgent,
 	isReadyAgent,
 } from "../lib/agent-select-options";
@@ -50,7 +48,6 @@ import { useModelCatalogAuthRecovery } from "../hooks/useModelCatalogAuthRecover
 import { useUiStore } from "../stores/ui-store";
 import { ModelCatalogNotice } from "./ModelCatalogNotice";
 import { NativeModePicker } from "./NativeModePicker";
-import { STANDALONE_WORKSPACE_ID } from "../types/workspace";
 import { AgentModelCombobox } from "./settings/AgentModelCombobox";
 import { EffortPicker, type EffortAvailability } from "./settings/EffortPicker";
 import { effortChoices, useModelTuning } from "./settings/ModelTuningControls";
@@ -173,7 +170,6 @@ export function TaskComposer({
 	const cloudProjects = useCloudProjectsQuery();
 	const cloudProject = (cloudProjects.data ?? []).find((project) => project.id === projectId);
 	const isCloudProject = !hostId && Boolean(cloudProject);
-	const isStandalone = projectId === STANDALONE_WORKSPACE_ID;
 	const preferenceContext = hostId ? `${hostId}:${projectId ?? ""}` : projectId ?? "";
 	const persistedPreferences = useMemo(
 		() => readTaskComposerPreferences(preferenceContext),
@@ -265,50 +261,17 @@ export function TaskComposer({
 		[hostId, queryClient, t],
 	);
 
-	const createStandaloneTask = useCallback(
-		async (input: CreateTaskInput): Promise<string> => {
-			try {
-			const displayName = input.brief.trim().slice(0, 100) || input.agent || "Standalone agent";
-			const { data, error } = await (hostId ? clientForHost(hostId) : apiClient).POST("/api/v1/sessions", {
-				headers: input.attachments?.length ? { "X-AO-Attachment-Upload": "1" } : undefined,
-				body: {
-					clientRequestId: input.clientRequestId,
-					kind: "worker",
-					harness: input.agent as components["schemas"]["SpawnSessionRequest"]["harness"],
-					prompt: input.brief,
-					displayName,
-					model: input.model,
-					...(input.effort ? { effort: input.effort } : {}),
-					...(input.mode ? { mode: input.mode } : {}),
-					...(input.approvalMode ? { approvalMode: input.approvalMode } : {}),
-					...(input.attachments && input.attachments.length > 0 ? { attachments: input.attachments } : {}),
-				},
-			});
-			if (error) {
-				throw new TaskCreateError(apiErrorMessage(error, t("newTask.unableToStart")), apiErrorCode(error), error.details);
-			}
-			if (!data?.session.id) throw new Error(t("newTask.noSession"));
-			void captureRendererEvent("ao.renderer.task_create_succeeded", { scope: "standalone" });
-			return data.session.id;
-			} catch (err) {
-				void captureRendererEvent("ao.renderer.task_create_failed", { scope: "standalone" });
-				throw err instanceof Error ? err : new Error(t("newTask.unableToStart"));
-			}
-		},
-		[hostId, t],
-	);
-
 	const createTask = useCallback(
 		(input: CreateTaskInput): Promise<string> =>
-			isStandalone ? createStandaloneTask(input) : isCloudProject ? createCloudTask(input) : createDaemonTask(input),
-		[isStandalone, isCloudProject, createStandaloneTask, createCloudTask, createDaemonTask],
+			isCloudProject ? createCloudTask(input) : createDaemonTask(input),
+		[isCloudProject, createCloudTask, createDaemonTask],
 	);
 
 	const projectQuery = useQuery({
 		// A cloud project lives in the control plane, not the local daemon, so this
 		// local lookup would 404 (PROJECT_NOT_FOUND); skip it for cloud projects.
 		queryKey: hostId ? ["project", hostId, projectId] : ["project", projectId],
-		enabled: Boolean(projectId) && !isCloudProject && !isStandalone,
+		enabled: Boolean(projectId) && !isCloudProject,
 		queryFn: async () => {
 			const { data, error: apiError } = await (hostId ? clientForHost(hostId) : apiClient).GET("/api/v1/projects/{id}", {
 				params: { path: { id: projectId ?? "" } },
@@ -374,19 +337,7 @@ export function TaskComposer({
 	// (the single source), with readiness derived from the user's provider connections.
 	const cloudConnectionsQuery = useProviderConnections();
 	const cloudAgents = useMemo(() => cloudAgentInfos(cloudConnectionsQuery.data), [cloudConnectionsQuery.data]);
-	const standaloneDefaultAgent = useMemo(() => {
-		if (!isStandalone || !agentCatalog) return "";
-		return (
-			buildRankedAgentOptions({
-				agents: agentCatalog.agents,
-				priorityRank: DEFAULT_AGENT_PRIORITY_RANK,
-				fallbackAgents: [],
-			}).find(isReadyAgent)?.id ?? ""
-		);
-	}, [agentCatalog, isStandalone]);
-	const configuredDefaultAgent = isStandalone
-		? standaloneDefaultAgent
-		: configuredProjectAgent;
+	const configuredDefaultAgent = configuredProjectAgent;
 	const rememberedAgent = persistedPreferences?.lastAgent ?? "";
 	const availableAgents = isCloudProject ? cloudAgents : agentCatalog?.agents;
 	const rememberedAgentIsAvailable = Boolean(
@@ -522,15 +473,10 @@ export function TaskComposer({
 	const selectedMode = mode || (modelTouched ? (catalogUsesModes ? catalogDefaultOption : "") : defaultModeForSelectedAgent);
 	const selectedModelOrMode = (selectedModel || selectedMode).trim();
 	const projectModelOrMode = projectModelForSelectedAgent || projectModeForSelectedAgent;
-	const requestedModel = isStandalone
-		// Standalone sessions have no project config to inherit. If the UI shows a
-		// concrete catalog default, send it explicitly; otherwise the native agent
-		// may launch with a different harness-owned default than the one displayed.
-		? (isConcreteModelID(selectedModelOrMode) ? selectedModelOrMode : undefined)
-		: selectedModelOrMode && selectedModelOrMode !== projectModelOrMode && (
-				selectedModelOrMode !== catalogDefaultOption || isConcreteModelID(projectModelOrMode) ||
-				(!catalogUsesModes && !projectModelOrMode)
-			) ? selectedModelOrMode : undefined;
+	const requestedModel = selectedModelOrMode && selectedModelOrMode !== projectModelOrMode && (
+			selectedModelOrMode !== catalogDefaultOption || isConcreteModelID(projectModelOrMode) ||
+			(!catalogUsesModes && !projectModelOrMode)
+		) ? selectedModelOrMode : undefined;
 	const rememberedEffortIsExplicit = Boolean(
 		rememberedConfigForSelectedAgent &&
 			Object.prototype.hasOwnProperty.call(rememberedConfigForSelectedAgent, "effort"),
@@ -571,8 +517,7 @@ export function TaskComposer({
 	// With no provider default for the reported levels AO picks one, shows it as
 	// selected, and sends it, so the picker matches what the task runs with.
 	// A seeded catalog default is not a provider default: the spawn must carry
-	// it explicitly (standalone included), or the gateway downgrades to the
-	// agent's own runtime default.
+	// it explicitly, or the gateway downgrades to the agent's own runtime default.
 	const seededDefaultEffort = effortModel?.effortsSeeded ? effortModel?.defaultEffort || "" : "";
 	const aoDefaultEffort = requiresTuiFallback
 		? undefined
@@ -581,14 +526,9 @@ export function TaskComposer({
 			: fallbackEffort(effortOptions, implicitEffort);
 	const effectiveEffort = effort && effort !== "default"
 		? effort
-		: aoDefaultEffort ?? (isStandalone && effortOptions.includes(implicitEffort) ? implicitEffort : "");
+		: aoDefaultEffort ?? "";
 	const requestedEffort = isCloudProject
 		? effort || cloudDefaultEffort || undefined
-		: isStandalone
-		// Standalone sessions have no project role to inherit from. Send the
-		// concrete effort shown by the picker even when the UI is retrying in TUI
-		// mode, otherwise the native harness may use a different default.
-		? (effectiveEffort || undefined)
 		: effortTouched || rememberedEffortIsExplicit
 			? !effectiveEffort || effectiveEffort === implicitEffort ? undefined : effectiveEffort
 			// Untouched, the picker still displays the seeded catalog default; a
@@ -609,9 +549,8 @@ export function TaskComposer({
 	const canSubmit =
 		hostConnected &&
 		Boolean(projectId) &&
-		(!isStandalone || selectedAgent !== "") &&
 		(!hostId || Boolean(agentCatalog?.agents.some((candidate) => candidate.id === selectedAgent && isLaunchableAgent(candidate)))) &&
-		(isCloudProject || isStandalone || projectQuery.data !== undefined) &&
+		(isCloudProject || projectQuery.data !== undefined) &&
 		(!hostId || (agentsQuery.isSuccess && settings !== undefined));
 	const remoteLoadError = !hostId ? undefined : !hostConnected ? t("remote.hostOffline") :
 		[projectQuery.error, agentsQuery.error].find((cause): cause is Error => cause instanceof Error)?.message ?? settingsError ??
@@ -798,7 +737,7 @@ export function TaskComposer({
 			model={{
 				agentId: selectedAgent,
 				agentLabel: selectedAgentLabel,
-				projectId: isStandalone ? "" : (projectId ?? ""),
+				projectId: projectId ?? "",
 				disabled: isSubmitting,
 				value: selectedModel,
 				mode: selectedMode,

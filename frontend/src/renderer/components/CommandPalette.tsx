@@ -38,7 +38,6 @@ import {
 	findProjectOrchestrator,
 	hasConfiguredOrchestratorAgent,
 	openPRs,
-	STANDALONE_WORKSPACE_ID,
 	workerSessions,
 } from "../types/workspace";
 import { useUiStore } from "../stores/ui-store";
@@ -419,9 +418,6 @@ export function CommandPalette() {
 					// Modal — do not route to /settings (that legacy path redirects home).
 					useUiStore.getState().openGlobalSettings();
 					break;
-				case "/sessions/$sessionId":
-					void navigate({ to: target.to, params: target.params });
-					break;
 				case "/projects/$projectId":
 					void navigate({ to: target.to, params: target.params });
 					break;
@@ -430,7 +426,6 @@ export function CommandPalette() {
 					break;
 				case "/projects/$projectId/sessions/$sessionId":
 				case "/host/$hostId/project/$projectId/session/$sessionId":
-				case "/host/$hostId/session/$sessionId":
 					void navigate({ to: target.to, params: target.params });
 					break;
 			}
@@ -439,22 +434,18 @@ export function CommandPalette() {
 	);
 
 	const sessionRoute = useCallback(
-		(projectId: string, sessionId: string): Extract<NavigateTarget, { to: "/sessions/$sessionId" | "/projects/$projectId/sessions/$sessionId" }> => {
-			return projectId === STANDALONE_WORKSPACE_ID
-				? { to: "/sessions/$sessionId", params: { sessionId } }
-				: { to: "/projects/$projectId/sessions/$sessionId", params: { projectId, sessionId } };
+		(projectId: string, sessionId: string): { to: "/projects/$projectId/sessions/$sessionId"; params: { projectId: string; sessionId: string } } => {
+			return { to: "/projects/$projectId/sessions/$sessionId", params: { projectId, sessionId } };
 		},
 		[],
 	);
 
 	const fileSessionRoute = useCallback((target: WorkspaceFileSearchTarget): NavigateTarget => {
 		if (target.hostId) {
-			return target.projectId === STANDALONE_WORKSPACE_ID
-				? { to: "/host/$hostId/session/$sessionId", params: { hostId: target.hostId, sessionId: target.sessionId } }
-				: {
-					to: "/host/$hostId/project/$projectId/session/$sessionId",
-					params: { hostId: target.hostId, projectId: target.projectId, sessionId: target.sessionId },
-				};
+			return {
+				to: "/host/$hostId/project/$projectId/session/$sessionId",
+				params: { hostId: target.hostId, projectId: target.projectId, sessionId: target.sessionId },
+			};
 		}
 		return sessionRoute(target.projectId, target.sessionId);
 	}, [sessionRoute]);
@@ -877,7 +868,6 @@ export function CommandPalette() {
 					openSignal={createProjectFlowOpenSignal}
 					onCloneProject={cloneProject}
 					onCreateProject={createProject}
-					onCreateStandaloneAgent={() => useUiStore.getState().requestNewTask(STANDALONE_WORKSPACE_ID)}
 					onInitializeProject={initializeProjectRepository}
 					onOpenExistingProject={openExistingProject}
 					existingProjectPaths={workspaces.map((workspace) => workspace.path)}
