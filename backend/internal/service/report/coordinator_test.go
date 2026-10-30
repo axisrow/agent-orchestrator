@@ -467,6 +467,22 @@ func TestCoordinatorSettlesOnlyMatchedAcceptance(t *testing.T) {
 	if store.reports[0].DeliveryState != domain.ReportPending {
 		t.Fatalf("record = %+v, want the batch still pending", store.reports[0])
 	}
+	// A coordination checkpoint naming some OTHER batch's id settles nothing:
+	// after the generation gate came out, the correlation-id match is the only
+	// remaining settle proof.
+	orch.Metadata = domain.SessionMetadata{
+		ConversationCheckpointState:      domain.ConversationCheckpointCoordination,
+		ConversationCheckpointGeneration: "live-launch",
+		ConversationCheckpointTurnID:     "report-batch:rpt_some_other_batch",
+		RuntimeLaunchID:                  "live-launch",
+	}
+	store.sessions = []domain.SessionRecord{orch}
+	if n, err := c.SettleEmittedReports(ctx, "orch"); err != nil || n != 0 {
+		t.Fatalf("settle with foreign coordination turn id = %d, err = %v, want 0", n, err)
+	}
+	if store.reports[0].DeliveryState != domain.ReportPending {
+		t.Fatalf("record = %+v, want the batch still pending", store.reports[0])
+	}
 	// A coordination checkpoint from a superseded runtime generation still
 	// carries THIS batch's acceptance: daemon restarts rotate the launch id,
 	// and the replay must settle accepted content instead of re-emitting it

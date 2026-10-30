@@ -260,7 +260,9 @@ func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.Proje
 	// never re-emit the content (fork issue #184). A checkpoint can only name
 	// a batch that was submitted, so a first delivery never matches.
 	if accepted, err := c.settleAcceptedBatch(ctx, target, batch); err != nil {
-		return err
+		// Every other post-claim failure releases the claim; a transient store
+		// error must not strand the rows claimed and invisible to scheduling.
+		return c.release(ctx, batch, err)
 	} else if accepted {
 		return nil
 	}
@@ -416,7 +418,9 @@ func (c *Coordinator) PreparePiggyback(ctx context.Context, target domain.Sessio
 	// content twice: the checkpoint naming this batch id is the acceptance of
 	// content already in the conversation (fork issue #184).
 	if accepted, err := c.settleAcceptedBatch(ctx, rec, batch); err != nil {
-		return PreparedBatch{}, err
+		// Release before the send fails: a stranded claim would sit invisible
+		// to scheduling until the next daemon restart.
+		return PreparedBatch{}, c.release(ctx, batch, err)
 	} else if accepted {
 		return PreparedBatch{}, nil
 	}
