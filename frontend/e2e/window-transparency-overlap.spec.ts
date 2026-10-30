@@ -75,7 +75,6 @@ for (const theme of ["dark", "light"]) {
 			if (transparency) await expect(page.locator("html")).toHaveAttribute("data-window-translucent", "true");
 
 			const scroller = page.getByTestId("sidebar-projects-scroller");
-			await scroller.getByRole("button", { name: /Show .* more/ }).click();
 			await scroller.evaluate((element) => { element.scrollTop = 48; });
 			const project = page.locator('[data-project-drag-row][data-project-id="fake-proj"]');
 			await expectSurfaceTransparency(project, transparency);

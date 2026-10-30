@@ -240,16 +240,11 @@ test("diagnostic: large workspace snapshot, refetch race, and SSE replay keep th
 
 	const initialCache = await cacheState(page);
 	expect(initialCache.sessionIds[443]).toBe("seed-443");
-	// A project lists its 6 most recent agents until Show more lifts the cap.
+	// No list cap anymore: all 491 agents render at once, in this phase and in
+	// every phase below, so the cache-refresh timings there include that rerender.
 	const sessionRows = sessionList(page).locator("[data-session-row]");
-	await expect(sessionRows).toHaveCount(6);
-	await page.getByRole("button", { name: "Show 485 more agents" }).click();
 	await expect(sessionRows).toHaveCount(491);
 	await expect(sessionList(page).getByText("Index 443 target worker", { exact: true })).toBeVisible();
-	// Return to the default cap: the phases below time cache refreshes, which a
-	// dev-build rerender of 491 rows would otherwise dominate. New workers sort first.
-	await page.getByRole("button", { name: "Show fewer agents" }).click();
-	await expect(sessionRows).toHaveCount(6);
 
 	// Arrange a new-worker event to arrive from inside the next fetchWorkspaces
 	// snapshot. The returned snapshot is deliberately pre-creation, so the event

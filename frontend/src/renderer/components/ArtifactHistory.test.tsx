@@ -69,15 +69,12 @@ describe("ArtifactHistoryMenu", () => {
 		expect(syncMock).toHaveBeenCalledTimes(1);
 	});
 
-	it("shows eight versions, then the rest after Show more", async () => {
+	it("lists every version in full, however many there are", async () => {
 		const many = Array.from({ length: 11 }, (_, i) => v(11 - i, i % 2 ? "user" : "agent", 1000 - i * 100, "claude-code"));
 		renderMenu(many);
 		await userEvent.click(screen.getByRole("button", { name: "Version history" }));
 		const menu = await screen.findByRole("menu");
-		expect(within(menu).getAllByRole("menuitem")).toHaveLength(9);
-		await userEvent.click(within(menu).getByText("Show more"));
 		expect(within(menu).getAllByRole("menuitem")).toHaveLength(11);
-		expect(within(menu).queryByText("Show more")).toBeNull();
 	});
 
 	it("says where a restored version came from", async () => {
