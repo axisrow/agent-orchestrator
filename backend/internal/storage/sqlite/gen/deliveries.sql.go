@@ -11,24 +11,32 @@ import (
 	"time"
 )
 
-const acknowledgeEmittedPendingReports = `-- name: AcknowledgeEmittedPendingReports :many
+const acknowledgeAcceptedPendingReports = `-- name: AcknowledgeAcceptedPendingReports :many
 UPDATE deliveries
 SET delivery_state = 'acknowledged', acknowledged_at = ?1,
     claim_token = 'activity-ack', claimed_at = ?1
 WHERE project_id = ?2 AND delivery_state = 'pending'
   AND emitted_at IS NOT NULL
+  AND delivery_batch_id = ?3
 RETURNING id
 `
 
-type AcknowledgeEmittedPendingReportsParams struct {
-	AcknowledgedAt sql.NullTime
-	ProjectID      string
+type AcknowledgeAcceptedPendingReportsParams struct {
+	AcknowledgedAt  sql.NullTime
+	ProjectID       string
+	DeliveryBatchID string
 }
 
+// The acceptance-gated settle (fork issue #179): only batches whose durable
+// correlation id is named by the recipient's current coordination checkpoint
+// settle - that checkpoint is the semantic acceptance of THIS batch, possibly
+// after the emit window closed. A truncated tail has no opening tag, credits
+// no coordination id, and plain prompt activity names no batch: such rows
+// stay pending and re-emit instead of passing as delivered.
 // The synthetic claim token exists only to satisfy the delivery-state CHECK:
 // acknowledged rows must carry a token, and nothing reads it after the ack.
-func (q *Queries) AcknowledgeEmittedPendingReports(ctx context.Context, arg AcknowledgeEmittedPendingReportsParams) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, acknowledgeEmittedPendingReports, arg.AcknowledgedAt, arg.ProjectID)
+func (q *Queries) AcknowledgeAcceptedPendingReports(ctx context.Context, arg AcknowledgeAcceptedPendingReportsParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, acknowledgeAcceptedPendingReports, arg.AcknowledgedAt, arg.ProjectID, arg.DeliveryBatchID)
 	if err != nil {
 		return nil, err
 	}

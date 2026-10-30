@@ -241,10 +241,12 @@ func TestReportStoreDurableBatchIdentityExcludesLaterReportsOnRetry(t *testing.T
 	}
 }
 
-// TestReportStoreSettlesOnlyEmittedPendingReports pins the recipient-activity
-// ack: shown-but-unacknowledged pending reports settle, while a report that
-// was never shown and a batch held by a live claim keep their state.
-func TestReportStoreSettlesOnlyEmittedPendingReports(t *testing.T) {
+// TestReportStoreSettlesOnlyAcceptedBatches pins the acceptance-gated settle:
+// only the shown pending batch whose delivery batch id matches the accepted
+// correlation id settles; a mismatched id settles nothing (a truncated tail
+// credits no batch id, fork issue #179), a never-shown report and a batch
+// held by a live claim keep their state.
+func TestReportStoreSettlesOnlyAcceptedBatches(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 	seedProject(t, s, "ao")
@@ -261,6 +263,7 @@ func TestReportStoreSettlesOnlyEmittedPendingReports(t *testing.T) {
 	if err != nil || len(claimed) != 1 {
 		t.Fatalf("claimed=%+v err=%v", claimed, err)
 	}
+	batchID := claimed[0].DeliveryBatchID
 	if _, err := s.MarkReportBatchEmitted(ctx, "ao", "emit-token", now); err != nil {
 		t.Fatal(err)
 	}
@@ -272,8 +275,12 @@ func TestReportStoreSettlesOnlyEmittedPendingReports(t *testing.T) {
 	if _, err = s.CreateReport(ctx, unshown); err != nil {
 		t.Fatal(err)
 	}
-	n, err := s.AcknowledgeEmittedReportBatches(ctx, "ao", now.Add(time.Second))
-	if err != nil || n != 1 {
+	// An acceptance naming a different id — a session send, or a truncated
+	// tail that carried no opening tag and credits no batch — settles nothing.
+	if n, err := s.AcknowledgeAcceptedReportBatches(ctx, "ao", "session-send:other", now.Add(time.Second)); err != nil || n != 0 {
+		t.Fatalf("mismatched settle=%d err=%v, want 0", n, err)
+	}
+	if n, err := s.AcknowledgeAcceptedReportBatches(ctx, "ao", batchID, now.Add(time.Second)); err != nil || n != 1 {
 		t.Fatalf("settled=%d err=%v, want 1", n, err)
 	}
 	got, ok, err := s.GetReport(ctx, shown.ID)
@@ -283,12 +290,12 @@ func TestReportStoreSettlesOnlyEmittedPendingReports(t *testing.T) {
 	if got, ok, err = s.GetReport(ctx, unshown.ID); err != nil || !ok || got.DeliveryState != domain.ReportPending {
 		t.Fatalf("unshown=%+v ok=%v err=%v, want pending", got, ok, err)
 	}
-	// A live claim is never touched by the activity ack.
+	// A live claim is never touched by the acceptance settle.
 	next, err := s.ClaimPendingReportBatch(ctx, "ao", "hold-token", now.Add(2*time.Second))
 	if err != nil || len(next) != 1 || next[0].ID != unshown.ID {
 		t.Fatalf("claimed=%+v err=%v", next, err)
 	}
-	if n, err = s.AcknowledgeEmittedReportBatches(ctx, "ao", now.Add(3*time.Second)); err != nil || n != 0 {
+	if n, err := s.AcknowledgeAcceptedReportBatches(ctx, "ao", batchID, now.Add(3*time.Second)); err != nil || n != 0 {
 		t.Fatalf("settled=%d err=%v, want 0 while the batch holds a claim", n, err)
 	}
 	if got, _, err = s.GetReport(ctx, unshown.ID); err != nil || got.DeliveryState != domain.ReportClaimed || got.ClaimToken != "hold-token" {

@@ -5244,11 +5244,14 @@ func (m *Manager) send(ctx context.Context, id domain.SessionID, message, client
 	case sessionguard.SuppressedInputGated:
 		return fmt.Errorf("send %s: %w", id, ErrSwitchInProgress)
 	}
-	// A prompt that reached the pane proves the recipient is being driven, so
-	// its already-shown report batches are settled (fork issue #159). Chat
-	// sessions never reach this path — sendChat handled them above with the
-	// same settle inline — and the optional interface keeps chat-less fakes
-	// intact. Best-effort: a settle failure never fails the delivered send.
+	// A prompt that reached the pane leaves its durable coordination checkpoint
+	// on the session; only report batches that checkpoint names — late semantic
+	// acceptances of the batch itself — settle there (fork issues #159, #179).
+	// Plain pane activity settles nothing: a batch whose acceptance never
+	// matched must stay scheduled and re-emit, not vanish. Chat sessions never
+	// reach this path — sendChat handled them above with the same settle
+	// inline — and the optional interface keeps chat-less fakes intact.
+	// Best-effort: a settle failure never fails the delivered send.
 	if settler, ok := m.chat.(interface {
 		SettleEmittedReports(context.Context, domain.SessionID) error
 	}); ok {

@@ -182,21 +182,22 @@ func (s *Store) AcknowledgeReportBatch(ctx context.Context, projectID domain.Pro
 	return len(rows), nil
 }
 
-// AcknowledgeEmittedReportBatches settles every shown-but-unacknowledged
-// pending report of a project — the recipient-activity ack. Batches claimed by
-// an in-flight delivery attempt stay untouched: that attempt's own cycle
-// fences them with its token.
-func (s *Store) AcknowledgeEmittedReportBatches(ctx context.Context, projectID domain.ProjectID, at time.Time) (int, error) {
-	if projectID == "" || at.IsZero() {
+// AcknowledgeAcceptedReportBatches settles shown pending reports of a project
+// whose delivery batch id matches the recipient's accepted coordination id —
+// the durable evidence of a semantic acceptance of that batch, possibly after
+// the emit window closed. Batches the checkpoint does not name, never-shown
+// reports, and rows claimed by an in-flight delivery attempt stay untouched.
+func (s *Store) AcknowledgeAcceptedReportBatches(ctx context.Context, projectID domain.ProjectID, acceptedBatchID string, at time.Time) (int, error) {
+	if projectID == "" || acceptedBatchID == "" || at.IsZero() {
 		return 0, domain.ErrInvalidReport
 	}
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
-	rows, err := s.qw.AcknowledgeEmittedPendingReports(ctx, gen.AcknowledgeEmittedPendingReportsParams{
-		ProjectID: string(projectID), AcknowledgedAt: nullTime(at),
+	rows, err := s.qw.AcknowledgeAcceptedPendingReports(ctx, gen.AcknowledgeAcceptedPendingReportsParams{
+		ProjectID: string(projectID), DeliveryBatchID: acceptedBatchID, AcknowledgedAt: nullTime(at),
 	})
 	if err != nil {
-		return 0, fmt.Errorf("acknowledge emitted reports for project %s: %w", projectID, err)
+		return 0, fmt.Errorf("acknowledge accepted reports for project %s: %w", projectID, err)
 	}
 	return len(rows), nil
 }
