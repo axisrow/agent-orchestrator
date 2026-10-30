@@ -4,6 +4,7 @@ package persistenthost
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"syscall"
 	"time"
@@ -30,3 +31,12 @@ func killProviderProcess(_ context.Context, cmd *exec.Cmd) error {
 	}
 	return aoprocess.TerminateGroup(cmd.Process.Pid, 2*time.Second)
 }
+
+// openHostFile opens a chat host file for reading. Unlinking an open file is
+// always allowed here, so a reader never blocks the host's cleanup.
+func openHostFile(path string) (*os.File, error) {
+	return os.Open(path) //nolint:gosec // AO-owned path derived from validated session id.
+}
+
+// hostFileBusy is a Windows sharing conflict, which Unix does not have.
+func hostFileBusy(error) bool { return false }
