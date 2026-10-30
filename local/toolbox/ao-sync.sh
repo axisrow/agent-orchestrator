@@ -1,10 +1,14 @@
 #!/bin/bash
 # ao-sync.sh — синхронизировать fork/main с upstream origin/main.
 #
-# ДВА РЕЖИМА (политика 2026-10-21: «из апстрима только багфиксы, фичи не нужны
+# ТРИ РЕЖИМА (политика 2026-10-21: «из апстрима только багфиксы, фичи не нужны
 # совсем»):
 #
-#   fixes-only (дефолт, без аргументов):
+#   (без аргументов) = --new: read-only обзор неразобранного апстрима (ниже).
+#     Сам синк — ВСЕГДА явным флагом: мутации по «sync-by-reflex» выключены
+#     с 2026-10-30.
+#
+#   fixes-only (--fixes-only; дефолт до 2026-10-30, сейчас — явный флаг):
 #     fetch → backup-тег → классификация fork/main..origin/main по ЛЕДЖЕРУ
 #     (local/toolbox/ao-upstream-ledger.txt) → cherry-pick -x только
 #     типизированных fix-коммитов → остальное в леджер как skipped →
@@ -24,7 +28,7 @@
 #     fork/main не переписывается, force-push не нужен. (Сжатие дельты обратно
 #     в 1 коммит — отдельный ручной squash-пасс, не часть синка.)
 #
-#   --new (read-only, 2026-10-30):
+#   --new (read-only, режим по умолчанию с 2026-10-30):
 #     fetch → тот же дифф против леджера, что в fixes-only → печать
 #     неклассифицированных апстрим-коммитов («<sha> <subject>») и exit 0.
 #     Ничего не пишет: без backup-тега, без маркера, без записей в леджер;
@@ -50,14 +54,16 @@
 set -e
 # NB: без `set -u` — та же причина, что в rebuild-ao.sh (macOS /bin/bash 3.2).
 
-# Режим синка (см. шапку): fixes-only — дефолт с 2026-10-21, --merge-all — старый.
+# Режим запуска (см. шапку). Дефолт — read-only обзор; сам синк — явным
+# флагом: --fixes-only (политика 2026-10-21) или --merge-all (старое поведение).
 MODE="fixes-only"
-LIST_ONLY=0
+LIST_ONLY=1
 case "${1:-}" in
-  --merge-all) MODE="merge-all" ;;
-  --new) LIST_ONLY=1 ;;
+  --merge-all) MODE="merge-all"; LIST_ONLY=0 ;;
+  --fixes-only) LIST_ONLY=0 ;;
+  --new) ;;
   "") ;;
-  *) echo "!! неизвестный аргумент '$1' (допустимо: --merge-all, --new)" >&2; exit 1 ;;
+  *) echo "!! неизвестный аргумент '$1' (допустимо: --fixes-only, --merge-all, --new)" >&2; exit 1 ;;
 esac
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"

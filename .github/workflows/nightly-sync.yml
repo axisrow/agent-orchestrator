@@ -80,7 +80,7 @@ jobs:
           git status -sb
 
       - name: Run fixes-only sync
-        run: bash local/toolbox/ao-sync.sh
+        run: bash local/toolbox/ao-sync.sh --fixes-only # без аргументов скрипт даёт read-only обзор (2026-10-30)
 
       - name: Push fork main (green syncs only)
         if: success()

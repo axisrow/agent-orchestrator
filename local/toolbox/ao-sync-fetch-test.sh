@@ -52,7 +52,9 @@ OLD_MAIN="$(git rev-parse main)"
 # Копия скрипта рядом с фикстурой: SCRIPT_DIR/.. не содержит .git, поэтому
 # REPO_ROOT разрешится в $PWD (фикстуру), а не в настоящий репо.
 cp "$SRC" "$WORK/ao-sync.sh"
-OUT="$(bash "$WORK/ao-sync.sh" 2>&1 || true)"
+# --fixes-only явно: без аргументов скрипт с 2026-10-30 даёт read-only обзор,
+# и тест «зеленел» бы, проверяя не тот путь.
+OUT="$(bash "$WORK/ao-sync.sh" --fixes-only 2>&1 || true)"
 
 printf '%s' "$OUT" | grep -q 'git fetch origin' || fail "резюме не выполнило git fetch. Вывод:
 $OUT"
