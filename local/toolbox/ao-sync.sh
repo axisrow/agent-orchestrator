@@ -24,6 +24,15 @@
 #     fork/main не переписывается, force-push не нужен. (Сжатие дельты обратно
 #     в 1 коммит — отдельный ручной squash-пасс, не часть синка.)
 #
+#   --new (read-only, 2026-10-30):
+#     fetch → тот же дифф против леджера, что в fixes-only → печать
+#     неклассифицированных апстрим-коммитов («<sha> <subject>») и exit 0.
+#     Ничего не пишет: без backup-тега, без маркера, без записей в леджер;
+#     чистое дерево не требуется. Единственный способ отвечать на «что
+#     нового у апстрима»: merge-base в cherry-pick-модели синка не двигается
+#     и «новизну» не показывает (инцидент 2026-10-30: «245 новых» против
+#     6 реальных).
+#
 # Цель: ловить типичные отказы (коллизия номера миграции, забытый `npm install`
 # после новой зависимости, рассинхрон regen-артефактов) ЗА СЕКУНДЫ, до того как
 # они всплывут через 5 минут `npm run package` или после запуска демона.
@@ -43,10 +52,12 @@ set -e
 
 # Режим синка (см. шапку): fixes-only — дефолт с 2026-10-21, --merge-all — старый.
 MODE="fixes-only"
+LIST_ONLY=0
 case "${1:-}" in
   --merge-all) MODE="merge-all" ;;
+  --new) LIST_ONLY=1 ;;
   "") ;;
-  *) echo "!! неизвестный аргумент '$1' (допустимо: --merge-all)" >&2; exit 1 ;;
+  *) echo "!! неизвестный аргумент '$1' (допустимо: --merge-all, --new)" >&2; exit 1 ;;
 esac
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
@@ -65,6 +76,32 @@ fi
 cd "$REPO_ROOT"
 
 echo "==> репо: $REPO_ROOT (ветка: $(git rev-parse --abbrev-ref HEAD))"
+
+# 0. --new: read-only список неразобранных апстрим-коммитов. Тот же дифф
+#    против леджера, что и в fixes-only ниже; без мутаций (fetch не в счёт)
+#    и без требования чистого дерева — запрос совместим с незавершённым
+#    синком. Merge-base здесь не участвует.
+if [ "$LIST_ONLY" = "1" ]; then
+  LEDGER="$REPO_ROOT/local/toolbox/ao-upstream-ledger.txt"
+  touch "$LEDGER"
+  echo "==> git fetch origin..."
+  git fetch origin
+  LIST_SHAS="$(git rev-parse --git-dir)/ao-sync-listnew-shas"
+  awk '{print $1}' "$LEDGER" > "$LIST_SHAS"
+  NEW_COMMITS="$(git rev-list --no-merges fork/main..origin/main | grep -vxF -f "$LIST_SHAS" || true)"
+  rm -f "$LIST_SHAS"
+  if [ -z "$NEW_COMMITS" ]; then
+    echo "==> новых неклассифицированных апстрим-коммитов нет (fork/main..origin/main)."
+    exit 0
+  fi
+  LIST_COUNT="$(printf '%s\n' "$NEW_COMMITS" | grep -c . || true)"
+  echo "==> неклассифицированных апстрим-коммитов: $LIST_COUNT (fork/main..origin/main):"
+  printf '%s\n' "$NEW_COMMITS" | head -40 | git show -s --format='%H %s' --stdin
+  if [ "$LIST_COUNT" -gt 40 ]; then
+    echo "    … и ещё $((LIST_COUNT - 40)); полный синк разберёт их в леджер."
+  fi
+  exit 0
+fi
 
 # 1. Guard: рабочее дерево обязано быть чистым — иначе merge может всё смешать.
 #    Леджер апстрим-дельты исключён: его пишет сам скрипт во время синка, грязь
