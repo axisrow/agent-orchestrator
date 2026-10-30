@@ -213,7 +213,7 @@ f2ef7e90192c5afae069fc99b079726d9666b3dc skipped feat(cli): add chat transcript 
 9416ed3f9b8fa9f4567a6adf8fcfd07916edf7bc taken fix(chat): stop showing Claude compaction summaries as user messages (#7328)
 83bb06c741177ad63152170f7285ebb8c5496134 skipped docs(integrations): link the public Orchestrator Bot template and use the Orchestrator name (#7343)
 136d240756a3fc3021fada12d655ed42af194a9f skipped feat(chat): give turns one ending, follow live work, redesign the plan panel (#6884)
-82894fcf9bd1903433feaec71d551b548c0ce3b0 skipped fix(new-chat): stop the Scratchpad composer showing a project-ID validation error (#7321) — модуль Scratchpad будет выпилен отдельным циклом (решение владельца 2026-10-29, резать и remote standalone)
+82894fcf9bd1903433feaec71d551b548c0ce3b0 skipped fix(new-chat): stop the Scratchpad composer showing a project-ID validation error (#7321) — модуль Scratchpad выпилен из desktop 2026-10-30 (a8c5e22d1d; backend/CLI/mobile не тронуты)
 289ea750e3be9c551a68ad5fbc0d5ec89c18fcab skipped feat(mobile): tell a bad phone connection apart from an unreachable machine (#7336)
 121fc2712611572461a18a0ba797e30888ef10e8 skipped feat(mobile): draw AO's automation messages and worker reports as desktop does (#7331)
 0b7d96c67bffc1a3b6d5c78e797102b2eb5e2712 skipped feat(integrations): install and onboard Orchestrator.inc from Orchestrator Bot (#7351)
