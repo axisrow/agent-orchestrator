@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { rememberedFileDisplayMode, sidebarIsVisible, sidebarOccupiesLayout, useUiStore } from "./ui-store";
+import { rememberedFileDisplayMode, sidebarIsVisible, sidebarOccupiesLayout, inspectorIsOpen, useUiStore } from "./ui-store";
+import { aoBridge } from "../lib/bridge";
 import { sessionUiKey } from "../lib/hosts";
 import { previewDocumentThemeStyle } from "../lib/theme";
 
@@ -179,6 +180,37 @@ describe("project UI state across hosts", () => {
 		expect(useUiStore.getState().newTaskRequest).toBeNull();
 		state.requestNewTask("project", "host-b");
 		expect(useUiStore.getState().newTaskRequest).toMatchObject({ projectId: "project", hostId: "host-b" });
+	});
+});
+
+describe("AO_RIGHT_PANEL expanded default", () => {
+	beforeEach(() => {
+		useUiStore.setState({ inspectorSessions: {} });
+		aoBridge.launch.rightPanelExpanded = false;
+	});
+
+	it("keeps the inspector closed by default", () => {
+		useUiStore.getState().initializeInspectorSession("sess-1", false, true);
+
+		expect(inspectorIsOpen(useUiStore.getState().inspectorSessions, "sess-1")).toBe(false);
+	});
+
+	it("opens the inspector expanded when the flag is set, and a manual close still sticks", () => {
+		aoBridge.launch.rightPanelExpanded = true;
+		useUiStore.getState().initializeInspectorSession("sess-1", false, true);
+
+		expect(inspectorIsOpen(useUiStore.getState().inspectorSessions, "sess-1")).toBe(true);
+
+		useUiStore.getState().setInspectorOpen("sess-1", false);
+		expect(inspectorIsOpen(useUiStore.getState().inspectorSessions, "sess-1")).toBe(false);
+	});
+
+	it("does not reopen a session that already has explicit state", () => {
+		aoBridge.launch.rightPanelExpanded = true;
+		useUiStore.getState().setInspectorOpen("sess-1", false);
+		useUiStore.getState().initializeInspectorSession("sess-1", false, true);
+
+		expect(inspectorIsOpen(useUiStore.getState().inspectorSessions, "sess-1")).toBe(false);
 	});
 });
 

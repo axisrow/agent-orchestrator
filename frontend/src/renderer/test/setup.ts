@@ -134,6 +134,9 @@ if (typeof window !== "undefined") {
 	document.elementFromPoint = (() => null) as typeof document.elementFromPoint;
 
 	window.ao = {
+		launch: {
+			rightPanelExpanded: false,
+		},
 		app: {
 			getVersion: async () => "0.0.0-test",
 			chooseDirectory: async () => null,
