@@ -1341,18 +1341,14 @@ describe("SessionInspector completion controls", () => {
     await userEvent.click(
       screen.getByRole("button", { name: "Archive session" }),
     );
-    expect(
-      screen.getByRole("dialog", { name: "Are you sure you want to archive this session?" }),
-    ).toBeInTheDocument();
-    await userEvent.click(
-      within(screen.getByRole("dialog")).getByRole("button", {
-        name: "Confirm, archive session",
+
+    await waitFor(() =>
+      expect(postMock).toHaveBeenCalledWith("/api/v1/sessions/{sessionId}/kill", {
+        params: { path: { sessionId: "sess-1" } },
+        body: undefined,
       }),
     );
-
-    expect(postMock).toHaveBeenCalledWith("/api/v1/sessions/{sessionId}/kill", {
-      params: { path: { sessionId: "sess-1" } },
-    });
+    // Archiving is instant: no confirmation dialog, the kill POST is in flight.
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(navigateMock).toHaveBeenCalledWith({
       to: "/projects/$projectId/sessions/$sessionId",
@@ -1360,7 +1356,7 @@ describe("SessionInspector completion controls", () => {
     });
   });
 
-  it("keeps the confirmation dismissed after a termination failure", async () => {
+  it("still navigates optimistically when a termination fails", async () => {
     postMock.mockResolvedValueOnce({
       error: new Error("runtime teardown failed"),
       response: { status: 500 },
@@ -1374,14 +1370,8 @@ describe("SessionInspector completion controls", () => {
     await userEvent.click(
       screen.getByRole("button", { name: "Archive session" }),
     );
-    await userEvent.click(
-      within(screen.getByRole("dialog")).getByRole("button", {
-        name: "Confirm, archive session",
-      }),
-    );
 
     await waitFor(() => expect(postMock).toHaveBeenCalledTimes(1));
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(navigateMock).toHaveBeenCalledWith({
       to: "/projects/$projectId",
       params: { projectId: "ws-1" },

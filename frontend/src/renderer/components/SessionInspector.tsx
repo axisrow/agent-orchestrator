@@ -85,7 +85,6 @@ import { useUiStore } from "../stores/ui-store";
 import { Button } from "./ui/button";
 import { cn } from "../lib/utils";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { SessionArchiveDialog, type SessionArchiveChoice } from "./SessionArchiveDialog";
 import { ReviewerSelect } from "./ReviewerSelect";
 import { agentLabel } from "../lib/agent-options";
 import { useAgentReadinessQuery, useEnsureAgentReadiness } from "../hooks/useAgentReadinessQuery";
@@ -754,7 +753,6 @@ function SessionControls({ session, hostId }: { session: WorkspaceSession; hostI
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
 	const workspaceKey = workspaceQueryKeyForHost(hostId);
-	const [confirmOpen, setConfirmOpen] = useState(false);
 	const terminate = useTerminateSession();
 	const { client: cloudClient } = useCloudCp();
 	const policy = useMutation({
@@ -788,13 +786,14 @@ function SessionControls({ session, hostId }: { session: WorkspaceSession; hostI
 	const policyError = policy.error instanceof Error ? policy.error.message : null;
 	const canTerminateNow = session.status === "merged";
 
-	const confirmTermination = ({ deleteArtifacts }: SessionArchiveChoice) => {
+	// Archiving is reversible (restore from the Archive section), so it runs on
+	// the click with no confirmation.
+	const archiveNow = () => {
 		const workspaces = queryClient.getQueryData<WorkspaceSummary[]>(workspaceKey) ?? [];
 		const workspace = workspaces.find((w) => w.id === session.workspaceId);
 		const nextNav = resolveNextNavigationAfterSessionKill(workspace, session.id);
 
-		setConfirmOpen(false);
-		terminate.mutate(hostId ? { ...session, hostId, deleteArtifacts } : { ...session, deleteArtifacts });
+		terminate.mutate(hostId ? { ...session, hostId } : session);
 
 		if (nextNav.target === "session") {
 			void navigate(sessionNavigateTarget(session.workspaceId, nextNav.sessionId, hostId));
@@ -810,28 +809,17 @@ function SessionControls({ session, hostId }: { session: WorkspaceSession; hostI
 			<span className="min-w-0 text-sm text-settings-label">{t("inspector.archiveShort")}</span>
 			<Tooltip>
 				<TooltipTrigger asChild>
-					<span className="inline-flex">
-						<SessionArchiveDialog
-							onConfirm={confirmTermination}
-							onOpenChange={setConfirmOpen}
-							open={confirmOpen}
-							session={session}
-							trigger={
-								<button
-									aria-label={t("inspector.archive")}
-									className="inline-flex size-control-md items-center justify-center rounded-sm text-passive transition-colors hover:bg-interactive-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-									onClick={() => {
-										clearTerminateSessionState(queryClient, session.id, hostId);
-										// Always open the confirm; the modal owns its own dismissal.
-										setConfirmOpen(true);
-									}}
-									type="button"
-								>
-									<Archive className="size-icon-sm" aria-hidden="true" />
-								</button>
-							}
-						/>
-					</span>
+					<button
+						aria-label={t("inspector.archive")}
+						className="inline-flex size-control-md items-center justify-center rounded-sm text-passive transition-colors hover:bg-interactive-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+						onClick={() => {
+							clearTerminateSessionState(queryClient, session.id, hostId);
+							archiveNow();
+						}}
+						type="button"
+					>
+						<Archive className="size-icon-sm" aria-hidden="true" />
+					</button>
 				</TooltipTrigger>
 				<TooltipContent side="bottom">{t("inspector.archive")}</TooltipContent>
 			</Tooltip>

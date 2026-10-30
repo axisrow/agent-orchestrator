@@ -2,7 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import { Archive, CalendarClock, File, Folder, LayoutDashboard, Plus } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { AwakeControl } from "./AwakeControl";
 import { NotificationCenter } from "./NotificationCenter";
 import { useProjectOrchestratorAction } from "../hooks/useProjectOrchestratorAction";
@@ -35,7 +35,6 @@ import { useWindowFullScreen } from "../hooks/useWindowFullScreen";
 import { StatusPill } from "./StatusPill";
 import { CoderWorkspaceTopbarButton } from "./CoderWorkspaceLinkButton";
 import { TopbarActionError, TopbarButton, topbarHeaderClass, topbarProjectLabelClass } from "./TopbarButton";
-import { SessionArchiveDialog, type SessionArchiveChoice } from "./SessionArchiveDialog";
 import { TopbarOpenEditorButton } from "./TopbarOpenEditorButton";
 import { useSessionShortcut } from "../hooks/useAppShortcut";
 import {
@@ -345,8 +344,10 @@ export function ShellTopbar({
 	);
 }
 
-// Confirmation is modal, but teardown progress is not: confirming closes the
-// dialog and returns to the project's orchestrator while the daemon finishes.
+// Archiving is reversible (restore from the Archive section), so it runs on
+// the click with no confirmation. Teardown progress is not silent: the button
+// shows Archiving state while the daemon finishes, and the control returns to
+// the project's orchestrator right away.
 // The control archives rather than deletes, so it carries the Archive icon and
 // the neutral icon treatment instead of the danger-red kill affordance.
 // Mutation-cache state is filtered by worker ID so rapid route switches never
@@ -361,49 +362,33 @@ export function TopbarArchiveButton({
 	onKilled: (workspaceId: string, orchestratorId?: string) => void;
 }) {
 	const { t } = useTranslation();
-	const [confirmOpen, setConfirmOpen] = useState(false);
 	const queryClient = useQueryClient();
 	const kill = useTerminateSession();
 	const { error, isPending } = useTerminateSessionState(session.id, session.hostId);
 
-	const confirmKill = ({ deleteArtifacts }: SessionArchiveChoice) => {
-		setConfirmOpen(false);
-		kill.mutate({ ...session, deleteArtifacts });
+	const archiveNow = () => {
+		clearTerminateSessionState(queryClient, session.id, session.hostId);
+		kill.mutate(session);
 		onKilled(session.workspaceId, orchestratorId);
 	};
-	// ⌘⇧A opens the same confirmation the button does.
+	// ⌘⇧A archives the session, same as the button.
 	useSessionShortcut("archive-session", () => {
 		if (isPending) return;
-		clearTerminateSessionState(queryClient, session.id, session.hostId);
-		setConfirmOpen(true);
+		archiveNow();
 	});
 
 	return (
 		<div className="inline-flex items-center gap-1.5" style={noDragStyle}>
 			<Tooltip>
 				<TooltipTrigger asChild>
-					<span className="inline-flex">
-						<SessionArchiveDialog
-							onConfirm={confirmKill}
-							onOpenChange={setConfirmOpen}
-							open={confirmOpen}
-							session={session}
-							trigger={
-								<TopbarButton
-									aria-label={isPending ? t("shell.archiving") : t("shell.archiveSession")}
-									disabled={isPending}
-									onClick={() => {
-										clearTerminateSessionState(queryClient, session.id, session.hostId);
-										// Always open the confirm; the modal owns its own dismissal.
-										setConfirmOpen(true);
-									}}
-									variant="icon"
-								>
-									<Archive className="size-icon-md" aria-hidden="true" />
-								</TopbarButton>
-							}
-						/>
-					</span>
+					<TopbarButton
+						aria-label={isPending ? t("shell.archiving") : t("shell.archiveSession")}
+						disabled={isPending}
+						onClick={archiveNow}
+						variant="icon"
+					>
+						<Archive className="size-icon-md" aria-hidden="true" />
+					</TopbarButton>
 				</TooltipTrigger>
 				<TooltipContent side="bottom">{t("shell.archiveSession")}</TooltipContent>
 			</Tooltip>
