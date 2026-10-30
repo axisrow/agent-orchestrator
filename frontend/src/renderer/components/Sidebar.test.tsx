@@ -11,7 +11,7 @@ vi.mock("motion/react", async (importOriginal) => {
 		AnimatePresence: ({ children }: { children: React.ReactNode }) => children,
 	};
 });
-import { act, cleanup, createEvent, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, createEvent, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { components } from "../../api/schema";
@@ -22,8 +22,6 @@ import {
 	resolveNextNavigationAfterSessionKill,
 } from "./Sidebar";
 import {
-	STANDALONE_PROJECT_KIND,
-	STANDALONE_WORKSPACE_ID,
 	type WorkspaceSession,
 	type WorkspaceSummary,
 } from "../types/workspace";
@@ -970,174 +968,14 @@ describe("Sidebar", () => {
 		expect(request?.nonce ?? 0).toBeGreaterThan(before);
 	});
 
-	it("opens the standalone board from the Scratchpad archived sessions action", () => {
-		renderSidebar({
-			workspaces: [
-				{
-					id: STANDALONE_WORKSPACE_ID,
-					name: "Scratchpad",
-					kind: STANDALONE_PROJECT_KIND,
-					path: "",
-					sessions: [
-						{
-							...session,
-							id: "adhoc-archived",
-							title: "archived",
-							workspaceId: STANDALONE_WORKSPACE_ID,
-							workspaceName: "Scratchpad",
-							isTerminated: true,
-							status: "terminated",
-						},
-					],
-				},
-			],
-		});
+	it("optically centers the Project header add icon", () => {
+		renderSidebar();
 
-		const archiveAction = screen.getByRole("button", { name: "Archived sessions" }).closest("[data-scratchpad-archive-action]");
-		expect(archiveAction).toHaveClass("opacity-0", "scale-[0.8]");
-		fireEvent.click(screen.getByRole("button", { name: "Archived sessions" }));
-
-		expect(navigateMock).toHaveBeenCalledWith({ to: "/sessions" });
+		// Shared 24px row-action button; the icon is centered by the grid, no optical nudge.
+		expect(screen.getByRole("button", { name: "New project" })).toHaveClass("size-6", "place-items-center");
 	});
 
-	it("opens a new ad hoc agent directly from the ad hoc row action", async () => {
-		const user = userEvent.setup();
-		renderSidebar({
-			workspaces: [
-				{
-					id: STANDALONE_WORKSPACE_ID,
-					name: "Scratchpad",
-					kind: STANDALONE_PROJECT_KIND,
-					path: "",
-					sessions: [],
-				},
-			],
-		});
-		const before = useUiStore.getState().newTaskRequest?.nonce ?? 0;
-
-		expect(screen.queryByLabelText("Project actions for Scratchpad")).not.toBeInTheDocument();
-		await user.click(screen.getByRole("button", { name: "Open a new agent" }));
-
-		const request = useUiStore.getState().newTaskRequest;
-		expect(request?.projectId).toBe(STANDALONE_WORKSPACE_ID);
-		expect(request?.nonce ?? 0).toBeGreaterThan(before);
-	});
-
-	it("lists ad hoc agents in their own Scratchpad section, not under a project row", () => {
-		renderSidebar({
-			workspaces: [
-				workspace,
-				{
-					id: STANDALONE_WORKSPACE_ID,
-					name: "Scratchpad",
-					kind: STANDALONE_PROJECT_KIND,
-					path: "",
-					sessions: [
-						{ ...session, id: "adhoc-1", title: "baby", workspaceId: STANDALONE_WORKSPACE_ID, workspaceName: "Scratchpad" },
-					],
-				},
-			],
-		});
-
-		// Section header, not a project row.
-		expect(screen.getByRole("button", { name: "Scratchpad" })).toBeInTheDocument();
-		expect(document.querySelector(`li[data-project-id="${STANDALONE_WORKSPACE_ID}"]`)).toBeNull();
-		const section = document.querySelector("[data-scratchpad-section]")!;
-		expect(section).toContainElement(screen.getByText("baby"));
-		expect(section).toHaveClass("mb-2", "min-h-0");
-		expect(screen.getByTestId("sidebar-projects-scroller")).not.toContainElement(screen.getByText("baby"));
-	});
-
-	it("optically centers the Project and Scratchpad header add icons", () => {
-		renderSidebar({
-			workspaces: [
-				workspace,
-				{
-					id: STANDALONE_WORKSPACE_ID,
-					name: "Scratchpad",
-					kind: STANDALONE_PROJECT_KIND,
-					path: "",
-					sessions: [],
-				},
-			],
-		});
-
-		for (const label of ["New project", "Open a new agent"]) {
-			// Shared 24px row-action button; the icon is centered by the grid, no optical nudge.
-			expect(screen.getByRole("button", { name: label })).toHaveClass("size-6", "place-items-center");
-		}
-	});
-
-	it("opens an ad hoc agent on its own session route", async () => {
-		const user = userEvent.setup();
-		renderSidebar({
-			workspaces: [
-				{
-					id: STANDALONE_WORKSPACE_ID,
-					name: "Scratchpad",
-					kind: STANDALONE_PROJECT_KIND,
-					path: "",
-					sessions: [
-						{ ...session, id: "adhoc-1", title: "baby", workspaceId: STANDALONE_WORKSPACE_ID, workspaceName: "Scratchpad" },
-					],
-				},
-			],
-		});
-
-		await user.click(screen.getByText("baby"));
-
-		expect(navigateMock).toHaveBeenCalledWith({ to: "/sessions/$sessionId", params: { sessionId: "adhoc-1" } });
-	});
-
-	it("collapses the Scratchpad section from its header", async () => {
-		const user = userEvent.setup();
-		renderSidebar({
-			workspaces: [
-				{
-					id: STANDALONE_WORKSPACE_ID,
-					name: "Scratchpad",
-					kind: STANDALONE_PROJECT_KIND,
-					path: "",
-					sessions: [
-						{ ...session, id: "adhoc-1", title: "baby", workspaceId: STANDALONE_WORKSPACE_ID, workspaceName: "Scratchpad" },
-					],
-				},
-			],
-		});
-
-		await user.click(screen.getByRole("button", { name: "Scratchpad" }));
-		expect(screen.queryByText("baby")).not.toBeInTheDocument();
-
-		await user.click(screen.getByRole("button", { name: "Scratchpad" }));
-		expect(screen.getByText("baby")).toBeInTheDocument();
-	});
-
-	it("saves the Scratchpad section state and starts closed when it was left closed", async () => {
-		const user = userEvent.setup();
-		const workspaces = [
-			{
-				id: STANDALONE_WORKSPACE_ID,
-				name: "Scratchpad",
-				kind: STANDALONE_PROJECT_KIND,
-				path: "",
-				sessions: [
-					{ ...session, id: "adhoc-1", title: "baby", workspaceId: STANDALONE_WORKSPACE_ID, workspaceName: "Scratchpad" },
-				],
-			},
-		];
-		renderSidebar({ workspaces });
-		await user.click(screen.getByRole("button", { name: "Scratchpad" }));
-		const saved = window.localStorage.getItem("ao.sidebar.sections");
-		expect(JSON.parse(saved ?? "null")).toMatchObject({ scratchpad: false });
-		cleanup();
-
-		window.localStorage.setItem("ao.sidebar.sections", saved ?? "");
-		renderSidebar({ workspaces });
-		expect(screen.queryByText("baby")).not.toBeInTheDocument();
-	});
-
-
-	it("shows scroll-edge fades on project and Scratchpad sections as they scroll", () => {
+	it("shows scroll-edge fades on the project section as it scrolls", () => {
 		renderSidebar({
 			workspaces: [
 				...Array.from({ length: 2 }, (_, index) => ({
@@ -1145,17 +983,10 @@ describe("Sidebar", () => {
 					id: `proj-${index + 1}`,
 					name: `Project ${index + 1}`,
 				})),
-				{
-					id: STANDALONE_WORKSPACE_ID,
-					name: "Scratchpad",
-					kind: STANDALONE_PROJECT_KIND,
-					path: "",
-					sessions: [{ ...session, id: "adhoc-1", title: "baby", workspaceId: STANDALONE_WORKSPACE_ID, workspaceName: "Scratchpad" }],
-				},
 			],
 		});
 
-		for (const testId of ["sidebar-projects-scroller", "sidebar-scratchpad-scroller"]) {
+		for (const testId of ["sidebar-projects-scroller"]) {
 			const scroller = screen.getByTestId(testId);
 			Object.defineProperties(scroller, {
 				scrollHeight: { configurable: true, value: 200 },
@@ -1177,19 +1008,6 @@ describe("Sidebar", () => {
 			expect(scroller.parentElement?.querySelector(".sidebar-section-scroll-fade--top")).toBeInTheDocument();
 			expect(scroller.parentElement?.querySelector(".sidebar-section-scroll-fade--bottom")).not.toBeInTheDocument();
 		}
-	});
-
-	it("offers ad hoc agent creation from the project add flow before the ad hoc row exists", async () => {
-		const user = userEvent.setup();
-		renderSidebar();
-		const before = useUiStore.getState().newTaskRequest?.nonce ?? 0;
-
-		await user.click(screen.getByLabelText("New project"));
-		await user.click(await screen.findByRole("button", { name: "Start a standalone agent" }));
-
-		const request = useUiStore.getState().newTaskRequest;
-		expect(request?.projectId).toBe(STANDALONE_WORKSPACE_ID);
-		expect(request?.nonce ?? 0).toBeGreaterThan(before);
 	});
 
 	it("opens the create-project flow when the no-project shortcut signal arrives", async () => {
@@ -2462,41 +2280,6 @@ describe("Sidebar", () => {
 
 
 
-	it("keeps Scratchpad mounted, bounded and un-clipped by a long Projects list", () => {
-		const manyProjects = Array.from({ length: 14 }, (_, index) => ({
-			...workspace,
-			id: `proj-${index + 1}`,
-			name: `Project ${index + 1}`,
-			path: `/repo/project-${index + 1}`,
-		}));
-		renderSidebar({
-			workspaces: [
-				...manyProjects,
-				{
-					id: STANDALONE_WORKSPACE_ID,
-					name: "Scratchpad",
-					kind: STANDALONE_PROJECT_KIND,
-					path: "",
-					sessions: [{ ...session, id: "adhoc-1", title: "adhoc one", workspaceId: STANDALONE_WORKSPACE_ID, workspaceName: "Scratchpad" }],
-				},
-			],
-		});
-
-		const section = document.querySelector<HTMLElement>("[data-scratchpad-section]")!;
-		expect(section).toBeInTheDocument();
-		expect(screen.getByRole("button", { name: "Scratchpad" })).toBeVisible();
-		expect(section).toContainElement(screen.getByText("adhoc one"));
-		// Both sections sit in auto-sized grid rows: each takes its content height,
-		// spare space goes to whichever needs it, and a tie splits the column evenly.
-		expect(section).not.toHaveClass("shrink-0");
-		expect(section.style.maxHeight).toBe("");
-		const projects = screen.getByTestId("sidebar-projects-scroller");
-		expect(projects).toHaveClass("min-h-0", "flex-1", "overflow-y-auto");
-		expect(projects.style.maxHeight).toBe("");
-		expect(section.parentElement).toHaveClass("grid", "min-h-0", "auto-rows-[minmax(0,auto)]");
-		expect(section.parentElement?.style.getPropertyValue("--sidebar-scratchpad-reserved-height")).toBe("");
-	});
-
 	it("fits the project list to content up to the full available height", async () => {
 		const manyProjects = Array.from({ length: 14 }, (_, index) => ({
 			...workspace,
@@ -3206,26 +2989,16 @@ describe("Sidebar", () => {
 		expect(JSON.parse(window.localStorage.getItem("ao.sidebar.project-order") ?? "null")).toEqual(["bravo", "alpha"]);
 	});
 
-	it("keeps the ad hoc group out of the project list and its drag ordering", () => {
+	it("reorders projects by dragging a row onto another", () => {
 		renderSidebar({
 			workspaces: [
 				{ ...workspace, id: "alpha", name: "Alpha" },
 				{ ...workspace, id: "bravo", name: "Bravo" },
-				{
-					id: STANDALONE_WORKSPACE_ID,
-					name: "Scratchpad",
-					kind: STANDALONE_PROJECT_KIND,
-					path: "",
-					sessions: [],
-				},
 			],
 		});
 		const labels = () => Array.from(document.querySelectorAll("[data-project-label]"), (node) => node.textContent);
 
-		// The ad hoc group is its own section, never a row in the project list.
 		expect(labels()).toEqual(["Alpha", "Bravo"]);
-		expect(document.querySelector(`li[data-project-id="${STANDALONE_WORKSPACE_ID}"]`)).toBeNull();
-		expect(screen.getByRole("button", { name: "Scratchpad" })).toBeInTheDocument();
 
 		const bravoRow = document.querySelector('[data-project-drag-row][data-project-id="bravo"]')!;
 		const alphaTarget = document.querySelector('li[data-project-drop-target][data-project-id="alpha"]')!;
@@ -3402,20 +3175,6 @@ describe("Sidebar active-session reveal", () => {
 	const noop = () => vi.fn().mockResolvedValue(undefined);
 	const other: WorkspaceSession = { ...session, id: "proj-1-2", title: "second task" };
 	const orchestrator: WorkspaceSession = { ...session, id: "proj-1-orc", kind: "orchestrator", title: "Orchestrator" };
-	const scratch: WorkspaceSession = {
-		...session,
-		id: "adhoc-1",
-		title: "scratch note",
-		workspaceId: STANDALONE_WORKSPACE_ID,
-		workspaceName: "Scratchpad",
-	};
-	const scratchpad = {
-		id: STANDALONE_WORKSPACE_ID,
-		name: "Scratchpad",
-		kind: STANDALONE_PROJECT_KIND,
-		path: "",
-		sessions: [scratch],
-	};
 
 	function mount(expandedProjectIds: string[]) {
 		window.localStorage.setItem("ao.sidebar.expanded-projects", JSON.stringify(expandedProjectIds));
@@ -3425,7 +3184,7 @@ describe("Sidebar active-session reveal", () => {
 				<TooltipProvider>
 					<SidebarProvider>
 						<Sidebar
-							workspaces={[{ ...workspace, sessions: [session, other, orchestrator] }, scratchpad]}
+							workspaces={[{ ...workspace, sessions: [session, other, orchestrator] }]}
 							onCloneProject={noop()}
 							onCreateProject={noop()}
 							onInitializeProject={noop()}
@@ -3439,39 +3198,13 @@ describe("Sidebar active-session reveal", () => {
 		);
 		const view = render(tree());
 		return {
-			// Pass null for a projectless route such as /sessions/$sessionId.
-			go: (sessionId: string | undefined, projectId: string | null = sessionId ? workspace.id : null) => {
-				mockParams.projectId = projectId ?? undefined;
+			go: (sessionId: string, projectId: string = workspace.id) => {
+				mockParams.projectId = projectId;
 				mockParams.sessionId = sessionId;
 				view.rerender(tree());
 			},
 		};
 	}
-
-	it("keeps a closed Scratchpad closed when a project's orchestrator opens", async () => {
-		window.localStorage.setItem("ao.sidebar.sections", JSON.stringify({ scratchpad: false }));
-		const { go } = mount([workspace.id]);
-		expect(screen.getByRole("button", { name: "Scratchpad" })).toHaveAttribute("aria-expanded", "false");
-
-		go(orchestrator.id);
-		await act(async () => {
-			await new Promise((resolve) => setTimeout(resolve, 50));
-		});
-
-		expect(screen.getByRole("button", { name: "Scratchpad" })).toHaveAttribute("aria-expanded", "false");
-		expect(screen.queryByText("scratch note")).not.toBeInTheDocument();
-		expect(JSON.parse(window.localStorage.getItem("ao.sidebar.sections") ?? "null")).toMatchObject({ scratchpad: false });
-	});
-
-	it("reopens a closed Scratchpad, not Projects, to reveal an active Scratchpad session", async () => {
-		window.localStorage.setItem("ao.sidebar.sections", JSON.stringify({ projects: false, scratchpad: false }));
-		const { go } = mount([workspace.id]);
-
-		go(scratch.id, null);
-
-		expect(await screen.findByLabelText("Open scratch note")).toHaveAttribute("aria-current", "page");
-		expect(screen.getByRole("button", { name: "Projects" })).toHaveAttribute("aria-expanded", "false");
-	});
 
 	it("expands the collapsed project and scrolls the active row into view when the session changes", async () => {
 		const scroll = vi.spyOn(Element.prototype, "scrollIntoView");

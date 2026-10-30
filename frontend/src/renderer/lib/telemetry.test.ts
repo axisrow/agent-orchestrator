@@ -444,7 +444,7 @@ describe("telemetry sanitizers", () => {
 			"ao.renderer.artifact_create_failed",
 		]) {
 			expect(await sanitizeRendererProperties(event, { scope: "project", project_id: "demo-project", name: "plan.md" })).toEqual({ scope: "project" });
-			expect(await sanitizeRendererProperties(event, { scope: "standalone" })).toEqual({ scope: "standalone" });
+			expect(await sanitizeRendererProperties(event, { scope: "standalone" })).toEqual({});
 			expect(await sanitizeRendererProperties(event, { scope: "/Users/alice/secret" })).toEqual({});
 		}
 	});
