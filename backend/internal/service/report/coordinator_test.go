@@ -467,8 +467,27 @@ func TestCoordinatorSettlesOnlyMatchedAcceptance(t *testing.T) {
 	if store.reports[0].DeliveryState != domain.ReportPending {
 		t.Fatalf("record = %+v, want the batch still pending", store.reports[0])
 	}
-	// A coordination checkpoint from a superseded runtime generation carries no
-	// acceptance evidence either.
+	// A coordination checkpoint naming some OTHER batch's id settles nothing:
+	// after the generation gate came out, the correlation-id match is the only
+	// remaining settle proof.
+	orch.Metadata = domain.SessionMetadata{
+		ConversationCheckpointState:      domain.ConversationCheckpointCoordination,
+		ConversationCheckpointGeneration: "live-launch",
+		ConversationCheckpointTurnID:     "report-batch:rpt_some_other_batch",
+		RuntimeLaunchID:                  "live-launch",
+	}
+	store.sessions = []domain.SessionRecord{orch}
+	if n, err := c.SettleEmittedReports(ctx, "orch"); err != nil || n != 0 {
+		t.Fatalf("settle with foreign coordination turn id = %d, err = %v, want 0", n, err)
+	}
+	if store.reports[0].DeliveryState != domain.ReportPending {
+		t.Fatalf("record = %+v, want the batch still pending", store.reports[0])
+	}
+	// A coordination checkpoint from a superseded runtime generation still
+	// carries THIS batch's acceptance: daemon restarts rotate the launch id,
+	// and the replay must settle accepted content instead of re-emitting it
+	// (fork issue #184). Lineage rotations clear the checkpoint, so a surviving
+	// stale-generation checkpoint always names an accepted batch.
 	orch.Metadata = domain.SessionMetadata{
 		ConversationCheckpointState:      domain.ConversationCheckpointCoordination,
 		ConversationCheckpointGeneration: "stale-launch",
@@ -476,20 +495,8 @@ func TestCoordinatorSettlesOnlyMatchedAcceptance(t *testing.T) {
 		RuntimeLaunchID:                  "live-launch",
 	}
 	store.sessions = []domain.SessionRecord{orch}
-	if n, err := c.SettleEmittedReports(ctx, "orch"); err != nil || n != 0 {
-		t.Fatalf("settle with stale-generation checkpoint = %d, err = %v, want 0", n, err)
-	}
-	// The checkpoint naming THIS batch's correlation id is the late semantic
-	// acceptance: the batch settles, acknowledged without a live claim token.
-	orch.Metadata = domain.SessionMetadata{
-		ConversationCheckpointState:      domain.ConversationCheckpointCoordination,
-		ConversationCheckpointGeneration: "live-launch",
-		ConversationCheckpointTurnID:     batchKey,
-		RuntimeLaunchID:                  "live-launch",
-	}
-	store.sessions = []domain.SessionRecord{orch}
 	if n, err := c.SettleEmittedReports(ctx, "orch"); err != nil || n != 1 {
-		t.Fatalf("settle = %d, err = %v, want 1 report settled", n, err)
+		t.Fatalf("settle with stale-generation checkpoint = %d, err = %v, want 1 report settled", n, err)
 	}
 	if store.reports[0].DeliveryState != domain.ReportAcknowledged || store.reports[0].ClaimToken != "activity-ack" {
 		t.Fatalf("record = %+v, want acknowledged under the synthetic token", store.reports[0])
@@ -500,6 +507,27 @@ func TestCoordinatorSettlesOnlyMatchedAcceptance(t *testing.T) {
 	}
 	if len(delivery.submissions) != 1 {
 		t.Fatalf("submissions = %d, want 1: a settled batch was re-emitted", len(delivery.submissions))
+	}
+	// The same contract holds on the live generation: the checkpoint naming
+	// THIS batch's correlation id is the late semantic acceptance of a fresh
+	// batch, acknowledged without a live claim token.
+	store.add(reportAt("second", "worker", now, now, "more context"))
+	delivery.submitErr = errors.New("prompt submission was not observed")
+	if _, err := c.RunDue(ctx); err == nil {
+		t.Fatal("second batch first attempt should surface the submit error")
+	}
+	orch.Metadata = domain.SessionMetadata{
+		ConversationCheckpointState:      domain.ConversationCheckpointCoordination,
+		ConversationCheckpointGeneration: "live-launch",
+		ConversationCheckpointTurnID:     store.reports[1].DeliveryBatchID,
+		RuntimeLaunchID:                  "live-launch",
+	}
+	store.sessions = []domain.SessionRecord{orch}
+	if n, err := c.SettleEmittedReports(ctx, "orch"); err != nil || n != 1 {
+		t.Fatalf("settle = %d, err = %v, want 1 report settled", n, err)
+	}
+	if store.reports[1].DeliveryState != domain.ReportAcknowledged {
+		t.Fatalf("record = %+v, want the second batch acknowledged", store.reports[1])
 	}
 }
 
