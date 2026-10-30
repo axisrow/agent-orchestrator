@@ -77,6 +77,20 @@ func (m *Provider) ListPRsByRepo(ctx context.Context, repo ports.SCMRepo, update
 	return p.ListPRsByRepo(ctx, repo, updatedAfter)
 }
 
+// ListOpenPRsByBranch delegates to the sub-provider matching repo.Provider
+// when it supports a branch-filtered listing.
+func (m *Provider) ListOpenPRsByBranch(ctx context.Context, repo ports.SCMRepo, branch string) ([]ports.SCMPRObservation, error) {
+	p, err := m.resolve(repo.Provider)
+	if err != nil {
+		return nil, err
+	}
+	lister, ok := p.(branchPRLister)
+	if !ok {
+		return nil, fmt.Errorf("%w: branch PR listing for provider %q", ports.ErrSCMUnsupported, repo.Provider)
+	}
+	return lister.ListOpenPRsByBranch(ctx, repo, branch)
+}
+
 // CommitChecksGuard delegates to the sub-provider matching repo.Provider.
 func (m *Provider) CommitChecksGuard(ctx context.Context, repo ports.SCMRepo, headSHA, etag string) (ports.SCMGuardResult, error) {
 	p, err := m.resolve(repo.Provider)
@@ -262,6 +276,10 @@ func (m *Provider) FindPublishedReview(ctx context.Context, ref ports.SCMPRRef, 
 		return ports.SCMReviewPublishResult{}, false, fmt.Errorf("%w: review publication lookup for provider %q", ports.ErrSCMUnsupported, ref.Repo.Provider)
 	}
 	return finder.FindPublishedReview(ctx, ref, bodyMarker)
+}
+
+type branchPRLister interface {
+	ListOpenPRsByBranch(ctx context.Context, repo ports.SCMRepo, branch string) ([]ports.SCMPRObservation, error)
 }
 
 type credentialChecker interface {
