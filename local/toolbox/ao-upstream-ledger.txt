@@ -261,3 +261,5 @@ fe0550a4e83be5b7268910b77dcc55a63d6a72a2 skipped fix(cloud): list Cloud's model 
 dbeaf19c8a9decc2330fc1fac8c36f22b417dabd skipped Sentry: full error coverage for daemon + Electron (#7386)
 8f4ecd5f9da7392ffe0d5c7f11c091f45229c068 skipped feat: measure project usage by durable worker activity (#7304)
 9b95d754f5d4fcbad31ff8d6422b37c8703c6206 taken fix(sidebar): keep a closed Scratchpad closed when opening an orchestrator (#7460)
+98408cb48bd871cf5b8c8638065e104d480e4251 taken fix(chat): stop the question dock clipping its rows' focus ring (#7424)
+1e936e9596f72b8fe37e91607419a5eed74d6905 taken fix(sqlite): repair the continuation column when version 199 was taken (#7464)
