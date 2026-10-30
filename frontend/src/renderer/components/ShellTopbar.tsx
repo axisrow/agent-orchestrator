@@ -12,17 +12,14 @@ import {
 	resolveNextNavigationAfterSessionKill,
 	sessionIsActive,
 	sessionCueTargetAvailable,
-	STANDALONE_PROJECT_KIND,
-	STANDALONE_WORKSPACE_ID,
 	toProjectKind,
 	type WorkspaceSession,
 	type WorkspaceSummary,
 } from "../types/workspace";
-import { useWorkspaceQuery, useWorkspaceScope, workspaceQueryKeyForHost } from "../hooks/useWorkspaceQuery";
+import { useWorkspaceScope, workspaceQueryKeyForHost } from "../hooks/useWorkspaceQuery";
 import { sessionUiKey } from "../lib/hosts";
 import { labelForHost } from "../lib/host-clients";
 import { projectNavigateTarget, sessionNavigateTarget } from "../lib/navigate-to-session";
-import { archivedStandaloneSessions } from "../lib/standalone-archive";
 import {
 	clearTerminateSessionState,
 	useProjectTerminateSessionStates,
@@ -118,24 +115,22 @@ export function ShellTopbar({
 	const isSessionRoute = startingOrchestrator || Boolean(params.sessionId);
 	const isAutomationsRoute = location.pathname === "/automations";
 	const isArtifactsRoute = location.pathname === "/artifacts";
-	const isStandaloneBoardRoute = location.pathname === "/sessions" || location.pathname === "/sessions/";
 	const isOrchestrator = startingOrchestrator || (session ? isOrchestratorSession(session) : false);
 	const isInspectorOpen = useUiStore((state) =>
 		currentSessionId ? inspectorIsOpen(state.inspectorSessions, sessionUiKey(currentSessionId, hostId)) : false,
 	);
-	// Project in scope: the session's workspace wins over the route param so the
-	// cross-project /sessions/$sessionId route still resolves a crumb. A
+	// Project in scope: the session's workspace wins over the route param. A
 	// projectId that no longer resolves (stale route after the project was
 	// removed, or data still loading) shows an empty crumb — never the raw
 	// route slug. "Board" is the root-board crumb only.
 	const projectId = session?.workspaceId ?? params.projectId;
 	const isProjectBoardRoute = !isSessionRoute && Boolean(projectId);
-	const isRootBoardRoute = !isSessionRoute && !isProjectBoardRoute && !isAutomationsRoute && !isArtifactsRoute && !isStandaloneBoardRoute;
+	const isRootBoardRoute = !isSessionRoute && !isProjectBoardRoute && !isAutomationsRoute && !isArtifactsRoute;
 	const project = workspaceScope?.project;
 	const supportsLocalCues = Boolean(!hostId && project && toProjectKind(project.kind));
 	const projectLabel = project?.name ?? session?.workspaceName ?? (projectId ? "" : t("shell.board"));
 	const orchestrator = workspaceScope?.orchestrator;
-	const supportsProjectActions = project?.kind !== STANDALONE_PROJECT_KIND && projectId !== STANDALONE_WORKSPACE_ID;
+	const supportsProjectActions = Boolean(projectId);
 	const projectActions = useProjectOrchestratorAction({
 		projectId: supportsProjectActions ? projectId : undefined,
 		project: supportsProjectActions ? project : undefined,
@@ -192,18 +187,13 @@ export function ShellTopbar({
 						</span>
 					</div>
 				) : (isProjectBoardRoute && boardActionsInPanel) ||
-				  (isMac && isRootBoardRoute && boardActionsInPanel) ||
-				  (isStandaloneBoardRoute && boardActionsInPanel) ? null : (
+				  (isMac && isRootBoardRoute && boardActionsInPanel) ? null : (
 					<div className="inline-flex min-w-0 items-center gap-1.5" data-testid="board-topbar-label">
-						{isStandaloneBoardRoute ? (
-							<StandaloneArchiveTopbarLabel />
-						) : (
-							<span className={cn(topbarProjectLabelClass, "inline-flex items-center gap-1.5")}>
-								<LayoutDashboard aria-hidden="true" className="size-icon-md" />
-								{t("shell.board")}
-								{hostId ? <span className="truncate text-muted-foreground">· {labelForHost(hostId) ?? hostId}</span> : null}
-							</span>
-						)}
+						<span className={cn(topbarProjectLabelClass, "inline-flex items-center gap-1.5")}>
+							<LayoutDashboard aria-hidden="true" className="size-icon-md" />
+							{t("shell.board")}
+							{hostId ? <span className="truncate text-muted-foreground">· {labelForHost(hostId) ?? hostId}</span> : null}
+						</span>
 					</div>
 				)}
 				</div>
@@ -310,10 +300,6 @@ export function ShellTopbar({
 												void navigate(sessionNavigateTarget(workspaceId, nextRoute.sessionId, hostId));
 												return;
 											}
-											if (workspaceId === STANDALONE_WORKSPACE_ID) {
-												void navigate({ to: "/" });
-												return;
-											}
 											void navigate(projectNavigateTarget(workspaceId, hostId));
 										}}
 									/>
@@ -352,42 +338,10 @@ export function ShellTopbar({
 						aria-hidden="true"
 					/>
 				) : (
-					<>
-						{!boardActionsInPanel && isStandaloneBoardRoute ? (
-							<StandaloneArchiveTopbarNewAgent style={noDragStyle} />
-						) : null}
-						<NotificationCenter style={noDragStyle} />
-					</>
+					<NotificationCenter style={noDragStyle} />
 				)}
 			</div>
 		</header>
-	);
-}
-
-function StandaloneArchiveTopbarLabel() {
-	const { t } = useTranslation();
-	const count = archivedStandaloneSessions(useWorkspaceQuery().data ?? []).length;
-	return (
-		<span className={topbarProjectLabelClass} data-testid="standalone-archive-title">
-			{t("standalone.archive.heading", { count })}
-		</span>
-	);
-}
-
-function StandaloneArchiveTopbarNewAgent({ style }: { style?: React.CSSProperties }) {
-	const { t } = useTranslation();
-	const requestNewTask = useUiStore((state) => state.requestNewTask);
-	return (
-		<TopbarButton
-			className="topbar-control--labeled"
-			onClick={() => requestNewTask(STANDALONE_WORKSPACE_ID)}
-			style={style}
-			type="button"
-			variant="primary"
-		>
-			<Plus className="size-icon-md" aria-hidden="true" />
-			{t("standalone.archive.newAgent")}
-		</TopbarButton>
 	);
 }
 

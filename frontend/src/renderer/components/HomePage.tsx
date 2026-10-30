@@ -1,7 +1,7 @@
 import type { ProjectSource } from "@aoagents/product-ui";
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, Cloud, Folder, Folders, FolderOpen, GitFork, MessageSquarePlus, Star } from "lucide-react";
+import { AlertTriangle, Cloud, Folder, Folders, FolderOpen, GitFork, Star } from "lucide-react";
 import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { useCloudGate } from "../hooks/useCloudGate";
 import { useSystemRequirementsGate } from "../hooks/useSystemRequirementsGate";
@@ -10,16 +10,11 @@ import { aoBridge } from "../lib/bridge";
 import { formatTimeCompact } from "../lib/format-time";
 import { isMacPlatform } from "../lib/platform";
 import { getProjectLastOpenedAt } from "../lib/project-history";
-import { recordManualWorkerOpen } from "../lib/session-management-telemetry";
 import { usesPreviewWorkspaceData } from "../lib/preview-mode";
 import { useShell } from "../lib/shell-context";
 import { cn } from "../lib/utils";
 import { useUiStore } from "../stores/ui-store";
-import {
-	STANDALONE_PROJECT_KIND,
-	STANDALONE_WORKSPACE_ID,
-	type WorkspaceSummary,
-} from "../types/workspace";
+import { type WorkspaceSummary } from "../types/workspace";
 import { CreateProjectFlow } from "./CreateProjectFlow";
 import { DaemonStartupLoader } from "./DaemonStartupLoader";
 import { GitHubOnboardingNotice } from "./GitHubOnboardingNotice";
@@ -31,18 +26,15 @@ import { Badge } from "./ui/badge";
  * - One centered column (`max-w-[640px]`); no upward translate hack.
  * - "Star us" is a quiet text link with dashed underline on hover — NOT a
  *   TopbarButton / accent pill / bordered card.
- * - Primary actions are always a 2×2 grid. The fourth cell is the
- *   standalone-agent action, or Clone to the cloud when Developer Mode and
- *   Cloud are both enabled (standalone stays reachable from the sidebar's
- *   Scratchpad "+"). Never add a fifth row. Connect Mobile is settings-only.
+ * - Primary actions are always a grid row. The fourth cell is Clone to the
+ *   cloud, shown when Developer Mode and Cloud are both enabled. Never add a
+ *   fifth row. Connect Mobile is settings-only.
  * - Recent rows use shared {@link NavRowHighlight} (same as sidebar), not a
  *   flat `hover:bg-interactive-hover` wash.
  * - One heading ({@link HOME_SECTION_TITLE_CLASS}) above the grid: Get started
  *   with no projects, otherwise Jump back right in. Recent-project rows sit
  *   under the grid with no heading of their own; each is one compact line
- *   (name and time, no path). The Scratchpad (standalone agents) is not a
- *   project: it never appears in the recent rows or counts toward the
- *   heading — the grid's standalone action and the sidebar own it.
+ *   (name and time, no path).
  */
 const isMac = isMacPlatform();
 const GITHUB_REPOSITORY_URL = "https://github.com/Untrivial-ai/agent-orchestrator";
@@ -146,7 +138,6 @@ function HomeActionCard({
 export function HomePage() {
 	const navigate = useNavigate();
 	const { t } = useTranslation();
-	const requestNewTask = useUiStore((state) => state.requestNewTask);
 	const developerMode = useUiStore((state) => state.developerMode);
 	const { cloneProject, createProject, daemonStatus, initializeProjectRepository, workspaceStartupState } =
 		useShell();
@@ -157,7 +148,7 @@ export function HomePage() {
 	const projects = workspaceQuery.data ?? [];
 	const recentProjects = useMemo(
 		() =>
-			sortProjectsByActivity(projects.filter((project) => project.kind !== STANDALONE_PROJECT_KIND)).slice(
+			sortProjectsByActivity(projects).slice(
 				0,
 				RECENT_PROJECT_LIMIT,
 			),
@@ -245,13 +236,7 @@ export function HomePage() {
 									label={t("createProject.cloudTitle")}
 									onClick={() => requestSource("cloud")}
 								/>
-							) : (
-								<HomeActionCard
-									icon={<MessageSquarePlus strokeWidth={1.8} />}
-									label={t("home.newStandaloneAgent")}
-									onClick={() => requestNewTask(STANDALONE_WORKSPACE_ID)}
-								/>
-							)}
+							) : null}
 						</div>
 
 						{/* Same section as the grid so the gap matches the grid's gap-3. */}
@@ -261,17 +246,7 @@ export function HomePage() {
 									<ProjectRow
 										key={project.id}
 										project={project}
-										onClick={() => {
-										if (project.kind === STANDALONE_PROJECT_KIND) {
-											const session = project.sessions.find((candidate) => candidate.kind === "worker");
-											if (session) recordManualWorkerOpen(session.id);
-											session
-												? void navigate({ to: "/sessions/$sessionId", params: { sessionId: session.id } })
-												: requestNewTask(STANDALONE_WORKSPACE_ID);
-											return;
-										}
-										openProject(project.id);
-									}}
+										onClick={() => openProject(project.id)}
 										emptyTimeLabel={t("home.never")}
 									/>
 								))}
@@ -288,7 +263,6 @@ export function HomePage() {
 					mode="choose"
 					onCloneProject={cloneProject}
 					onCreateProject={createProject}
-					onCreateStandaloneAgent={() => requestNewTask(STANDALONE_WORKSPACE_ID)}
 					onInitializeProject={initializeProjectRepository}
 					onOpenExistingProject={openExistingProject}
 					sourceSignal={sourceSignal}

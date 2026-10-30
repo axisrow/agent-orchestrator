@@ -8,7 +8,7 @@ import { useRemoteWorkspaces, useWorkspaceQuery } from "../hooks/useWorkspaceQue
 import { labelForHost } from "../lib/host-clients";
 import { apiClient, apiErrorMessage } from "../lib/api-client";
 import { TaskComposer } from "./TaskComposer";
-import { CLOUD_PROJECT_KIND, STANDALONE_WORKSPACE_ID, STANDALONE_PROJECT_KIND } from "../types/workspace";
+import { CLOUD_PROJECT_KIND } from "../types/workspace";
 import { SettingsOptionMenu } from "./settings/SettingsOptionMenu";
 
 function repositoryOwnerAvatar(repo: string): { owner: string; url: string } | null {
@@ -70,9 +70,7 @@ export function NewTaskDialog({ open, projectId, hostId, onProjectChange, onCrea
 	const localWorkspaces = useWorkspaceQuery({ subscribed: open }).data ?? [];
 	const remoteWorkspaces = useRemoteWorkspaces({ subscribed: open }).data ?? [];
 	const workspaces = hostId ? remoteWorkspaces.filter((workspace) => workspace.hostId === hostId) : localWorkspaces;
-	const projects = useMemo(() => workspaces.filter(
-		(workspace) => workspace.id !== STANDALONE_WORKSPACE_ID && workspace.kind !== STANDALONE_PROJECT_KIND,
-	), [workspaces]);
+	const projects = useMemo(() => workspaces, [workspaces]);
 	const localProjects = useMemo(() => hostId ? [] : projects.filter((project) => project.kind !== CLOUD_PROJECT_KIND), [hostId, projects]);
 	const localProjectDetails = useQueries({
 		queries: localProjects.map((project) => ({
@@ -109,14 +107,11 @@ export function NewTaskDialog({ open, projectId, hostId, onProjectChange, onCrea
 		});
 		return [project.id, avatars] as const;
 	})), [localProjectDetails, localProjects, projects]);
-	const selectedProjectId = projectId ?? STANDALONE_WORKSPACE_ID;
+	const selectedProjectId = projectId ?? "";
 	const selectedProject = projects.find((project) => project.id === selectedProjectId);
-	const selectedProjectName = selectedProject?.name ?? t("standalone.workspaceName");
+	const selectedProjectName = selectedProject?.name ?? "";
 	const selectedProjectAvatar = projectAvatars.get(selectedProjectId)?.[0];
-	const projectOptions = [
-		{ value: STANDALONE_WORKSPACE_ID, label: t("standalone.workspaceName") },
-		...projects.map((project) => ({ value: project.id, label: project.name })),
-	];
+	const projectOptions = projects.map((project) => ({ value: project.id, label: project.name }));
 	useEffect(() => {
 		if (!open) return;
 		for (const avatars of projectAvatars.values()) {
@@ -144,9 +139,7 @@ export function NewTaskDialog({ open, projectId, hostId, onProjectChange, onCrea
 							menuItemClassName="gap-1!"
 							renderTrigger={() => (
 								<span className="inline-flex min-w-0 items-center gap-1.5">
-									{selectedProjectId === STANDALONE_WORKSPACE_ID ? (
-										<StickyNote aria-hidden="true" className="size-[0.85em] shrink-0 -translate-y-px text-muted-foreground" />
-									) : selectedProjectAvatar ? (
+									{selectedProjectAvatar ? (
 										<ProjectOwnerAvatar avatar={selectedProjectAvatar} className="size-[1em]" />
 									) : <StickyNote aria-hidden="true" className="size-[0.85em] shrink-0 -translate-y-px text-muted-foreground" />}
 									<span className="min-w-0 -translate-y-px truncate">{selectedProjectName}</span>
@@ -157,15 +150,11 @@ export function NewTaskDialog({ open, projectId, hostId, onProjectChange, onCrea
 								return (
 									<>
 										<span className="relative flex w-5 shrink-0 items-center justify-center">
-											{option.value === STANDALONE_WORKSPACE_ID ? (
-												<StickyNote aria-hidden="true" className="size-4! -translate-y-px text-muted-foreground" />
-											) : (
-												<span className="flex items-center -space-x-2">
-													{avatars.slice(0, 2).map((avatar) => (
-														<ProjectOwnerAvatar key={`${avatar.owner}:${avatar.url}`} avatar={avatar} className="size-[18px]" />
-													))}
-												</span>
-											)}
+											<span className="flex items-center -space-x-2">
+												{avatars.slice(0, 2).map((avatar) => (
+													<ProjectOwnerAvatar key={`${avatar.owner}:${avatar.url}`} avatar={avatar} className="size-[18px]" />
+												))}
+											</span>
 											{avatars.length > 2 ? <span className="absolute -bottom-1 -right-1 flex size-3 items-center justify-center rounded-full border border-card bg-muted text-[8px] text-muted-foreground">+{avatars.length - 2}</span> : null}
 										</span>
 										<span className="min-w-0 truncate text-settings-label">{option.label}</span>
@@ -176,7 +165,7 @@ export function NewTaskDialog({ open, projectId, hostId, onProjectChange, onCrea
 						{hostId ? <span className="text-settings-muted">· {labelForHost(hostId) ?? hostId}</span> : null}
 					</Dialog.Title>
 					<Dialog.Description className="sr-only">
-						{t(selectedProjectId === STANDALONE_WORKSPACE_ID ? "newTask.standaloneDescription" : "newTask.description")}
+						{t("newTask.description")}
 					</Dialog.Description>
 					<TaskComposer
 						projectId={selectedProjectId}

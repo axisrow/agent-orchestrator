@@ -1,13 +1,11 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useCallback } from "react";
 import { LOCAL_HOST, type HostId } from "./hosts";
-import { sessionIsActive, sortedWorkerSessions, STANDALONE_WORKSPACE_ID, type WorkspaceSession } from "../types/workspace";
+import { sessionIsActive, sortedWorkerSessions, type WorkspaceSession } from "../types/workspace";
 
 export type SessionNavigateTarget =
-	| { to: "/sessions/$sessionId"; params: { sessionId: string } }
 	| { to: "/projects/$projectId/sessions/$sessionId"; params: { projectId: string; sessionId: string } }
-	| { to: "/host/$hostId/project/$projectId/session/$sessionId"; params: { hostId: string; projectId: string; sessionId: string } }
-	| { to: "/host/$hostId/session/$sessionId"; params: { hostId: string; sessionId: string } };
+	| { to: "/host/$hostId/project/$projectId/session/$sessionId"; params: { hostId: string; projectId: string; sessionId: string } };
 
 export function projectNavigateTarget(projectId: string, host: HostId = LOCAL_HOST) {
 	return host === LOCAL_HOST
@@ -24,17 +22,11 @@ export function projectLandingSessionId(sessions: WorkspaceSession[]): string | 
 
 export function sessionNavigateTarget(projectId: string | undefined, sessionId: string, host: HostId = LOCAL_HOST): SessionNavigateTarget {
 	if (host !== LOCAL_HOST) {
-		if (!projectId || projectId === STANDALONE_WORKSPACE_ID) {
-			return { to: "/host/$hostId/session/$sessionId", params: { hostId: host, sessionId } };
-		}
-		return { to: "/host/$hostId/project/$projectId/session/$sessionId", params: { hostId: host, projectId, sessionId } };
-	}
-	if (!projectId || projectId === STANDALONE_WORKSPACE_ID) {
-		return { to: "/sessions/$sessionId", params: { sessionId } };
+		return { to: "/host/$hostId/project/$projectId/session/$sessionId", params: { hostId: host, projectId: projectId ?? "", sessionId } };
 	}
 	return {
 		to: "/projects/$projectId/sessions/$sessionId",
-		params: { projectId, sessionId },
+		params: { projectId: projectId ?? "", sessionId },
 	};
 }
 

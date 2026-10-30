@@ -2,12 +2,19 @@ import { isAgentActivityWorking } from "@aoagents/product-ui";
 import {
 	CLOUD_PROJECT_KIND,
 	sessionArtifacts,
-	STANDALONE_WORKSPACE_ID,
 	workerSessions,
 	type ArtifactKind,
+	type WorkspaceSession,
 	type WorkspaceSummary,
 } from "../types/workspace";
-import { isArchivedSession } from "./standalone-archive";
+
+export function isArchivedSession(session: WorkspaceSession): boolean {
+	return (
+		session.kanbanColumn === "archive" ||
+		session.isTerminated === true ||
+		session.status === "terminated"
+	);
+}
 
 /** One artifact file in the Artifacts list, with the session that wrote it. */
 export type ArtifactRow = {
@@ -19,18 +26,16 @@ export type ArtifactRow = {
 	updatedAt: string;
 	sessionId: string;
 	sessionTitle: string;
-	/** Undefined for a Scratchpad session. */
-	projectId?: string;
+	projectId: string;
 	/** The writing session's agent is working, so the file may still change. */
 	generating: boolean;
 };
 
 /** One project's artifacts, newest first. */
 export type ArtifactGroup = {
-	/** The workspace id; STANDALONE_WORKSPACE_ID for the Scratchpad. */
+	/** The workspace id. */
 	id: string;
 	name: string;
-	isScratchpad: boolean;
 	rows: ArtifactRow[];
 };
 
@@ -43,7 +48,6 @@ export function groupArtifactsByProject(workspaces: readonly WorkspaceSummary[])
 	const groups: ArtifactGroup[] = [];
 	for (const workspace of workspaces) {
 		if (workspace.kind === CLOUD_PROJECT_KIND || workspace.hostId) continue;
-		const isScratchpad = workspace.id === STANDALONE_WORKSPACE_ID;
 		const rows = workerSessions(workspace.sessions)
 			.filter((session) => !isArchivedSession(session))
 			.flatMap((session) =>
@@ -56,13 +60,13 @@ export function groupArtifactsByProject(workspaces: readonly WorkspaceSummary[])
 					updatedAt: artifact.updatedAt,
 					sessionId: session.id,
 					sessionTitle: session.title,
-					projectId: isScratchpad ? undefined : workspace.id,
+					projectId: workspace.id,
 					generating: isAgentActivityWorking(session.activity),
 				})),
 			)
 			.sort(newestFirst);
 		if (rows.length === 0) continue;
-		groups.push({ id: workspace.id, name: workspace.name, isScratchpad, rows });
+		groups.push({ id: workspace.id, name: workspace.name, rows });
 	}
 	return groups.sort((left, right) => newestFirst(left.rows[0], right.rows[0]));
 }

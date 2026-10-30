@@ -16,8 +16,6 @@ import {
 } from "./command-palette";
 import type { PRReviewState } from "./session-reviews";
 import {
-	STANDALONE_PROJECT_KIND,
-	STANDALONE_WORKSPACE_ID,
 	type PullRequestFacts,
 	type WorkspaceSession,
 	type WorkspaceSummary,
@@ -681,24 +679,6 @@ describe("buildSessionActions", () => {
 		expect(items[0].action).toEqual({
 			kind: "navigate",
 			target: { to: "/projects/$projectId/sessions/$sessionId", params: { projectId: "proj-1", sessionId: "live" } },
-		});
-	});
-
-	it("routes a standalone session through the projectless session route", () => {
-		const standaloneWorkspace: WorkspaceSummary = {
-			id: STANDALONE_WORKSPACE_ID,
-			name: "Standalone agents",
-			kind: STANDALONE_PROJECT_KIND,
-			path: "",
-			sessions: [],
-		};
-		const items = buildSessionActions(
-			standaloneWorkspace,
-			session({ id: "standalone-1", workspaceId: "", workspaceName: "Standalone agents", branch: undefined }),
-		);
-		expect(items[0].action).toEqual({
-			kind: "navigate",
-			target: { to: "/sessions/$sessionId", params: { sessionId: "standalone-1" } },
 		});
 	});
 
