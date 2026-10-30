@@ -259,14 +259,27 @@ describe("TaskComposer", () => {
 		expect(changed).not.toBe(firstID);
 	});
 
-	it("preserves an explicitly selected agent when readiness rankings refresh", async () => {
+	it("preselects the highest-ranked ready agent for a standalone task", async () => {
+		h.agentCatalog = {
+			agents: [
+				agentReadiness("claude-code", "Claude Code"),
+				agentReadiness("codex", "Codex", { usageCount: 3, lastUsedAt: "2026-09-20T12:00:00Z" }),
+				agentReadiness("cursor", "Cursor", { authentication: "unauthorized" }),
+			],
+		};
+
+		render(
+			<Wrap>
+				<TaskComposer projectId="__standalone__" onCreated={vi.fn()} />
+			</Wrap>,
+		);
+
+		await waitFor(() => expect(screen.getByLabelText("Agent")).toHaveAttribute("data-value", "codex"));
+		await waitFor(() => expect(screen.queryByRole("status", { name: "Loading models…" })).not.toBeInTheDocument());
+	});
+
+	it("preserves an explicitly selected standalone agent when readiness rankings refresh", async () => {
 		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-		h.get.mockImplementation(async (path: string) => {
-			if (path.includes("/models")) {
-				return { data: { agent: "codex", selectionMode: "text", models: [], allowCustom: true, refreshRecommended: false } };
-			}
-			return { data: { status: "ok", project: { agent: "codex", config: {} } } };
-		});
 		h.agentCatalog = {
 			agents: [
 				agentReadiness("codex", "Codex", { usageCount: 3, lastUsedAt: "2026-09-20T12:00:00Z" }),
@@ -276,7 +289,7 @@ describe("TaskComposer", () => {
 
 		const { rerender } = render(
 			<Wrap queryClient={queryClient}>
-				<TaskComposer projectId="project-a" onCreated={vi.fn()} />
+				<TaskComposer projectId="__standalone__" onCreated={vi.fn()} />
 			</Wrap>,
 		);
 
@@ -292,7 +305,7 @@ describe("TaskComposer", () => {
 		};
 		rerender(
 			<Wrap queryClient={queryClient}>
-				<TaskComposer projectId="project-a" onCreated={vi.fn()} />
+				<TaskComposer projectId="__standalone__" onCreated={vi.fn()} />
 			</Wrap>,
 		);
 
@@ -301,7 +314,7 @@ describe("TaskComposer", () => {
 		);
 	});
 
-	it("restores an agent's draft model after switching away and back", async () => {
+	it("restores a standalone agent's draft model after switching away and back", async () => {
 		h.agentCatalog = {
 			agents: [
 				agentReadiness("codex", "Codex", { usageCount: 3, lastUsedAt: "2026-09-20T12:00:00Z" }),
@@ -331,10 +344,10 @@ describe("TaskComposer", () => {
 							},
 						};
 			}
-			return { data: { status: "ok", project: { agent: "codex", config: {} } } };
+			return { data: { status: "ok", project: { config: {} } } };
 		});
 
-		render(<Wrap><TaskComposer projectId="project-a" onCreated={vi.fn()} /></Wrap>);
+		render(<Wrap><TaskComposer projectId="__standalone__" onCreated={vi.fn()} /></Wrap>);
 
 		const model = await screen.findByRole("button", { name: "Model" });
 		expect(model).toHaveTextContent("GPT-6-Astra");
@@ -349,7 +362,7 @@ describe("TaskComposer", () => {
 		expect(await screen.findByRole("button", { name: "Model" })).toHaveTextContent("GPT-5.5");
 	});
 
-	it("restores the last successfully spawned harness and model in a new composer", async () => {
+	it("restores the last successfully spawned standalone harness and model in a new composer", async () => {
 		h.agentCatalog = {
 			agents: [
 				agentReadiness("codex", "Codex", { usageCount: 3, lastUsedAt: "2026-09-20T12:00:00Z" }),
@@ -379,11 +392,11 @@ describe("TaskComposer", () => {
 							},
 						};
 			}
-			return { data: { status: "ok", project: { agent: "codex", config: {} } } };
+			return { data: { status: "ok", project: { config: {} } } };
 		});
-		h.post.mockResolvedValueOnce({ data: { workerId: "remembered-worker" } });
+		h.post.mockResolvedValueOnce({ data: { session: { id: "standalone-remembered" } } });
 
-		const first = render(<Wrap><TaskComposer projectId="project-a" onCreated={vi.fn()} /></Wrap>);
+		const first = render(<Wrap><TaskComposer projectId="__standalone__" onCreated={vi.fn()} /></Wrap>);
 		fireEvent.click(await screen.findByLabelText("Agent"));
 		expect(await screen.findByRole("button", { name: "Model" })).toHaveTextContent("Fable 5.1");
 		fireEvent.change(task(), { target: { value: "Remember this setup" } });
@@ -391,7 +404,7 @@ describe("TaskComposer", () => {
 		await waitFor(() => expect(h.post).toHaveBeenCalledTimes(1));
 		first.unmount();
 
-		render(<Wrap><TaskComposer projectId="project-a" onCreated={vi.fn()} /></Wrap>);
+		render(<Wrap><TaskComposer projectId="__standalone__" onCreated={vi.fn()} /></Wrap>);
 
 		await waitFor(() => expect(screen.getByLabelText("Agent")).toHaveAttribute("data-value", "claude-code"));
 		expect(await screen.findByRole("button", { name: "Model" })).toHaveTextContent("Fable 5.1");
@@ -434,7 +447,7 @@ describe("TaskComposer", () => {
 		expect(await screen.findByRole("button", { name: "Model" })).toHaveTextContent("GPT-6-Astra");
 	});
 
-	it("does not persist the model preference when task creation fails", async () => {
+	it("does not persist a standalone preference when task creation fails", async () => {
 		h.agentCatalog = { agents: [agentReadiness("codex", "Codex")] };
 		h.get.mockImplementation(async (path: string) => {
 			if (path.includes("/models")) {
@@ -450,11 +463,11 @@ describe("TaskComposer", () => {
 					},
 				};
 			}
-			return { data: { status: "ok", project: { agent: "codex", config: {} } } };
+			return { data: { status: "ok", project: { config: {} } } };
 		});
 		h.post.mockResolvedValueOnce({ error: { code: "SPAWN_FAILED", message: "Could not start task" } });
 
-		render(<Wrap><TaskComposer projectId="project-a" onCreated={vi.fn()} /></Wrap>);
+		render(<Wrap><TaskComposer projectId="__standalone__" onCreated={vi.fn()} /></Wrap>);
 		const model = await screen.findByRole("button", { name: "Model" });
 		await userEvent.click(model);
 		await userEvent.click(await screen.findByRole("menuitem", { name: "GPT-5.5" }));
@@ -465,9 +478,9 @@ describe("TaskComposer", () => {
 		expect(window.localStorage.getItem("ao.taskComposer.preferences.v1")).toBeNull();
 	});
 
-	it("falls back when remembered harness and model choices are no longer valid", async () => {
+	it("falls back when remembered standalone harness and model choices are no longer valid", async () => {
 		window.localStorage.setItem("ao.taskComposer.preferences.v1", JSON.stringify({
-			"project-a": {
+			__standalone__: {
 				lastAgent: "removed-agent",
 				agents: {
 					codex: { model: "retired-model", mode: "" },
@@ -487,16 +500,16 @@ describe("TaskComposer", () => {
 					},
 				};
 			}
-			return { data: { status: "ok", project: { agent: "codex", config: {} } } };
+			return { data: { status: "ok", project: { config: {} } } };
 		});
 
-		render(<Wrap><TaskComposer projectId="project-a" onCreated={vi.fn()} /></Wrap>);
+		render(<Wrap><TaskComposer projectId="__standalone__" onCreated={vi.fn()} /></Wrap>);
 
 		await waitFor(() => expect(screen.getByLabelText("Agent")).toHaveAttribute("data-value", "codex"));
 		expect(await screen.findByRole("button", { name: "Model" })).toHaveTextContent("GPT-6-Astra");
 	});
 
-	it("keeps the agent unselected when no agent is ready", () => {
+	it("keeps a standalone task unselected when no agent is ready", () => {
 		h.agentCatalog = {
 			agents: [
 				agentReadiness("claude-code", "Claude Code", { installation: "not_installed" }),
@@ -506,7 +519,7 @@ describe("TaskComposer", () => {
 
 		render(
 			<Wrap>
-				<TaskComposer projectId="project-a" onCreated={vi.fn()} />
+				<TaskComposer projectId="__standalone__" onCreated={vi.fn()} />
 			</Wrap>,
 		);
 
@@ -515,7 +528,37 @@ describe("TaskComposer", () => {
 		expect(screen.getByLabelText("Model")).toHaveAttribute("aria-disabled", "true");
 	});
 
-	it("sends the visible default model when starting a worker", async () => {
+	it("starts a standalone worker without loading or sending a project", async () => {
+		const onCreated = vi.fn();
+		h.agentCatalog = { agents: [agentReadiness("codex", "Codex")] };
+		h.post.mockResolvedValueOnce({ data: { session: { id: "standalone-1" } } });
+
+		render(
+			<Wrap>
+				<TaskComposer projectId="__standalone__" onCreated={onCreated} />
+			</Wrap>,
+		);
+
+		await waitFor(() => expect(screen.getByLabelText("Agent")).toHaveAttribute("data-value", "codex"));
+		fireEvent.change(task(), { target: { value: "Research release options" } });
+		fireEvent.click(screen.getByText("Start task"));
+
+		await waitFor(() => expect(onCreated).toHaveBeenCalledWith("standalone-1"));
+		expect(h.post).toHaveBeenCalledWith(
+			"/api/v1/sessions",
+			expect.objectContaining({
+				body: expect.objectContaining({
+					kind: "worker",
+					harness: "codex",
+					prompt: "Research release options",
+				}),
+			}),
+		);
+		expect(h.post.mock.calls[0][1].body).not.toHaveProperty("projectId");
+		expect(h.get.mock.calls.some(([path]) => path === "/api/v1/projects/{id}")).toBe(false);
+	});
+
+	it("sends the visible default model when starting a standalone worker", async () => {
 		h.agentCatalog = { agents: [agentReadiness("codex", "Codex")] };
 		h.get.mockImplementation(async (path: string) => {
 			if (path.includes("/models")) {
@@ -532,24 +575,24 @@ describe("TaskComposer", () => {
 					},
 				};
 			}
-			return { data: { status: "ok", project: { agent: "codex", config: {} } } };
+			return { data: { status: "ok", project: { config: {} } } };
 		});
-		h.post.mockResolvedValueOnce({ data: { workerId: "worker-1" } });
+		h.post.mockResolvedValueOnce({ data: { session: { id: "standalone-1" } } });
 
-		render(<Wrap><TaskComposer projectId="project-a" onCreated={vi.fn()} /></Wrap>);
+		render(<Wrap><TaskComposer projectId="__standalone__" onCreated={vi.fn()} /></Wrap>);
 
 		expect(await screen.findByRole("button", { name: "Model" })).toHaveTextContent("GPT-6 Astra");
 		fireEvent.click(screen.getByText("Start task"));
 
 		await waitFor(() =>
 			expect(h.post).toHaveBeenCalledWith(
-				"/api/v1/orchestrators/delegate",
+				"/api/v1/sessions",
 				expect.objectContaining({ body: expect.objectContaining({ model: "gpt-6-astra" }) }),
 			),
 		);
 	});
 
-	it("leaves the catalog default mode to the daemon for a mode-list worker", async () => {
+	it("sends the visible default mode when starting a standalone mode-list worker", async () => {
 		h.agentCatalog = { agents: [agentReadiness("amp", "Amp")] };
 		h.get.mockImplementation(async (path: string) => {
 			if (path.includes("/models")) {
@@ -566,25 +609,24 @@ describe("TaskComposer", () => {
 					},
 				};
 			}
-			return { data: { status: "ok", project: { agent: "amp", config: {} } } };
+			return { data: { status: "ok", project: { config: {} } } };
 		});
-		h.post.mockResolvedValueOnce({ data: { workerId: "worker-1" } });
+		h.post.mockResolvedValueOnce({ data: { session: { id: "standalone-1" } } });
 
-		render(<Wrap><TaskComposer projectId="project-a" onCreated={vi.fn()} /></Wrap>);
+		render(<Wrap><TaskComposer projectId="__standalone__" onCreated={vi.fn()} /></Wrap>);
 
 		expect(await screen.findByRole("button", { name: "Model" })).toHaveTextContent("High");
 		fireEvent.click(screen.getByText("Start task"));
 
 		await waitFor(() =>
 			expect(h.post).toHaveBeenCalledWith(
-				"/api/v1/orchestrators/delegate",
-				expect.objectContaining({ body: expect.objectContaining({ agent: "amp" }) }),
+				"/api/v1/sessions",
+				expect.objectContaining({ body: expect.objectContaining({ model: "high" }) }),
 			),
 		);
-		expect(h.post.mock.calls[0][1].body).not.toHaveProperty("model");
 	});
 
-	it("leaves a provider-advertised default effort to the agent", async () => {
+	it("sends the visible default effort when starting a standalone worker", async () => {
 		h.agentCatalog = { agents: [agentReadiness("codex", "Codex")] };
 		h.get.mockImplementation(async (path: string) => {
 			if (path.includes("/models")) {
@@ -604,27 +646,26 @@ describe("TaskComposer", () => {
 					},
 				};
 			}
-			return { data: { status: "ok", project: { agent: "codex", config: {} } } };
+			return { data: { status: "ok", project: { config: {} } } };
 		});
-		h.post.mockResolvedValueOnce({ data: { workerId: "worker-1" } });
+		h.post.mockResolvedValueOnce({ data: { session: { id: "standalone-1" } } });
 
-		render(<Wrap><TaskComposer projectId="project-a" onCreated={vi.fn()} /></Wrap>);
+		render(<Wrap><TaskComposer projectId="__standalone__" onCreated={vi.fn()} /></Wrap>);
 
 		expect(await screen.findByRole("button", { name: "Effort" })).toHaveTextContent("High");
 		fireEvent.click(screen.getByText("Start task"));
 
 		await waitFor(() =>
 			expect(h.post).toHaveBeenCalledWith(
-				"/api/v1/orchestrators/delegate",
+				"/api/v1/sessions",
 				expect.objectContaining({
-					body: expect.objectContaining({ model: "gpt-5.6-sol" }),
+					body: expect.objectContaining({ model: "gpt-5.6-sol", effort: "high" }),
 				}),
 			),
 		);
-		expect(h.post.mock.calls[0][1].body).not.toHaveProperty("effort");
 	});
 
-	it("sends the selected effort when starting a worker", async () => {
+	it("sends the selected effort when starting a standalone worker", async () => {
 		h.get.mockImplementation(async (path: string) => {
 			if (path.includes("/models")) {
 				return {
@@ -637,13 +678,13 @@ describe("TaskComposer", () => {
 					},
 				};
 			}
-			return { data: { status: "ok", project: { agent: "codex", config: {} } } };
+			return { data: { status: "ok", project: { config: {} } } };
 		});
-		h.post.mockResolvedValueOnce({ data: { workerId: "worker-1" } });
+		h.post.mockResolvedValueOnce({ data: { session: { id: "standalone-1" } } });
 
 		render(
 			<Wrap>
-				<TaskComposer projectId="project-a" onCreated={vi.fn()} />
+				<TaskComposer projectId="__standalone__" onCreated={vi.fn()} />
 			</Wrap>,
 		);
 
@@ -655,7 +696,7 @@ describe("TaskComposer", () => {
 
 		await waitFor(() =>
 			expect(h.post).toHaveBeenCalledWith(
-				"/api/v1/orchestrators/delegate",
+				"/api/v1/sessions",
 				expect.objectContaining({ body: expect.objectContaining({ effort: "high" }) }),
 			),
 		);
@@ -686,13 +727,13 @@ describe("TaskComposer", () => {
 					},
 				};
 			}
-			return { data: { status: "ok", project: { agent: "claude-code", config: {} } } };
+			return { data: { status: "ok", project: { config: {} } } };
 		});
-		h.post.mockResolvedValueOnce({ data: { workerId: "worker-1" } });
+		h.post.mockResolvedValueOnce({ data: { session: { id: "standalone-1" } } });
 
 		render(
 			<Wrap>
-				<TaskComposer projectId="project-a" onCreated={vi.fn()} />
+				<TaskComposer projectId="__standalone__" onCreated={vi.fn()} />
 			</Wrap>,
 		);
 
@@ -703,7 +744,7 @@ describe("TaskComposer", () => {
 
 		await waitFor(() =>
 			expect(h.post).toHaveBeenCalledWith(
-				"/api/v1/orchestrators/delegate",
+				"/api/v1/sessions",
 				expect.objectContaining({ body: expect.objectContaining({ effort: "max" }) }),
 			),
 		);
@@ -722,13 +763,13 @@ describe("TaskComposer", () => {
 					},
 				};
 			}
-			return { data: { status: "ok", project: { agent: "codex", config: {} } } };
+			return { data: { status: "ok", project: { config: {} } } };
 		});
-		h.post.mockResolvedValueOnce({ data: { workerId: "worker-1" } });
+		h.post.mockResolvedValueOnce({ data: { session: { id: "standalone-1" } } });
 
 		render(
 			<Wrap>
-				<TaskComposer projectId="project-a" onCreated={vi.fn()} />
+				<TaskComposer projectId="__standalone__" onCreated={vi.fn()} />
 			</Wrap>,
 		);
 
@@ -742,7 +783,7 @@ describe("TaskComposer", () => {
 
 		await waitFor(() =>
 			expect(h.post).toHaveBeenCalledWith(
-				"/api/v1/orchestrators/delegate",
+				"/api/v1/sessions",
 				expect.objectContaining({ body: expect.objectContaining({ effort: "medium" }) }),
 			),
 		);
@@ -773,13 +814,13 @@ describe("TaskComposer", () => {
 					},
 				};
 			}
-			return { data: { status: "ok", project: { agent: "claude-code", config: {} } } };
+			return { data: { status: "ok", project: { config: {} } } };
 		});
-		h.post.mockResolvedValueOnce({ data: { workerId: "worker-1" } });
+		h.post.mockResolvedValueOnce({ data: { session: { id: "standalone-1" } } });
 
 		render(
 			<Wrap>
-				<TaskComposer projectId="project-a" onCreated={vi.fn()} />
+				<TaskComposer projectId="__standalone__" onCreated={vi.fn()} />
 			</Wrap>,
 		);
 
@@ -791,7 +832,7 @@ describe("TaskComposer", () => {
 
 		await waitFor(() =>
 			expect(h.post).toHaveBeenCalledWith(
-				"/api/v1/orchestrators/delegate",
+				"/api/v1/sessions",
 				expect.objectContaining({ body: expect.objectContaining({ effort: "max" }) }),
 			),
 		);
@@ -1583,7 +1624,7 @@ describe("TaskComposer", () => {
 		expect(h.post.mock.calls[1][1].body).not.toHaveProperty("mode");
 	});
 
-	it("starts an Unreal task in Chat after approval-less retry", async () => {
+	it("starts a standalone Unreal task in Chat after approval-less retry", async () => {
 		h.agentCatalog = { agents: [agentReadiness("unreal-agent", "Unreal Agent")] };
 		h.get.mockImplementation(async (path: string) => {
 			if (path === "/api/v1/settings") {
@@ -1592,7 +1633,7 @@ describe("TaskComposer", () => {
 			if (path.includes("/models")) {
 				return { data: { agent: "unreal-agent", selectionMode: "text", models: [], allowCustom: true } };
 			}
-			return { data: { status: "ok", project: { agent: "unreal-agent", config: {} } } };
+			return { data: { status: "ok", project: { config: {} } } };
 		});
 		h.post
 			.mockResolvedValueOnce({
@@ -1602,37 +1643,31 @@ describe("TaskComposer", () => {
 					details: { missingCapabilities: ["approvals"], allowedApprovalModes: ["bypass-permissions"] },
 				},
 			})
-			.mockResolvedValueOnce({ data: { workerId: "sess-unreal" } });
+			.mockResolvedValueOnce({ data: { session: { id: "sess-unreal" } } });
 		const onCreated = vi.fn();
 
-		render(<Wrap><TaskComposer projectId="project-a" onCreated={onCreated} /></Wrap>);
+		render(<Wrap><TaskComposer projectId="__standalone__" onCreated={onCreated} /></Wrap>);
 		await waitFor(() => expect(screen.getByTestId("agent-field")).toHaveAttribute("data-value", "unreal-agent"));
 		fireEvent.change(task(), { target: { value: "Say hello" } });
 		fireEvent.click(startTask());
 		fireEvent.click(await screen.findByRole("button", { name: "Start without approvals" }));
 
 		await waitFor(() => expect(onCreated).toHaveBeenCalledWith("sess-unreal"));
-		expect(h.post.mock.calls[0][1].body).toMatchObject({ agent: "unreal-agent", mode: "chat" });
+		expect(h.post.mock.calls[0][1].body).toMatchObject({ harness: "unreal-agent", mode: "chat" });
 		expect(h.post.mock.calls[1][1].body).toMatchObject({
-			agent: "unreal-agent", mode: "chat", approvalMode: "bypass-permissions",
+			harness: "unreal-agent", mode: "chat", approvalMode: "bypass-permissions",
 		});
 	});
 
-	it("reports a create failure", async () => {
+	it("reports a standalone create failure", async () => {
 		h.agentCatalog = { agents: [agentReadiness("codex", "Codex")] };
-		h.get.mockImplementation(async (path: string) => {
-			if (path.includes("/models")) {
-				return { data: { agent: "codex", selectionMode: "text", models: [], allowCustom: true, refreshRecommended: false } };
-			}
-			return { data: { status: "ok", project: { agent: "codex", config: {} } } };
-		});
 		h.post.mockResolvedValue({ error: { code: "SESSION_CREATE_FAILED", message: "no session" } });
-		render(<Wrap><TaskComposer projectId="project-a" onCreated={vi.fn()} /></Wrap>);
+		render(<Wrap><TaskComposer projectId="__standalone__" onCreated={vi.fn()} /></Wrap>);
 		await waitFor(() => expect(screen.getByLabelText("Agent")).toHaveAttribute("data-value", "codex"));
 		fireEvent.change(task(), { target: { value: "Say hello" } });
 		fireEvent.click(screen.getByText("Start task"));
 		expect(await screen.findByRole("alert")).toHaveTextContent("no session");
-		expect(h.capture).toHaveBeenCalledWith("ao.renderer.task_create_failed", { project_id: "project-a" });
+		expect(h.capture).toHaveBeenCalledWith("ao.renderer.task_create_failed", { scope: "standalone" });
 	});
 
 	it("reports dirty then clears it on unmount", () => {

@@ -6,6 +6,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useUiStore } from "../stores/ui-store";
 import {
 	CLOUD_PROJECT_KIND,
+	STANDALONE_PROJECT_KIND,
+	STANDALONE_WORKSPACE_ID,
 	type SessionActivityState,
 	type WorkspaceSession,
 	type WorkspaceSummary,
@@ -433,14 +435,14 @@ describe("ShellTopbar status pill", () => {
 });
 
 describe("ShellTopbar orchestrator actions", () => {
-	it.each([CLOUD_PROJECT_KIND, "unknown"] as const)(
+	it.each([CLOUD_PROJECT_KIND, STANDALONE_PROJECT_KIND, "unknown"] as const)(
 		"hides the session cue runner for %s projects", (kind) => {
 			renderTopbarSessions([sessionWith()], "sess-1", false, undefined, kind as WorkspaceSummary["kind"]);
 			expect(screen.queryByRole("button", { name: "Run a cue" })).not.toBeInTheDocument();
 		},
 	);
 
-	it.each(["single_repo", "multi_repo", CLOUD_PROJECT_KIND, "unknown"] as const)(
+	it.each(["single_repo", "multi_repo", CLOUD_PROJECT_KIND, STANDALONE_PROJECT_KIND, "unknown"] as const)(
 		"hides the board cue runner for %s projects", (kind) => {
 			renderTopbarSessions([orchestrator], "", false, undefined, kind as WorkspaceSummary["kind"]);
 			expect(screen.queryByRole("button", { name: "Run a cue" })).not.toBeInTheDocument();
@@ -556,6 +558,24 @@ describe("ShellTopbar orchestrator actions", () => {
 			to: "/projects/$projectId/sessions/$sessionId",
 			params: { projectId: "proj-1", sessionId: "orch-1" },
 		});
+	});
+
+	it("hides project-only orchestrator actions for ad hoc sessions", () => {
+		renderTopbarSessions(
+			[
+				sessionWith({
+					workspaceId: STANDALONE_WORKSPACE_ID,
+					workspaceName: "Scratchpad",
+					branch: undefined,
+				}),
+			],
+			"sess-1",
+			false,
+			undefined,
+			STANDALONE_PROJECT_KIND,
+		);
+
+		expect(screen.queryByRole("button", { name: "Open orchestrator" })).not.toBeInTheDocument();
 	});
 
 	it("switches from a worker to its orchestrator as soon as termination is confirmed", async () => {

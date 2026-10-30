@@ -76,6 +76,7 @@ import {
 	resolveNextNavigationAfterSessionKill,
 	sessionArtifacts,
 	sortedPRs,
+	STANDALONE_WORKSPACE_ID,
 } from "../types/workspace";
 import { getAgentActivityView, getSessionTimelinePillView } from "../lib/session-presentation";
 import { BrowserPanelView, type BrowserAnnotationQueueModel } from "./BrowserPanel";
@@ -406,8 +407,8 @@ const SummaryView = memo(function SummaryView({
 	const artifactSectionTitle = artifacts.length > 1
 		? t("inspector.artifacts", { count: artifacts.length })
 		: t("inspector.artifact");
-	// CI, review, and merge policies act on a PR.
-	const showSessionControls = hasPRs;
+	// CI, review, and merge policies act on a PR. Standalone sessions keep the row for Archive.
+	const showSessionControls = hasPRs || session.workspaceId === STANDALONE_WORKSPACE_ID;
 	// Cloud orchestrators list the workers they spawned; local orchestrators
 	// have no parent/child model and every other session has no children.
 	const showWorkers =
@@ -780,18 +781,23 @@ function SessionControls({ session, hostId }: { session: WorkspaceSession; hostI
 	});
 	const policyError = policy.error instanceof Error ? policy.error.message : null;
 	const canTerminateNow = session.status === "merged";
+	const isStandaloneSession = session.workspaceId === STANDALONE_WORKSPACE_ID;
 
 	const confirmTermination = ({ deleteArtifacts }: SessionArchiveChoice) => {
 		const workspaces = queryClient.getQueryData<WorkspaceSummary[]>(workspaceKey) ?? [];
 		const workspace = workspaces.find((w) => w.id === session.workspaceId);
 		const nextNav = resolveNextNavigationAfterSessionKill(workspace, session.id);
-
+		
 		setConfirmOpen(false);
 		terminate.mutate(hostId ? { ...session, hostId, deleteArtifacts } : { ...session, deleteArtifacts });
-
+		
 		if (nextNav.target === "session") {
 			void navigate(sessionNavigateTarget(session.workspaceId, nextNav.sessionId, hostId));
 		} else {
+			if (session.workspaceId === STANDALONE_WORKSPACE_ID) {
+				void navigate({ to: "/" });
+				return;
+			}
 			void navigate(projectNavigateTarget(session.workspaceId, hostId));
 		}
 	};
@@ -830,6 +836,15 @@ function SessionControls({ session, hostId }: { session: WorkspaceSession; hostI
 			</Tooltip>
 		</div>
 	);
+
+	if (isStandaloneSession) {
+		return (
+			<Section title={t("inspector.sessionControls")}>
+				{terminateAction}
+				{!session.cloud && (!hostId || hostId === "local") ? <AwakeControl sessionId={session.id} /> : null}
+			</Section>
+		);
+	}
 
 	return (
 		<Section title={t("inspector.sessionControls")}>

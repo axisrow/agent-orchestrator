@@ -1,4 +1,4 @@
-import { type WorkspaceSession } from "../types/workspace";
+import { STANDALONE_WORKSPACE_ID, type WorkspaceSession } from "../types/workspace";
 
 export function sessionBranchPresentation(session?: WorkspaceSession): { branch?: string; naming: boolean } {
 	// Keep a provisional branch private, including when creation fails before
@@ -6,6 +6,7 @@ export function sessionBranchPresentation(session?: WorkspaceSession): { branch?
 	const launched = session?.provisionState !== "provisioning" && session?.provisionState !== "failed"
 		&& Boolean(session?.terminalHandleId || session?.chatProviderPreserved);
 	const unfinished = session && !launched && !session.cloud && session.kind !== "orchestrator"
+		&& session.workspaceId !== STANDALONE_WORKSPACE_ID
 		&& (session.provisionSteps?.some((step) => step.id === "worktree" && step.status !== "done")
 			|| (!session.provisionSteps?.length && (session.provisionState === "provisioning" || session.provisionState === "failed")));
 	const pendingName = Boolean(session?.branchNaming && !session.isTerminated && session.provisionState !== "failed");

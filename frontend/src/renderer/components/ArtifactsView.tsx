@@ -16,7 +16,7 @@ import { useNavigateToSession } from "../lib/navigate-to-session";
 import { hidesShellTopbar } from "../lib/platform";
 import { cn } from "../lib/utils";
 import { useUiStore } from "../stores/ui-store";
-import { CLOUD_PROJECT_KIND, type WorkspaceSummary } from "../types/workspace";
+import { CLOUD_PROJECT_KIND, STANDALONE_WORKSPACE_ID, type WorkspaceSummary } from "../types/workspace";
 import { NAV_ROW_HIGHLIGHT_HOST_CLASS, NavRowHighlight } from "./NavRowHighlight";
 import { TopbarButton, topbarProjectLabelClass } from "./TopbarButton";
 import { Button } from "./ui/button";
@@ -24,6 +24,7 @@ import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
+	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 import { Input } from "./ui/input";
@@ -83,7 +84,7 @@ export function ArtifactsView() {
 								{ value: ALL_PROJECTS, label: t("artifacts.allProjects") },
 								...groups.map((group) => ({
 									value: group.id,
-									label: group.name,
+									label: group.isScratchpad ? t("standalone.workspaceName") : group.name,
 								})),
 							]}
 							onChange={setProjectFilter}
@@ -139,8 +140,9 @@ export function ArtifactsView() {
 }
 
 function ArtifactGroupSection({ group }: { group: ArtifactGroup }) {
-	const name = group.name;
-	const GroupIcon = Folder;
+	const { t } = useTranslation();
+	const name = group.isScratchpad ? t("standalone.workspaceName") : group.name;
+	const GroupIcon = group.isScratchpad ? File : Folder;
 	return (
 		<section aria-label={name}>
 			<h2 className="flex h-8 items-center gap-2 px-3 text-xs font-medium text-muted-foreground">
@@ -225,8 +227,8 @@ function EmptyArtifacts({ workspaces }: { workspaces: readonly WorkspaceSummary[
 }
 
 /**
- * The Create artifact trigger and its project menu. The empty state and the
- * list header share it so both start the same session.
+ * The Create artifact trigger and its Scratchpad / project menu. The empty
+ * state and the list header share it so both start the same session.
  */
 function CreateArtifactMenu({
 	workspaces,
@@ -238,7 +240,7 @@ function CreateArtifactMenu({
 	disabledReason,
 }: {
 	workspaces: readonly WorkspaceSummary[];
-	create: (projectId: string) => Promise<void>;
+	create: (projectId?: string) => Promise<void>;
 	pending: boolean;
 	label?: "create" | "new";
 	align: "center" | "end";
@@ -247,7 +249,7 @@ function CreateArtifactMenu({
 }) {
 	const { t } = useTranslation();
 	const projects = workspaces.filter(
-		(workspace) => workspace.kind !== CLOUD_PROJECT_KIND && !workspace.hostId,
+		(workspace) => workspace.id !== STANDALONE_WORKSPACE_ID && workspace.kind !== CLOUD_PROJECT_KIND && !workspace.hostId,
 	);
 	const disabled = pending || Boolean(disabledReason);
 	const trigger =
@@ -289,6 +291,11 @@ function CreateArtifactMenu({
 		<DropdownMenu>
 			<DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
 			<DropdownMenuContent align={align} className="min-w-56">
+				<DropdownMenuItem onSelect={() => void create()}>
+					<File aria-hidden="true" className="size-icon-sm" />
+					{t("standalone.workspaceName")}
+				</DropdownMenuItem>
+				{projects.length > 0 ? <DropdownMenuSeparator /> : null}
 				{projects.map((project) => (
 					<DropdownMenuItem key={project.id} onSelect={() => void create(project.id)}>
 						<Folder aria-hidden="true" className="size-icon-sm" />

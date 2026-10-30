@@ -25,7 +25,7 @@ The desktop app finds, starts, and supervises the daemon. Its renderer uses a ge
 
 ## Sessions and worktrees
 
-Workers in Git projects use isolated worktrees. A workspace can include its root repository and child repositories. Scratch sessions use Orchestrator-managed directories. Each session uses one agent interface at a time:
+Workers in Git projects use isolated worktrees. A workspace can include its root repository and child repositories. Scratch and standalone sessions use Orchestrator-managed directories. Each session uses one agent interface at a time:
 
 - **Terminal UI** runs the harness in a detached native pseudo-terminal (PTY) host on macOS/Linux. Older sessions and fallback launches can use tmux. Windows uses ConPTY.
 - **Chat** runs a native provider controller without an agent terminal runtime.
@@ -88,7 +88,7 @@ Browser automation uses a local connection between the daemon and Electron. The 
 
 The temporary browser profile is isolated per session. Named profiles save cookies and storage and can be reused across sessions. Sessions using the same named profile share its browser state. Orchestrator copies imported browser data into Orchestrator-owned storage and does not change the source profile.
 
-The architecture above describes local sessions. Cloud execution is a separate gated integration requiring build enablement, account access, and a reachable control plane.
+The architecture above describes local sessions. Cloud execution is a separate gated integration requiring build enablement, account access, and a reachable control plane. Standalone local workers are projectless; they are not Cloud sessions.
 
 ## Load-bearing rules
 

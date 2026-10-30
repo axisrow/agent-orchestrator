@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	CLOUD_PROJECT_KIND,
+	STANDALONE_WORKSPACE_ID,
 	type SessionArtifact,
 	type WorkspaceSession,
 	type WorkspaceSummary,
@@ -68,6 +69,15 @@ describe("groupArtifactsByProject", () => {
 
 		expect(groups.map((group) => group.id)).toEqual(["ao"]);
 		expect(groups[0].rows.map((row) => row.name)).toEqual(["kept.md"]);
+	});
+
+	it("labels the standalone workspace as the Scratchpad without a project id", () => {
+		const [group] = groupArtifactsByProject([
+			workspace(STANDALONE_WORKSPACE_ID, "Standalone", [session("standalone-1", [artifact("caching.md", "2026-10-08T10:00:00Z")])]),
+		]);
+
+		expect(group.isScratchpad).toBe(true);
+		expect(group.rows[0].projectId).toBeUndefined();
 	});
 
 	it("skips orchestrators, cloud projects, remote hosts, and PR-only output", () => {

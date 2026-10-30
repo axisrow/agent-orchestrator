@@ -3,7 +3,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useUiStore } from "../stores/ui-store";
-import { CLOUD_PROJECT_KIND, type WorkspaceSession, type WorkspaceSummary } from "../types/workspace";
+import { CLOUD_PROJECT_KIND, STANDALONE_WORKSPACE_ID, type WorkspaceSession, type WorkspaceSummary } from "../types/workspace";
 import { ArtifactsView } from "./ArtifactsView";
 import { TooltipProvider } from "./ui/tooltip";
 
@@ -79,12 +79,19 @@ const withArtifacts: WorkspaceSummary[] = [
 			session("ao-2", "Review pricing", [{ name: "pricing.md", updatedAt: "2026-10-10T10:00:00Z" }]),
 		],
 	},
+	{
+		id: STANDALONE_WORKSPACE_ID,
+		name: "Standalone",
+		path: "",
+		sessions: [session("standalone-1", "Compare caching options", [{ name: "caching-options.md", updatedAt: "2026-10-08T10:00:00Z" }])],
+	},
 ];
 
 const withoutArtifacts: WorkspaceSummary[] = [
 	{ id: "ao", name: "agent-orchestrator", path: "/code/ao", sessions: [] },
 	{ id: "px0", name: "px0", path: "/code/px0", sessions: [] },
 	{ id: "cloud", name: "cloud-project", path: "", kind: CLOUD_PROJECT_KIND, sessions: [] },
+	{ id: STANDALONE_WORKSPACE_ID, name: "Standalone", path: "", sessions: [] },
 ];
 
 function renderView() {
@@ -116,7 +123,7 @@ describe("ArtifactsView", () => {
 
 		expect(screen.getByRole("heading", { level: 1, name: "Artifacts" })).not.toHaveClass("sr-only");
 		const sections = screen.getAllByRole("region");
-		expect(sections.map((section) => section.getAttribute("aria-label"))).toEqual(["agent-orchestrator"]);
+		expect(sections.map((section) => section.getAttribute("aria-label"))).toEqual(["agent-orchestrator", "Scratchpad"]);
 		const project = within(sections[0]);
 		expect(project.getByRole("heading", { level: 2 })).toHaveTextContent("agent-orchestrator2");
 		expect(project.getAllByRole("listitem").map((row) => row.textContent)).toEqual([
@@ -134,6 +141,7 @@ describe("ArtifactsView", () => {
 		await user.type(screen.getByRole("searchbox", { name: "Search artifacts" }), "pricing");
 		expect(screen.getByText("pricing.md")).toBeInTheDocument();
 		expect(screen.queryByText("artifacts-user-flow.html")).not.toBeInTheDocument();
+		expect(screen.queryByRole("region", { name: "Scratchpad" })).not.toBeInTheDocument();
 
 		await user.clear(screen.getByRole("searchbox", { name: "Search artifacts" }));
 		await user.type(screen.getByRole("searchbox", { name: "Search artifacts" }), "no such thing");
@@ -141,7 +149,7 @@ describe("ArtifactsView", () => {
 
 		await user.click(screen.getByRole("button", { name: "Clear filters" }));
 		expect(screen.getByRole("searchbox", { name: "Search artifacts" })).toHaveValue("");
-		expect(screen.getAllByRole("region")).toHaveLength(1);
+		expect(screen.getAllByRole("region")).toHaveLength(2);
 	});
 
 	it("filters to one project's group", async () => {
@@ -149,9 +157,9 @@ describe("ArtifactsView", () => {
 		renderView();
 
 		await user.click(screen.getByRole("button", { name: "Filter by project" }));
-		await user.click(await screen.findByRole("menuitem", { name: /agent-orchestrator/ }));
+		await user.click(await screen.findByRole("menuitem", { name: /Scratchpad/ }));
 
-		expect(screen.getAllByRole("region").map((section) => section.getAttribute("aria-label"))).toEqual(["agent-orchestrator"]);
+		expect(screen.getAllByRole("region").map((section) => section.getAttribute("aria-label"))).toEqual(["Scratchpad"]);
 	});
 
 	it("opens the source session and hands it the clicked artifact", async () => {
@@ -168,19 +176,27 @@ describe("ArtifactsView", () => {
 		});
 	});
 
-	it("offers New artifact beside the filters with the project menu", async () => {
+	it("opens a Scratchpad artifact on the standalone session route", async () => {
 		const user = userEvent.setup();
-		mocks.get.mockResolvedValue({ data: { status: "ok", project: { agent: "codex" } } });
-		mocks.post.mockResolvedValue({ data: { session: { id: "ao-9" } } });
+		renderView();
+
+		await user.click(screen.getByRole("button", { name: /caching-options\.md/ }));
+
+		expect(mocks.navigate).toHaveBeenCalledWith({ to: "/sessions/$sessionId", params: { sessionId: "standalone-1" } });
+	});
+
+	it("offers New artifact beside the filters with the same Scratchpad and project menu", async () => {
+		const user = userEvent.setup();
+		mocks.post.mockResolvedValue({ data: { session: { id: "standalone-7" } } });
 		renderView();
 
 		await user.click(screen.getByRole("button", { name: "New artifact" }));
-		expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["agent-orchestrator"]);
-		await user.click(screen.getByRole("menuitem", { name: "agent-orchestrator" }));
+		expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Scratchpad", "agent-orchestrator"]);
+		await user.click(screen.getByRole("menuitem", { name: "Scratchpad" }));
 
-		await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith({ to: "/projects/$projectId/sessions/$sessionId", params: { projectId: "ao", sessionId: "ao-9" } }));
+		await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith({ to: "/sessions/$sessionId", params: { sessionId: "standalone-7" } }));
 		expect(mocks.post).toHaveBeenCalledWith("/api/v1/sessions", {
-			body: { kind: "worker", requestedOutput: "artifact", displayName: "New artifact", projectId: "ao", harness: "codex" },
+			body: { kind: "worker", requestedOutput: "artifact", displayName: "New artifact", harness: "codex" },
 		});
 	});
 
@@ -201,7 +217,24 @@ describe("ArtifactsView", () => {
 		expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
 
 		await user.click(screen.getByRole("button", { name: "Create artifact" }));
-		expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["agent-orchestrator", "px0"]);
+		expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Scratchpad", "agent-orchestrator", "px0"]);
+	});
+
+	it("starts a Scratchpad artifact session without a project id and opens it", async () => {
+		const user = userEvent.setup();
+		mocks.workspaces = withoutArtifacts;
+		mocks.post.mockResolvedValue({ data: { session: { id: "standalone-9" } } });
+		renderView();
+
+		await user.click(screen.getByRole("button", { name: "Create artifact" }));
+		await user.click(screen.getByRole("menuitem", { name: "Scratchpad" }));
+
+		await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith({ to: "/sessions/$sessionId", params: { sessionId: "standalone-9" } }));
+		expect(mocks.post).toHaveBeenCalledWith("/api/v1/sessions", {
+			body: { kind: "worker", requestedOutput: "artifact", displayName: "New artifact", harness: "codex" },
+		});
+		expect(mocks.capture).not.toHaveBeenCalledWith("ao.renderer.artifact_create_requested", expect.anything());
+		expect(mocks.capture).toHaveBeenCalledWith("ao.renderer.artifact_create_succeeded", { scope: "standalone" });
 	});
 
 	it("starts a project artifact session with the project's worker agent", async () => {
@@ -224,16 +257,15 @@ describe("ArtifactsView", () => {
 	it("shows the daemon error and stays on the screen when the start fails", async () => {
 		const user = userEvent.setup();
 		mocks.workspaces = withoutArtifacts;
-		mocks.get.mockResolvedValue({ data: { status: "ok", project: { agent: "codex" } } });
 		mocks.post.mockResolvedValue({ error: { error: "conflict", code: "AGENT_NOT_READY", message: "Agent is not ready" } });
 		renderView();
 
 		await user.click(screen.getByRole("button", { name: "Create artifact" }));
-		await user.click(screen.getByRole("menuitem", { name: "px0" }));
+		await user.click(screen.getByRole("menuitem", { name: "Scratchpad" }));
 
 		await waitFor(() => expect(useUiStore.getState().globalToast).toMatchObject({ title: "Agent is not ready" }));
 		expect(mocks.navigate).not.toHaveBeenCalled();
-		expect(mocks.capture).toHaveBeenCalledWith("ao.renderer.artifact_create_failed", { scope: "project" });
+		expect(mocks.capture).toHaveBeenCalledWith("ao.renderer.artifact_create_failed", { scope: "standalone" });
 		expect(screen.getByRole("button", { name: "Create artifact" })).toBeEnabled();
 	});
 

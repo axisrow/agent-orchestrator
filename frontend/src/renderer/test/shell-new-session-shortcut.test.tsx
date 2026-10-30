@@ -1044,6 +1044,15 @@ describe("shell new-session shortcut subscription", () => {
 
 		expect(screen.getByTestId("new-task-flow")).toHaveAttribute("data-project", "proj-1");
 	});
+
+	it("opens the standalone new-task flow when no project is in scope", async () => {
+		await renderShell();
+
+		emitShortcut();
+
+		expect(screen.getByTestId("new-task-flow")).toHaveAttribute("data-project", "__standalone__");
+		expect(screen.queryByTestId("create-project-flow")).not.toBeInTheDocument();
+	});
 });
 
 describe("shell application shortcut subscriptions", () => {
@@ -1264,6 +1273,36 @@ describe("shell application shortcut subscriptions", () => {
 		expect(useUiStore.getState().isSidebarOpen).toBe(true);
 	});
 
+	it("moves between standalone sessions without constructing a project route", async () => {
+		const standalone = {
+			id: "__standalone__",
+			name: "Standalone agents",
+			kind: "standalone",
+			path: "",
+			sessions: [
+				{ id: "standalone-1", workspaceId: "", status: "working" },
+				{ id: "standalone-2", workspaceId: "", status: "idle" },
+			],
+		} as unknown as WorkspaceSummary;
+		shellMocks.state.routeParams = { sessionId: "standalone-1" };
+		shellMocks.state.workspaces = [...workspaces, standalone];
+		shellMocks.state.workspaceQuery = {
+			data: shellMocks.state.workspaces,
+			dataUpdatedAt: 0,
+			isError: false,
+			isSuccess: true,
+		};
+		await renderShell();
+
+		// The Scratchpad lists newest first (standalone-2, standalone-1).
+		act(() => shellMocks.state.previousSessionListener?.());
+
+		expect(shellMocks.navigate).toHaveBeenCalledWith({
+			to: "/sessions/$sessionId",
+			params: { sessionId: "standalone-2" },
+		});
+	});
+
 	it("cycles only sessions on the selected remote host when IDs collide", async () => {
 		shellMocks.state.routeParams = { hostId: "box-b", sessionId: "sess-1" };
 		shellMocks.state.remoteWorkspaces = [
@@ -1281,6 +1320,24 @@ describe("shell application shortcut subscriptions", () => {
 		expect(shellMocks.navigate).toHaveBeenCalledWith({
 			to: "/host/$hostId/project/$projectId/session/$sessionId",
 			params: { hostId: "box-b", projectId: "proj-1", sessionId: "box-b-next" },
+		});
+	});
+
+	it("cycles remote standalone sessions on their host", async () => {
+		shellMocks.state.routeParams = { hostId: "box-b", sessionId: "standalone-1" };
+		shellMocks.state.remoteWorkspaces = [{
+			hostId: "box-b", id: "__standalone__", sessions: [
+				{ id: "standalone-1", status: "working" },
+				{ id: "standalone-2", status: "idle" },
+			],
+		}] as WorkspaceSummary[];
+		await renderShell();
+
+		act(() => shellMocks.state.previousSessionListener?.());
+
+		expect(shellMocks.navigate).toHaveBeenCalledWith({
+			to: "/host/$hostId/session/$sessionId",
+			params: { hostId: "box-b", sessionId: "standalone-2" },
 		});
 	});
 });

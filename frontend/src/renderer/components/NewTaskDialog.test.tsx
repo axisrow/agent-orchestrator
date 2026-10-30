@@ -30,6 +30,7 @@ vi.mock("../hooks/useWorkspaceQuery", async (importOriginal) => {
 				{ id: "proj-2", name: "agent-orchestrator", kind: "local", workspaceRepos: [
 					{ name: "app", relativePath: "app", repo: "https://github.com/aoagents/agent-orchestrator.git" },
 				] },
+				{ id: "__standalone__", name: "Scratchpad", kind: "standalone" },
 			],
 		}),
 	};
@@ -192,7 +193,7 @@ describe("NewTaskDialog", () => {
 		expect(screen.queryByLabelText("Branch")).not.toBeInTheDocument();
 	});
 
-	it("switches the task destination from the selector", async () => {
+	it("puts Scratchpad first and switches the task destination from the selector", async () => {
 		const { onProjectChange } = renderDialog();
 		const user = userEvent.setup();
 		const trigger = screen.getByRole("button", { name: "Project" });
@@ -202,29 +203,31 @@ describe("NewTaskDialog", () => {
 		const options = await screen.findAllByRole("menuitem");
 		await waitFor(() => expect(getMock).toHaveBeenCalledWith("/api/v1/projects/{id}", expect.objectContaining({ params: { path: { id: "proj-2" } } })));
 		expect(options.map((option) => option.querySelector(".text-settings-label")?.textContent?.trim())).toEqual([
+			"Scratchpad",
 			"careerops",
 			"agent-orchestrator",
 		]);
-		await waitFor(() => expect(options[0]?.querySelectorAll("img")).toHaveLength(2));
-		expect(options[0]?.querySelectorAll("img")).toHaveLength(2);
-		expect(options[0]?.querySelector("img")).toHaveAttribute("src", "https://github.com/team.png?size=64");
-		const avatar = options[0]?.querySelector("img");
+		await waitFor(() => expect(options[1]?.querySelectorAll("img")).toHaveLength(2));
+		expect(options[1]?.querySelectorAll("img")).toHaveLength(2);
+		expect(options[1]?.querySelector("img")).toHaveAttribute("src", "https://github.com/team.png?size=64");
+		const avatar = options[1]?.querySelector("img");
 		if (!avatar) throw new Error("Expected repository owner avatar");
 		fireEvent.error(avatar);
 		expect(avatar).toHaveStyle({ visibility: "hidden" });
 		expect(avatar.parentElement).toHaveTextContent("T");
-		expect(options[0]?.querySelectorAll("img")[1]).toHaveAttribute("src", "https://github.com/partner.png?size=64");
-		expect(options[1]?.querySelector("img")).toHaveAttribute("src", "https://github.com/aoagents.png?size=64");
+		expect(options[1]?.querySelectorAll("img")[1]).toHaveAttribute("src", "https://github.com/partner.png?size=64");
+		expect(options[2]?.querySelector("img")).toHaveAttribute("src", "https://github.com/aoagents.png?size=64");
+		expect(options[0]?.querySelector("img")).not.toBeInTheDocument();
 		expect(trigger).toHaveClass("w-fit");
 		expect(options[0]).toHaveClass("settings-menu-item");
 		expect(options[1]).toHaveClass("settings-menu-item");
 		expect(options[0]).toHaveClass("gap-1!");
-		expect(options[0]?.querySelector("img")?.parentElement).toHaveClass("size-[18px]");
-		expect(options[0]?.querySelector("img")?.parentElement?.parentElement?.parentElement).toHaveClass("w-5");
+		expect(options[1]?.querySelector("img")?.parentElement).toHaveClass("size-[18px]");
+		expect(options[1]?.querySelector("img")?.parentElement?.parentElement?.parentElement).toHaveClass("w-5");
 		expect(document.querySelector('[data-slot="settings-option-menu-scroll-region"]')).toBeInTheDocument();
 
-		await user.click(options[1]);
-		expect(onProjectChange).toHaveBeenCalledWith("proj-2");
+		await user.click(options[0]);
+		expect(onProjectChange).toHaveBeenCalledWith("__standalone__");
 	});
 
 	it("dismisses the chrome-free card with Escape", async () => {

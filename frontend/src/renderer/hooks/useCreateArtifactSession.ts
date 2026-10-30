@@ -14,9 +14,9 @@ type Harness = components["schemas"]["SpawnSessionRequest"]["harness"];
 type ProjectAgents = { agent?: string; config?: { worker?: { agent?: string } } };
 
 /**
- * Starts a worker session whose output kind is artifact in a project and
- * opens it. The agent is the project's worker agent, then the daemon-wide
- * default, then the first ready agent.
+ * Starts a worker session whose output kind is artifact, in a project or the
+ * Scratchpad (no projectId), and opens it. The agent is the project's worker
+ * agent, then the daemon-wide default, then the first ready agent.
  */
 export function useCreateArtifactSession() {
 	const { t } = useTranslation();
@@ -35,26 +35,27 @@ export function useCreateArtifactSession() {
 	);
 
 	const create = useCallback(
-		async (projectId: string) => {
+		async (projectId?: string) => {
+			const scope = projectId ? "project" : "standalone";
 			setPending(true);
 			try {
-				const harness = (await projectWorkerAgent(queryClient, projectId)) || readyAgent;
+				const harness = projectId ? (await projectWorkerAgent(queryClient, projectId)) || readyAgent : readyAgent;
 				const { data, error } = await apiClient.POST("/api/v1/sessions", {
 					body: {
 						kind: "worker",
 						requestedOutput: "artifact",
 						displayName: t("artifacts.newSessionName"),
-						projectId,
+						...(projectId ? { projectId } : {}),
 						...(harness ? { harness: harness as Harness } : {}),
 					},
 				});
 				if (error) throw new Error(apiErrorMessage(error, t("artifacts.createError")));
 				if (!data?.session.id) throw new Error(t("artifacts.createError"));
-				void captureRendererEvent("ao.renderer.artifact_create_succeeded", { scope: "project" });
+				void captureRendererEvent("ao.renderer.artifact_create_succeeded", { scope });
 				await queryClient.invalidateQueries({ queryKey: workspaceQueryKey });
 				navigateToSession(projectId, data.session.id);
 			} catch (error) {
-				void captureRendererEvent("ao.renderer.artifact_create_failed", { scope: "project" });
+				void captureRendererEvent("ao.renderer.artifact_create_failed", { scope });
 				useUiStore
 					.getState()
 					.showGlobalToast(error instanceof Error ? error.message : t("artifacts.createError"), undefined, "error");

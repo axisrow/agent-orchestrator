@@ -26,6 +26,7 @@ import { clientForSessionHost } from "../lib/host-clients";
 import { isConcreteModelID } from "../lib/agent-model-choices";
 import { AGENT_LABELS, AGENT_OPTIONS, agentLabel } from "../lib/agent-options";
 import {
+	STANDALONE_WORKSPACE_ID,
 	type AgentSwitchSummary,
 	type WorkspaceSession,
 } from "../types/workspace";
@@ -216,10 +217,11 @@ export function SwitchAgentDialog({ agentSwitch, container, open, session, onOpe
 	const [mode, setMode] = useState("");
 	const [modelTouched, setModelTouched] = useState(false);
 	const hostId = session.hostId;
-	const catalogProjectId = session.workspaceId;
+	const isStandalone = session.workspaceId === STANDALONE_WORKSPACE_ID;
+	const catalogProjectId = isStandalone ? "" : session.workspaceId;
 	const projectQuery = useQuery({
 		queryKey: hostId ? ["project", hostId, session.workspaceId] : ["project", session.workspaceId],
-		enabled: open,
+		enabled: open && !isStandalone,
 		staleTime: 30_000,
 		queryFn: async () => {
 			const { data, error } = await clientForSessionHost(hostId).GET("/api/v1/projects/{id}", {
@@ -231,8 +233,11 @@ export function SwitchAgentDialog({ agentSwitch, container, open, session, onOpe
 		},
 	});
 	const modelCatalog = useQuery(agentModelsQueryOptions(targetHarness, catalogProjectId, hostId)).data;
-	const project = projectQuery.data;
-	const projectError = projectQuery.error;
+	// Standalone sessions have no project configuration. Ignore any project query
+	// state that may have been prefetched under the standalone sentinel so it
+	// cannot surface a validation error or affect the picker defaults.
+	const project = isStandalone ? undefined : projectQuery.data;
+	const projectError = isStandalone ? undefined : projectQuery.error;
 	const projectKnown = Boolean(project);
 	const role = session.kind === "orchestrator" ? project?.config?.orchestrator : project?.config?.worker;
 	const roleMatches = !role?.agent || role.agent === targetHarness;

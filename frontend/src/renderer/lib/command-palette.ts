@@ -12,6 +12,7 @@ import {
 	type PullRequestFacts,
 	type WorkspaceSession,
 	type WorkspaceSummary,
+	STANDALONE_WORKSPACE_ID,
 } from "../types/workspace";
 import {
 	openReviewStatesFor,
@@ -142,10 +143,16 @@ export type WorkspaceSessionContext = {
 
 function jumpTarget(workspace: WorkspaceSummary, session: WorkspaceSession): NavigateTarget {
 	if (workspace.hostId) {
+		if (workspace.id === STANDALONE_WORKSPACE_ID) {
+			return { to: "/host/$hostId/session/$sessionId", params: { hostId: workspace.hostId, sessionId: session.id } };
+		}
 		return {
 			to: "/host/$hostId/project/$projectId/session/$sessionId",
 			params: { hostId: workspace.hostId, projectId: workspace.id, sessionId: session.id },
 		};
+	}
+	if (workspace.id === STANDALONE_WORKSPACE_ID) {
+		return { to: "/sessions/$sessionId", params: { sessionId: session.id } };
 	}
 	return {
 		to: "/projects/$projectId/sessions/$sessionId",
@@ -315,27 +322,29 @@ export function buildCommands(ctx: CommandPaletteContext, t: TFunction = appI18n
 	});
 
 	if (currentProject) {
-		items.push({
-			id: "current-open-orchestrator",
-			group: "current",
-			title: t("command.openOrchestrator"),
-			subtitle: currentProject.name,
-			keywords: ["orchestrator", "spawn", currentProject.name],
-			disabled: isProjectRestarting,
-			disabledReason: isProjectRestarting ? t("command.orchestratorRestarting") : undefined,
-			action: { kind: "open-orchestrator", projectId: currentProject.id },
-		});
-		items.push({
-			id: "current-project-settings",
-			group: "current",
-			title: t("command.projectSettings"),
-			subtitle: currentProject.name,
-			keywords: ["settings", "config", currentProject.name],
-			action: {
-				kind: "navigate",
-				target: { to: "/projects/$projectId/settings", params: { projectId: currentProject.id } },
-			},
-		});
+		if (currentProject.id !== STANDALONE_WORKSPACE_ID) {
+			items.push({
+				id: "current-open-orchestrator",
+				group: "current",
+				title: t("command.openOrchestrator"),
+				subtitle: currentProject.name,
+				keywords: ["orchestrator", "spawn", currentProject.name],
+				disabled: isProjectRestarting,
+				disabledReason: isProjectRestarting ? t("command.orchestratorRestarting") : undefined,
+				action: { kind: "open-orchestrator", projectId: currentProject.id },
+			});
+			items.push({
+				id: "current-project-settings",
+				group: "current",
+				title: t("command.projectSettings"),
+				subtitle: currentProject.name,
+				keywords: ["settings", "config", currentProject.name],
+				action: {
+					kind: "navigate",
+					target: { to: "/projects/$projectId/settings", params: { projectId: currentProject.id } },
+				},
+			});
+		}
 	}
 
 	const searchableCurrentSession = currentSession && sessionSupportsFileSearch(currentSession)
@@ -390,7 +399,7 @@ export function buildCommands(ctx: CommandPaletteContext, t: TFunction = appI18n
 		items.push(sessionCommand(workspace, session, "attention"));
 	}
 
-	for (const workspace of workspaces) {
+	for (const workspace of workspaces.filter((candidate) => candidate.id !== STANDALONE_WORKSPACE_ID)) {
 		items.push({
 			id: `project:${workspace.id}`,
 			group: "projects",
@@ -466,7 +475,7 @@ export function buildCommands(ctx: CommandPaletteContext, t: TFunction = appI18n
 		id: "global-home",
 		group: "global",
 		title: t("shell.goHome"),
-		keywords: ["home", "start", "get started", "clone", "import"],
+		keywords: ["home", "start", "get started", "clone", "import", "standalone"],
 		action: { kind: "navigate", target: { to: "/" } },
 	});
 	items.push({

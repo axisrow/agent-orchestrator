@@ -19,7 +19,7 @@ import { appI18n } from "../../i18n";
 import type { ConversationItem, ConversationMessage, ConversationSnapshot } from "../../types/conversation";
 import { setApiBaseUrl } from "../../lib/api-client";
 import { useUiStore } from "../../stores/ui-store";
-import { type WorkspaceSession } from "../../types/workspace";
+import { STANDALONE_WORKSPACE_ID, type WorkspaceSession } from "../../types/workspace";
 import {
 	getChatComposerMutation,
 	getChatInlineEditMutation,
@@ -2168,7 +2168,7 @@ describe("ChatWorkspace timeline", () => {
 
 	it("offers sample artifact requests in an empty artifact session, fills the composer with one, and hides them", async () => {
 		const user = userEvent.setup();
-		render(<ChatWorkspace snapshot={chatFixtureEmpty} session={{ ...chatSession, requestedOutput: "artifact" }} />);
+		render(<ChatWorkspace snapshot={chatFixtureEmpty} session={{ ...chatSession, workspaceId: STANDALONE_WORKSPACE_ID, requestedOutput: "artifact" }} />);
 
 		expect(screen.getByRole("heading", { name: "What do you want to create?" })).toBeInTheDocument();
 		expect(screen.getByText("Describe the page or document you want")).toBeInTheDocument();
@@ -2201,6 +2201,13 @@ describe("ChatWorkspace timeline", () => {
 		await user.click(prompts[0]);
 		await waitFor(() => expect(screen.getByLabelText("Message the agent")).toHaveTextContent("Review my recent changes for bugs"));
 		await waitFor(() => expect(screen.queryByRole("list", { name: "Sample requests" })).not.toBeInTheDocument());
+	});
+
+	it("offers sample artifact requests to artifact sessions outside Scratchpad too", () => {
+		render(<ChatWorkspace snapshot={chatFixtureEmpty} session={{ ...chatSession, requestedOutput: "artifact" }} />);
+
+		expect(screen.getByRole("heading", { name: "What do you want to create?" })).toBeInTheDocument();
+		expect(screen.getByRole("list", { name: "Sample artifact requests" })).toBeInTheDocument();
 	});
 
 	it("drops the sample requests once the conversation has messages", () => {

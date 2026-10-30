@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { agentModelsQueryKey } from "../hooks/useAgentModelsQuery";
 import { apiClient } from "../lib/api-client";
 import {
+	STANDALONE_WORKSPACE_ID,
 	type AgentSwitchSummary,
 	type WorkspaceSession,
 } from "../types/workspace";
@@ -52,6 +53,16 @@ const worker: WorkspaceSession = {
 	workspaceName: "my-app",
 };
 
+const standaloneWorker: WorkspaceSession = {
+	...worker,
+	branch: undefined,
+	id: "standalone-1",
+	terminalHandleId: "standalone-terminal",
+	title: "research something",
+	workspaceId: STANDALONE_WORKSPACE_ID,
+	workspaceName: "Scratchpad",
+};
+
 function renderDialog(
 	session: WorkspaceSession = worker,
 	onOpenChange = vi.fn(),
@@ -69,7 +80,7 @@ function renderDialog(
 			projectConfig,
 		);
 	}
-	const catalogProjectId = session.workspaceId;
+	const catalogProjectId = session.workspaceId === STANDALONE_WORKSPACE_ID ? "" : session.workspaceId;
 	for (const agentId of ["claude-code", "codex", "fx"]) {
 		queryClient.setQueryData(agentModelsQueryKey(agentId, catalogProjectId, session.hostId), {
 			agentId,
@@ -274,6 +285,49 @@ describe("SwitchAgentDialog", () => {
 			expect.objectContaining({ model: "", targetHarness: "codex" }),
 			expect.any(Object),
 		);
+	});
+
+	it("switches standalone sessions without loading the standalone sentinel as a project", async () => {
+		const getSpy = vi.spyOn(apiClient, "GET").mockRejectedValue(new Error("unexpected project lookup"));
+		renderDialog(standaloneWorker, vi.fn(), undefined, null);
+		const dialog = screen.getByRole("dialog", { name: "Switch agent" });
+
+		expect(within(dialog).queryByRole("alert")).not.toBeInTheDocument();
+		expect(within(dialog).getByRole("button", { name: "Model" })).toHaveTextContent("GPT-5.4");
+		// Global settings feed the model filter; no project is looked up.
+		expect((getSpy.mock.calls as unknown[][]).map((call) => call[0]).filter((path) => path !== "/api/v1/settings")).toEqual([]);
+
+		await userEvent.click(within(dialog).getByRole("button", { name: "Switch" }));
+
+		expect((getSpy.mock.calls as unknown[][]).map((call) => call[0]).filter((path) => path !== "/api/v1/settings")).toEqual([]);
+		expect(switchMocks.mutate).toHaveBeenCalledWith(
+			{
+				idempotencyKey: "idempotency-1",
+				model: "",
+				session: standaloneWorker,
+				targetHarness: "codex",
+			},
+			{ onSuccess: expect.any(Function) },
+		);
+	});
+
+	it("ignores a cached standalone project error", async () => {
+		const { queryClient } = renderDialog(standaloneWorker, vi.fn(), undefined, null);
+		const projectQuery = queryClient.getQueryCache().build(queryClient, {
+			queryKey: ["project", STANDALONE_WORKSPACE_ID],
+			queryFn: async () => ({}),
+		});
+		projectQuery.setState({
+			...projectQuery.state,
+			data: undefined,
+			error: new Error("Project id failed storage-path validation"),
+			status: "error",
+		});
+
+		await waitFor(() =>
+			expect(screen.getByRole("dialog")).not.toHaveTextContent("Project id failed storage-path validation"),
+		);
+		expect(screen.getByRole("dialog").querySelector('[role="alert"]')).not.toBeInTheDocument();
 	});
 
 	it("shows the project model and inherits it when switching without a model change", async () => {

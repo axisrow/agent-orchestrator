@@ -3,6 +3,7 @@ import {
 	sessionNeedsAttention,
 	sortedWorkerSessions,
 	workerSessions,
+	STANDALONE_PROJECT_KIND,
 	type WorkspaceSession,
 	type WorkspaceSummary,
 } from "../types/workspace";
@@ -57,10 +58,10 @@ function listedSessions(
 
 /**
  * Every session reachable from the sidebar, in the order the sidebar shows
- * them: pinned sessions, then projects in the user's order, then remote
- * hosts. A session that appears twice (pinned and under its project) counts
- * once, at its first position. Keyboard navigation and the ⌘1–9 jump both
- * walk this list so they always agree with what is on screen.
+ * them: pinned sessions, then projects in the user's order, then remote hosts,
+ * then the Scratchpad. A session that appears twice (pinned and under its
+ * project) counts once, at its first position. Keyboard navigation and the
+ * ⌘1–9 jump both walk this list so they always agree with what is on screen.
  */
 export function buildSidebarSessionOrder({
 	workspaces,
@@ -88,10 +89,14 @@ export function buildSidebarSessionOrder({
 		.sort((a, b) => pinnedTime(b.session) - pinnedTime(a.session));
 	for (const { workspace, session } of pinned) add(session, workspace);
 
-	for (const workspace of applyOrder(workspaces, (item) => item.id, projectOrder, "start")) {
+	const projects = workspaces.filter((workspace) => workspace.kind !== STANDALONE_PROJECT_KIND);
+	for (const workspace of applyOrder(projects, (item) => item.id, projectOrder, "start")) {
 		for (const session of listedSessions(workspace, sessionOrders)) add(session, workspace);
 	}
 	for (const workspace of remoteWorkspaces) {
+		for (const session of listedSessions(workspace, sessionOrders)) add(session, workspace);
+	}
+	for (const workspace of workspaces.filter((item) => item.kind === STANDALONE_PROJECT_KIND)) {
 		for (const session of listedSessions(workspace, sessionOrders)) add(session, workspace);
 	}
 	return entries;
