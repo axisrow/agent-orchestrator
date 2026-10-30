@@ -254,3 +254,10 @@ ee7475c93db325976a68b271a38b857d276f41d8 skipped fix(mobile): send terminal-comp
 96cd425bd33a5187ff5891731cc7114fe12a7ed6 skipped fix: unify the session pane tab strip (#7371) — клэш с параллельной fork-реализацией таб-стрипа (ChatWorkspace/CenterPane/SessionFileTabs), TerminalAgentControls удалён в форке
 1d7882ae87b58e443d72f6df4c797b420fbf7cc3 skipped fix(desktop): give the macOS dmg a real install window layout (#7418) — forge update-helper/maker-dmg выпилены вместе с апдейтером, dmг-раскладка не нужна
 de4a47da9eaaed314d03d6b8ed12de804f146b79 skipped feat(cloud): ~3 s Freestyle session start: repository snapshots at connect and after deploys, warmed snapshots, prewarmed agent, in-place start (#7208)
+c3104a2df2d5afb2733a6bc124c01ff5076c251d skipped fix: scrub dynamic context from daemon Sentry error titles (#7221) — ядро (+339 sentryobs) сидит на скипнутой telemetry-identity #7112 (подсистема удалена дельтой); конфликт при пике 2026-10-30; httpd-скраб без sentryobs-ядра малополезен — сводить с владельцем при случае
+dc1bd40fdc1d798b16eb04d50636acebd4911df1 skipped fix: restore cloud artifact gallery previews (#7393) — целевые файлы (ArtifactThumbnail/CloudArtifactFrame) выпилены дельтой форка; чинит регрессию скипнутого cloud S3 #6769 — регрессии в форке нет
+fe0550a4e83be5b7268910b77dcc55a63d6a72a2 skipped fix(cloud): list Cloud's model catalog in a Cloud project's New Task (#7430) — cloud control-plane (contracts/cloud, cloud-cp, cloud-client): cloud не используем, решение владельца 2026-10-29 (прецедент #7353/#7354)
+9c7073fc443f39fe2d4524e8b84611f820f89a1a skipped feat(contract): describe the remote-host routes, with fixed addresses (#7410)
+dbeaf19c8a9decc2330fc1fac8c36f22b417dabd skipped Sentry: full error coverage for daemon + Electron (#7386)
+8f4ecd5f9da7392ffe0d5c7f11c091f45229c068 skipped feat: measure project usage by durable worker activity (#7304)
+9b95d754f5d4fcbad31ff8d6422b37c8703c6206 taken fix(sidebar): keep a closed Scratchpad closed when opening an orchestrator (#7460)
