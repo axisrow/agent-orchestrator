@@ -19,7 +19,6 @@ const cloudSearchMock = vi.hoisted(() => vi.fn());
 const createProjectFlowMock = vi.hoisted(() => ({
 	props: null as null | {
 		existingProjectPaths?: readonly string[];
-		onCreateStandaloneAgent?: () => void;
 		onOpenExistingProject?: (path: string) => void | Promise<void>;
 	},
 	lastOpenSignal: 0,
