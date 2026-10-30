@@ -4,6 +4,9 @@ import { coerceUiSettings, DEFAULT_UI_SETTINGS } from "../../shared/ui-locale";
 export const aoBridge: AoBridge =
 	window.ao ??
 	({
+		launch: {
+			rightPanelExpanded: false,
+		},
 		app: {
 			getVersion: async () => "0.0.0-preview",
 			chooseDirectory: async () => null,

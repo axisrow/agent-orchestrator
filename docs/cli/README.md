@@ -269,6 +269,7 @@ The CLI and daemon share the same environment-driven config:
 | `AO_REQUEST_TIMEOUT`  | `60s`                | REST request timeout.                                                                          |
 | `AO_SHUTDOWN_TIMEOUT` | `10s`                | Graceful shutdown cap. Also scales how long a new daemon waits for the data dir (9x + 18s).    |
 | `AO_KEEP_DAEMON`      | unset (off)          | Keep the desktop app's daemon running after the window closes; stop only via `ao stop`. (fork) |
+| `AO_RIGHT_PANEL`      | unset (collapsed)    | `expanded` (or `1`) opens the right inspector panel (Pull request / Artifact / Session controls) expanded by default when a session is opened; unset keeps it collapsed until opened. Read by the desktop app at launch. (fork) |
 | `AO_DISABLE_GPU`      | unset (off)          | Skip Chromium hardware acceleration; escape hatch for broken Linux GPU drivers.                |
 | `AO_NO_TRAY`          | unset (off)          | `1`/`true` skips the macOS menu bar tray; any other value keeps the default. (fork)             |
 | `AO_NO_QUIET_NOTIFICATIONS` | unset (quiet)  | `1`/`true` restores the upstream loud notifications: bell/OS-toast/sound on every event type. Default signals only for human-feedback events (blocked agent, changes-requested review, failed agent). Read at app startup. (fork) |
