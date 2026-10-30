@@ -177,10 +177,11 @@ export function PRCardStatusSummary({
 	reviewDetailsAction?: ReactNode;
 }) {
 	const omitted = omit ? new Set(omit) : undefined;
-	const supporting = presentation.supporting.filter(
-		(status) => status.key === "lifecycle" || !omitted?.has(status.key),
-	);
-	const rows = presentation.statusRows?.filter((status) => status.key === "lifecycle" || !omitted?.has(status.key));
+	// lifecycle and ao_review rows carry their own opt-in data, so legacy omit
+	// lists (which predate them) do not target them.
+	const omittable = (status: PRCardStatus) => status.key === "lifecycle" || status.key === "ao_review" || !omitted?.has(status.key);
+	const supporting = presentation.supporting.filter(omittable);
+	const rows = presentation.statusRows?.filter(omittable);
 	if (rows && presentation.readiness) {
 		return (
 			<div className={cn("border-t border-border pt-2", className)}>
