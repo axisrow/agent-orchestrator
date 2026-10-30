@@ -253,6 +253,17 @@ func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.Proje
 	if err != nil || len(batch.Reports) == 0 {
 		return err
 	}
+	// The replay path consults the recipient's durable acceptance before
+	// re-delivering: a checkpoint that names this batch's correlation id is
+	// the semantic acceptance of exactly this content — its delivery already
+	// happened, so a restart or a lost ack must replay the acknowledgment,
+	// never re-emit the content (fork issue #184). A checkpoint can only name
+	// a batch that was submitted, so a first delivery never matches.
+	if accepted, err := c.settleAcceptedBatch(ctx, target, batch); err != nil {
+		return err
+	} else if accepted {
+		return nil
+	}
 	if batch.hasState(domain.ReportStuck) {
 		interrupted := false
 		var nextInterrupt time.Time
@@ -397,7 +408,19 @@ func (c *Coordinator) PreparePiggyback(ctx context.Context, target domain.Sessio
 	if rec.Kind != domain.KindOrchestrator || rec.IsTerminated || domain.NormalizeSessionMode(rec.Mode) != domain.SessionModeChat {
 		return PreparedBatch{}, nil
 	}
-	return c.claim(ctx, rec.ProjectID)
+	batch, err := c.claim(ctx, rec.ProjectID)
+	if err != nil || len(batch.Reports) == 0 {
+		return batch, err
+	}
+	// An accepted batch rides along as its acknowledgment, never as appended
+	// content twice: the checkpoint naming this batch id is the acceptance of
+	// content already in the conversation (fork issue #184).
+	if accepted, err := c.settleAcceptedBatch(ctx, rec, batch); err != nil {
+		return PreparedBatch{}, err
+	} else if accepted {
+		return PreparedBatch{}, nil
+	}
+	return batch, nil
 }
 
 // SettleEmittedReports retires shown pending batches of the target's project
@@ -423,14 +446,19 @@ func (c *Coordinator) SettleEmittedReports(ctx context.Context, target domain.Se
 	if rec.Kind != domain.KindOrchestrator || rec.IsTerminated {
 		return 0, nil
 	}
-	// The evidence mirror of semanticMessageAccepted: only a coordination
-	// checkpoint of the recipient's live runtime generation names an accepted
-	// batch id. A truncated tail carries no opening tag, so it credits no
-	// coordination id and its checkpoint never matches a report batch key.
-	accepted := ""
-	if rec.Metadata.ConversationCheckpointState == domain.ConversationCheckpointCoordination &&
-		rec.Metadata.ConversationCheckpointGeneration == rec.Metadata.RuntimeLaunchID {
-		accepted = rec.Metadata.ConversationCheckpointTurnID
+	// The evidence mirror of semanticMessageAccepted, minus its live-generation
+	// requirement: a coordination checkpoint naming a batch's correlation id is
+	// the durable acceptance of THAT batch, and a daemon restart rotates the
+	// runtime generation without touching the checkpoint. Requiring the live
+	// launch id turned every acceptance whose settle raced a restart back into
+	// an undelivered batch — the replay then re-delivered accepted content
+	// (fork issue #184). Lineage rotations clear the checkpoint instead of
+	// leaving a foreign one, so a surviving stale-generation checkpoint always
+	// names a batch the current lineage accepted. A truncated tail still
+	// credits no coordination id and settles nothing (fork issues #177, #179).
+	accepted := rec.Metadata.ConversationCheckpointTurnID
+	if rec.Metadata.ConversationCheckpointState != domain.ConversationCheckpointCoordination {
+		accepted = ""
 	}
 	if accepted == "" {
 		return 0, nil
@@ -443,6 +471,26 @@ func (c *Coordinator) SettleEmittedReports(ctx context.Context, target domain.Se
 		c.log.Info("report: accepted batches settled by matched semantic acceptance", "project", rec.ProjectID, "target", target, "batch", accepted, "reports", n)
 	}
 	return n, nil
+}
+
+// settleAcceptedBatch retires the claimed batch when the target orchestrator's
+// durable coordination checkpoint names its correlation id. It is the
+// dispatcher-side half of the restart dedup (fork issue #184): an acceptance
+// whose settle probe a restart preceded must not turn into a re-emission —
+// the relaunched runtime rotates the launch id, so the leftover checkpoint is
+// the only surviving acceptance evidence. The claimed rows ack under their own
+// token fence; a checkpoint can only name a batch whose prompt was submitted,
+// so a first delivery never matches.
+func (c *Coordinator) settleAcceptedBatch(ctx context.Context, target domain.SessionRecord, batch PreparedBatch) (bool, error) {
+	if batch.ID == "" || target.Metadata.ConversationCheckpointState != domain.ConversationCheckpointCoordination ||
+		target.Metadata.ConversationCheckpointTurnID != batch.ID {
+		return false, nil
+	}
+	if err := c.ackBatch(ctx, batch.ProjectID, batch.Token); err != nil {
+		return false, err
+	}
+	c.log.Info("report: replayed batch settled by durable acceptance", "project", batch.ProjectID, "target", target.ID, "batch", batch.ID, "reports", len(batch.Reports))
+	return true, nil
 }
 
 // AcceptPiggyback acknowledges reports after the combined user turn is accepted.
