@@ -53,7 +53,11 @@ type spawnRequest struct {
 	Model           string `json:"model,omitempty"`
 	Effort          string `json:"effort,omitempty"`
 	RequestedOutput string `json:"requestedOutput,omitempty"`
-	DisplayName     string `json:"displayName"`
+	// ReviewOnly spawns a review-only session: the launch denies file-editing
+	// and push tools, auto-review is forced on, and review auto-inject stays
+	// off. Used by the unified PR review entrypoint for foreign PRs.
+	ReviewOnly  bool   `json:"reviewOnly,omitempty"`
+	DisplayName string `json:"displayName"`
 }
 
 type spawnResult struct {

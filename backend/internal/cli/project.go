@@ -12,6 +12,8 @@ import (
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
+
+	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 )
 
 type projectAddOptions struct {
@@ -137,6 +139,9 @@ type projectConfig struct {
 	Orchestrator               roleOverride         `json:"orchestrator,omitempty"`
 	TrackerIntake              trackerIntakeConfig  `json:"trackerIntake,omitempty"`
 	AutoReview                 bool                 `json:"autoReview,omitempty"`
+	// OwnAccounts must round-trip through set-config so a CLI edit of another
+	// field never silently disables ownership detection by account.
+	OwnAccounts []string `json:"ownAccounts,omitempty"`
 	// MaxReviewersPerHead must round-trip through set-config so a CLI edit of
 	// another field never silently resets the per-head reviewer cap to 1.
 	MaxReviewersPerHead int `json:"maxReviewersPerHead,omitempty"`
@@ -175,6 +180,7 @@ type projectSetConfigOptions struct {
 	trackerRepo        string
 	trackerAssignee    string
 	reviewers          []string
+	ownAccounts        []string
 	configJSON         string
 	clear              bool
 	json               bool
@@ -373,6 +379,7 @@ func newProjectSetConfigCommand(ctx *commandContext) *cobra.Command {
 	f.StringVar(&opts.trackerRepo, "tracker-repo", "", "Provider-native repo for issue intake (owner/repo or group/subgroup/repo; default: derive from git origin)")
 	f.StringVar(&opts.trackerAssignee, "tracker-assignee", "", "Issue assignee required for intake eligibility")
 	f.StringArrayVar(&opts.reviewers, "reviewer", nil, "Reviewer harness that reviews worker PRs (repeatable; e.g. claude-code)")
+	f.StringArrayVar(&opts.ownAccounts, "own-account", nil, "GitHub account treated as own for PR review ownership (repeatable; also splits commas)")
 	f.StringVar(&opts.configJSON, "config-json", "", "Full config as a JSON object (overrides field flags)")
 	f.BoolVar(&opts.clear, "clear", false, "Clear all config")
 	f.BoolVar(&opts.json, "json", false, "Output the updated project as JSON")
@@ -419,7 +426,8 @@ func buildProjectConfig(opts projectSetConfigOptions) (projectConfig, error) {
 			Repo:     opts.trackerRepo,
 			Assignee: opts.trackerAssignee,
 		},
-		Reviewers: reviewersForFlags(opts.reviewers),
+		Reviewers:   reviewersForFlags(opts.reviewers),
+		OwnAccounts: ownAccountsForFlags(opts.ownAccounts),
 	}
 	if len(opts.workerMCPConfig) > 0 || opts.workerStrictMCP {
 		cfg.Worker.AgentConfig.MCP = &mcpConfig{Configs: opts.workerMCPConfig, Strict: opts.workerStrictMCP}
@@ -431,6 +439,21 @@ func buildProjectConfig(opts projectSetConfigOptions) (projectConfig, error) {
 		return projectConfig{}, usageError{errors.New("usage: provide at least one config flag, --config-json, or --clear")}
 	}
 	return cfg, nil
+}
+
+// ownAccountsForFlags turns repeated --own-account values (each may carry
+// comma-separated logins) into the normalized config shape. The daemon
+// validates the vocabulary.
+func ownAccountsForFlags(values []string) []string {
+	var accounts []string
+	for _, value := range values {
+		for _, account := range strings.Split(value, ",") {
+			if login := domain.NormalizeOwnAccount(account); login != "" {
+				accounts = append(accounts, login)
+			}
+		}
+	}
+	return accounts
 }
 
 // reviewersForFlags turns repeated --reviewer harness values into the config

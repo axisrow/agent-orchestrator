@@ -14404,6 +14404,8 @@ components:
           enum:
           - artifact
           type: string
+        reviewOnly:
+          type: boolean
         reviewerConfig:
           $ref: '#/components/schemas/AgentConfig'
         reviewerHarness:
@@ -17419,6 +17421,10 @@ components:
           type: string
         orchestratorRules:
           type: string
+        ownAccounts:
+          items:
+            type: string
+          type: array
         postCreate:
           items:
             type: string
@@ -19374,6 +19380,8 @@ components:
           enum:
           - artifact
           type: string
+        reviewOnly:
+          type: boolean
         trackerProvider:
           enum:
           - github

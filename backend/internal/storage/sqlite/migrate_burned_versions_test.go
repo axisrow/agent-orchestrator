@@ -220,6 +220,7 @@ var shippedMigrations = map[int64]string{
 	// Fork-local migrations live in the reserved 9000+ range so a sync rebase
 	// can never renumber them onto a number upstream will claim. See
 	// migrate_fork_reserved_range_test.go for why.
+	9017:              "9017_session_review_only.sql",
 	20261020173311321: "20261020173311321_preview_poll_sessions.sql",
 	20261022172135182: "20261022172135182_report_emitted_at.sql",
 	20261022172135183: "20261022172135183_review_run_current_head_lookup.sql",

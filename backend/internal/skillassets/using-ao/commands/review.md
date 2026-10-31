@@ -8,9 +8,13 @@ the review commands default to the calling session (`AO_SESSION_ID`), so
 `ao review trigger` reviews your own implementation PR. An orchestrator passes
 the implementation worker's session id.
 
-For a requested review of someone else's PR, spawn or use a normal review-only
-worker without claiming or attaching the target PR. That worker submits the
-requested provider review and comments directly. Do not run `ao review trigger`,
+`ao review pr` is the unified entry point over both routes: it detects whether
+the PR is this project's own (canonical repo, or the author/repository owner in
+the project's own accounts) and spawns accordingly — an Edit-capable claimed
+worker for own PRs, or a review-only session with mutation tools denied for
+foreign ones. For a requested review of someone else's PR, prefer that entry
+point; a manually spawned review-only worker without claim or attach works the
+same way. Do not run `ao review trigger` on a foreign PR outside its session,
 create an ownership-only placeholder, or require an implementation owner just
 to review the PR.
 
@@ -27,6 +31,49 @@ ao review <subcommand> [args] [flags]
 The review loop can be inspected, submitted, cancelled, or triggered again.
 
 ## Subcommands
+
+---
+
+### ao review pr
+
+One entry point to review a PR; it branches by ownership and spawns the worker
+itself. Own PR (repository matches the project's canonical repo, or the PR's
+author or repository owner is in the project's own accounts): spawns a full
+worker, claims the PR, and — when the project has auto-review enabled — starts
+the reviewer whose inline findings loop back to the worker as fixes. Foreign PR
+(everything else, including an unparsable repository): spawns a review-only
+session whose launch denies Edit/Write and push tools (a mutation tool call
+fails at the tool layer), claims nothing, and starts the reviewer with
+auto-inject off, so the result is a published verdict on GitHub with no fix
+loop. `--mode own|foreign` overrides detection. The active mode is stated in
+the command output, the worker's prompt, and `ao session get`
+(`review mode: review-only (foreign)`).
+
+**Syntax:**
+```
+ao review pr <pr-ref> [flags]
+```
+
+**Flags:**
+
+| Flag | Meaning | Default / Required |
+|---|---|---|
+| `--project string` | Project id to spawn the review session in | `AO_PROJECT_ID`, the calling session's project, or the current registered repo |
+| `--mode string` | Force the review mode: `own` or `foreign` | Detect by ownership |
+| `--name string` | Display name for the spawned session | Derived from the PR title |
+| `--no-takeover` | Own mode: refuse if another active session owns the PR | Takeover allowed |
+
+**Examples:**
+
+```bash
+# The entrypoint decides: own PR → review+fix worker, foreign PR → review-only
+ao review pr https://github.com/acme/widgets/pull/42
+```
+
+```bash
+# Force the safe mode regardless of detection
+ao review pr 42 --mode foreign
+```
 
 ---
 

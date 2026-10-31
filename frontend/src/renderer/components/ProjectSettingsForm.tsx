@@ -173,6 +173,7 @@ function SettingsBody({ project, projectId, hostId, hostConnected, onSaved, sect
 		reviewerPermissions: config.reviewers?.[0]?.agentConfig?.permissions ?? config.agentConfig?.permissions ?? "",
 		autoReview: config.autoReview ?? false,
 		workersRequestReview: config.workersRequestReview ?? false,
+		ownAccounts: (config.ownAccounts ?? []).join(", "),
 		intakeEnabled: intake.enabled ?? false,
 		intakeRepo: intake.repo ?? "",
 		intakeAssignee: intake.assignee ?? "",
@@ -279,6 +280,7 @@ function SettingsBody({ project, projectId, hostId, hostConnected, onSaved, sect
 					),
 					autoReview: values.autoReview,
 					workersRequestReview: values.workersRequestReview || undefined,
+					ownAccounts: splitOwnAccounts(values.ownAccounts),
 				};
 		const { error } = await (hostId ? clientForHost(hostId) : apiClient).PUT("/api/v1/projects/{id}", {
 			params: { path: { id: projectId } },
@@ -349,7 +351,7 @@ function SettingsBody({ project, projectId, hostId, hostConnected, onSaved, sect
 		}
 	};
 	return <ProjectSettingsEditor initialValues={initialValues} section={section} disabled={!hostConnected}
-		capabilities={{ workflow: !isScratchProject, sessionPrefix: !isScratchProject, intake: intakeVisible, reviewer: !isScratchProject, requiredAgents: true, workersRequestReview: !isScratchProject }}
+		capabilities={{ workflow: !isScratchProject, sessionPrefix: !isScratchProject, intake: intakeVisible, reviewer: !isScratchProject, requiredAgents: true, workersRequestReview: !isScratchProject, ownAccounts: !isScratchProject }}
 		details={[{ label: t("settings.project.path"), value: project.path, href: hostId ? undefined : `file://${encodeURI(project.path)}` }, { label: t("settings.project.repo"), value: project.repo || "—", href: project.repo ? repositoryHref(project.repo) : undefined }]}
 		workspaceRepos={project.kind === "workspace" ? project.workspaceRepos ?? [] : undefined} repository={project.repo}
 		modelScope={() => ""} defaultReviewer={(draft) => WORKER_DEFAULT_REVIEWERS[draft.workerAgent] ?? "claude-code"}
@@ -430,6 +432,7 @@ function scratchSupportedConfig(config: ProjectConfig): ProjectConfig {
 		reviewers: _reviewers,
 		autoReview: _legacyAutoReview,
 		workersRequestReview: _workersRequestReview,
+		ownAccounts: _ownAccounts,
 		trackerIntake: _trackerIntake,
 		...supported
 	} = config as ProjectConfig;
@@ -438,6 +441,16 @@ function scratchSupportedConfig(config: ProjectConfig): ProjectConfig {
 
 function blankToUndefined<T extends object>(obj: T): T | undefined {
 	return Object.values(obj).some((v) => v !== undefined) ? obj : undefined;
+}
+
+/** Splits the settings row's comma-separated logins into the config list;
+ * the daemon normalizes case and a leading @ on each entry. */
+function splitOwnAccounts(value: string | undefined): string[] | undefined {
+	const accounts = (value ?? "")
+		.split(",")
+		.map((account) => account.trim().replace(/^@/, "").toLowerCase())
+		.filter((account) => account.length > 0);
+	return accounts.length > 0 ? accounts : undefined;
 }
 
 function buildRoleAgentConfig(

@@ -65,6 +65,12 @@ type SpawnConfig struct {
 	// task flow; artifact adds an artifact-delivery section to the worker prompt.
 	RequestedOutput domain.RequestedOutput
 
+	// ReviewOnly spawns a session that reviews a pull request without the right
+	// to mutate code. It pins the session's launch policy: file-editing and push
+	// tools are denied on every launch and restore, auto-review turns on, and
+	// review auto-inject stays off so findings never route back as a fix loop.
+	ReviewOnly bool
+
 	// DisplayName is the user-facing sidebar label. Empty falls back to the
 	// session id in the read model (e.g. orchestrator sessions).
 	DisplayName string
