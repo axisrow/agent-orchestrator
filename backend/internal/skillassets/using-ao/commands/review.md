@@ -13,10 +13,10 @@ the PR is this project's own (canonical repo, or the author/repository owner in
 the project's own accounts) and spawns accordingly — an Edit-capable claimed
 worker for own PRs, or a review-only session with mutation tools denied for
 foreign ones. For a requested review of someone else's PR, prefer that entry
-point; a manually spawned review-only worker without claim or attach works the
-same way. Do not run `ao review trigger` on a foreign PR outside its session,
-create an ownership-only placeholder, or require an implementation owner just
-to review the PR.
+point; spawning a normal review-only worker without claiming or attaching the
+target PR works the same way. Do not run `ao review trigger` on a foreign PR
+outside its session, create an ownership-only placeholder, or require an
+implementation owner just to review the PR.
 
 AO's review is internal. An AO approval is not a GitHub approval: it does not
 satisfy required or independent-account reviews or branch protection, and it
