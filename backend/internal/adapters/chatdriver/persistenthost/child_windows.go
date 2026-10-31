@@ -166,4 +166,3 @@ func hostFileBusy(err error) bool {
 	return errors.Is(err, windows.ERROR_SHARING_VIOLATION) ||
 		errors.Is(err, windows.ERROR_ACCESS_DENIED)
 }
->>>>>>> 7b99c89115 (fix(persistenthost): let Windows chat host shutdown delete its descriptor (#7436))
