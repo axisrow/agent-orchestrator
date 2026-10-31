@@ -10,7 +10,7 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 )
 
-func TestPublishReviewPostsCommentReviewWithInlineComments(t *testing.T) {
+func TestPublishReviewPostsVerdictReviewWithInlineComments(t *testing.T) {
 	f := newFakeGH(t)
 	f.on(http.MethodPost, "/repos/octo/hello/pulls/42/reviews", func(w http.ResponseWriter, r *http.Request) {
 		var payload struct {
@@ -26,8 +26,8 @@ func TestPublishReviewPostsCommentReviewWithInlineComments(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Errorf("decode request: %v", err)
 		}
-		if payload.Event != "COMMENT" {
-			t.Errorf("event = %q, want COMMENT", payload.Event)
+		if payload.Event != "REQUEST_CHANGES" {
+			t.Errorf("event = %q, want REQUEST_CHANGES", payload.Event)
 		}
 		if payload.CommitID != "abc123" {
 			t.Errorf("commit_id = %q, want abc123", payload.CommitID)
@@ -44,13 +44,16 @@ func TestPublishReviewPostsCommentReviewWithInlineComments(t *testing.T) {
 		if payload.Comments[1].Path != "util.go" || payload.Comments[1].Line != 3 || payload.Comments[1].Body != "unused var" {
 			t.Errorf("comment[1] = %#v", payload.Comments[1])
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"id": 9001, "html_url": "https://github.com/octo/hello/pull/42#pullrequestreview-9001"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": 9001, "html_url": "https://github.com/octo/hello/pull/42#pullrequestreview-9001", "state": "CHANGES_REQUESTED"})
 	})
 	p := newProviderForTest(t, f)
 
 	result, err := p.PublishReview(ctx(), ports.SCMReviewPublishRequest{
 		PR:        ports.SCMPRRef{Number: 42, Repo: ports.SCMRepo{Owner: "octo", Name: "hello"}},
 		CommitSHA: "abc123",
+		// Issue #188: the daemon decides the event; the adapter must send it
+		// verbatim and echo the state GitHub assigned back to the service.
+		Event:     "REQUEST_CHANGES",
 		Body:      `Summary with quotes "here" and a code block.`,
 		Comments: []ports.SCMReviewComment{
 			{Path: "main.go", Line: 12, Body: "off-by-one"},
@@ -62,6 +65,37 @@ func TestPublishReviewPostsCommentReviewWithInlineComments(t *testing.T) {
 	}
 	if result.ReviewID != "9001" || result.HTMLURL != "https://github.com/octo/hello/pull/42#pullrequestreview-9001" {
 		t.Fatalf("result = %#v", result)
+	}
+	if result.State != "CHANGES_REQUESTED" {
+		t.Fatalf("result state = %q, want CHANGES_REQUESTED", result.State)
+	}
+}
+
+func TestPublishReviewDefaultsToCommentEvent(t *testing.T) {
+	f := newFakeGH(t)
+	f.on(http.MethodPost, "/repos/octo/hello/pulls/42/reviews", func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Event string `json:"event"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		if payload.Event != "COMMENT" {
+			t.Errorf("event = %q, want COMMENT for an unspecified event", payload.Event)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": 9002, "state": "COMMENTED"})
+	})
+	p := newProviderForTest(t, f)
+
+	result, err := p.PublishReview(ctx(), ports.SCMReviewPublishRequest{
+		PR:   ports.SCMPRRef{Number: 42, Repo: ports.SCMRepo{Owner: "octo", Name: "hello"}},
+		Body: "body",
+	})
+	if err != nil {
+		t.Fatalf("PublishReview: %v", err)
+	}
+	if result.State != "COMMENTED" {
+		t.Fatalf("result state = %q, want COMMENTED", result.State)
 	}
 }
 
@@ -143,7 +177,7 @@ func TestFindPublishedReviewMatchesBodyMarker(t *testing.T) {
 		}
 		_ = json.NewEncoder(w).Encode([]map[string]any{
 			{"id": 1, "body": "an unrelated human review"},
-			{"id": 9001, "body": "findings...\n\n<!-- ao-review-run:run-1 -->", "html_url": "https://github.com/octo/hello/pull/42#review-9001"},
+			{"id": 9001, "body": "findings...\n\n<!-- ao-review-run:run-1 -->", "html_url": "https://github.com/octo/hello/pull/42#review-9001", "state": "COMMENTED"},
 		})
 	})
 	p := newProviderForTest(t, f)
@@ -154,6 +188,11 @@ func TestFindPublishedReviewMatchesBodyMarker(t *testing.T) {
 	}
 	if result.ReviewID != "9001" || result.HTMLURL != "https://github.com/octo/hello/pull/42#review-9001" {
 		t.Fatalf("result = %+v, want review 9001", result)
+	}
+	// The found review's state rides along so recovery can record the state
+	// GitHub actually assigned (issue #188).
+	if result.State != "COMMENTED" {
+		t.Fatalf("result state = %q, want COMMENTED", result.State)
 	}
 }
 

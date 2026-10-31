@@ -643,24 +643,25 @@ type Review struct {
 }
 
 type ReviewRun struct {
-	ID               string
-	ReviewID         string
-	SessionID        domain.SessionID
-	Harness          domain.ReviewerHarness
-	PRURL            string
-	TargetSha        string
-	Status           domain.ReviewRunStatus
-	Verdict          domain.ReviewVerdict
-	Body             string
-	CreatedAt        time.Time
-	GithubReviewID   string
-	DeliveredAt      sql.NullTime
-	BatchID          string
-	AutoInjectReview bool
-	TriggerSource    domain.ReviewTriggerSource
-	Findings         string
-	PublishState     string
-	PublishError     string
+	ID                string
+	ReviewID          string
+	SessionID         domain.SessionID
+	Harness           domain.ReviewerHarness
+	PRURL             string
+	TargetSha         string
+	Status            domain.ReviewRunStatus
+	Verdict           domain.ReviewVerdict
+	Body              string
+	CreatedAt         time.Time
+	GithubReviewID    string
+	DeliveredAt       sql.NullTime
+	BatchID           string
+	AutoInjectReview  bool
+	TriggerSource     domain.ReviewTriggerSource
+	Findings          string
+	PublishState      string
+	PublishError      string
+	GithubReviewState string
 }
 
 type Session struct {

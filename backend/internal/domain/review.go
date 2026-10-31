@@ -98,6 +98,13 @@ type ReviewRun struct {
 	// changes, AO includes it in the message to the worker so the worker knows
 	// exactly which review to address and reply to.
 	GithubReviewID string `json:"githubReviewId"`
+	// GithubReviewState is the review state GitHub actually assigned to the
+	// published review (APPROVED / CHANGES_REQUESTED / COMMENTED), recorded at
+	// publication time. It diverges from Verdict only in the self-review case:
+	// GitHub rejects verdict events from the PR author's own account, so the
+	// daemon publishes as COMMENT and this field (with PublishError) makes that
+	// outcome visible instead of losing the verdict state silently.
+	GithubReviewState GithubReviewState `json:"githubReviewState"`
 	// Findings are the run's inline review comments, recorded at submit time
 	// and published to the provider by the daemon.
 	Findings []ReviewFinding `json:"findings,omitempty"`
@@ -180,11 +187,22 @@ const (
 // run that has not produced an outcome yet.
 type ReviewVerdict = contract.AOReviewVerdict
 
+// GithubReviewState is the review state the provider actually assigned to a
+// published review.
+type GithubReviewState = contract.AOReviewGithubState
+
 // Review verdicts.
 const (
 	VerdictNone             = contract.AOReviewVerdictNone
 	VerdictApproved         = contract.AOReviewVerdictApproved
 	VerdictChangesRequested = contract.AOReviewVerdictChangesRequested
+)
+
+// GitHub review states.
+const (
+	GithubReviewApproved         = contract.AOReviewGithubApproved
+	GithubReviewChangesRequested = contract.AOReviewGithubChangesRequested
+	GithubReviewCommented        = contract.AOReviewGithubCommented
 )
 
 // CurrentHeadReviewRun is one AO review pass recorded against a PR's current

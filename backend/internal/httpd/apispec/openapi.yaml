@@ -18001,6 +18001,8 @@ components:
           type: array
         githubReviewId:
           type: string
+        githubReviewState:
+          type: string
         harness:
           type: string
         id:
@@ -18040,6 +18042,7 @@ components:
       - verdict
       - body
       - githubReviewId
+      - githubReviewState
       - publishState
       - createdAt
       - autoInjectReview
