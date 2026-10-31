@@ -468,9 +468,9 @@ export const useUiStore = create<UiState>((set, get) => ({
 		}),
 	initializeInspectorSession: (sessionId, hasBrowserContent, hasInspector) =>
 		set((state) => {
-			// Sessions without an inspector (e.g. orchestrator sessions) must not
-			// gain a store entry at all — leave inspectorSessions[sessionId]
-			// undefined so callers that key off its presence stay correct.
+			// A route without a session object has no inspector at all: it must not
+			// gain a store entry — leave inspectorSessions[sessionId] undefined so
+			// callers that key off its presence stay correct.
 			if (!hasInspector) return state;
 			const current = inspectorState(state.inspectorSessions, sessionId);
 			if (current.initialized) return state;
