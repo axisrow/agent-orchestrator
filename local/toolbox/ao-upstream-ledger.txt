@@ -240,7 +240,7 @@ c8be3cbd452eccabdc7001536b917e0572cf5b89 taken fix(codex): find node for npm Cod
 d43a84a29d6226154bdcc30df727453a60af6168 skipped fix(updater): persist local preparation diagnostics (#6856) — модуль автообновления выпилен из форка целиком 2026-10-29
 f230a47d94663add09469c9a0564bc84656d502c taken fix(desktop): retry the Node download when building the ACP runtime (#7382)
 d869fb31199bb91717602de16afd692fe35d031a taken fix(telemetry): prune all expired rows and reclaim disk space (#5178) — взят 2026-10-29 (d0888ae820): код авто; доки = prune-текст апстрима + agent-switch-секция форка; vacuum-тест адаптирован на форк-раннер (goose снесён)
-4d406ccd9efaf1cee58816ba0175c03131a7fa3b skipped feat(harness): update official-installer and single-binary cask harnesses beside running sessions (#6934)
+4d406ccd9efaf1cee58816ba0175c03131a7fa3b taken feat(harness): update official-installer and single-binary cask harnesses beside running sessions (#6934) — взят 2026-10-31 (8f7908a872): прежний скип отменён владельцем ради #7463; notice-упрощение портировано на форк-версию, ports/system.go доббан Args из родителя пика
 144c32f93774b62d262fd4436d2132d7e940559f skipped fix(mobile): connect the scanned machine instead of rejecting it during reconnect (#7347) — конфликт packages/mobile/* + автоскрип по mobile-политике (packages/mobile)
 b692d6c7f3e4aa85435ac6148c15d74b0665d882 skipped feat(computer-use): Added Computer Use Agents via Cua Driver, ao mcp
 ee7475c93db325976a68b271a38b857d276f41d8 skipped fix(mobile): send terminal-composer messages as the user's own words (#7390) — применён чисто и отреверчен 2f6e7f4ffc по политике mobile-скип
@@ -263,3 +263,34 @@ dbeaf19c8a9decc2330fc1fac8c36f22b417dabd skipped Sentry: full error coverage for
 9b95d754f5d4fcbad31ff8d6422b37c8703c6206 taken fix(sidebar): keep a closed Scratchpad closed when opening an orchestrator (#7460)
 98408cb48bd871cf5b8c8638065e104d480e4251 taken fix(chat): stop the question dock clipping its rows' focus ring (#7424)
 1e936e9596f72b8fe37e91607419a5eed74d6905 taken fix(sqlite): repair the continuation column when version 199 was taken (#7464)
+027284e386974278c08695accb186782e606f442 skipped feat(mobile): match the desktop's lattice loader on the live chat turn (#7423)
+68ccb137cce8d49441fa048fd6ca590f58e69817 taken fix: open OMP provider sign-in through native setup (#6424)
+1f6610c3a8ff8822ffb4d38b09e559fc5675a3dc skipped feat(cli): add setup-token option to local Claude Code login (#6734)
+f7c037f736a0e65a3c3fa855857a98d4683514e3 taken fix(harness): resolve launcher symlinks before ownership checks (#7462)
+892f0277730af47d63966da4bb330744e564d061 skipped feat: detect cached Gemini credentials (#6433)
+457e7bd987aa1d44f7d679c703e21c3548e5a7ce taken fix: allow trusted artifact scope changes to PR publishing (#7474)
+3297eb843dfa226790a7bf22c8cc4d4408bc5e01 skipped feat(settings): show live progress while a harness installs (#7473)
+dde71cf580cda8aec761eb2d64310b290c70196c skipped feat(telemetry): segment by OS, arch and install source; add first_open and durable firsts (#7417)
+be4259d4fa281c6194f3acf24f8b12323aa750e7 skipped feat(project-config): load orchestrator rules from a repo file (orchestratorRulesFile) (#7448)
+7b99c891156d6f5357450bc3a1e00f765cdea008 taken fix(persistenthost): let Windows chat host shutdown delete its descriptor (#7436) — без хвоста #6588 terminateProviderProcess
+4def31189a462f522f91f331df531522c2ff1ef6 taken fix(chat): handle Qwen ask_user_question as interactive input in ACP (#6777)
+09a909cbb51841abcbc6e100641c7eabeaff0394 taken fix(browser): drop sent annotations from the page's batch (#7456)
+8f85d9c94447416128853a65592dde3481cf3ab8 skip fix(artifacts): drop the spinner that tracked agent activity (#7480) — клэш с форк-переписью artifacts UI; интент портирован вручную коммитом 7bf896afc6
+9dc1c14df0fab2e2a4e793a39d9feb3f5c2b958a taken fix: update OMP independently of the system Bun runtime (#7463) — взят 2026-10-31 (939829fb2e) вместе с #6934, решение владельца
+2d5482ecc965029b23c01a3bee2746e8117a0c38 skip fix(updater): exclude macOS sleep from preparation watchdog (#7061) — auto-updater выпилен в форке целиком, фиксы апдейтера не берём
+3aa3526db1706acb905bed3bfaf62fb28806ef0b skipped feat(contract): a machine's host key, so a device with its account token cannot act as it (#7495)
+d5e91a0ba637eaba11ea9735b6cf99b6ee943be2 skipped feat(contract): say on the host list whether the deployment takes host keys (#7498)
+f499a10c5ac9195857c0f499cceffca003971f3c taken fix: include directory symlinks in remote folder browsing (#6347)
+90f4f08cb88e56a14c7274c45c7883e55a75940b taken fix: wire mobile Sentry and classify missing linked Git repositories (#7470) — взят 2026-10-31 (dd3214b584) backend-only; packages/mobile и docs/telemetry.md оставлены в форк-состоянии (mobile-политика)
+0a43ac09dde2261a469fb39d7c64d3d946352942 taken fix(review): find a just-opened PR when ao review trigger runs (#6956) — взят 2026-10-31 (46861d7ee5); union с форк-дельтой (PublishReview/multi-reviewer); тест thread-refresher снят (фичи в форке нет)
+ed0ffd713e9d5dc8cb265c9999583ed1f35cd558 skipped feat(mobile): draw the turn plan as the desktop panel does (#7432)
+ccfa051aa5f9c1ca1e3b470a02c2aa25c5dbe162 taken fix(i18n): render relative times in the app language, not the OS locale (#6871)
+390cb55bb44f9cb52967d0667036c94eacd60cd4 skipped perf(chat): keep splitting streamed replies when only code looks like a link definition (#7504)
+8eee27778ab03f594c8c83cf34cece96c75a1bca skipped feat(settings): turn navigation gestures on by default (#7505)
+2d758c9a8ddb69734a589ca56daa9dd5717706a5 skipped feat(mobile): open a PR's worker from the PR page and the PR list (#7499)
+d891b1da58e97adc6eeb024310743bf03516c30d taken fix(desktop): align macOS titlebar with the framed center panel (#7509) — взят 2026-10-31 (e2f697458d); импорт без апдейтерных модулей, cloud-тесты sidebar не взяты
+31b4e8f2c428e1602dcc083216d3450a77c94440 skipped feat(contract): a deployment without fixed addresses answers the tunnel route with 404 (#7500)
+548c887b8627dec552bbe3bad0a9e5fa384a5ba0 skipped feat(remote): give linked machines fixed addresses from AO Cloud (#7294)
+4aec433d9077c7e1ef97605d920e7c44620a1eec skipped feat(mobile): treat AO Cloud's fixed addresses as stable tunnels (#7411)
+02d9c356fdb7e10c2140ec36223f82589d44bf5a skipped feat(mobile): start Connect Mobile from the sidebar, a switch to turn it off, and no note while remote access starts (#7507)
+c0b351a31eccaf1ac55f8e5015fd21ab414545ca skipped feat(remote): sign the machine's own AO Cloud requests with a host key (#7496)
