@@ -3,9 +3,11 @@
 package conpty
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
+	"sync"
 
 	"golang.org/x/sys/unix"
 )
@@ -20,6 +22,11 @@ import (
 // master — and the fd (and the block) die with the PTY on Close.
 type ptyInputProbe struct {
 	slave *os.File
+
+	// mu serializes ioctls against Close: wait() closes the probe as soon as
+	// the child exits, while a pacing loop may still be polling the queue.
+	mu     sync.Mutex
+	closed bool
 }
 
 // newPtyInputProbe resolves the slave path from the master (TIOCGPTN ->
@@ -43,6 +50,11 @@ const fionread = 0x541b
 
 // PendingInput returns the unread byte count of the tty input queue (TIOCINQ).
 func (p *ptyInputProbe) PendingInput() (int, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed {
+		return 0, errors.New("input probe closed")
+	}
 	n, err := unix.IoctlGetInt(int(p.slave.Fd()), fionread)
 	if err != nil {
 		return 0, fmt.Errorf("FIONREAD on pty slave: %w", err)
@@ -53,6 +65,11 @@ func (p *ptyInputProbe) PendingInput() (int, error) {
 // FlushInput discards queued unread input. Linux takes the TCFLSH selector by
 // value (a pointer arg is EINVAL).
 func (p *ptyInputProbe) FlushInput() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed {
+		return errors.New("input probe closed")
+	}
 	if err := unix.IoctlSetInt(int(p.slave.Fd()), unix.TCFLSH, unix.TCIFLUSH); err != nil {
 		return fmt.Errorf("TCIFLUSH on pty slave: %w", err)
 	}
@@ -60,4 +77,12 @@ func (p *ptyInputProbe) FlushInput() error {
 }
 
 // Close releases the probe's slave fd. Called with the PTY's Close.
-func (p *ptyInputProbe) Close() error { return p.slave.Close() }
+func (p *ptyInputProbe) Close() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed {
+		return nil
+	}
+	p.closed = true
+	return p.slave.Close()
+}

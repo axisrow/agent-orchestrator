@@ -17,6 +17,10 @@ import (
 // the write fails loudly — never a silent ~1022-byte cut.
 
 // startRealPTYHost serves a host around a real kernel pty running shellScript.
+// The script must `touch ready` once its tty is in its final mode; waitReady
+// blocks until then, so no test bytes race the child's `stty raw` window (in
+// canonical mode an incomplete line is invisible to the input probe, and
+// Linux would clamp over-long lines on top).
 func startRealPTYHost(t *testing.T, shellScript string) (*host, string, func()) {
 	t.Helper()
 	dir := t.TempDir()
@@ -44,6 +48,21 @@ func startRealPTYHost(t *testing.T, shellScript string) (*host, string, func()) 
 	return h, dir, cleanup
 }
 
+func waitReady(t *testing.T, dir string) {
+	t.Helper()
+	ready := filepath.Join(dir, "ready")
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(ready); err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("child never became ready")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 // TestSyncInputDeliversWholeBeyondKernelClamp sends a 4 KiB batch to a child
 // that reads nothing for a second — the diagnostic's loss window, long enough
 // for the old unpaced write to lose everything past the clamp — and asserts
@@ -52,11 +71,12 @@ func TestSyncInputDeliversWholeBeyondKernelClamp(t *testing.T) {
 	// Raw mode mirrors the claude-code TUI recipient; the child reads exactly
 	// 4097 bytes (batch + Enter) after the non-reading window, so the Enter is
 	// consumed before the child exits and cannot race its own exit ack.
-	h, dir, cleanup := startRealPTYHost(t, "stty raw -echo; sleep 1; head -c 4097 > out.txt")
+	h, dir, cleanup := startRealPTYHost(t, "stty raw -echo; touch ready; sleep 1; head -c 4097 > out.txt")
 	defer cleanup()
 	if _, ok := h.cfg.PTY.(inputFlowController); !ok {
 		t.Fatal("real unix pty must implement inputFlowController")
 	}
+	waitReady(t, dir)
 
 	message := strings.Repeat("abcdefgh", 512) // 4096 B, far past the ~1022 clamp
 	want := message + "\r"
@@ -94,8 +114,9 @@ func TestSyncInputFailsLoudWhenRecipientNeverReads(t *testing.T) {
 	inputFlowTimeout = 300 * time.Millisecond
 	defer func() { inputFlowTimeout = oldTimeout }()
 
-	h, _, cleanup := startRealPTYHost(t, "stty raw -echo; sleep 30")
+	h, dir, cleanup := startRealPTYHost(t, "stty raw -echo; touch ready; sleep 30")
 	defer cleanup()
+	waitReady(t, dir)
 
 	flow := h.cfg.PTY.(inputFlowController)
 	message := strings.Repeat("x", 4096)

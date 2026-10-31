@@ -21,10 +21,11 @@ const (
 	ptyInputChunkDelay = 15 * time.Millisecond
 	// ptyInputEnterDelay is the pause before sending Enter. Mirrors PTY_INPUT_ENTER_DELAY_MS.
 	ptyInputEnterDelay = 300 * time.Millisecond
-	// ptyInputAckTimeout bounds the wait for the host's input acks. The host's
-	// own flow-control budget (inputFlowTimeout) fails a stalled write and then
-	// acks every remaining frame, so one budget plus round-trip slop suffices
-	// no matter the chunk count.
+	// ptyInputAckTimeout bounds one send sequence as a whole: frame writes,
+	// the pre-Enter pause, and the ack wait share this single deadline. The
+	// host's pacing budget (inputFlowTimeout) bounds its own stall total from
+	// below, so a stalled sequence is failed and flushed by the host first and
+	// the client learns of it through an error ack instead of this deadline.
 	ptyInputAckTimeout = 15 * time.Second
 
 	dialTimeout      = 3 * time.Second
@@ -68,6 +69,13 @@ func clientSendMessage(addr, message string) error {
 		return err
 	}
 	defer func() { _ = conn.Close() }()
+	// One deadline for the whole sequence: if the host's pacing drags past it,
+	// the sender must leave (and drop the conn) rather than linger while the
+	// host keeps writing — the host notices the dead conn, aborts, and flushes
+	// the queued partial, so the retry starts clean.
+	if err := conn.SetDeadline(time.Now().Add(ptyInputAckTimeout)); err != nil {
+		return err
+	}
 
 	runes := []rune(message)
 	frames := 0
@@ -110,15 +118,13 @@ func clientSendMessage(addr, message string) error {
 	return awaitInputAcks(conn, frames)
 }
 
-// awaitInputAcks reads frames until every sent sync frame is answered. The
-// host interleaves terminal-output broadcasts on the same connection, so
-// frames that are not acks are skipped. The first failed ack aborts: the
-// delivery failed loudly and the caller (SendSemantic's acceptance loop)
-// owns the retry.
+// awaitInputAcks reads frames until every sent sync frame is answered, under
+// the sequence deadline the caller set on the connection. The host
+// interleaves terminal-output broadcasts on the same connection, so frames
+// that are not acks are skipped. The first failed ack aborts: the delivery
+// failed loudly and the caller (SendSemantic's acceptance loop) owns the
+// retry.
 func awaitInputAcks(conn net.Conn, want int) error {
-	if err := conn.SetReadDeadline(time.Now().Add(ptyInputAckTimeout)); err != nil {
-		return err
-	}
 	ackC := make(chan InputAckPayload, want)
 	parser := NewMessageParser(func(msgType byte, payload []byte) {
 		if msgType != MsgInputAckRes {
