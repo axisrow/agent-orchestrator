@@ -158,7 +158,6 @@ function ArtifactGroupSection({ group }: { group: ArtifactGroup }) {
 }
 
 function ArtifactListRow({ row }: { row: ArtifactRow }) {
-	const { t } = useTranslation();
 	const requestWorkspaceFileOpen = useUiStore((state) => state.requestWorkspaceFileOpen);
 	const navigateToSession = useNavigateToSession();
 	const KindIcon = row.kind === "html" ? Globe : row.kind === "markdown" ? FileText : File;
@@ -181,11 +180,7 @@ function ArtifactListRow({ row }: { row: ArtifactRow }) {
 				className="flex min-w-0 shrink items-center gap-2.5 self-stretch text-left outline-none after:absolute after:inset-0 after:z-[1] after:rounded-lg"
 				onClick={open}
 			>
-				{row.generating ? (
-					<Loader2 aria-label={t("artifacts.generating")} className="relative z-[1] size-icon-sm shrink-0 animate-spin text-status-working motion-reduce:animate-none" />
-				) : (
-					<KindIcon aria-hidden="true" className="relative z-[1] size-icon-sm shrink-0 text-muted-foreground" />
-				)}
+				<KindIcon aria-hidden="true" className="relative z-[1] size-icon-sm shrink-0 text-muted-foreground" />
 				<span className="relative z-[1] shrink-0 truncate text-control font-medium text-foreground">{row.name}</span>
 				<span className="relative z-[1] min-w-0 truncate text-xs text-muted-foreground">{row.sessionTitle}</span>
 			</button>

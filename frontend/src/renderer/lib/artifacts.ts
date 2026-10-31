@@ -1,4 +1,3 @@
-import { isAgentActivityWorking } from "@aoagents/product-ui";
 import {
 	CLOUD_PROJECT_KIND,
 	sessionArtifacts,
@@ -27,8 +26,6 @@ export type ArtifactRow = {
 	sessionId: string;
 	sessionTitle: string;
 	projectId: string;
-	/** The writing session's agent is working, so the file may still change. */
-	generating: boolean;
 };
 
 /** One project's artifacts, newest first. */
@@ -61,7 +58,6 @@ export function groupArtifactsByProject(workspaces: readonly WorkspaceSummary[])
 					sessionId: session.id,
 					sessionTitle: session.title,
 					projectId: workspace.id,
-					generating: isAgentActivityWorking(session.activity),
 				})),
 			)
 			.sort(newestFirst);
