@@ -1,10 +1,8 @@
-import { createContext, useContext, useState, type ComponentProps, type ReactNode } from "react";
+import { createContext, useContext, type ComponentProps } from "react";
 import { Copy, ExternalLink, FileText, Globe } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { aoBridge } from "../lib/bridge";
 import { isWebLink, openLinkInSystemBrowser } from "../lib/external-link-policy";
-import { useLinkPreview } from "../hooks/useLinkPreview";
-import { LinkPreviewCard, LinkPreviewCardLoading } from "./LinkPreviewCard";
 import {
 	ContextMenu,
 	ContextMenuTrigger,
@@ -12,26 +10,21 @@ import {
 	ContextMenuItem,
 	ContextMenuSeparator,
 } from "./ui/context-menu";
-import { HoverCard, HoverCardContent, HoverCardTrigger } from "./ui/hover-card";
 
 export const AppBrowserLinkContext = createContext<((url: string) => void) | undefined>(undefined);
 
 /** Shared web-link behavior; native fragments and special schemes retain their handlers. */
-export function AppLink({ href, onClick, onBrowserOpen, inAppLink, filePath, onFileOpen, hoverPreview, ...props }: ComponentProps<"a"> & {
+export function AppLink({ href, onClick, onBrowserOpen, inAppLink, filePath, onFileOpen, ...props }: ComponentProps<"a"> & {
 	onBrowserOpen?: (url: string) => void;
 	inAppLink?: (url: string) => boolean;
 	filePath?: string;
 	onFileOpen?: (path: string) => void;
-	hoverPreview?: (open: boolean) => ReactNode;
 }) {
 	const { t } = useTranslation();
 	const sessionBrowserOpen = useContext(AppBrowserLinkContext);
 	const openBrowser = onBrowserOpen ?? sessionBrowserOpen;
 	const webLink = !!href && isWebLink(href);
 	const browserLink = !!href && (inAppLink?.(href) ?? webLink);
-	const hasHoverPreview = webLink || Boolean(hoverPreview);
-	const [previewOpen, setPreviewOpen] = useState(false);
-	const previewQuery = useLinkPreview(href ?? "", previewOpen && webLink);
 	const anchor = (
 		<a
 			{...props}
@@ -46,16 +39,9 @@ export function AppLink({ href, onClick, onBrowserOpen, inAppLink, filePath, onF
 		/>
 	);
 	if (!href || href.startsWith("#") || (href.startsWith("/") && !browserLink && !filePath)) return anchor;
-	const trigger = hasHoverPreview ? (
-		<ContextMenuTrigger asChild>
-			<HoverCardTrigger asChild>{anchor}</HoverCardTrigger>
-		</ContextMenuTrigger>
-	) : (
-		<ContextMenuTrigger asChild>{anchor}</ContextMenuTrigger>
-	);
-	const menu = (
+	return (
 		<ContextMenu>
-			{trigger}
+			<ContextMenuTrigger asChild>{anchor}</ContextMenuTrigger>
 			<ContextMenuContent className="min-w-52">
 				{browserLink && (
 					<ContextMenuItem disabled={!openBrowser} onSelect={() => openBrowser?.(href)}>
@@ -82,21 +68,5 @@ export function AppLink({ href, onClick, onBrowserOpen, inAppLink, filePath, onF
 				</ContextMenuItem>
 			</ContextMenuContent>
 		</ContextMenu>
-	);
-	if (!hasHoverPreview) return menu;
-	return (
-		<HoverCard onOpenChange={setPreviewOpen}>
-			{menu}
-			{previewOpen && webLink && !previewQuery.isError && (
-				<HoverCardContent collisionPadding={8}>
-					{previewQuery.data ? (
-						<LinkPreviewCard url={href} preview={previewQuery.data} onBrowserOpen={openBrowser} />
-					) : (
-						<LinkPreviewCardLoading />
-					)}
-				</HoverCardContent>
-			)}
-			{previewOpen && !webLink && hoverPreview?.(previewOpen)}
-		</HoverCard>
 	);
 }

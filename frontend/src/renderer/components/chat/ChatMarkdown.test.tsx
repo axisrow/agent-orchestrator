@@ -7,14 +7,6 @@ import { renderMermaidDiagram } from "../../lib/mermaid-diagram";
 import { ActivityTitle, ChatLinkProvider, ChatMarkdown, ChatOpeningRef } from "./ChatMarkdown";
 import { ChatImageSourceProvider } from "./chat-image-source";
 
-const sessionPreview = vi.hoisted(() => vi.fn());
-vi.mock("../SessionLinkPreviewCard", () => ({
-	SessionLinkPreviewCard: (props: unknown) => {
-		sessionPreview(props);
-		return <div data-testid="session-link-preview" />;
-	},
-}));
-
 const linkSource = vi.hoisted(() => ({ workspaces: [] as Array<{ id: string; sessions: Array<{ id: string; artifactFiles?: Array<{ path: string }> }> }> }));
 vi.mock("../../lib/use-session-link-navigation", () => ({
 	useSessionLinkSource: () => ({ ready: true, isLoading: false, isError: false, workspaces: linkSource.workspaces }),
@@ -266,39 +258,6 @@ describe("ChatMarkdown", () => {
 		expect(onLinkOpen).not.toHaveBeenCalled();
 		expect(openExternal).not.toHaveBeenCalled();
 		openExternal.mockRestore();
-	});
-
-	it("scopes a session preview to the chat source", async () => {
-		sessionPreview.mockClear();
-		// The hover card schedules real timers that Radix only cancels on
-		// unmount; one firing after jsdom teardown fails the whole run with an
-		// unhandled "window is not defined" even when every test passed.
-		vi.useFakeTimers({ shouldAdvanceTime: true });
-		try {
-			const view = render(
-				<ChatLinkProvider
-					onSessionLinkOpen={vi.fn()}
-					sessionLinkHostId="box-a"
-				>
-					<ChatMarkdown text="[Worker](ao://sessions/project/session)" />
-				</ChatLinkProvider>,
-			);
-
-			fireEvent.pointerOver(screen.getByRole("link"), { pointerType: "mouse" });
-			await waitFor(() => expect(screen.getByTestId("session-link-preview")).toBeInTheDocument());
-			expect(sessionPreview).toHaveBeenCalledWith({
-				href: "ao://sessions/project/session",
-				sourceHostId: "box-a",
-				sourceKind: undefined,
-			});
-			// Unmount while the fake timers still own the clock: RTL's afterEach
-			// cleanup runs after this finally, i.e. on real timers, and the open
-			// hover card's close timer can then land after jsdom teardown under
-			// CI load. Unmounting here is what makes Radix cancel it.
-			view.unmount();
-		} finally {
-			vi.useRealTimers();
-		}
 	});
 
 	it("renders remote workspace paths as text while keeping external links working", async () => {
