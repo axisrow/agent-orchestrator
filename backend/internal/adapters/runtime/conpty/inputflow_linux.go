@@ -50,9 +50,10 @@ func (p *ptyInputProbe) PendingInput() (int, error) {
 	return n, nil
 }
 
-// FlushInput discards queued unread input.
+// FlushInput discards queued unread input. Linux takes the TCFLSH selector by
+// value (a pointer arg is EINVAL).
 func (p *ptyInputProbe) FlushInput() error {
-	if err := unix.IoctlSetPointerInt(int(p.slave.Fd()), unix.TCFLSH, unix.TCIFLUSH); err != nil {
+	if err := unix.IoctlSetInt(int(p.slave.Fd()), unix.TCFLSH, unix.TCIFLUSH); err != nil {
 		return fmt.Errorf("TCIFLUSH on pty slave: %w", err)
 	}
 	return nil

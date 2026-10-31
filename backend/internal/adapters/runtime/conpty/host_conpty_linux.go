@@ -113,6 +113,12 @@ func (c *linuxPTYConn) wait() {
 	} else if err != nil {
 		code = -1
 	}
+	// Release the probe's slave fd before announcing the exit: while it is
+	// open the kernel does not hang the tty up, the master's read never sees
+	// the EIO that ends every output pump, and readers wait forever.
+	if c.probe != nil {
+		_ = c.probe.Close()
+	}
 	c.exitMu.Lock()
 	c.exitCode = code
 	c.exited = true
