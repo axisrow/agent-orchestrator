@@ -85,7 +85,6 @@ import { useUiStore } from "../stores/ui-store";
 import { Button } from "./ui/button";
 import { cn } from "../lib/utils";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { SessionArchiveDialog, type SessionArchiveChoice } from "./SessionArchiveDialog";
 import { ReviewerSelect } from "./ReviewerSelect";
 import { agentLabel } from "../lib/agent-options";
 import { useAgentReadinessQuery, useEnsureAgentReadiness } from "../hooks/useAgentReadinessQuery";
@@ -400,6 +399,12 @@ const SummaryView = memo(function SummaryView({
 	const prSummaries = sessionPRDisplaySummaries(session, query.data?.prs);
 	const prCount = prSummaries.length + linkedPRs.length;
 	const hasPRs = prCount > 0;
+	// The AO reviewer verdict is a second, independent PR fact (the review-run
+	// table), fetched through the same shared query the Reviews tab uses. Local
+	// sessions only: cloud sessions read review state from the control plane.
+	const reviewsQuery = useQuery(sessionReviewsQueryOptions(session, hasPRs && !session.cloud, undefined, hostId));
+	const aoReviewFor = (pr: SessionPRSummary): PRReviewState | undefined =>
+		reviewsQuery.data?.reviews.find((review) => review.prUrl === pr.url);
 	const artifacts = sessionArtifacts(session);
 	const hasArtifacts = artifacts.length > 0;
 	const prSectionTitle = prCount > 1 ? t("inspector.pullRequests", { count: prCount }) : t("inspector.pullRequest");
@@ -451,6 +456,7 @@ const SummaryView = memo(function SummaryView({
 							showRepository={prsSpanRepositories(prSummaries)}
 							onOpenReviews={onOpenReviews}
 							pr={pr}
+							aoReview={aoReviewFor(pr)}
 							hostId={hostId}
 							sessionId={session.id}
 							cloudOrgId={session.cloud?.orgId}
@@ -747,7 +753,6 @@ function SessionControls({ session, hostId }: { session: WorkspaceSession; hostI
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
 	const workspaceKey = workspaceQueryKeyForHost(hostId);
-	const [confirmOpen, setConfirmOpen] = useState(false);
 	const terminate = useTerminateSession();
 	const { client: cloudClient } = useCloudCp();
 	const policy = useMutation({
@@ -781,13 +786,14 @@ function SessionControls({ session, hostId }: { session: WorkspaceSession; hostI
 	const policyError = policy.error instanceof Error ? policy.error.message : null;
 	const canTerminateNow = session.status === "merged";
 
-	const confirmTermination = ({ deleteArtifacts }: SessionArchiveChoice) => {
+	// Archiving is reversible (restore from the Archive section), so it runs on
+	// the click with no confirmation.
+	const archiveNow = () => {
 		const workspaces = queryClient.getQueryData<WorkspaceSummary[]>(workspaceKey) ?? [];
 		const workspace = workspaces.find((w) => w.id === session.workspaceId);
 		const nextNav = resolveNextNavigationAfterSessionKill(workspace, session.id);
 
-		setConfirmOpen(false);
-		terminate.mutate(hostId ? { ...session, hostId, deleteArtifacts } : { ...session, deleteArtifacts });
+		terminate.mutate(hostId ? { ...session, hostId } : session);
 
 		if (nextNav.target === "session") {
 			void navigate(sessionNavigateTarget(session.workspaceId, nextNav.sessionId, hostId));
@@ -803,28 +809,17 @@ function SessionControls({ session, hostId }: { session: WorkspaceSession; hostI
 			<span className="min-w-0 text-sm text-settings-label">{t("inspector.archiveShort")}</span>
 			<Tooltip>
 				<TooltipTrigger asChild>
-					<span className="inline-flex">
-						<SessionArchiveDialog
-							onConfirm={confirmTermination}
-							onOpenChange={setConfirmOpen}
-							open={confirmOpen}
-							session={session}
-							trigger={
-								<button
-									aria-label={t("inspector.archive")}
-									className="inline-flex size-control-md items-center justify-center rounded-sm text-passive transition-colors hover:bg-interactive-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-									onClick={() => {
-										clearTerminateSessionState(queryClient, session.id, hostId);
-										// Always open the confirm; the modal owns its own dismissal.
-										setConfirmOpen(true);
-									}}
-									type="button"
-								>
-									<Archive className="size-icon-sm" aria-hidden="true" />
-								</button>
-							}
-						/>
-					</span>
+					<button
+						aria-label={t("inspector.archive")}
+						className="inline-flex size-control-md items-center justify-center rounded-sm text-passive transition-colors hover:bg-interactive-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+						onClick={() => {
+							clearTerminateSessionState(queryClient, session.id, hostId);
+							archiveNow();
+						}}
+						type="button"
+					>
+						<Archive className="size-icon-sm" aria-hidden="true" />
+					</button>
 				</TooltipTrigger>
 				<TooltipContent side="bottom">{t("inspector.archive")}</TooltipContent>
 			</Tooltip>
@@ -880,6 +875,7 @@ function PRSummaryCard({
 	cloudOrgId,
 	onOpenReviews,
 	pr,
+	aoReview,
 	sessionId,
 	showRepository = false,
 }: {
@@ -888,6 +884,8 @@ function PRSummaryCard({
 	cloudOrgId?: string;
 	onOpenReviews: () => void;
 	pr: SessionPRSummary;
+	/** AO reviewer verdict for this PR, from the shared reviews query. */
+	aoReview?: PRReviewState;
 	sessionId: string;
 	/** Label the card with its repository: the session has PRs on several. */
 	showRepository?: boolean;
@@ -896,7 +894,7 @@ function PRSummaryCard({
 	const queryClient = useQueryClient();
 	const workspaceKey = workspaceQueryKeyForHost(hostId);
 	const { client: cloudClient, baseUrl: cloudBaseUrl } = useCloudCp();
-	const presentation = prCardPresentation(pr);
+	const presentation = prCardPresentation(pr, aoReview);
 	const canMerge = prCanMerge(pr) && Boolean(pr.url && pr.headSha);
 	const mergePr = useMutation({
 		mutationFn: async () => {

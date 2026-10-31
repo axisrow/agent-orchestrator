@@ -29,6 +29,8 @@ export function createWindowComposition(options: {
 	WebContentsView: WebContentsViewConstructor;
 	preload: string;
 	platform: NodeJS.Platform;
+	/** Launch flags handed to the sandboxed preload via process.argv (see shared/launch-env). */
+	additionalArguments?: string[];
 }): WindowComposition {
 	const shellView = new options.WebContentsView({
 		webPreferences: {
@@ -37,6 +39,7 @@ export function createWindowComposition(options: {
 			nodeIntegration: false,
 			sandbox: true,
 			transparent: true,
+			additionalArguments: options.additionalArguments ?? [],
 		},
 	});
 	shellView.setBackgroundColor("#00000000");

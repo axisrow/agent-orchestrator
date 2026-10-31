@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SessionPRSummary } from "../hooks/useSessionScmSummary";
 import type { PullRequestFacts, WorkspaceSession } from "../types/workspace";
+import type { PRReviewState, ReviewRunFacts } from "./session-reviews";
 import {
 	prBrowserUrl,
 	prCardPresentation,
@@ -414,6 +415,113 @@ describe("prCardPresentation", () => {
 
 		expect(presentation.primary.detail).toBe("GitLab currently reports this pull request can't be merged.");
 		expect(presentation.readiness?.detail).toBe("GitLab currently reports this pull request can't be merged.");
+	});
+});
+
+describe("prCardPresentation AO review verdict", () => {
+	const aoRun = (overrides: Partial<ReviewRunFacts> = {}): ReviewRunFacts => ({
+		autoInjectReview: true,
+		batchId: "batch-1",
+		body: "",
+		createdAt: "2026-06-15T00:00:00Z",
+		githubReviewId: "",
+		harness: "codex",
+		id: "run-1",
+		prUrl: "https://github.com/acme/repo/pull/7",
+		publishState: "unpublished",
+		reviewId: "review-1",
+		sessionId: "sess-1",
+		status: "complete",
+		targetSha: "abc123",
+		triggerSource: "manual",
+		verdict: "approved",
+		...overrides,
+	});
+	const aoReview = (overrides: Partial<PRReviewState> = {}): PRReviewState => ({
+		prUrl: "https://github.com/acme/repo/pull/7",
+		prNumber: 7,
+		title: "Fix dashboard",
+		targetSha: "abc123",
+		status: "up_to_date",
+		...overrides,
+	});
+	const noReviewRequired = { review: { decision: "none" as const, hasUnresolvedHumanComments: false, unresolvedBy: [] } };
+	const aoRow = (presentation: ReturnType<typeof prCardPresentation>) =>
+		presentation.statusRows?.find((row) => row.key === "ao_review");
+
+	it("shows the GitHub requirement and the AO verdict as two independent rows", () => {
+		// "No review required" (GitHub) and "AO review: approved" are separate
+		// facts: the card must show both, never collapse them into one.
+		const presentation = prCardPresentation(summary(noReviewRequired), aoReview({ latestRun: aoRun() }));
+		const reviewRow = presentation.statusRows?.find((row) => row.key === "review");
+		expect(reviewRow).toMatchObject({ label: "Review status", detail: "No review required" });
+		expect(aoRow(presentation)).toMatchObject({ label: "AO review: approved", tone: "success", breathe: false });
+	});
+
+	it("shows the AO verdict next to a required review", () => {
+		const presentation = prCardPresentation(
+			summary({ ...noReviewRequired, review: { decision: "review_required", hasUnresolvedHumanComments: false, unresolvedBy: [] } }),
+			aoReview({ latestRun: aoRun() }),
+		);
+		expect(presentation.statusRows?.find((row) => row.key === "review")?.detail).toBe("Required review not submitted");
+		expect(aoRow(presentation)?.label).toBe("AO review: approved");
+	});
+
+	it("renders a current changes_requested verdict as a warning", () => {
+		const presentation = prCardPresentation(
+			summary(),
+			aoReview({ status: "changes_requested", latestRun: aoRun({ verdict: "changes_requested" }) }),
+		);
+		expect(aoRow(presentation)).toMatchObject({ label: "AO review: changes requested", tone: "warning" });
+	});
+
+	it("renders a running pass with a breathing neutral row", () => {
+		const presentation = prCardPresentation(
+			summary(),
+			aoReview({ status: "running", latestRun: aoRun({ status: "running", verdict: "" }) }),
+		);
+		expect(aoRow(presentation)).toMatchObject({ label: "AO review: running", tone: "neutral", breathe: true });
+	});
+
+	it("renders a completed verdict on an older head as outdated, never current", () => {
+		// Push after approval: the run's target_sha is behind the PR head, so the
+		// verdict is demoted even though the run itself said approved.
+		const presentation = prCardPresentation(
+			summary(),
+			aoReview({
+				status: "needs_review",
+				targetSha: "def456",
+				previousRun: aoRun({ id: "run-0", targetSha: "abc123" }),
+			}),
+		);
+		expect(aoRow(presentation)).toMatchObject({ label: "AO review outdated", detail: "AO review: approved", tone: "passive" });
+	});
+
+	it("demotes a stale approval the reviews query still calls current", () => {
+		// The PR summary and reviews query refresh on different schedules; the
+		// card re-checks target_sha against the summary's head.
+		const presentation = prCardPresentation(
+			summary(),
+			aoReview({ status: "up_to_date", latestRun: aoRun({ targetSha: "def456" }) }),
+		);
+		expect(aoRow(presentation)).toMatchObject({ label: "AO review outdated", tone: "passive" });
+	});
+
+	it("names a stale changes_requested verdict in the outdated detail", () => {
+		const presentation = prCardPresentation(
+			summary(),
+			aoReview({
+				status: "needs_review",
+				targetSha: "def456",
+				previousRun: aoRun({ id: "run-0", verdict: "changes_requested" }),
+			}),
+		);
+		expect(aoRow(presentation)).toMatchObject({ label: "AO review outdated", detail: "AO review: changes requested" });
+	});
+
+	it("omits the AO row when the session has no review-run data", () => {
+		const presentation = prCardPresentation(summary());
+		expect(presentation.statusRows?.some((row) => row.key === "ao_review")).toBe(false);
 	});
 });
 

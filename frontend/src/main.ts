@@ -70,6 +70,7 @@ import { type DaemonLaunchSpec, bundledDaemonIdentityError, resolveDaemonLaunch 
 import { createListenPortScanner, defaultRunFilePath, parseRunFile } from "./shared/daemon-discovery";
 import type { DaemonStatus } from "./shared/daemon-status";
 import { canonicalPathInside, sameCanonicalPath } from "./shared/path-identity";
+import { rightPanelPreloadArgs } from "./shared/launch-env";
 import {
 	refreshSlowDaemonStartupDetails,
 	slowDaemonStartupStatus,
@@ -792,6 +793,7 @@ async function createWindowInternal(): Promise<void> {
 		WebContentsView,
 		preload: preloadPath(),
 		platform: process.platform,
+		additionalArguments: rightPanelPreloadArgs(process.env),
 	});
 	windowComposition = composition;
 	syncNativeWindowBackground();

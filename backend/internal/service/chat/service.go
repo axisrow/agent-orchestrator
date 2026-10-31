@@ -121,10 +121,11 @@ func (s *Service) SetReportCoordinator(coordinator *reportsvc.Coordinator) {
 	s.reports = coordinator
 }
 
-// SettleEmittedReports retires the recipient's already-shown report batches
-// once an accepted prompt proves the conversation is being read (fork issue
-// #159). Session Manager calls it after a pane-delivered prompt; Chat's own
-// accepted-send paths call the same coordinator method inline.
+// SettleEmittedReports retires shown report batches the recipient's durable
+// checkpoint names by correlation id — semantic acceptances of the batches
+// themselves (fork issues #159, #179). Session Manager calls it after a
+// pane-delivered prompt; Chat's own accepted-send paths call the same
+// coordinator method inline.
 func (s *Service) SettleEmittedReports(ctx context.Context, id domain.SessionID) error {
 	if s.reports == nil {
 		return nil

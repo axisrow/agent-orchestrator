@@ -1091,6 +1091,13 @@ func (m *Manager) harnessWaitingInputComposerSafe(harness domain.AgentHarness) b
 // materialization fails the still-seed row is deleted outright; a later failure
 // parks the row as terminated and rolls back what was built.
 func (m *Manager) Spawn(ctx context.Context, cfg ports.SpawnConfig) (domain.SessionRecord, int, int, error) {
+	timings := newSpawnTimings()
+	rec, promptBytes, systemPromptBytes, err := m.spawn(ctx, cfg, timings)
+	m.logSpawnTimings(timings, err)
+	return rec, promptBytes, systemPromptBytes, err
+}
+
+func (m *Manager) spawn(ctx context.Context, cfg ports.SpawnConfig, timings *spawnTimings) (domain.SessionRecord, int, int, error) {
 	if cfg.RequestedOutput == domain.RequestedOutputArtifact && m.artifactDir("") == "" {
 		return domain.SessionRecord{}, 0, 0, fmt.Errorf("spawn: %w", ErrArtifactOutputUnavailable)
 	}
@@ -1131,6 +1138,7 @@ func (m *Manager) Spawn(ctx context.Context, cfg ports.SpawnConfig) (domain.Sess
 	// A per-project role override picks the harness when the spawn names none,
 	// so a project can default workers to one agent and orchestrators to another.
 	cfg.Harness = effectiveHarness(cfg.Harness, cfg.Kind, project.Config)
+	timings.set("harness", cfg.Harness)
 	if cfg.Harness == "" {
 		return domain.SessionRecord{}, 0, 0, fmt.Errorf("spawn: %w: configure project %s.agent or pass --harness", ErrMissingHarness, roleConfigName(cfg.Kind))
 	}
@@ -1233,6 +1241,9 @@ func (m *Manager) Spawn(ctx context.Context, cfg ports.SpawnConfig) (domain.Sess
 	}
 
 	asyncChat := cfg.Async && mode == domain.SessionModeChat && m.chat != nil && (cfg.Kind == domain.KindOrchestrator || cfg.Kind == domain.KindWorker)
+	timings.set("mode", mode)
+	timings.set("async", asyncChat)
+	timings.mark("resolve")
 
 	var prep *taskPreparation
 	if cfg.AutomationRunID == nil && cfg.Branch == "" {
@@ -1275,6 +1286,7 @@ func (m *Manager) Spawn(ctx context.Context, cfg ports.SpawnConfig) (domain.Sess
 		}
 	}
 	id := rec.ID
+	timings.set("sessionID", id)
 	if m.agentAccounts != nil {
 		if err := m.agentAccounts.BindSession(ctx, id, cfg.Harness, cfg.AgentAccountID); err != nil {
 			if prep != nil {
@@ -1384,9 +1396,11 @@ func (m *Manager) Spawn(ctx context.Context, cfg ports.SpawnConfig) (domain.Sess
 			cancelNaming()
 		}
 	}()
+	timings.mark("seed")
 	if !asyncChat {
 		taskName, cancelNaming = m.startTaskNaming(cfg, rec, project.Config)
 		releaseWorkspaceGate := sync.OnceFunc(m.acquireWorkspaceGate(cfg.ProjectID))
+		timings.mark("gateWait")
 		ctx = context.WithValue(ctx, spawnWorkspaceGateKey{}, releaseWorkspaceGate)
 		defer releaseWorkspaceGate()
 	}
@@ -1434,6 +1448,7 @@ func (m *Manager) Spawn(ctx context.Context, cfg ports.SpawnConfig) (domain.Sess
 	var workspaceProject *ports.WorkspaceProjectInfo
 	if prep != nil {
 		ws, workspaceProject, err = m.awaitTaskPreparation(ctx, prep)
+		timings.mark("taskPrepWait")
 		if err != nil && ctx.Err() != nil {
 			cleanupCtx, cancel := spawnRollbackContext(ctx)
 			m.discardClaimedTaskPreparation(cleanupCtx, prep)
@@ -1444,7 +1459,9 @@ func (m *Manager) Spawn(ctx context.Context, cfg ports.SpawnConfig) (domain.Sess
 	}
 	if ws.Path == "" {
 		baseRefs := m.refreshDefaultBranchesBestEffort(ctx, project)
+		timings.mark("defaultBranch")
 		ws, workspaceProject, err = m.createSessionWorkspace(ctx, project, cfg, id, branch, baseRefs)
+		timings.mark("worktree")
 	}
 	if err != nil {
 		if ws.Path != "" {
@@ -1458,7 +1475,9 @@ func (m *Manager) Spawn(ctx context.Context, cfg ports.SpawnConfig) (domain.Sess
 	}
 	// Per-project workspace provisioning: symlink shared files, then run any
 	// post-create commands (e.g. `pnpm install`) before the agent launches.
-	if err := m.provisionWorkspace(ctx, project, ws.Path); err != nil {
+	err = m.provisionWorkspace(ctx, project, ws.Path)
+	timings.mark("provision")
+	if err != nil {
 		m.rollbackSeedSpawnWorkspace(ctx, rec, ws, workspaceProject, false, false)
 		return domain.SessionRecord{}, 0, 0, wrapSpawnStage(id, ErrWorkspaceProvision, err)
 	}
@@ -1479,6 +1498,7 @@ func (m *Manager) Spawn(ctx context.Context, cfg ports.SpawnConfig) (domain.Sess
 			return domain.SessionRecord{}, 0, 0, wrapSpawnStage(id, ErrSpawnAttachments, err)
 		}
 		prompt = appendAttachmentReferences(prompt, refs)
+		timings.mark("attachments")
 	}
 
 	// Everything above is shared: project, harness, prompts, seed row, worktree,
@@ -1496,6 +1516,7 @@ func (m *Manager) Spawn(ctx context.Context, cfg ports.SpawnConfig) (domain.Sess
 			systemPrompt:     systemPrompt,
 			systemPromptFile: systemPromptFile,
 		})
+		timings.mark("controller")
 		if err != nil {
 			return domain.SessionRecord{}, 0, 0, err
 		}
@@ -1623,12 +1644,14 @@ func (m *Manager) Spawn(ctx context.Context, cfg ports.SpawnConfig) (domain.Sess
 		return domain.SessionRecord{}, 0, 0, fmt.Errorf("spawn %s: %w", id, err)
 	}
 	defer releaseCodexAdmission()
+	timings.mark("launchPrep")
 	handle, err := m.runtime.Create(ctx, ports.RuntimeConfig{
 		SessionID:     id,
 		WorkspacePath: ws.Path,
 		Argv:          argv,
 		Env:           env,
 	})
+	timings.mark("runtime")
 	if err != nil {
 		m.rollbackSeedSpawnWorkspace(ctx, rec, ws, workspaceProject, true, false)
 		return domain.SessionRecord{}, 0, 0, wrapSpawnStage(id, ErrRuntimeCreate, agentlaunch.RedactError(err, project.Config.Env))
@@ -1674,6 +1697,7 @@ func (m *Manager) Spawn(ctx context.Context, cfg ports.SpawnConfig) (domain.Sess
 		m.markSpawnFailedTerminatedAfterFailure(ctx, id, false)
 		return domain.SessionRecord{}, 0, 0, wrapSpawnStage(id, ErrSpawnCommit, err)
 	}
+	timings.mark("record")
 	if delivery == ports.PromptDeliveryAfterStart {
 		if err := m.deliverAfterStartPrompt(ctx, agent, launchCfg, handle, id, afterStartPrompt); err != nil {
 			runtimeDestroyed := m.destroySpawnRuntimeAfterFailure(ctx, handle)
@@ -1681,6 +1705,7 @@ func (m *Manager) Spawn(ctx context.Context, cfg ports.SpawnConfig) (domain.Sess
 			m.markSpawnFailedTerminatedAfterFailure(ctx, id, runtimeDestroyed && workspaceDestroyed)
 			return domain.SessionRecord{}, 0, 0, wrapSpawnStage(id, ErrSpawnDeliverPrompt, err)
 		}
+		timings.mark("promptDelivery")
 	}
 	if cfg.AutomationRunID != nil {
 		if err := m.markAutomationLaunchCompleted(ctx, id); err != nil {
@@ -5244,11 +5269,14 @@ func (m *Manager) send(ctx context.Context, id domain.SessionID, message, client
 	case sessionguard.SuppressedInputGated:
 		return fmt.Errorf("send %s: %w", id, ErrSwitchInProgress)
 	}
-	// A prompt that reached the pane proves the recipient is being driven, so
-	// its already-shown report batches are settled (fork issue #159). Chat
-	// sessions never reach this path — sendChat handled them above with the
-	// same settle inline — and the optional interface keeps chat-less fakes
-	// intact. Best-effort: a settle failure never fails the delivered send.
+	// A prompt that reached the pane leaves its durable coordination checkpoint
+	// on the session; only report batches that checkpoint names — late semantic
+	// acceptances of the batch itself — settle there (fork issues #159, #179).
+	// Plain pane activity settles nothing: a batch whose acceptance never
+	// matched must stay scheduled and re-emit, not vanish. Chat sessions never
+	// reach this path — sendChat handled them above with the same settle
+	// inline — and the optional interface keeps chat-less fakes intact.
+	// Best-effort: a settle failure never fails the delivered send.
 	if settler, ok := m.chat.(interface {
 		SettleEmittedReports(context.Context, domain.SessionID) error
 	}); ok {

@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { aoBridge } from "../lib/bridge";
 import { formatOrchestratorStartupError } from "../lib/orchestrator-startup-error";
 import { developerModeStorageKey, windowTranslucencyStorageKey } from "../lib/window-translucency";
 import { sessionUiKey } from "../lib/hosts";
@@ -479,6 +480,11 @@ export const useUiStore = create<UiState>((set, get) => ({
 					[sessionId]: {
 						...current,
 						initialized: true,
+						// AO_RIGHT_PANEL=expanded restores the old default: the rail opens
+						// expanded on first open. Stored as real state, so a manual close
+						// still sticks for the rest of the app run; an entry that already
+						// exists (e.g. an early browser reveal) keeps its explicit value.
+						isOpen: state.inspectorSessions[sessionId] ? current.isOpen : aoBridge.launch.rightPanelExpanded,
 						view: "summary",
 						browserContentRevealed: current.browserContentRevealed ?? hasBrowserContent,
 					},

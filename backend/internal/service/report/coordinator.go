@@ -31,12 +31,6 @@ const ReportOrchestratorBackoff = time.Minute
 // refreshes the marker) is allowed so a true no-show is not lost forever.
 const ReportEmitTTL = 15 * time.Minute
 
-// ReportSilentRetryFloor is the silent-retry step for a batch whose quiet
-// window is exhausted: once visible re-emission has stopped (#127), the batch
-// still polls — at a day's pace rather than every emit TTL — until a recipient
-// activity ack or a fresh orchestrator retires it (fork issue #159).
-const ReportSilentRetryFloor = 24 * time.Hour
-
 // ReportExpiryAge is the delivery ledger's terminal expiry: a report still
 // pending a week after creation is retired as stale instead of polling the
 // dispatcher forever. Claimed rows ride out their own attempt first.
@@ -55,7 +49,7 @@ type DeliveryStore interface {
 	ReleaseReportBatch(context.Context, domain.ProjectID, string, time.Time, string) (int, error)
 	DeferReportBatch(context.Context, domain.ProjectID, string, time.Time, string) (int, error)
 	MarkReportBatchEmitted(context.Context, domain.ProjectID, string, time.Time) (int, error)
-	AcknowledgeEmittedReportBatches(context.Context, domain.ProjectID, time.Time) (int, error)
+	AcknowledgeAcceptedReportBatches(context.Context, domain.ProjectID, string, time.Time) (int, error)
 	ExpireStaleReportDeliveries(context.Context, time.Time) (int, error)
 	AcquireReportInterrupt(context.Context, domain.SessionID, time.Time, time.Duration) (bool, time.Time, error)
 }
@@ -116,13 +110,13 @@ func NewCoordinator(d CoordinatorDeps) *Coordinator {
 }
 
 // emitQuietWindow escalates that window with the batch's durable delivery
-// attempts — 15m, 1h, 6h, then no further visible re-emission. A sleeping
-// recipient never acks, so a flat TTL re-emits the same batch visibly every
-// cycle forever (fork issue #127).
+// attempts — 15m, 1h, then 6h repeating. A sleeping recipient never acks, so a
+// flat TTL re-emits the same batch visibly every cycle (fork issue #127); the
+// backoff quiets that without ever stopping: an unaccepted batch is
+// undelivered work, and going silent would repeat the #177 truncation losses
+// it is meant to surface (fork issue #179). Ledger expiry is the only exit.
 func (c *Coordinator) emitQuietWindow(attempts int64) time.Duration {
 	switch {
-	case attempts > 6:
-		return 0
 	case attempts > 4:
 		return 6 * time.Hour
 	case attempts > 2:
@@ -139,7 +133,7 @@ func (c *Coordinator) emitQuietWindow(attempts int64) time.Duration {
 // returns true.
 func (c *Coordinator) EmitVisible(ctx context.Context, batch PreparedBatch) (bool, error) {
 	if at := batch.emittedAt(); !at.IsZero() {
-		if quiet := c.emitQuietWindow(batch.MaxDeliveryAttempts()); quiet == 0 || c.now().UTC().Sub(at) < quiet {
+		if c.now().UTC().Sub(at) < c.emitQuietWindow(batch.MaxDeliveryAttempts()) {
 			return false, nil
 		}
 	}
@@ -259,6 +253,19 @@ func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.Proje
 	if err != nil || len(batch.Reports) == 0 {
 		return err
 	}
+	// The replay path consults the recipient's durable acceptance before
+	// re-delivering: a checkpoint that names this batch's correlation id is
+	// the semantic acceptance of exactly this content — its delivery already
+	// happened, so a restart or a lost ack must replay the acknowledgment,
+	// never re-emit the content (fork issue #184). A checkpoint can only name
+	// a batch that was submitted, so a first delivery never matches.
+	if accepted, err := c.settleAcceptedBatch(ctx, target, batch); err != nil {
+		// Every other post-claim failure releases the claim; a transient store
+		// error must not strand the rows claimed and invisible to scheduling.
+		return c.release(ctx, batch, err)
+	} else if accepted {
+		return nil
+	}
 	if batch.hasState(domain.ReportStuck) {
 		interrupted := false
 		var nextInterrupt time.Time
@@ -287,17 +294,11 @@ func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.Proje
 	}
 	if !visible {
 		// At-most-once on the visible channel: the batch was already shown,
-		// so retry silently while the quiet window escalates toward no
-		// further re-emission. Ack fencing and its counters stay untouched.
-		// The suppression evidence is also the DB defer reason on the batch
-		// rows; this Info line keeps daemon.log greppable with the same text.
-		// The silent step follows the same escalation as the visible window —
-		// 15m, 1h, 6h — then rests at the floor instead of re-trying every
-		// emit TTL for as long as the batch lives.
+		// so retry silently while the quiet window backs off — 15m, 1h, then
+		// 6h repeating. Ack fencing and its counters stay untouched. The
+		// suppression evidence is also the DB defer reason on the batch rows;
+		// this Info line keeps daemon.log greppable with the same text.
 		quiet := c.emitQuietWindow(batch.MaxDeliveryAttempts())
-		if quiet == 0 {
-			quiet = ReportSilentRetryFloor
-		}
 		next := batch.emittedAt().Add(quiet)
 		if next.Before(c.now().UTC()) {
 			next = c.now().UTC().Add(quiet)
@@ -310,6 +311,11 @@ func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.Proje
 	// same batch key and attempts > 1.
 	c.log.Info("report: batch emitted", "batch", batch.IdempotencyKey(), "project", batch.ProjectID, "target", target.ID, "reports", len(batch.Reports), "attempts", batch.MaxDeliveryAttempts())
 	if err := c.delivery.Submit(ctx, target.ID, batch.Render(), batch.IdempotencyKey()); err != nil {
+		// Fail loud (fork issue #179): an emission whose acceptance did not
+		// match is a failed delivery. It is never acked here — the batch goes
+		// back to pending with last_error set and re-emits on the quiet
+		// window — but the attempt itself names its batch in the log.
+		c.log.Warn("report: batch delivery failed", "batch", batch.IdempotencyKey(), "project", batch.ProjectID, "target", target.ID, "attempts", batch.MaxDeliveryAttempts(), "err", err)
 		return c.release(ctx, batch, err)
 	}
 	return c.ackBatch(ctx, batch.ProjectID, batch.Token)
@@ -404,17 +410,35 @@ func (c *Coordinator) PreparePiggyback(ctx context.Context, target domain.Sessio
 	if rec.Kind != domain.KindOrchestrator || rec.IsTerminated || domain.NormalizeSessionMode(rec.Mode) != domain.SessionModeChat {
 		return PreparedBatch{}, nil
 	}
-	return c.claim(ctx, rec.ProjectID)
+	batch, err := c.claim(ctx, rec.ProjectID)
+	if err != nil || len(batch.Reports) == 0 {
+		return batch, err
+	}
+	// An accepted batch rides along as its acknowledgment, never as appended
+	// content twice: the checkpoint naming this batch id is the acceptance of
+	// content already in the conversation (fork issue #184).
+	if accepted, err := c.settleAcceptedBatch(ctx, rec, batch); err != nil {
+		// Release before the send fails: a stranded claim would sit invisible
+		// to scheduling until the next daemon restart.
+		return PreparedBatch{}, c.release(ctx, batch, err)
+	} else if accepted {
+		return PreparedBatch{}, nil
+	}
+	return batch, nil
 }
 
-// SettleEmittedReports retires every already-shown pending batch of the
-// target's project when the recipient shows observable prompt activity: the
-// report was delivered, and an accepted prompt proves the recipient is reading
-// the conversation, so silent retries have nothing left to say (fork issue
-// #159). The orchestrator-only gate mirrors activeOrchestrator — batches are
-// delivered to the project's orchestrator, so activity anywhere else settles
-// nothing — and never-emitted batches stay scheduled: a recipient that has not
-// seen the report yet must still get it.
+// SettleEmittedReports retires shown pending batches of the target's project
+// only when the recipient's durable conversation checkpoint names a batch's
+// own correlation id: that checkpoint is the semantic acceptance of THIS batch
+// — the exit for an acceptance whose evidence arrived after the emit window
+// closed, e.g. a TUI that queued the prompt mid-turn and submitted it at the
+// turn boundary (fork issue #159). Plain prompt activity settles nothing: a
+// batch whose delivery never matched its coordination id — the signature of a
+// truncated pty write (fork issue #177) — must stay scheduled and re-emit
+// rather than pass as delivered (fork issue #179). The orchestrator-only gate
+// mirrors activeOrchestrator — batches are delivered to the project's
+// orchestrator, so activity anywhere else settles nothing — and never-emitted
+// batches always stay scheduled.
 func (c *Coordinator) SettleEmittedReports(ctx context.Context, target domain.SessionID) (int, error) {
 	if c == nil || c.store == nil || target == "" {
 		return 0, nil
@@ -426,14 +450,51 @@ func (c *Coordinator) SettleEmittedReports(ctx context.Context, target domain.Se
 	if rec.Kind != domain.KindOrchestrator || rec.IsTerminated {
 		return 0, nil
 	}
-	n, err := c.store.AcknowledgeEmittedReportBatches(ctx, rec.ProjectID, c.now().UTC())
+	// The evidence mirror of semanticMessageAccepted, minus its live-generation
+	// requirement: a coordination checkpoint naming a batch's correlation id is
+	// the durable acceptance of THAT batch, and a daemon restart rotates the
+	// runtime generation without touching the checkpoint. Requiring the live
+	// launch id turned every acceptance whose settle raced a restart back into
+	// an undelivered batch — the replay then re-delivered accepted content
+	// (fork issue #184). Lineage rotations clear the checkpoint instead of
+	// leaving a foreign one, so a surviving stale-generation checkpoint always
+	// names a batch the current lineage accepted. A truncated tail still
+	// credits no coordination id and settles nothing (fork issues #177, #179).
+	accepted := rec.Metadata.ConversationCheckpointTurnID
+	if rec.Metadata.ConversationCheckpointState != domain.ConversationCheckpointCoordination {
+		accepted = ""
+	}
+	if accepted == "" {
+		return 0, nil
+	}
+	n, err := c.store.AcknowledgeAcceptedReportBatches(ctx, rec.ProjectID, accepted, c.now().UTC())
 	if err != nil {
 		return 0, err
 	}
 	if n > 0 {
-		c.log.Info("report: delivered batches settled by recipient prompt activity", "project", rec.ProjectID, "target", target, "reports", n)
+		c.log.Info("report: accepted batches settled by matched semantic acceptance", "project", rec.ProjectID, "target", target, "batch", accepted, "reports", n)
 	}
 	return n, nil
+}
+
+// settleAcceptedBatch retires the claimed batch when the target orchestrator's
+// durable coordination checkpoint names its correlation id. It is the
+// dispatcher-side half of the restart dedup (fork issue #184): an acceptance
+// whose settle probe a restart preceded must not turn into a re-emission —
+// the relaunched runtime rotates the launch id, so the leftover checkpoint is
+// the only surviving acceptance evidence. The claimed rows ack under their own
+// token fence; a checkpoint can only name a batch whose prompt was submitted,
+// so a first delivery never matches.
+func (c *Coordinator) settleAcceptedBatch(ctx context.Context, target domain.SessionRecord, batch PreparedBatch) (bool, error) {
+	if batch.ID == "" || target.Metadata.ConversationCheckpointState != domain.ConversationCheckpointCoordination ||
+		target.Metadata.ConversationCheckpointTurnID != batch.ID {
+		return false, nil
+	}
+	if err := c.ackBatch(ctx, batch.ProjectID, batch.Token); err != nil {
+		return false, err
+	}
+	c.log.Info("report: replayed batch settled by durable acceptance", "project", batch.ProjectID, "target", target.ID, "batch", batch.ID, "reports", len(batch.Reports))
+	return true, nil
 }
 
 // AcceptPiggyback acknowledges reports after the combined user turn is accepted.

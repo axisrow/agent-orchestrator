@@ -125,7 +125,6 @@ import { useSidebarOrderStore } from "../stores/sidebar-order-store";
 import { applyOrder } from "../lib/sidebar-order";
 import { useKeybindingsStore } from "../stores/keybindings-store";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { SessionArchiveDialog, type SessionArchiveChoice } from "./SessionArchiveDialog";
 import { CreateProjectFlow, type CloneProjectInput, type CreateProjectInput } from "./CreateProjectFlow";
 import { ResizeHandle } from "./ResizeHandle";
 import { NAV_ROW_HIGHLIGHT_HOST_CLASS, NavRowHighlight } from "./NavRowHighlight";
@@ -2335,7 +2334,6 @@ const SessionActions = memo(function SessionActions({
 	const { t } = useTranslation();
 	const { mutate: pinSession } = usePinSession();
 	const { mutate: unpinSession } = useUnpinSession();
-	const [confirmOpen, setConfirmOpen] = useState(false);
 	// Optimistic: navigate + drop the row as soon as kill starts (onMutate),
 	// not after the daemon round-trip.
 	const onKilledRef = useRef(onKilled);
@@ -2346,16 +2344,11 @@ const SessionActions = memo(function SessionActions({
 		},
 	});
 
-	// The row used to archive on the bare click while the session page asked
-	// first; both surfaces now open the same confirm before anything moves.
+	// Archiving is reversible (restore from the Archive section), so the row
+	// archives on the bare click with no confirmation.
 	const handleArchive = (event: React.MouseEvent) => {
 		event.stopPropagation();
-		setConfirmOpen(true);
-	};
-
-	const confirmArchive = ({ deleteArtifacts }: SessionArchiveChoice) => {
-		setConfirmOpen(false);
-		terminateSession({ ...session, deleteArtifacts });
+		terminateSession(session);
 	};
 
 	return (
@@ -2400,25 +2393,15 @@ const SessionActions = memo(function SessionActions({
 				</Tooltip>
 				<Tooltip>
 					<TooltipTrigger asChild>
-						<span className="inline-flex">
-							<SessionArchiveDialog
-								onConfirm={confirmArchive}
-								onOpenChange={setConfirmOpen}
-								open={confirmOpen}
-								session={session}
-								trigger={
-									<button
-										aria-label={t("shell.archiveSession")}
-										className={cn(SESSION_ACTION_CLASS, "focus-visible:text-foreground")}
-										disabled={isKilling}
-										onClick={handleArchive}
-										type="button"
-									>
-										<Archive aria-hidden="true" />
-									</button>
-								}
-							/>
-						</span>
+						<button
+							aria-label={t("shell.archiveSession")}
+							className={cn(SESSION_ACTION_CLASS, "focus-visible:text-foreground")}
+							disabled={isKilling}
+							onClick={handleArchive}
+							type="button"
+						>
+							<Archive aria-hidden="true" />
+						</button>
 					</TooltipTrigger>
 					<TooltipContent side="top">{t("shell.archiveSession")}</TooltipContent>
 				</Tooltip>
