@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
@@ -162,12 +161,7 @@ var runCleanupStep = runWorkspaceStep
 // and cleanup. WaitDelay bounds orphaned output pipes after shell exit or
 // cancellation; it does not impose a time limit on the running command.
 func runWorkspaceStep(ctx context.Context, workspacePath, command string, env map[string]string, output io.Writer) error {
-	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" {
-		cmd = aoprocess.CommandContext(ctx, "cmd", "/c", command)
-	} else {
-		cmd = aoprocess.CommandContext(ctx, "sh", "-c", command)
-	}
+	cmd := workspaceStepCommand(ctx, command)
 	aoprocess.ConfigureTreeCancellation(cmd)
 	cmd.Dir = workspacePath
 	// Ambient commit identity (an enclosing environment's GIT_AUTHOR_*/GIT_COMMITTER_*,
