@@ -522,6 +522,9 @@ func (r *Runtime) HasSupervisedProcessRecord(ctx context.Context, handle ports.R
 }
 
 // SendMessage chunks message and writes it to the pty-host followed by Enter.
+// The write is flow-controlled and acknowledged (MsgTerminalInputSync): the
+// batch reaches the PTY input queue whole or the error propagates — never a
+// silent partial write (#177).
 func (r *Runtime) SendMessage(ctx context.Context, handle ports.RuntimeHandle, message string) error {
 	sess, err := r.resolveWithEvidence(ctx, handle.ID)
 	if err != nil {
@@ -529,6 +532,16 @@ func (r *Runtime) SendMessage(ctx context.Context, handle ports.RuntimeHandle, m
 	}
 	if sess == nil {
 		return fmt.Errorf("conpty: session %q not found", handle.ID)
+	}
+	// Sync input needs a v3+ host. An older host adopted from a previous build
+	// would ignore the sync frames and strand the sender in the ack timeout,
+	// so refuse up front with the remedy in the message.
+	version, err := r.resolveHostProtocol(ctx, sess)
+	if err != nil {
+		return fmt.Errorf("conpty: negotiate runtime %q for message: %w", handle.ID, err)
+	}
+	if version < conPTYHostProtocolVersion {
+		return fmt.Errorf("conpty: pty-host protocol %d predates flow-controlled input; restart session %q to deliver", version, handle.ID)
 	}
 	return clientSendMessage(sess.addr, message)
 }

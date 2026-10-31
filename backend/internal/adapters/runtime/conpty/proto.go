@@ -11,7 +11,11 @@ import (
 )
 
 const (
-	conPTYHostProtocolVersion         = 2
+	// v3 adds flow-controlled input (MsgTerminalInputSync / MsgInputAckRes).
+	// An adopted host older than v3 must not receive sync input: it would
+	// ignore the frame and the sender would wait out the ack timeout, so
+	// SendMessage refuses the delivery with an explicit error instead.
+	conPTYHostProtocolVersion         = 3
 	conPTYStyledOutputProtocolVersion = 2
 )
 
@@ -27,6 +31,14 @@ const (
 	MsgKillReq            byte = 0x08 // client -> host: empty
 	MsgGetStyledOutputReq byte = 0x09 // client -> host: JSON {lines}
 	MsgGetStyledOutputRes byte = 0x0a // host -> client: rendered UTF-8 text with ANSI styles
+
+	// MsgTerminalInputSync asks the host for a guaranteed input write: the host
+	// paces the payload into the PTY input queue under flow control (see
+	// writeInputFlow) so a recipient that is not reading stdin cannot silently
+	// lose bytes to the kernel's tty-input clamp (#177), then answers with one
+	// MsgInputAckRes per frame.
+	MsgTerminalInputSync byte = 0x0b // client -> host: paced terminal input
+	MsgInputAckRes       byte = 0x0c // host -> client: JSON InputAckPayload
 )
 
 // JSON payload structs shared with later tasks (kept minimal).
@@ -48,6 +60,16 @@ type StatusPayload struct {
 // GetOutputReq is the JSON body for MsgGetOutputReq.
 type GetOutputReq struct {
 	Lines int `json:"lines"`
+}
+
+// InputAckPayload is the JSON body for MsgInputAckRes, one per
+// MsgTerminalInputSync frame, in frame order. Bytes mirrors the acknowledged
+// payload size; Err is empty on success and names the failure otherwise
+// (stalled recipient, exited child, or refusal after an earlier failure on the
+// same connection).
+type InputAckPayload struct {
+	Bytes int    `json:"bytes"`
+	Err   string `json:"err,omitempty"`
 }
 
 // EncodeMessage encodes a single frame into the binary protocol format.

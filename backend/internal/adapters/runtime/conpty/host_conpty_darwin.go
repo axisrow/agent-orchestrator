@@ -25,6 +25,10 @@ type darwinPTYConn struct {
 	pty *os.File
 	cmd *exec.Cmd
 
+	// probe observes the input queue for flow-controlled writes (nil when the
+	// slave could not be opened; sync input then degrades to write-through).
+	probe *ptyInputProbe
+
 	closeOnce sync.Once
 	doneC     chan struct{}
 	exitMu    sync.Mutex
@@ -53,8 +57,31 @@ func newConPTY(cwd, shellCmd string, shellArgs []string, cols, rows uint16) (pty
 	}
 
 	c := &darwinPTYConn{pty: f, cmd: cmd, doneC: make(chan struct{})}
+	// Best effort: without the probe, flow-controlled input degrades to the
+	// historical write-through (writeInputFlow's fallback).
+	if probe, probeErr := newPtyInputProbe(f); probeErr == nil {
+		c.probe = probe
+	} else {
+		fmt.Fprintf(os.Stderr, "darwin pty: input flow probe unavailable: %v\n", probeErr)
+	}
 	go c.wait()
 	return c, nil
+}
+
+// PendingInput reports unread PTY input via the slave-side probe.
+func (c *darwinPTYConn) PendingInput() (int, error) {
+	if c.probe == nil {
+		return 0, errors.New("darwin pty: no input probe")
+	}
+	return c.probe.PendingInput()
+}
+
+// FlushInput discards queued unread PTY input via the slave-side probe.
+func (c *darwinPTYConn) FlushInput() error {
+	if c.probe == nil {
+		return errors.New("darwin pty: no input probe")
+	}
+	return c.probe.FlushInput()
 }
 
 func (c *darwinPTYConn) wait() {
@@ -107,6 +134,9 @@ func (c *darwinPTYConn) Close() error {
 			}
 		}
 		closeErr = c.pty.Close()
+		if c.probe != nil {
+			_ = c.probe.Close()
+		}
 	})
 	return closeErr
 }
