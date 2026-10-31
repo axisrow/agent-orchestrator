@@ -9,6 +9,11 @@ import MakerNSIS from "./makers/maker-nsis";
 import MakerDMG, { sealDmg, verifyDmg } from "./makers/maker-dmg";
 import { machoHasX86_64Slice } from "./makers/macho-archs";
 import MakerAppImage from "./makers/maker-appimage";
+import {
+	assertMacReleaseCredentials,
+	isForgePublishCommand,
+	macPackagerSecurity,
+} from "./mac-release-security";
 import { existsSync, readdirSync, rmSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
@@ -115,6 +120,18 @@ function parseReleaseRepo(value: string | undefined): { owner: string; name: str
 	return { owner, name };
 }
 
+// The public artifact workflow deliberately runs unsigned; the private release
+// conductor seals those artifacts later (#4501). Direct Forge publication,
+// however, must never emit an unsigned macOS update: validate at config load
+// for an immediate publish failure and again in prePackage for an explicit
+// target. Ported from upstream PR #4833 (closed unmerged).
+assertMacReleaseCredentials(
+	process.env,
+	process.platform,
+	isForgePublishCommand(process.argv),
+);
+const macSecurity = macPackagerSecurity(process.env);
+
 const config: ForgeConfig = {
 	packagerConfig: {
 		asar: true,
@@ -140,26 +157,25 @@ const config: ForgeConfig = {
 		//  - Local: AO_NOTARY_PROFILE, a notarytool keychain profile created with
 		//    `notarytool store-credentials`. See ao-macos-signed-release runbook.
 		// Both are valid NotaryToolCredentials, so no cast is needed.
-		osxSign: process.env.APPLE_SIGNING_IDENTITY
-			? {
-					identity: process.env.APPLE_SIGNING_IDENTITY,
-					optionsForFile: macSignOptionsForFile,
-				}
-			: process.env.CSC_LINK
-				? { optionsForFile: macSignOptionsForFile }
-				: undefined,
-		osxNotarize: process.env.AO_NOTARY_PROFILE
-			? { keychainProfile: process.env.AO_NOTARY_PROFILE }
-			: process.env.APPLE_API_KEY
-				? {
-						appleApiKey: process.env.APPLE_API_KEY,
-						appleApiKeyId: process.env.APPLE_API_KEY_ID!,
-						appleApiIssuer: process.env.APPLE_API_ISSUER!,
-					}
-				: undefined,
+		// macPackagerSecurity fails closed on partial credentials (a lone
+		// APPLE_API_KEY, signing without notarization) and pins Hardened
+		// Runtime plus explicit parent/child entitlements instead of relying
+		// on @electron/osx-sign defaults (#4501). The #3879 per-file override
+		// below must survive every change to this block: without it
+		// electron-osx-sign's default re-signing crashes the Intel ACP Node
+		// (exit 133) inside a perfectly sealed bundle.
+		osxSign: macSecurity.osxSign
+			? { ...macSecurity.osxSign, optionsForFile: macSignOptionsForFile }
+			: undefined,
+		osxNotarize: macSecurity.osxNotarize,
 	},
 	hooks: {
 		prePackage: async (_forgeConfig, platform, arch) => {
+			assertMacReleaseCredentials(
+				process.env,
+				platform as NodeJS.Platform,
+				isForgePublishCommand(process.argv),
+			);
 			await prepareNativeDependencies(platform as NodeJS.Platform, arch);
 			if (platform === "darwin") {
 				const wakeBuild = spawnSync(process.execPath, [path.resolve("scripts/build-wake-helper.mjs"), "--arch", arch], { stdio: "inherit" });

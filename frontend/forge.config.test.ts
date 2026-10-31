@@ -110,6 +110,12 @@ async function loadMacSignOptions(env: {
 }): Promise<MacSignOptions | undefined> {
 	vi.stubEnv("APPLE_SIGNING_IDENTITY", env.APPLE_SIGNING_IDENTITY ?? "");
 	vi.stubEnv("CSC_LINK", env.CSC_LINK ?? "");
+	// The #4501 fail-closed guard rejects signing credentials without
+	// notarization at config load, so the signed cases stub a complete pair.
+	vi.stubEnv(
+		"AO_NOTARY_PROFILE",
+		env.APPLE_SIGNING_IDENTITY || env.CSC_LINK ? "ao-notary" : "",
+	);
 	vi.resetModules();
 	const { default: envConfig } = await import("./forge.config");
 	return envConfig.packagerConfig?.osxSign as MacSignOptions | undefined;
@@ -186,7 +192,16 @@ describe("macOS signing", () => {
 		const signOptions = await loadMacSignOptions(env);
 
 		expect(signOptions?.identity).toBe(identity);
+		// The #3879 Intel ACP Node crash: this callback must survive any
+		// rework of the signing options (the fail-closed #4501 port spreads
+		// macPackagerSecurity's options under it for exactly this reason).
 		expect(signOptions?.optionsForFile).toEqual(expect.any(Function));
+		// Pinned by macPackagerSecurity instead of @electron/osx-sign defaults.
+		expect(signOptions).toMatchObject({
+			hardenedRuntime: true,
+			entitlements: "assets/entitlements.mac.plist",
+			entitlementsInherit: "assets/entitlements.mac.inherit.plist",
+		});
 	});
 
 	it("leaves unsigned local packages unsigned", async () => {
