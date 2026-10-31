@@ -3,6 +3,7 @@ import type { SessionPRSummary } from "../hooks/useSessionScmSummary";
 import type { PullRequestFacts, WorkspaceSession } from "../types/workspace";
 import type { PRReviewState, ReviewRunFacts } from "./session-reviews";
 import {
+	ciDataStale,
 	prBrowserUrl,
 	prCardPresentation,
 	prDiffSummary,
@@ -29,12 +30,16 @@ const summary = (overrides: Partial<SessionPRSummary> = {}): SessionPRSummary =>
 	ci: { autoInjectCI: true, state: "passing", failingChecks: [] },
 	review: { decision: "approved", hasUnresolvedHumanComments: false, unresolvedBy: [] },
 	mergeability: { state: "mergeable", reasons: [], prUrl: "https://github.com/acme/repo/pull/7" },
-	updatedAt: "2026-06-15T00:00:00Z",
-	observedAt: "2026-06-15T00:00:00Z",
-	ciObservedAt: "2026-06-15T00:00:00Z",
-	reviewObservedAt: "2026-06-15T00:00:00Z",
+	updatedAt: freshIso(),
+	observedAt: freshIso(),
+	ciObservedAt: freshIso(),
+	reviewObservedAt: freshIso(),
 	...overrides,
 });
+
+// Observation stamps default to "just happened" so tests that do not care
+// about staleness never trip the CI stale threshold.
+const freshIso = () => new Date().toISOString();
 
 const session = (prs: WorkspaceSession["prs"]): WorkspaceSession => ({
 	id: "sess-1",
@@ -1061,6 +1066,31 @@ describe("prSummaryParts", () => {
 			status: "None",
 			summary: "Draft PR · Not ready for review",
 		});
+	});
+});
+
+describe("ciDataStale", () => {
+	const now = Date.parse("2026-06-15T12:00:00Z");
+
+	it("marks open PRs whose CI facts stopped refreshing", () => {
+		expect(ciDataStale(summary({ ciObservedAt: "2026-06-15T11:44:00Z" }), now)).toBe(true);
+		expect(ciDataStale(summary({ ciObservedAt: "2026-06-15T11:50:00Z" }), now)).toBe(false);
+		expect(ciDataStale(summary({ ciObservedAt: undefined }), now)).toBe(false);
+	});
+
+	it("ignores terminal PR states", () => {
+		expect(ciDataStale(summary({ state: "merged", ciObservedAt: "2026-06-15T11:44:00Z" }), now)).toBe(false);
+		expect(ciDataStale(summary({ state: "closed", ciObservedAt: "2026-06-15T11:44:00Z" }), now)).toBe(false);
+	});
+
+	it("surfaces the stale note in the CI part summary", () => {
+		const parts = prSummaryParts(summary({ ciObservedAt: "2026-06-15T11:00:00Z" }));
+		expect(parts.find((part) => part.key === "ci")?.summary).toBe("Data may be stale");
+	});
+
+	it("keeps fresh PR CI summaries clean", () => {
+		const parts = prSummaryParts(summary({}));
+		expect(parts.find((part) => part.key === "ci")?.summary).toBeUndefined();
 	});
 });
 

@@ -1085,6 +1085,7 @@
 	"pr.ci.noFailingLink": "No se observó enlace de comprobación fallida",
 	"pr.ci.passing": "Correcto",
 	"pr.ci.pending": "Pendiente",
+	"pr.ci.staleData": "Los datos pueden estar obsoletos",
 	"pr.openedVia": "vía AO",
 	"pr.merge.action": "Fusionar",
 	"pr.merge.actionFor": "Fusionar PR #{{number}}",
