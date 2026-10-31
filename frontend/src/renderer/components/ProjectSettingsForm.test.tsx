@@ -851,6 +851,36 @@ describe("ProjectSettingsForm", () => {
 		expect(request?.body.config.reviewers).toBeUndefined();
 	});
 
+	it("loads and saves the own accounts list for PR review ownership", async () => {
+		mockProject({
+			id: "proj-1",
+			name: "Project One",
+			kind: "single_repo",
+			path: "/repo/project-one",
+			repo: "git@github.com:acme/project-one.git",
+			defaultBranch: "main",
+			config: {
+				worker: { agent: "codex" },
+				orchestrator: { agent: "claude-code" },
+				ownAccounts: ["octocat", "@SecondOrg"],
+			},
+		});
+
+		renderSettings("proj-1", undefined, "general");
+
+		const input = await beginEdit("Own accounts");
+		expect(input).toHaveValue("octocat, @SecondOrg");
+		await userEvent.clear(input);
+		await userEvent.type(input, "NewCat, @AnotherOrg");
+		await userEvent.keyboard("{Escape}");
+
+		submitSettings();
+
+		await waitFor(() => expect(putMock).toHaveBeenCalledTimes(1));
+		const request = putMock.mock.calls[0]?.[1];
+		expect(request?.body.config.ownAccounts).toEqual(["newcat", "anotherorg"]);
+	});
+
 	// With no reviewer configured the daemon reviews with the default worker
 	// agent and its model, so the reviewer row must show that model.
 	it("shows the default worker model as the inherited reviewer model", async () => {

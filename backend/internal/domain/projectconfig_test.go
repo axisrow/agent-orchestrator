@@ -73,6 +73,11 @@ func TestProjectConfigValidate(t *testing.T) {
 		{"tracker intake assignee with whitespace", ProjectConfig{TrackerIntake: TrackerIntakeConfig{Enabled: true, Assignee: " alice"}}, true},
 		{"auto review enabled", ProjectConfig{AutoReview: true}, false},
 		{"auto review disabled", ProjectConfig{AutoReview: false}, false},
+		{"own accounts ok", ProjectConfig{OwnAccounts: []string{"octocat", "@OtherCat "}}, false},
+		{"own accounts exact duplicate", ProjectConfig{OwnAccounts: []string{"octocat", "octocat"}}, true},
+		{"own accounts case-folded duplicate", ProjectConfig{OwnAccounts: []string{"OctoCat", "@octocat"}}, true},
+		{"own accounts empty entry", ProjectConfig{OwnAccounts: []string{"  "}}, true},
+		{"own accounts empty list", ProjectConfig{OwnAccounts: nil}, false},
 
 		// Per-role environment profile (#2195): systemPrompt, env, mcp, pluginDirs.
 		{"worker mcp strict isolation ok", ProjectConfig{Worker: RoleOverride{AgentConfig: AgentConfig{MCP: &MCPConfig{Strict: true}}}}, false},

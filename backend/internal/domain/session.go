@@ -327,10 +327,16 @@ type SessionRecord struct {
 	StaleBinary *SessionStaleBinary `json:"staleBinary,omitempty"`
 	// TerminateOnPRMerge is a user-controlled lifecycle policy. When enabled,
 	// completing the session's PR set through a merge tears down the session.
-	TerminateOnPRMerge bool              `json:"terminateOnPrMerge"`
-	AutoInjectReview   bool              `json:"autoInjectReview"`
-	AutoInjectCI       bool              `json:"autoInjectCI"`
-	OutputType         SessionOutputType `json:"outputType" enum:"none,pr,artifact,pr_artifact"`
+	TerminateOnPRMerge bool `json:"terminateOnPrMerge"`
+	AutoInjectReview   bool `json:"autoInjectReview"`
+	AutoInjectCI       bool `json:"autoInjectCI"`
+	// ReviewOnly marks a session spawned to review a pull request without the
+	// right to mutate code. Its launch and every restore run with file-editing
+	// and push tools denied, auto-review on, and review auto-inject off: review
+	// findings are collected in the session's review record, never routed back
+	// as a fix loop. Set at spawn; no update path can change it.
+	ReviewOnly bool              `json:"reviewOnly,omitempty"`
+	OutputType SessionOutputType `json:"outputType" enum:"none,pr,artifact,pr_artifact"`
 	// RequestedOutput is the deliverable requested at spawn. It is fixed after
 	// insertion so restore and agent switching rebuild the same worker prompt.
 	RequestedOutput RequestedOutput `json:"requestedOutput,omitempty" enum:"artifact"`

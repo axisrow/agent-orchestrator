@@ -981,6 +981,7 @@ func rowToRecord(row gen.GetSessionRow) domain.SessionRecord {
 		TerminateOnPRMerge: row.TerminateOnPRMerge,
 		AutoInjectReview:   row.AutoInjectReview,
 		AutoInjectCI:       row.AutoInjectCI,
+		ReviewOnly:         row.ReviewOnly,
 		OutputType:         normalizeSessionOutputType(domain.SessionOutputType(row.SessionOutputType)),
 		Metadata: domain.SessionMetadata{
 			Branch:                           row.Branch,
@@ -1126,6 +1127,7 @@ func recordToInsert(rec domain.SessionRecord, num int64) gen.InsertSessionParams
 		TerminateOnPRMerge:               rec.TerminateOnPRMerge,
 		AutoInjectReview:                 rec.AutoInjectReview,
 		AutoInjectCI:                     rec.AutoInjectCI,
+		ReviewOnly:                       rec.ReviewOnly,
 		CleanupGeneration:                rec.CleanupGeneration,
 		BrowserCapabilityVerifier:        rec.Metadata.BrowserCapabilityVerifier,
 		ArtifactDir:                      rec.Metadata.ArtifactDir,

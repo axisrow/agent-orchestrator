@@ -128,15 +128,6 @@ func (s *Service) readManagedRecord(target Target) (managedRecord, bool) {
 	return record, true
 }
 
-// managedRecordMatchesPlan keeps the Bun entry usable after OMP migrates to
-// AO's standalone release. This alias applies only to managed OMP on platforms
-// where its isolated standalone installer is supported.
-func (s *Service) managedRecordMatchesPlan(record managedRecord, plan Plan) bool {
-	method := plan.ownershipMethod()
-	return record.Method == method || plan.Target == TargetOMP && method == "bun" &&
-		record.Method == "official-installer" && (s.goos == "darwin" || s.goos == "linux")
-}
-
 // managedCLINames fixes the executable a managed install puts in bin/ for
 // targets whose resolved binary has another name. OpenCode v2 resolves its own
 // opencode-v2 launcher but installs bin/opencode, and the Copilot resolver
@@ -168,6 +159,97 @@ func managedBinRel(goos, method, cli string) string {
 		return filepath.Join("bin", cli+".exe")
 	}
 	return filepath.Join("bin", cli)
+}
+
+// managedBinSearchDepth bounds how many node_modules levels the dependency
+// bin search follows; npm deduplicates, so real trees are far shallower.
+const managedBinSearchDepth = 6
+
+// resolveManagedBinRel locates the CLI inside a fresh release directory. It
+// looks first where managedBinRel says method puts it. A package whose
+// executable comes from a dependency — @github/copilot declares only
+// bin/copilot, its Node loader, while the native binary belongs to an
+// @github/copilot-<os>-<arch> optional dependency — has that binary linked
+// only into the dependency's node_modules/.bin instead. The search follows
+// only node_modules and package (or @scope group) directories, so it stays
+// inside the release and bounded.
+//
+// Restored from 60451de16d/9512842eeb: the official-installer refactor
+// (#6934) dropped the search for the package-manager methods, so every
+// update of such a package failed verification and cleanup deleted the
+// release, leaving the harness behind_latest forever.
+func (s *Service) resolveManagedBinRel(releaseDir, method, cli string) (string, error) {
+	fast := managedBinRel(s.goos, method, cli)
+	if _, err := os.Stat(filepath.Join(releaseDir, fast)); err == nil {
+		return fast, nil
+	}
+	names := []string{cli}
+	if s.goos == "windows" {
+		// npm links a .cmd shim (next to a bare sh script); a package may
+		// also ship a real .exe.
+		names = []string{cli + ".cmd", cli + ".exe", cli}
+	}
+	// npm's global tree is lib/node_modules, except on Windows where the
+	// prefix itself is the tree root.
+	root := filepath.Join(releaseDir, "lib", "node_modules")
+	if _, err := os.Stat(root); err != nil {
+		root = filepath.Join(releaseDir, "node_modules")
+	}
+	if found := searchNodeModulesBins(root, names, managedBinSearchDepth); found != "" {
+		if rel, err := filepath.Rel(releaseDir, found); err == nil {
+			return rel, nil
+		}
+	}
+	return "", fmt.Errorf("the install finished but %s is missing", filepath.Join(releaseDir, fast))
+}
+
+// searchNodeModulesBins returns the absolute path of the first regular file
+// named after one of names in a node_modules/.bin directory at or under
+// nodeModules, at most depth node_modules levels deep; "" when there is none.
+// npm hoists non-conflicting dependencies and links their bins into the
+// level's own .bin, so that is checked first; a nested package's .bin appears
+// only on a version conflict.
+func searchNodeModulesBins(nodeModules string, names []string, depth int) string {
+	if depth == 0 {
+		return ""
+	}
+	for _, name := range names {
+		bin := filepath.Join(nodeModules, ".bin", name)
+		if info, err := os.Stat(bin); err == nil && info.Mode().IsRegular() {
+			return bin
+		}
+	}
+	entries, err := os.ReadDir(nodeModules)
+	if err != nil {
+		return ""
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		base, pkgs := nodeModules, []string{entry.Name()}
+		if strings.HasPrefix(entry.Name(), "@") {
+			// An @scope group: its entries are the packages.
+			scoped, err := os.ReadDir(filepath.Join(nodeModules, entry.Name()))
+			if err != nil {
+				continue
+			}
+			base = filepath.Join(nodeModules, entry.Name())
+			pkgs = pkgs[:0]
+			for _, scopedPkg := range scoped {
+				if scopedPkg.IsDir() {
+					pkgs = append(pkgs, scopedPkg.Name())
+				}
+			}
+		}
+		for _, pkg := range pkgs {
+			// Transitive dependencies; the recursion checks each level's .bin first.
+			if found := searchNodeModulesBins(filepath.Join(base, pkg, "node_modules"), names, depth-1); found != "" {
+				return found
+			}
+		}
+	}
+	return ""
 }
 
 // managedInstallCommand builds the install of pkgSpec into dir for method.
@@ -274,7 +356,7 @@ func (s *Service) runManagedInstall(ctx context.Context, plan Plan, baseline *in
 			pin = baseline.latest
 		}
 	}
-	binRel := managedBinRel(s.goos, plan.Method, cli)
+	var binRel string
 	if recipe, ok := s.officialManagedRecipeFor(plan); ok {
 		if err := s.runOfficialManagedInstall(ctx, plan, recipe, pin, dir, env, out); err != nil {
 			return err
@@ -289,6 +371,11 @@ func (s *Service) runManagedInstall(ctx context.Context, plan Plan, baseline *in
 		if err := s.installCommands.RunInstall(ctx, ports.InstallCommand{Argv: argv, Env: append(append([]string(nil), env...), extraEnv...)}, out, out); err != nil {
 			return installFailed("The install command failed.", err)
 		}
+		resolved, err := s.resolveManagedBinRel(dir, plan.Method, cli)
+		if err != nil {
+			return installFailed(fmt.Sprintf("Installed, but %s was not found.", cli), err)
+		}
+		binRel = resolved
 	}
 
 	binary := filepath.Join(dir, binRel)
@@ -377,13 +464,9 @@ func (s *Service) runManagedInstall(ctx context.Context, plan Plan, baseline *in
 func (s *Service) probeManagedVersion(ctx context.Context, target Target, cli, binary string) (string, error) {
 	probeCtx, cancel := context.WithTimeout(ctx, defaultVerifyTimeout)
 	defer cancel()
-	output := &capturedOutput{max: maxOutputBytes}
-	if err := s.commands.Run(probeCtx, []string{binary, "--version"}, output, output); err != nil {
-		detail := fmt.Errorf("the new copy did not start: %w", err)
-		if text := strings.TrimSpace(output.String()); text != "" {
-			detail = fmt.Errorf("%w\n%s", detail, text)
-		}
-		return "", installFailed(fmt.Sprintf("The new %s did not start.", cli), detail)
+	var output strings.Builder
+	if err := s.commands.Run(probeCtx, []string{binary, "--version"}, &output, &output); err != nil {
+		return "", installFailed(fmt.Sprintf("The new %s did not start.", cli), fmt.Errorf("the new copy did not start: %w", err))
 	}
 	version, ok := versionSchemeFor(target).find(output.String())
 	if !ok {

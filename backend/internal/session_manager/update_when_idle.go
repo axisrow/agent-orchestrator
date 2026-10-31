@@ -126,9 +126,13 @@ func (m *Manager) terminalResumesNatively(ctx context.Context, rec domain.Sessio
 		Metadata:      map[string]string{ports.MetadataKeyAgentSessionID: rec.Metadata.AgentSessionID},
 	}
 	agentConfig := restoredAgentConfig(rec, project.Config)
-	_, ok, err = agent.GetRestoreCommand(ctx, ports.RestoreConfig{
+	restoreCfg := ports.RestoreConfig{
 		Session: ref, Kind: rec.Kind, DataDir: m.dataDir, Config: agentConfig, Permissions: agentConfig.Permissions,
-	})
+	}
+	if rec.ReviewOnly {
+		pinReviewOnlyRestorePolicy(&restoreCfg)
+	}
+	_, ok, err = agent.GetRestoreCommand(ctx, restoreCfg)
 	if err != nil || !ok {
 		return false
 	}
