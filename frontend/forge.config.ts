@@ -158,12 +158,16 @@ const config: ForgeConfig = {
 		//    `notarytool store-credentials`. See ao-macos-signed-release runbook.
 		// Both are valid NotaryToolCredentials, so no cast is needed.
 		// macPackagerSecurity fails closed on partial credentials (a lone
-		// APPLE_API_KEY, signing without notarization) and pins Hardened
-		// Runtime plus explicit parent/child entitlements instead of relying
-		// on @electron/osx-sign defaults (#4501). The #3879 per-file override
-		// below must survive every change to this block: without it
-		// electron-osx-sign's default re-signing crashes the Intel ACP Node
-		// (exit 133) inside a perfectly sealed bundle.
+		// APPLE_API_KEY, signing without notarization) so an incomplete
+		// credential set can never reach the signer silently (#4501). The
+		// signing options themselves stay at @electron/osx-sign defaults:
+		// the vendored 1.3.3 consumes only optionsForFile output merged
+		// over its built-in per-file defaults (hardenedRuntime is already
+		// on), so top-level entitlements/hardenedRuntime here would be
+		// dead config. The #3879 per-file override below must survive
+		// every change to this block: without it electron-osx-sign's
+		// default re-signing crashes the Intel ACP Node (exit 133) inside
+		// a perfectly sealed bundle.
 		osxSign: macSecurity.osxSign
 			? { ...macSecurity.osxSign, optionsForFile: macSignOptionsForFile }
 			: undefined,

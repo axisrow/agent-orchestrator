@@ -196,12 +196,12 @@ describe("macOS signing", () => {
 		// rework of the signing options (the fail-closed #4501 port spreads
 		// macPackagerSecurity's options under it for exactly this reason).
 		expect(signOptions?.optionsForFile).toEqual(expect.any(Function));
-		// Pinned by macPackagerSecurity instead of @electron/osx-sign defaults.
-		expect(signOptions).toMatchObject({
-			hardenedRuntime: true,
-			entitlements: "assets/entitlements.mac.plist",
-			entitlementsInherit: "assets/entitlements.mac.inherit.plist",
-		});
+		// osx-sign 1.3.3 consumes only optionsForFile output over its
+		// built-in per-file defaults; nothing else may sneak in as dead
+		// config pretending to be a signing policy.
+		expect(Object.keys(signOptions ?? {})).toEqual(
+			expect.arrayContaining(["optionsForFile"]),
+		);
 	});
 
 	it("leaves unsigned local packages unsigned", async () => {

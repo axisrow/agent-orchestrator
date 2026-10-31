@@ -64,11 +64,12 @@ describe("macOS release credentials", () => {
 		expect(() =>
 			assertMacReleaseCredentials(env, "darwin", true),
 		).not.toThrow();
-		expect(macPackagerSecurity(env).osxSign).toMatchObject({
+		// identity-only on purpose: @electron/osx-sign 1.3.3 ignores every
+		// other top-level signing option (per-file optionsForFile output and
+		// built-in defaults are all it consumes), so anything else here is
+		// dead config. toEqual (not toMatchObject) pins that shape.
+		expect(macPackagerSecurity(env).osxSign).toEqual({
 			identity: "Developer ID Application",
-			hardenedRuntime: true,
-			entitlements: "assets/entitlements.mac.plist",
-			entitlementsInherit: "assets/entitlements.mac.inherit.plist",
 		});
 	});
 
@@ -80,9 +81,7 @@ describe("macOS release credentials", () => {
 		expect(() =>
 			assertMacReleaseCredentials(env, "darwin", true),
 		).not.toThrow();
-		expect(macPackagerSecurity(env).osxSign).toMatchObject({
-			hardenedRuntime: true,
-		});
+		expect(macPackagerSecurity(env).osxSign).toEqual({});
 	});
 
 	it("does not apply the macOS guard to other platforms", () => {

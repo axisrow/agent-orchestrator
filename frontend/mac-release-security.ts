@@ -1,12 +1,13 @@
 type ReleaseEnvironment = Record<string, string | undefined>;
 
 interface MacPackagerSecurity {
-	osxSign?: {
-		identity?: string;
-		hardenedRuntime: true;
-		entitlements: string;
-		entitlementsInherit: string;
-	};
+	// Deliberately identity-only. @electron/osx-sign 1.3.3 (the vendored
+	// version) builds per-file signing options from optionsForFile output
+	// merged over built-in defaults (dist/cjs/sign.js) and never reads
+	// top-level entitlements/entitlementsInherit/hardenedRuntime, and
+	// hardenedRuntime is already the per-file default — any "pin" fields
+	// here would be dead config.
+	osxSign?: { identity?: string };
 	osxNotarize?:
 		| { keychainProfile: string }
 		| { appleApiKey: string; appleApiKeyId: string; appleApiIssuer: string };
@@ -78,14 +79,9 @@ export function macPackagerSecurity(
 	const { completeApiCredentials, hasSigning } = credentialState(env);
 	return {
 		osxSign: hasSigning
-			? {
-					...(configured(env.APPLE_SIGNING_IDENTITY)
-						? { identity: env.APPLE_SIGNING_IDENTITY }
-						: {}),
-					hardenedRuntime: true,
-					entitlements: "assets/entitlements.mac.plist",
-					entitlementsInherit: "assets/entitlements.mac.inherit.plist",
-				}
+			? configured(env.APPLE_SIGNING_IDENTITY)
+				? { identity: env.APPLE_SIGNING_IDENTITY as string }
+				: {}
 			: undefined,
 		osxNotarize: configured(env.AO_NOTARY_PROFILE)
 			? { keychainProfile: env.AO_NOTARY_PROFILE as string }
