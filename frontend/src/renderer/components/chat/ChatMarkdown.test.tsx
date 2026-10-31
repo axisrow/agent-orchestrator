@@ -275,7 +275,7 @@ describe("ChatMarkdown", () => {
 		// unhandled "window is not defined" even when every test passed.
 		vi.useFakeTimers({ shouldAdvanceTime: true });
 		try {
-			render(
+			const view = render(
 				<ChatLinkProvider
 					onSessionLinkOpen={vi.fn()}
 					sessionLinkHostId="box-a"
@@ -291,6 +291,11 @@ describe("ChatMarkdown", () => {
 				sourceHostId: "box-a",
 				sourceKind: undefined,
 			});
+			// Unmount while the fake timers still own the clock: RTL's afterEach
+			// cleanup runs after this finally, i.e. on real timers, and the open
+			// hover card's close timer can then land after jsdom teardown under
+			// CI load. Unmounting here is what makes Radix cancel it.
+			view.unmount();
 		} finally {
 			vi.useRealTimers();
 		}
