@@ -266,7 +266,10 @@ func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.Proje
 	} else if accepted {
 		return nil
 	}
-	if batch.hasState(domain.ReportStuck) {
+	// Terminal orchestrators queue typed input during a turn, and a Ctrl-C
+	// there cancels the running turn or a prompt that was just submitted, so
+	// stuck reports are delivered to them like any other report.
+	if batch.hasState(domain.ReportStuck) && domain.NormalizeSessionMode(target.Mode) == domain.SessionModeChat {
 		interrupted := false
 		var nextInterrupt time.Time
 		for _, worker := range batch.stuckWorkers() {
@@ -312,11 +315,12 @@ func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.Proje
 	c.log.Info("report: batch emitted", "batch", batch.IdempotencyKey(), "project", batch.ProjectID, "target", target.ID, "reports", len(batch.Reports), "attempts", batch.MaxDeliveryAttempts())
 	if err := c.delivery.Submit(ctx, target.ID, batch.Render(), batch.IdempotencyKey()); err != nil {
 		// Fail loud (fork issue #179): an emission whose acceptance did not
-		// match is a failed delivery. It is never acked here — the batch goes
-		// back to pending with last_error set and re-emits on the quiet
-		// window — but the attempt itself names its batch in the log.
+		// match is a failed delivery. It is never acked here — the batch backs
+		// off by the retry delay with last_error set instead of rejoining the
+		// head of the queue (#7435) — but the attempt itself names its batch in
+		// the log.
 		c.log.Warn("report: batch delivery failed", "batch", batch.IdempotencyKey(), "project", batch.ProjectID, "target", target.ID, "attempts", batch.MaxDeliveryAttempts(), "err", err)
-		return c.release(ctx, batch, err)
+		return c.retryLater(ctx, batch, err)
 	}
 	return c.ackBatch(ctx, batch.ProjectID, batch.Token)
 }
@@ -518,6 +522,17 @@ func (c *Coordinator) release(ctx context.Context, batch PreparedBatch, cause er
 	if releaseErr != nil {
 		c.log.Warn("report: batch release failed", "batch", batch.IdempotencyKey(), "project", batch.ProjectID, "err", releaseErr)
 		return errors.Join(cause, releaseErr)
+	}
+	return cause
+}
+
+// retryLater queues a refused submission behind every report that is already
+// due. Schedule selection takes the earliest pending report across projects,
+// so an orchestrator that keeps refusing must not hold that place.
+func (c *Coordinator) retryLater(ctx context.Context, batch PreparedBatch, cause error) error {
+	_, deferErr := c.store.DeferReportBatch(ctx, batch.ProjectID, batch.Token, c.now().UTC().Add(c.retryDelay), cause.Error())
+	if deferErr != nil {
+		return errors.Join(cause, deferErr)
 	}
 	return cause
 }

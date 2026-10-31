@@ -108,6 +108,36 @@ func TestCoordinatorStuckInterruptRateLimitAndCoalescing(t *testing.T) {
 	}
 }
 
+// Terminal orchestrators queue typed input during a turn, so a stuck report
+// must reach them via the normal submit path — never a Ctrl-C interrupt (#7435).
+func TestCoordinatorNeverInterruptsTerminalOrchestrator(t *testing.T) {
+	for _, mode := range []domain.SessionMode{domain.SessionModeTUI, ""} {
+		now := time.Date(2026, 10, 28, 2, 10, 0, 0, time.UTC)
+		store := newCoordinatorStore(now)
+		store.sessions = []domain.SessionRecord{{ID: "orch", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: mode}}
+		first := reportAt("stuck-1", "worker", now, now, "cannot continue")
+		first.State = domain.ReportStuck
+		store.add(first)
+		delivery := &coordinatorDelivery{}
+		c := NewCoordinator(CoordinatorDeps{Store: store, Delivery: delivery, Now: func() time.Time { return now }, NewToken: func() string { return "claim" }})
+		if _, err := c.RunDue(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if len(delivery.interrupts) != 0 || len(delivery.submissions) != 1 {
+			t.Fatalf("mode %q: interrupts = %v, submissions = %d", mode, delivery.interrupts, len(delivery.submissions))
+		}
+		repeat := reportAt("stuck-2", "worker", now.Add(time.Minute), now, "still cannot continue")
+		repeat.State = domain.ReportStuck
+		store.add(repeat)
+		if _, err := c.RunDue(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if len(delivery.interrupts) != 0 || len(delivery.submissions) != 2 {
+			t.Fatalf("mode %q repeat: interrupts = %v, submissions = %d", mode, delivery.interrupts, len(delivery.submissions))
+		}
+	}
+}
+
 func TestReportSessionLinkUsesDisplayName(t *testing.T) {
 	got := reportSessionLink(domain.ReportRecord{
 		SessionID: "worker/1", ProjectID: "proj 1", SessionDisplayName: "Backend [worker]",
