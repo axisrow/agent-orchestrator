@@ -70,20 +70,27 @@ type SCMReviewComment struct {
 	Body string
 }
 
-// SCMReviewPublishRequest is one COMMENT review the daemon publishes: a summary
-// body plus optional inline comments, anchored at CommitSHA (empty = the PR's
-// current head).
+// SCMReviewPublishRequest is one review the daemon publishes: a summary body
+// plus optional inline comments, anchored at CommitSHA (empty = the PR's
+// current head). Event is the provider review event ("APPROVE",
+// "REQUEST_CHANGES", or "COMMENT"); providers default it to "COMMENT" when
+// empty.
 type SCMReviewPublishRequest struct {
 	PR        SCMPRRef
 	CommitSHA string
+	Event     string
 	Body      string
 	Comments  []SCMReviewComment
 }
 
-// SCMReviewPublishResult reports the provider-created review.
+// SCMReviewPublishResult reports the provider-created review. State is the
+// review state the provider assigned (a ports-level echo of the provider's own
+// vocabulary, e.g. GitHub's APPROVED); empty when the provider does not report
+// one.
 type SCMReviewPublishResult struct {
 	ReviewID string
 	HTMLURL  string
+	State    string
 }
 
 // SCMReviewPublisher publishes pull-request reviews through an SCM provider.

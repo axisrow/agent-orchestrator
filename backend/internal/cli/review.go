@@ -23,22 +23,23 @@ const (
 
 // reviewRun mirrors the daemon's domain.ReviewRun for the CLI client.
 type reviewRun struct {
-	ID             string     `json:"id"`
-	ReviewID       string     `json:"reviewId"`
-	SessionID      string     `json:"sessionId"`
-	BatchID        string     `json:"batchId"`
-	Harness        string     `json:"harness"`
-	PRURL          string     `json:"prUrl"`
-	TargetSHA      string     `json:"targetSha"`
-	Status         string     `json:"status"`
-	Verdict        string     `json:"verdict"`
-	TriggerSource  string     `json:"triggerSource,omitempty"`
-	Body           string     `json:"body"`
-	PublishState   string     `json:"publishState"`
-	PublishError   string     `json:"publishError,omitempty"`
-	GithubReviewID string     `json:"githubReviewId"`
-	CreatedAt      time.Time  `json:"createdAt"`
-	DeliveredAt    *time.Time `json:"deliveredAt,omitempty"`
+	ID                string     `json:"id"`
+	ReviewID          string     `json:"reviewId"`
+	SessionID         string     `json:"sessionId"`
+	BatchID           string     `json:"batchId"`
+	Harness           string     `json:"harness"`
+	PRURL             string     `json:"prUrl"`
+	TargetSHA         string     `json:"targetSha"`
+	Status            string     `json:"status"`
+	Verdict           string     `json:"verdict"`
+	TriggerSource     string     `json:"triggerSource,omitempty"`
+	Body              string     `json:"body"`
+	PublishState      string     `json:"publishState"`
+	PublishError      string     `json:"publishError,omitempty"`
+	GithubReviewID    string     `json:"githubReviewId"`
+	GithubReviewState string     `json:"githubReviewState"`
+	CreatedAt         time.Time  `json:"createdAt"`
+	DeliveredAt       *time.Time `json:"deliveredAt,omitempty"`
 }
 
 type reviewState struct {

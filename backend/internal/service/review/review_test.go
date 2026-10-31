@@ -161,7 +161,7 @@ func (f *fakeStore) UpdateReviewRunResult(_ context.Context, id string, status d
 	return true, nil
 }
 
-func (f *fakeStore) UpdateReviewRunPublication(_ context.Context, id string, state domain.ReviewRunPublishState, githubReviewID, publishError string) (bool, error) {
+func (f *fakeStore) UpdateReviewRunPublication(_ context.Context, id string, state domain.ReviewRunPublishState, githubReviewID, githubReviewState, publishError string) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.publishCalls++
@@ -174,6 +174,9 @@ func (f *fakeStore) UpdateReviewRunPublication(_ context.Context, id string, sta
 		run.PublishError = publishError
 		if githubReviewID != "" {
 			run.GithubReviewID = githubReviewID
+		}
+		if domain.GithubReviewState(githubReviewState).Valid() {
+			run.GithubReviewState = domain.GithubReviewState(githubReviewState)
 		}
 	}
 	apply(&f.run)
@@ -359,13 +362,22 @@ func TestRequestRereviewRejectsUnknownReviewer(t *testing.T) {
 type fakePublisher struct {
 	calls  int
 	last   ports.SCMReviewPublishRequest
+	events []string
 	result ports.SCMReviewPublishResult
 	err    error
+	// failEvents definitively rejects the attempt whose request carries the
+	// event key — the shape GitHub produces when it refuses a verdict event on
+	// the PR author's own account.
+	failEvents map[string]error
 }
 
 func (p *fakePublisher) PublishReview(_ context.Context, request ports.SCMReviewPublishRequest) (ports.SCMReviewPublishResult, error) {
 	p.calls++
 	p.last = request
+	p.events = append(p.events, request.Event)
+	if err, ok := p.failEvents[request.Event]; ok {
+		return ports.SCMReviewPublishResult{}, err
+	}
 	if p.err != nil {
 		return ports.SCMReviewPublishResult{}, p.err
 	}
@@ -1249,11 +1261,16 @@ func TestSubmitPublishesReviewOnceAndReturnsRecordedId(t *testing.T) {
 	if pub.calls != 1 {
 		t.Fatalf("publisher calls = %d, want 1", pub.calls)
 	}
-	if pub.last.CommitSHA != "sha1" || pub.last.Body != "needs auth\n\n<!-- ao-review-run:run-1 -->" || len(pub.last.Comments) != 1 || pub.last.Comments[0].Path != "src/auth.go" || pub.last.Comments[0].Line != 42 {
+	if pub.last.CommitSHA != "sha1" || pub.last.Event != "REQUEST_CHANGES" || pub.last.Body != "needs auth\n\n<!-- ao-review-run:run-1 -->" || len(pub.last.Comments) != 1 || pub.last.Comments[0].Path != "src/auth.go" || pub.last.Comments[0].Line != 42 {
 		t.Fatalf("publish request = %+v", pub.last)
 	}
 	if run.PublishState != domain.ReviewPublishPublished || run.GithubReviewID != "9001" {
 		t.Fatalf("run = publish %q id %q, want published/9001", run.PublishState, run.GithubReviewID)
+	}
+	// The recorded review state must match the verdict event the provider
+	// accepted, not just the HTTP success (issue #188).
+	if run.GithubReviewState != domain.GithubReviewChangesRequested {
+		t.Fatalf("run github review state = %q, want CHANGES_REQUESTED", run.GithubReviewState)
 	}
 
 	// An identical resubmission must return the recorded result without
@@ -1312,8 +1329,14 @@ func TestSubmitProviderFailureRecordsFailedAndRetryRepublishes(t *testing.T) {
 	if _, err := svc.Submit(context.Background(), "worker-1", "run-1", domain.VerdictApproved, "ship it", nil); err != nil {
 		t.Fatalf("provider failure must not fail the submission: %v", err)
 	}
-	if st.run.PublishState != domain.ReviewPublishFailed || st.run.PublishError == "" {
-		t.Fatalf("run = %+v, want failed with an error", st.run)
+	// The verdict event failed definitively, so the service made its explicit
+	// COMMENT fallback attempt before recording the failure — both attempts
+	// were rejected, and the verdict-event error is the recorded reason.
+	if pub.calls != 2 || len(pub.events) != 2 || pub.events[0] != "APPROVE" || pub.events[1] != "COMMENT" {
+		t.Fatalf("publisher calls/events = %d/%v, want 2/[APPROVE COMMENT]", pub.calls, pub.events)
+	}
+	if st.run.PublishState != domain.ReviewPublishFailed || st.run.PublishError == "" || strings.Contains(st.run.PublishError, "COMMENT") {
+		t.Fatalf("run = %+v, want failed with the verdict-event error", st.run)
 	}
 
 	// The provider rejecting the request is definitive: the review was not
@@ -1324,8 +1347,85 @@ func TestSubmitProviderFailureRecordsFailedAndRetryRepublishes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("retry Submit: %v", err)
 	}
-	if pub.calls != 2 || run.PublishState != domain.ReviewPublishPublished || run.GithubReviewID != "77" {
+	if pub.calls != 3 || run.PublishState != domain.ReviewPublishPublished || run.GithubReviewID != "77" {
 		t.Fatalf("retry: calls=%d publish=%q id=%q", pub.calls, run.PublishState, run.GithubReviewID)
+	}
+	// The accepted verdict event's state is written back to the run.
+	if run.GithubReviewState != domain.GithubReviewApproved || st.run.GithubReviewState != domain.GithubReviewApproved {
+		t.Fatalf("retry state run=%q store=%q, want APPROVED", run.GithubReviewState, st.run.GithubReviewState)
+	}
+}
+
+func TestSubmitSelfReviewFallsBackToCommentAndRecordsOutcome(t *testing.T) {
+	// GitHub rejects APPROVE and REQUEST_CHANGES from the PR author's own
+	// account. The fallback to a COMMENT review is the explicit decision: the
+	// run records published with the COMMENTED state and the rejection reason,
+	// so the lost verdict state is visible in review_run (issue #188).
+	for _, tc := range []struct {
+		name    string
+		verdict domain.ReviewVerdict
+		event   string
+		state   domain.GithubReviewState
+	}{
+		{name: "approved", verdict: domain.VerdictApproved, event: "APPROVE", state: domain.GithubReviewCommented},
+		{name: "changes_requested", verdict: domain.VerdictChangesRequested, event: "REQUEST_CHANGES", state: domain.GithubReviewCommented},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			st := &fakeStore{ok: true, run: domain.ReviewRun{
+				ID: "run-1", SessionID: "worker-1", PRURL: "https://github.com/acme/app/pull/9",
+				TargetSHA: "sha1", Status: domain.ReviewRunRunning,
+			}}
+			pub := &fakePublisher{failEvents: map[string]error{
+				tc.event: errors.New("403: Can not approve your own pull request"),
+			}}
+			svc := publicationTestService(t, st, pub)
+
+			run, err := svc.Submit(context.Background(), "worker-1", "run-1", tc.verdict, "review body", nil)
+			if err != nil {
+				t.Fatalf("Submit: %v", err)
+			}
+			if len(pub.events) != 2 || pub.events[0] != tc.event || pub.events[1] != "COMMENT" {
+				t.Fatalf("events = %v, want [%s COMMENT]", pub.events, tc.event)
+			}
+			if run.PublishState != domain.ReviewPublishPublished || run.GithubReviewID == "" {
+				t.Fatalf("run = %q/%q, want published with a review id", run.PublishState, run.GithubReviewID)
+			}
+			if run.GithubReviewState != tc.state || st.run.GithubReviewState != tc.state {
+				t.Fatalf("state run=%q store=%q, want %q", run.GithubReviewState, st.run.GithubReviewState, tc.state)
+			}
+			if !strings.Contains(run.PublishError, "published as COMMENT") || !strings.Contains(run.PublishError, tc.event) {
+				t.Fatalf("publish error = %q, want the recorded fallback reason", run.PublishError)
+			}
+		})
+	}
+}
+
+func TestSubmitCommentFallbackUnknownOutcomeStaysUncertain(t *testing.T) {
+	// When even the COMMENT fallback's outcome is unknown, the run must stay
+	// uncertain — recovery reconciles it against the provider instead of
+	// reposting a review that may already exist.
+	st := &fakeStore{ok: true, run: domain.ReviewRun{
+		ID: "run-1", SessionID: "worker-1", PRURL: "https://github.com/acme/app/pull/9",
+		TargetSHA: "sha1", Status: domain.ReviewRunRunning,
+	}}
+	pub := &fakePublisher{failEvents: map[string]error{
+		"APPROVE": errors.New("403: Can not approve your own pull request"),
+		"COMMENT": fmt.Errorf("post timeout: %w", ports.ErrSCMPublishOutcomeUnknown),
+	}}
+	svc := publicationTestService(t, st, pub)
+
+	run, err := svc.Submit(context.Background(), "worker-1", "run-1", domain.VerdictApproved, "review body", nil)
+	if err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	if len(pub.events) != 2 {
+		t.Fatalf("events = %v, want one verdict attempt and one fallback", pub.events)
+	}
+	if run.PublishState != domain.ReviewPublishUncertain || run.PublishError == "" {
+		t.Fatalf("run = %q/%q, want uncertain with a reason", run.PublishState, run.PublishError)
+	}
+	if run.GithubReviewState != "" {
+		t.Fatalf("state = %q, want empty for an unknown outcome", run.GithubReviewState)
 	}
 }
 
@@ -1366,7 +1466,7 @@ func TestSubmitPublishingRunRecoversToPublishedWhenProviderHasReview(t *testing.
 		TargetSHA: "sha1", Status: domain.ReviewRunComplete, Verdict: domain.VerdictChangesRequested,
 		Body: "fix it", PublishState: domain.ReviewPublishPublishing,
 	}}
-	pub := &lookupPublisher{fakePublisher: &fakePublisher{}, found: true, result: ports.SCMReviewPublishResult{ReviewID: "9001", HTMLURL: "https://github.com/acme/app/pull/9#review-9001"}}
+	pub := &lookupPublisher{fakePublisher: &fakePublisher{}, found: true, result: ports.SCMReviewPublishResult{ReviewID: "9001", HTMLURL: "https://github.com/acme/app/pull/9#review-9001", State: "COMMENTED"}}
 	svc := publicationTestService(t, st, pub)
 
 	run, err := svc.Submit(context.Background(), "worker-1", "run-1", domain.VerdictChangesRequested, "fix it", nil)
@@ -1384,6 +1484,12 @@ func TestSubmitPublishingRunRecoversToPublishedWhenProviderHasReview(t *testing.
 	}
 	if run.PublishState != domain.ReviewPublishPublished || run.GithubReviewID != "9001" {
 		t.Fatalf("run = %q/%q, want published/9001", run.PublishState, run.GithubReviewID)
+	}
+	// Recovery records the state the provider reports for the found review —
+	// here a pre-fix COMMENTED publication — instead of deriving it from the
+	// verdict (issue #188).
+	if run.GithubReviewState != domain.GithubReviewCommented || st.run.GithubReviewState != domain.GithubReviewCommented {
+		t.Fatalf("state run=%q store=%q, want COMMENTED", run.GithubReviewState, st.run.GithubReviewState)
 	}
 	if st.run.PublishState != domain.ReviewPublishPublished {
 		t.Fatalf("persisted state = %q, want published", st.run.PublishState)

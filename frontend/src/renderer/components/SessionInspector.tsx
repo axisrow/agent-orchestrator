@@ -1775,6 +1775,8 @@ function cloudReviewRun(run: CloudCpAOReviewRun, harness: string): ReviewRunFact
 		body: run.body,
 		createdAt: run.createdAt,
 		githubReviewId: run.providerReviewId,
+		// The cloud contract does not carry the provider review state yet.
+		githubReviewState: "",
 		harness: run.harness || harness,
 		id: run.id,
 		prUrl: run.pullRequestUrl,

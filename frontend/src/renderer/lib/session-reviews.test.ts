@@ -130,6 +130,7 @@ const run = (
 	body: "review body",
 	createdAt: "2026-06-10T00:00:00Z",
 	githubReviewId: "",
+	githubReviewState: "",
 	harness: "codex",
 	id: `run-${number}`,
 	prUrl: `https://github.com/o/r/pull/${number}`,

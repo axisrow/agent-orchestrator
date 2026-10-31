@@ -272,6 +272,7 @@ const reviewRun = (prNumber: number): ReviewRun => ({
 	body: "review body",
 	createdAt: "2026-06-10T00:00:00Z",
 	githubReviewId: `${prNumber}01`,
+	githubReviewState: "APPROVED",
 	harness: "codex",
 	id: `run-${prNumber}`,
 	prUrl: `https://github.com/o/r/pull/${prNumber}`,

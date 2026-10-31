@@ -283,16 +283,20 @@ func (s *Store) UpdateReviewRunResult(ctx context.Context, id string, status dom
 
 // UpdateReviewRunPublication records the outcome of one daemon-side publication
 // attempt. A non-empty githubReviewID is stored; otherwise a previously
-// recorded id is preserved.
-func (s *Store) UpdateReviewRunPublication(ctx context.Context, id string, state domain.ReviewRunPublishState, githubReviewID, publishError string) (bool, error) {
+// recorded id is preserved. githubReviewState is the review state the provider
+// actually assigned; empty leaves a previously recorded state in place on
+// non-terminal writes.
+func (s *Store) UpdateReviewRunPublication(ctx context.Context, id string, state domain.ReviewRunPublishState, githubReviewID, githubReviewState, publishError string) (bool, error) {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 	n, err := s.qw.UpdateReviewRunPublication(ctx, gen.UpdateReviewRunPublicationParams{
-		PublishState:   string(state),
-		Column2:        githubReviewID,
-		GithubReviewID: githubReviewID,
-		PublishError:   publishError,
-		ID:             id,
+		PublishState:      string(state),
+		Column2:           githubReviewID,
+		GithubReviewID:    githubReviewID,
+		Column4:           githubReviewState,
+		GithubReviewState: githubReviewState,
+		PublishError:      publishError,
+		ID:                id,
 	})
 	if err != nil {
 		return false, err
@@ -539,24 +543,25 @@ func reviewRunFromRow(r gen.ReviewRun) domain.ReviewRun {
 		state = domain.ReviewPublishPending
 	}
 	return domain.ReviewRun{
-		ID:               r.ID,
-		ReviewID:         r.ReviewID,
-		SessionID:        r.SessionID,
-		BatchID:          r.BatchID,
-		Harness:          r.Harness,
-		TriggerSource:    r.TriggerSource,
-		PRURL:            r.PRURL,
-		TargetSHA:        r.TargetSha,
-		Status:           r.Status,
-		Verdict:          r.Verdict,
-		Body:             r.Body,
-		GithubReviewID:   r.GithubReviewID,
-		Findings:         findings,
-		PublishState:     state,
-		PublishError:     r.PublishError,
-		CreatedAt:        r.CreatedAt,
-		DeliveredAt:      deliveredAt,
-		AutoInjectReview: r.AutoInjectReview,
+		ID:                r.ID,
+		ReviewID:          r.ReviewID,
+		SessionID:         r.SessionID,
+		BatchID:           r.BatchID,
+		Harness:           r.Harness,
+		TriggerSource:     r.TriggerSource,
+		PRURL:             r.PRURL,
+		TargetSHA:         r.TargetSha,
+		Status:            r.Status,
+		Verdict:           r.Verdict,
+		Body:              r.Body,
+		GithubReviewID:    r.GithubReviewID,
+		GithubReviewState: domain.GithubReviewState(r.GithubReviewState),
+		Findings:          findings,
+		PublishState:      state,
+		PublishError:      r.PublishError,
+		CreatedAt:         r.CreatedAt,
+		DeliveredAt:       deliveredAt,
+		AutoInjectReview:  r.AutoInjectReview,
 	}
 }
 

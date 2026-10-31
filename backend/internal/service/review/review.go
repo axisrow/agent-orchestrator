@@ -21,6 +21,7 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/reqid"
 	reviewcore "github.com/aoagents/agent-orchestrator/backend/internal/review"
 	"github.com/aoagents/agent-orchestrator/backend/internal/telemetrymeta"
+	"github.com/aoagents/agent-orchestrator/backend/pkg/contract"
 )
 
 // errRunSuperseded marks a run that became terminal before its result arrived.
@@ -134,7 +135,7 @@ type Store interface {
 	GetSession(ctx context.Context, id domain.SessionID) (domain.SessionRecord, bool, error)
 	SetSessionAutoInjectReview(ctx context.Context, id domain.SessionID, autoInject bool, updatedAt time.Time) (bool, error)
 	UpdateReviewRunResult(ctx context.Context, id string, status domain.ReviewRunStatus, verdict domain.ReviewVerdict, body, findingsJSON, githubReviewID string, autoInjectReview bool) (bool, error)
-	UpdateReviewRunPublication(ctx context.Context, id string, state domain.ReviewRunPublishState, githubReviewID, publishError string) (bool, error)
+	UpdateReviewRunPublication(ctx context.Context, id string, state domain.ReviewRunPublishState, githubReviewID, githubReviewState, publishError string) (bool, error)
 	MarkReviewRunDelivered(ctx context.Context, id string, deliveredAt time.Time) (bool, error)
 	ListPRsBySession(ctx context.Context, id domain.SessionID) ([]domain.PullRequest, error)
 	ListPRReviews(ctx context.Context, prURL string) ([]domain.PullRequestReview, error)
@@ -1016,6 +1017,7 @@ func (s *Service) submitOne(ctx context.Context, workerID domain.SessionID, revi
 		run.Body = body
 		run.Findings = findings
 		run.GithubReviewID = ""
+		run.GithubReviewState = ""
 		run.AutoInjectReview = session.AutoInjectReview
 		fresh = true
 	case domain.ReviewRunComplete:
@@ -1083,13 +1085,13 @@ func (s *Service) publishOne(ctx context.Context, workerID domain.SessionID, run
 		// could duplicate a review a concurrent submission already posted.
 		// Record the failure so the CLI reports a reason instead of a bare
 		// outcome-unknown.
-		s.recordPublishState(ctx, run, domain.ReviewPublishUncertain, "", fmt.Sprintf("publication state re-read failed: %v", err))
+		s.recordPublishState(ctx, run, domain.ReviewPublishUncertain, "", "", fmt.Sprintf("publication state re-read failed: %v", err))
 		return
 	}
 	if !ok {
 		// Same invariant as the error branch: the row is unreadable, so the
 		// in-memory snapshot is a guess. Never publish on a guess.
-		s.recordPublishState(ctx, run, domain.ReviewPublishUncertain, "", "publication state row is missing; outcome unknown")
+		s.recordPublishState(ctx, run, domain.ReviewPublishUncertain, "", "", "publication state row is missing; outcome unknown")
 		return
 	}
 	run.PublishState = current.PublishState
@@ -1109,7 +1111,13 @@ func (s *Service) publishOne(ctx context.Context, workerID domain.SessionID, run
 		// run's marker in a published review body is proof of publication.
 		result, found, lookupErr := s.findPublishedReview(ctx, workerID, run)
 		if lookupErr == nil && found {
-			s.recordPublishState(ctx, run, domain.ReviewPublishPublished, result.ReviewID, "")
+			// Record the state the provider actually assigned; the provider's
+			// word outranks any derivation from the verdict.
+			state := domain.GithubReviewState(strings.TrimSpace(result.State))
+			if !state.Valid() {
+				state = ""
+			}
+			s.recordPublishState(ctx, run, domain.ReviewPublishPublished, result.ReviewID, state, "")
 			return
 		}
 		if run.PublishState == domain.ReviewPublishPublishing && lookupErr == nil {
@@ -1120,7 +1128,7 @@ func (s *Service) publishOne(ctx context.Context, workerID domain.SessionID, run
 		if run.PublishState == domain.ReviewPublishPublishing {
 			// No proof either way; keep reporting the interruption instead of
 			// reposting on a guess.
-			s.recordPublishState(ctx, run, domain.ReviewPublishUncertain, "", "publication interrupted by a daemon restart; outcome unknown")
+			s.recordPublishState(ctx, run, domain.ReviewPublishUncertain, "", "", "publication interrupted by a daemon restart; outcome unknown")
 		}
 		// An unconfirmed uncertain outcome stays reported: recovery only ever
 		// upgrades to published on proof, never reposts blindly.
@@ -1128,22 +1136,22 @@ func (s *Service) publishOne(ctx context.Context, workerID domain.SessionID, run
 	}
 	pr, ok := s.publishTarget(ctx, workerID, run.PRURL)
 	if !ok {
-		s.recordPublishState(ctx, run, domain.ReviewPublishFailed, "", "the run's pull request is not tracked for this worker session")
+		s.recordPublishState(ctx, run, domain.ReviewPublishFailed, "", "", "the run's pull request is not tracked for this worker session")
 		return
 	}
 	if pr.Closed || pr.Merged {
-		s.recordPublishState(ctx, run, domain.ReviewPublishFailed, "", "pull request is not open")
+		s.recordPublishState(ctx, run, domain.ReviewPublishFailed, "", "", "pull request is not open")
 		return
 	}
 	ref, err := reviewRequestRef(pr)
 	if err != nil {
-		s.recordPublishState(ctx, run, domain.ReviewPublishFailed, "", err.Error())
+		s.recordPublishState(ctx, run, domain.ReviewPublishFailed, "", "", err.Error())
 		return
 	}
 	// Persist the attempt before the external request: if the daemon dies
 	// mid-publish, the next submission must see the attempt instead of silently
 	// reposting.
-	if _, err := s.store.UpdateReviewRunPublication(ctx, run.ID, domain.ReviewPublishPublishing, "", ""); err != nil {
+	if _, err := s.store.UpdateReviewRunPublication(ctx, run.ID, domain.ReviewPublishPublishing, "", "", ""); err != nil {
 		return
 	}
 	run.PublishState = domain.ReviewPublishPublishing
@@ -1151,30 +1159,73 @@ func (s *Service) publishOne(ctx context.Context, workerID domain.SessionID, run
 	for _, finding := range run.Findings {
 		comments = append(comments, ports.SCMReviewComment{Path: finding.Path, Line: finding.Line, Body: finding.Body})
 	}
-	result, err := s.publisher.PublishReview(ctx, ports.SCMReviewPublishRequest{PR: ref, CommitSHA: run.TargetSHA, Body: run.Body + "\n\n" + reviewPublishMarker(run), Comments: comments})
+	// The verdict event carries the machine-readable verdict on the provider:
+	// APPROVED or CHANGES_REQUESTED. GitHub rejects both from the PR author's
+	// own account (self-review), so a definitive rejection of a verdict event
+	// falls back to one explicit COMMENT attempt whose reason and resulting
+	// state are recorded — the loss of the verdict state stays visible in
+	// review_run instead of degrading silently.
+	event := contract.ReviewEventForVerdict(run.Verdict)
+	result, err := s.publisher.PublishReview(ctx, ports.SCMReviewPublishRequest{PR: ref, CommitSHA: run.TargetSHA, Event: event, Body: run.Body + "\n\n" + reviewPublishMarker(run), Comments: comments})
 	if err != nil {
 		// An unknown-outcome failure (transport outage, 5xx — the adapter
 		// classifies them) or a cancelled call means the review may or may not
 		// exist at the provider. Record uncertainty so nothing reposts it
 		// blindly; only a definitive provider rejection is a failed publish.
-		if errors.Is(err, ports.ErrSCMPublishOutcomeUnknown) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			s.recordPublishState(ctx, run, domain.ReviewPublishUncertain, "", fmt.Sprintf("publication outcome unknown: %v", err))
+		if publishOutcomeUnknown(err) {
+			s.recordPublishState(ctx, run, domain.ReviewPublishUncertain, "", "", fmt.Sprintf("publication outcome unknown: %v", err))
 			return
 		}
-		s.recordPublishState(ctx, run, domain.ReviewPublishFailed, "", err.Error())
+		if event != "COMMENT" {
+			reason := fmt.Sprintf("published as COMMENT: provider rejected %s (%v)", event, err)
+			slog.Default().WarnContext(ctx, "review verdict event rejected; publishing as COMMENT", "run", run.ID, "event", event, "err", err)
+			fallback, fallbackErr := s.publisher.PublishReview(ctx, ports.SCMReviewPublishRequest{PR: ref, CommitSHA: run.TargetSHA, Event: "COMMENT", Body: run.Body + "\n\n" + reviewPublishMarker(run), Comments: comments})
+			switch {
+			case fallbackErr == nil:
+				s.recordPublishState(ctx, run, domain.ReviewPublishPublished, fallback.ReviewID, githubStateFromPublication(fallback, "COMMENT"), reason)
+			case publishOutcomeUnknown(fallbackErr):
+				// The fallback may have landed; record uncertainty rather than
+				// failing, so recovery reconciles against the provider.
+				s.recordPublishState(ctx, run, domain.ReviewPublishUncertain, "", "", fmt.Sprintf("COMMENT fallback outcome unknown: %v", fallbackErr))
+			default:
+				// Report the verdict-event rejection: it is the cause the run
+				// was published for, and no review exists to reconcile.
+				s.recordPublishState(ctx, run, domain.ReviewPublishFailed, "", "", err.Error())
+			}
+			return
+		}
+		s.recordPublishState(ctx, run, domain.ReviewPublishFailed, "", "", err.Error())
 		return
 	}
-	s.recordPublishState(ctx, run, domain.ReviewPublishPublished, result.ReviewID, "")
+	s.recordPublishState(ctx, run, domain.ReviewPublishPublished, result.ReviewID, githubStateFromPublication(result, event), "")
 }
 
-func (s *Service) recordPublishState(ctx context.Context, run *domain.ReviewRun, state domain.ReviewRunPublishState, githubReviewID, publishError string) {
-	if _, err := s.store.UpdateReviewRunPublication(ctx, run.ID, state, githubReviewID, publishError); err != nil {
+// publishOutcomeUnknown reports whether a publication failure leaves the
+// review's existence at the provider unresolved.
+func publishOutcomeUnknown(err error) bool {
+	return errors.Is(err, ports.ErrSCMPublishOutcomeUnknown) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
+
+// githubStateFromPublication prefers the provider-reported review state and
+// falls back to the state the requested event produces when accepted.
+func githubStateFromPublication(result ports.SCMReviewPublishResult, event string) domain.GithubReviewState {
+	if state := domain.GithubReviewState(strings.TrimSpace(result.State)); state.Valid() {
+		return state
+	}
+	return contract.GithubStateForEvent(event)
+}
+
+func (s *Service) recordPublishState(ctx context.Context, run *domain.ReviewRun, state domain.ReviewRunPublishState, githubReviewID string, githubReviewState domain.GithubReviewState, publishError string) {
+	if _, err := s.store.UpdateReviewRunPublication(ctx, run.ID, state, githubReviewID, string(githubReviewState), publishError); err != nil {
 		return
 	}
 	run.PublishState = state
 	run.PublishError = publishError
 	if githubReviewID != "" {
 		run.GithubReviewID = githubReviewID
+	}
+	if githubReviewState.Valid() {
+		run.GithubReviewState = githubReviewState
 	}
 }
 
