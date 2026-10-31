@@ -53,8 +53,8 @@ func TestPublishReviewPostsVerdictReviewWithInlineComments(t *testing.T) {
 		CommitSHA: "abc123",
 		// Issue #188: the daemon decides the event; the adapter must send it
 		// verbatim and echo the state GitHub assigned back to the service.
-		Event:     "REQUEST_CHANGES",
-		Body:      `Summary with quotes "here" and a code block.`,
+		Event: "REQUEST_CHANGES",
+		Body:  `Summary with quotes "here" and a code block.`,
 		Comments: []ports.SCMReviewComment{
 			{Path: "main.go", Line: 12, Body: "off-by-one"},
 			{Path: "util.go", Line: 3, Body: "unused var"},
