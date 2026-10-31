@@ -104,10 +104,6 @@ function decodeSegment(segment: string): string | undefined {
 	}
 }
 
-export function isSessionLink(value: string): boolean {
-	return parseSessionLink(value) !== undefined;
-}
-
 export function resolveSessionLink(value: string, workspaces: SessionLinkWorkspace[]): ResolvedSessionLink | undefined {
 	const target = parseSessionLink(value) ?? parseArtifactLink(value);
 	if (!target) return undefined;
