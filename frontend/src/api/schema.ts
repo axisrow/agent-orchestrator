@@ -5011,6 +5011,7 @@ export interface components {
             prs: components["schemas"]["SessionPRFacts"][];
             /** @enum {string} */
             requestedOutput?: "artifact";
+            reviewOnly?: boolean;
             reviewerConfig?: components["schemas"]["AgentConfig"];
             /** @enum {string} */
             reviewerHarness?: "claude-code" | "codex" | "copilot" | "cursor" | "kilocode" | "opencode" | "opencode-v2" | "kiro" | "pi" | "agy" | "devin" | "droid" | "kimi" | "kimchi" | "muse" | "amp" | "aider" | "grok" | "crush" | "auggie" | "cline" | "autohand";
@@ -6141,6 +6142,7 @@ export interface components {
             orchestrator?: components["schemas"]["RoleOverride"];
             orchestratorPromptOverride?: string;
             orchestratorRules?: string;
+            ownAccounts?: string[];
             postCreate?: string[];
             preRemove?: string[];
             reviewers?: components["schemas"]["DomainReviewerConfig"][];
@@ -6915,6 +6917,7 @@ export interface components {
             prompt?: string;
             /** @enum {string} */
             requestedOutput?: "artifact";
+            reviewOnly?: boolean;
             /** @enum {string} */
             trackerProvider?: "github" | "gitlab";
         };

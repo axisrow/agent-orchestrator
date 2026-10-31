@@ -56,7 +56,10 @@ type sessionDTO struct {
 	UpdatedAt    time.Time       `json:"updatedAt"`
 	Status       string          `json:"status"`
 	Branch       string          `json:"branch,omitempty"`
-	PRs          []sessionPRDTO  `json:"prs"`
+	// ReviewOnly marks the review-only mode the unified entrypoint spawns for
+	// foreign PRs; ordinary sessions omit it.
+	ReviewOnly bool           `json:"reviewOnly,omitempty"`
+	PRs        []sessionPRDTO `json:"prs"`
 }
 
 type sessionActivity struct {
@@ -1012,6 +1015,9 @@ func writeSessionDetails(cmd *cobra.Command, sess sessionDTO) error {
 		{"issue", sess.IssueID},
 		{"branch", sess.Branch},
 		{"terminated", fmt.Sprintf("%t", sess.IsTerminated)},
+	}
+	if sess.ReviewOnly {
+		fields = append(fields, [2]string{"review mode", "review-only (foreign)"})
 	}
 	for _, field := range fields {
 		if field[1] == "" {

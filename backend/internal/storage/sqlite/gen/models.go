@@ -745,6 +745,7 @@ type Session struct {
 	TemporaryBranch                  string
 	ProviderBaseURL                  string
 	ProviderModel                    string
+	ReviewOnly                       bool
 }
 
 type SessionAgentAccount struct {

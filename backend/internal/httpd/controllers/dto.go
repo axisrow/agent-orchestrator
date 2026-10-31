@@ -507,6 +507,13 @@ type SpawnSessionRequest struct {
 	// the ordinary task flow.
 	RequestedOutput domain.RequestedOutput `json:"requestedOutput,omitempty" enum:"artifact"`
 
+	// ReviewOnly spawns a review-only session: its launch denies file-editing and
+	// push tools, auto-review is forced on, and review auto-inject stays off so
+	// findings never route back as a fix loop. It requires the native terminal
+	// interface and a project checkout, and cannot be combined with artifact
+	// delivery. Used by the unified PR review entrypoint for foreign PRs.
+	ReviewOnly bool `json:"reviewOnly,omitempty"`
+
 	// DisplayName is the sidebar label for the session, capped at 100 characters.
 	// `ao spawn --name` always sets it; other clients (e.g. the desktop new-task
 	// dialog) may omit it and fall back to the session id in the read model.

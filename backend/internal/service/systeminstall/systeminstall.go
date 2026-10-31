@@ -1554,7 +1554,13 @@ func (s *Service) resolvePlan(target Target) Plan {
 // "; " rather than "&&": a failed step is noted and Command still runs.
 func displayCommand(plan Plan) string {
 	if plan.Script != nil {
-		return fmt.Sprintf("%s <downloaded from %s>", strings.Join(plan.Script.Interpreter, " "), plan.Script.URL)
+		display := fmt.Sprintf("%s <downloaded from %s>", strings.Join(plan.Script.Interpreter, " "), plan.Script.URL)
+		// Disclose the installer's flags too: a managed OMP update shows the
+		// --binary/--ref invocation it will actually run (upstream #6536).
+		if len(plan.Script.Args) > 0 {
+			display += " " + strings.Join(plan.Script.Args, " ")
+		}
+		return display
 	}
 	argv := plan.Command
 	if plan.NeedsRoot && len(argv) > 0 {

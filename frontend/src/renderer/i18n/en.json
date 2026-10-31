@@ -1724,6 +1724,8 @@
 	"settings.project.autoReview": "Auto review",
 	"settings.project.autoReviewToggle": "Auto review PRs",
 	"settings.project.workersRequestReviewDescription": "When enabled, new workers start an AO review of their own PR once it is ready, and again after each fix. When disabled, workers ask before starting one.",
+	"settings.project.ownAccounts": "Own accounts",
+	"settings.project.ownAccountsPlaceholder": "logins, comma-separated",
 	"settings.project.workersRequestReviewToggle": "Workers request AO review",
 	"settings.project.autoReviewDescription": "When enabled, new worker sessions will automatically review their pull requests. This can still be toggled per session after spawn.",
 	"settings.project.saveChanges": "Save changes",
