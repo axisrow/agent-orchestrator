@@ -540,6 +540,7 @@ type PR struct {
 	ProviderID               string
 	AuthorAvatarURL          string
 	ReviewPartial            bool
+	LastSeenAt               sql.NullTime
 }
 
 type PRCheck struct {

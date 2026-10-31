@@ -49,6 +49,19 @@ func (s *Store) WriteSCMObservation(ctx context.Context, pr domain.PullRequest, 
 	return s.writePR(ctx, pr, checks, reviews, threads, comments, reviewMode, false)
 }
 
+// TouchPRSeen advances the PR's last_seen_at freshness cursor (issue #199
+// review): the observation stamps freeze until content changes, so the card
+// needs a separate "observer last refreshed this PR" signal that also moves on
+// no-op polls whose content hashes matched and skipped the pr write.
+func (s *Store) TouchPRSeen(ctx context.Context, prURL string, at time.Time) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	if err := s.qw.TouchPRSeen(ctx, gen.TouchPRSeenParams{LastSeenAt: nullTime(at), URL: prURL}); err != nil {
+		return fmt.Errorf("touch pr seen %s: %w", prURL, err)
+	}
+	return nil
+}
+
 // MarkPRMerged records the authoritative success returned by the provider's
 // merge endpoint without replacing concurrently refreshed CI or review facts.
 // The pr_cdc_update trigger emits the corresponding pr_updated event.
@@ -776,6 +789,7 @@ func prRowFromGen(p gen.PR) domain.PullRequest {
 		ObservedAt:               timeFromNull(p.ObservedAt),
 		CIObservedAt:             timeFromNull(p.CIObservedAt),
 		ReviewObservedAt:         timeFromNull(p.ReviewObservedAt),
+		LastSeenAt:               timeFromNull(p.LastSeenAt),
 		ReviewPartial:            p.ReviewPartial,
 		AutoInjectCI:             p.AutoInjectCI,
 	}

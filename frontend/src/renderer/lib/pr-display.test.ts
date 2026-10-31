@@ -34,6 +34,7 @@ const summary = (overrides: Partial<SessionPRSummary> = {}): SessionPRSummary =>
 	observedAt: freshIso(),
 	ciObservedAt: freshIso(),
 	reviewObservedAt: freshIso(),
+	lastSeenAt: freshIso(),
 	...overrides,
 });
 
@@ -1072,19 +1073,30 @@ describe("prSummaryParts", () => {
 describe("ciDataStale", () => {
 	const now = Date.parse("2026-06-15T12:00:00Z");
 
-	it("marks open PRs whose CI facts stopped refreshing", () => {
-		expect(ciDataStale(summary({ ciObservedAt: "2026-06-15T11:44:00Z" }), now)).toBe(true);
-		expect(ciDataStale(summary({ ciObservedAt: "2026-06-15T11:50:00Z" }), now)).toBe(false);
-		expect(ciDataStale(summary({ ciObservedAt: undefined }), now)).toBe(false);
+	it("marks open PRs whose observer stopped refreshing", () => {
+		expect(ciDataStale(summary({ lastSeenAt: "2026-06-15T11:44:00Z" }), now)).toBe(true);
+		expect(ciDataStale(summary({ lastSeenAt: "2026-06-15T11:50:00Z" }), now)).toBe(false);
+		expect(ciDataStale(summary({ lastSeenAt: undefined }), now)).toBe(false);
+	});
+
+	it("keeps a quiet green PR fresh while the observer keeps seeing it", () => {
+		// ciObservedAt is a change timestamp: frozen while checks stay green.
+		// Only the observer's lastSeen cursor may drive the staleness verdict.
+		expect(
+			ciDataStale(summary({ ciObservedAt: "2026-06-15T09:00:00Z", lastSeenAt: "2026-06-15T11:50:00Z" }), now),
+		).toBe(false);
+		expect(
+			ciDataStale(summary({ ciObservedAt: freshIso(), lastSeenAt: "2026-06-15T11:44:00Z" }), now),
+		).toBe(true);
 	});
 
 	it("ignores terminal PR states", () => {
-		expect(ciDataStale(summary({ state: "merged", ciObservedAt: "2026-06-15T11:44:00Z" }), now)).toBe(false);
-		expect(ciDataStale(summary({ state: "closed", ciObservedAt: "2026-06-15T11:44:00Z" }), now)).toBe(false);
+		expect(ciDataStale(summary({ state: "merged", lastSeenAt: "2026-06-15T11:44:00Z" }), now)).toBe(false);
+		expect(ciDataStale(summary({ state: "closed", lastSeenAt: "2026-06-15T11:44:00Z" }), now)).toBe(false);
 	});
 
 	it("surfaces the stale note in the CI part summary", () => {
-		const parts = prSummaryParts(summary({ ciObservedAt: "2026-06-15T11:00:00Z" }));
+		const parts = prSummaryParts(summary({ lastSeenAt: "2026-06-15T11:00:00Z" }));
 		expect(parts.find((part) => part.key === "ci")?.summary).toBe("Data may be stale");
 	});
 

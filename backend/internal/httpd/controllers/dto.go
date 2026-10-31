@@ -1257,6 +1257,7 @@ type SessionPRSummary struct {
 	ObservedAt       time.Time                    `json:"observedAt,omitempty"`
 	CIObservedAt     time.Time                    `json:"ciObservedAt,omitempty"`
 	ReviewObservedAt time.Time                    `json:"reviewObservedAt,omitempty"`
+	LastSeenAt       *time.Time                   `json:"lastSeenAt,omitempty"`
 }
 
 // SessionPRCISummary is the CI status block for a session PR summary.
@@ -1372,6 +1373,7 @@ func NewSessionPRSummary(in sessionsvc.PRSummary) SessionPRSummary {
 		ObservedAt:       in.ObservedAt,
 		CIObservedAt:     in.CIObservedAt,
 		ReviewObservedAt: in.ReviewObservedAt,
+		LastSeenAt:       optionalTime(in.LastSeenAt),
 	}
 }
 

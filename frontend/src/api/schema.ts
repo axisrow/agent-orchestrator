@@ -6599,6 +6599,8 @@ export interface components {
             deletions: number;
             headSha: string;
             htmlUrl?: string;
+            /** Format: date-time */
+            lastSeenAt?: null | string;
             mergeability: components["schemas"]["SessionPRMergeabilitySummary"];
             number: number;
             /** Format: date-time */

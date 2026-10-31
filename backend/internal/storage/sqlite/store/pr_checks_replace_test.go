@@ -115,6 +115,49 @@ func TestWriteSCMObservationRereadsConclusionAfterRerun(t *testing.T) {
 	}
 }
 
+// The freshness cursor survives the roundtrip: NULL until the first touch,
+// then read back by both GetPR and the session-summary listing path.
+func TestTouchPRSeenPersistsFreshnessCursor(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	seedProject(t, s, "mer")
+	r, _ := s.CreateSession(ctx, sampleRecord("mer"))
+	now := time.Now().UTC().Truncate(time.Second)
+
+	pr := domain.PullRequest{
+		URL: "https://github.com/o/r/pull/9", SessionID: r.ID, Number: 9,
+		Provider: "github", Host: "github.com", Repo: "o/r",
+		HeadSHA: "h1", CI: domain.CIPassing,
+		MetadataHash: "mh", CIHash: "ch",
+		UpdatedAt: now, ObservedAt: now, CIObservedAt: now,
+	}
+	if err := s.WriteSCMObservation(ctx, pr, nil, nil, nil, nil, ports.ReviewWritePreserve); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, err := s.GetPR(ctx, pr.URL); err != nil || !got.LastSeenAt.IsZero() {
+		t.Fatalf("last_seen must start unset: got=%v err=%v", got.LastSeenAt, err)
+	}
+
+	at := now.Add(5 * time.Minute)
+	if err := s.TouchPRSeen(ctx, pr.URL, at); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := s.GetPR(ctx, pr.URL)
+	if err != nil || !ok {
+		t.Fatalf("get pr: ok=%v err=%v", ok, err)
+	}
+	if !got.LastSeenAt.Equal(at) {
+		t.Fatalf("last_seen = %v, want %v", got.LastSeenAt, at)
+	}
+	prs, err := s.ListPRsBySession(ctx, r.ID)
+	if err != nil || len(prs) != 1 {
+		t.Fatalf("list prs: %v", err)
+	}
+	if !prs[0].LastSeenAt.Equal(at) {
+		t.Fatalf("listed last_seen = %v, want %v", prs[0].LastSeenAt, at)
+	}
+}
+
 // Pruning is scoped to the head the snapshot names: rows of previous heads are
 // untouched, and batches that do not address one whole head never prune.
 func TestWriteSCMObservationPruneScopesToSnapshotHead(t *testing.T) {
