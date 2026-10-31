@@ -7,10 +7,45 @@ package gen
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 )
+
+const deletePRChecksNotInGeneration = `-- name: DeletePRChecksNotInGeneration :exec
+DELETE FROM pr_checks
+WHERE pr_url = ? AND commit_hash = ?
+  AND name NOT IN (/*SLICE:names*/?)
+`
+
+type DeletePRChecksNotInGenerationParams struct {
+	PRURL      string
+	CommitHash string
+	Names      []string
+}
+
+// Per-sha replace: the stored checks for one head are a snapshot of the
+// provider's live rollup, not an accumulator. After an observation upserts the
+// current generation, this drops the head's rows the snapshot did not confirm
+// (renamed checks, re-expanded matrices, phantom template names), so the card
+// cannot mix check generations of the same commit.
+func (q *Queries) DeletePRChecksNotInGeneration(ctx context.Context, arg DeletePRChecksNotInGenerationParams) error {
+	query := deletePRChecksNotInGeneration
+	var queryParams []interface{}
+	queryParams = append(queryParams, arg.PRURL)
+	queryParams = append(queryParams, arg.CommitHash)
+	if len(arg.Names) > 0 {
+		for _, v := range arg.Names {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:names*/?", strings.Repeat(",?", len(arg.Names))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:names*/?", "NULL", 1)
+	}
+	_, err := q.db.ExecContext(ctx, query, queryParams...)
+	return err
+}
 
 const listChecksByPR = `-- name: ListChecksByPR :many
 SELECT pr_url, name, commit_hash, status, url, log_tail, created_at, conclusion, details

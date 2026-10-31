@@ -18577,6 +18577,11 @@ components:
           type: string
         htmlUrl:
           type: string
+        lastSeenAt:
+          format: date-time
+          type:
+          - "null"
+          - string
         mergeability:
           $ref: '#/components/schemas/SessionPRMergeabilitySummary'
         number:

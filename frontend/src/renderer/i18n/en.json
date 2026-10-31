@@ -1053,6 +1053,7 @@
 	"pr.ci.noFailingLink": "No failing check link observed",
 	"pr.ci.passing": "Passing",
 	"pr.ci.pending": "Pending",
+	"pr.ci.staleData": "Data may be stale",
 	"pr.openedVia": "via AO",
 	"pr.merge.action": "Merge",
 	"pr.merge.actionFor": "Merge PR #{{number}}",

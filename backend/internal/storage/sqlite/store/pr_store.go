@@ -49,6 +49,19 @@ func (s *Store) WriteSCMObservation(ctx context.Context, pr domain.PullRequest, 
 	return s.writePR(ctx, pr, checks, reviews, threads, comments, reviewMode, false)
 }
 
+// TouchPRSeen advances the PR's last_seen_at freshness cursor (issue #199
+// review): the observation stamps freeze until content changes, so the card
+// needs a separate "observer last refreshed this PR" signal that also moves on
+// no-op polls whose content hashes matched and skipped the pr write.
+func (s *Store) TouchPRSeen(ctx context.Context, prURL string, at time.Time) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	if err := s.qw.TouchPRSeen(ctx, gen.TouchPRSeenParams{LastSeenAt: nullTime(at), URL: prURL}); err != nil {
+		return fmt.Errorf("touch pr seen %s: %w", prURL, err)
+	}
+	return nil
+}
+
 // MarkPRMerged records the authoritative success returned by the provider's
 // merge endpoint without replacing concurrently refreshed CI or review facts.
 // The pr_cdc_update trigger emits the corresponding pr_updated event.
@@ -154,6 +167,20 @@ func writePRRows(ctx context.Context, q *gen.Queries, pr domain.PullRequest, che
 	for _, c := range checks {
 		if err := q.UpsertPRCheck(ctx, genCheckParams(pr.URL, c)); err != nil {
 			return err
+		}
+	}
+	// Per-sha replace (issue #199): the incoming checks are the provider's live
+	// rollup for one head, so rows of that head the snapshot does not confirm
+	// are dead generations (renamed checks, re-expanded matrices, phantom
+	// template names). Upserting per name alone let them accumulate forever and
+	// the PR card mixed generations with contradicting verdicts.
+	if head, ok := completeCheckGeneration(checks); ok {
+		names := make([]string, len(checks))
+		for i, c := range checks {
+			names[i] = c.Name
+		}
+		if err := q.DeletePRChecksNotInGeneration(ctx, gen.DeletePRChecksNotInGenerationParams{PRURL: pr.URL, CommitHash: head, Names: names}); err != nil {
+			return fmt.Errorf("prune stale pr checks %s@%s: %w", pr.URL, head, err)
 		}
 	}
 	if replaceLegacyComments {
@@ -762,6 +789,7 @@ func prRowFromGen(p gen.PR) domain.PullRequest {
 		ObservedAt:               timeFromNull(p.ObservedAt),
 		CIObservedAt:             timeFromNull(p.CIObservedAt),
 		ReviewObservedAt:         timeFromNull(p.ReviewObservedAt),
+		LastSeenAt:               timeFromNull(p.LastSeenAt),
 		ReviewPartial:            p.ReviewPartial,
 		AutoInjectCI:             p.AutoInjectCI,
 	}
@@ -777,6 +805,30 @@ func genCheckParams(prURL string, c domain.PullRequestCheck) gen.UpsertPRCheckPa
 		Status: status, URL: c.URL, LogTail: c.LogTail, CreatedAt: c.CreatedAt,
 		Conclusion: c.Conclusion, Details: c.Details,
 	}
+}
+
+// completeCheckGeneration reports whether checks carry one non-empty commit
+// hash — that is, the batch is addressable as a whole-head snapshot and stale
+// generations of that head may be pruned. Empty batches and mixed-head batches
+// (metadata-only writes, workers reporting several heads) never prune.
+// ponytail: a provider-side truncated check listing (GitLab jobs past the page
+// size) also looks complete here; the next untruncated fetch re-inserts
+// anything pruned in error. Gate on the observation's CI.Partial if
+// partial-ness is ever carried into storage.
+func completeCheckGeneration(checks []domain.PullRequestCheck) (string, bool) {
+	if len(checks) == 0 {
+		return "", false
+	}
+	head := checks[0].CommitHash
+	if head == "" {
+		return "", false
+	}
+	for _, c := range checks {
+		if c.CommitHash == "" || !strings.EqualFold(c.CommitHash, head) {
+			return "", false
+		}
+	}
+	return head, true
 }
 
 func checkRowFromGen(c gen.PRCheck) domain.PullRequestCheck {

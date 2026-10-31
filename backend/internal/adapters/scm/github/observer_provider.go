@@ -286,7 +286,22 @@ func (p *Provider) FetchPullRequests(ctx context.Context, refs []ports.SCMPRRef)
 		}
 		if scmContextsPaginated(pr) {
 			if err := p.fetchRemainingCheckContexts(ctx, ref, pr); err != nil {
-				return nil, err
+				// Degrade to a per-ref failure instead of aborting the whole
+				// batch (issue #199): a PR with more check contexts than the
+				// first page poisoned every other PR sharing its batch, so its
+				// snapshot never refreshed and stale check generations lived on
+				// the card indefinitely. The observer treats Fetched=false as a
+				// transient failure: no durable facts are overwritten and the
+				// repo stays refresh-incomplete until a retry succeeds.
+				out[i] = ports.SCMObservation{
+					Fetched:  false,
+					Provider: ref.Repo.Provider,
+					Host:     ref.Repo.Host,
+					Repo:     repoFullName(ref.Repo),
+					PR:       ports.SCMPRObservation{Number: ref.Number, URL: ref.URL},
+					Error:    fmt.Errorf("fetch remaining check contexts for %s#%d: %w", repoFullName(ref.Repo), ref.Number, err),
+				}
+				continue
 			}
 		}
 		out[i] = scmObservationFromGraphQL(ref, pr)

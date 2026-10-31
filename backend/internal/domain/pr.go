@@ -98,6 +98,11 @@ type PullRequest struct {
 	ObservedAt       time.Time
 	CIObservedAt     time.Time
 	ReviewObservedAt time.Time
+	// LastSeenAt is the freshness cursor: when the observer last refreshed
+	// this PR, including no-op polls where nothing changed. The observation
+	// stamps above freeze until content changes and are change timestamps,
+	// not freshness timestamps.
+	LastSeenAt time.Time
 	// ReviewPartial records that the latest review-thread observation hit the
 	// provider's thread-window cap, so stored thread rows are a partial view.
 	ReviewPartial bool
