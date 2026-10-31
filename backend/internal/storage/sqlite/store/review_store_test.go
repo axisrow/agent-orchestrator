@@ -241,6 +241,59 @@ func TestCleanupOwnedReviewControllerWorkSettlesItsTurn(t *testing.T) {
 	}
 }
 
+// TestReviewRunPublicationStateRoundTrip proves the publication write-back
+// records the review state GitHub actually assigned, keeps it on non-terminal
+// writes, and resets it when a fresh result reopens the run (issue #188).
+func TestReviewRunPublicationStateRoundTrip(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	seedProject(t, s, "mer")
+	rec, err := s.CreateSession(ctx, sampleRecord("mer"))
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	if err := s.UpsertReview(ctx, domain.Review{
+		ID: "rev-1", SessionID: rec.ID, ProjectID: rec.ProjectID,
+		Harness: domain.ReviewerClaudeCode, CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("upsert review: %v", err)
+	}
+	if err := s.InsertReviewRun(ctx, domain.ReviewRun{
+		ID: "run-1", ReviewID: "rev-1", SessionID: rec.ID, Harness: domain.ReviewerClaudeCode,
+		PRURL: "https://example/pr/1", TargetSHA: "sha1", Status: domain.ReviewRunRunning, CreatedAt: now,
+	}); err != nil {
+		t.Fatalf("insert run: %v", err)
+	}
+
+	if ok, err := s.UpdateReviewRunResult(ctx, "run-1", domain.ReviewRunComplete, domain.VerdictApproved, "ship it", "[]", "", true); err != nil || !ok {
+		t.Fatalf("record result: ok=%v err=%v", ok, err)
+	}
+	if ok, err := s.UpdateReviewRunPublication(ctx, "run-1", domain.ReviewPublishPublished, "9001", "APPROVED", ""); err != nil || !ok {
+		t.Fatalf("record publication: ok=%v err=%v", ok, err)
+	}
+	run, ok, err := s.GetReviewRun(ctx, "run-1")
+	if err != nil || !ok {
+		t.Fatalf("get run: ok=%v err=%v", ok, err)
+	}
+	if run.PublishState != domain.ReviewPublishPublished || run.GithubReviewID != "9001" || run.GithubReviewState != domain.GithubReviewApproved {
+		t.Fatalf("run = %q/%q/%q, want published/9001/APPROVED", run.PublishState, run.GithubReviewID, run.GithubReviewState)
+	}
+
+	// A non-terminal write (a new publishing attempt) must not erase the
+	// recorded review id or state.
+	if _, err := s.UpdateReviewRunPublication(ctx, "run-1", domain.ReviewPublishPublishing, "", "", ""); err != nil {
+		t.Fatalf("persist attempt: %v", err)
+	}
+	run, _, err = s.GetReviewRun(ctx, "run-1")
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	if run.GithubReviewID != "9001" || run.GithubReviewState != domain.GithubReviewApproved {
+		t.Fatalf("attempt write clobbered id/state: %q/%q", run.GithubReviewID, run.GithubReviewState)
+	}
+}
+
 func TestInsertReviewRunDuplicatePRSHAMapsToSentinel(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

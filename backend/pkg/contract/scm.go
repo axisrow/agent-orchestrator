@@ -55,6 +55,57 @@ func (v AOReviewVerdict) Valid() bool {
 	return v == AOReviewVerdictApproved || v == AOReviewVerdictChangesRequested
 }
 
+// AOReviewGithubState is the review state GitHub actually assigned to a
+// published AO review, as opposed to the verdict AO recorded. The two diverge
+// only in the self-review case: GitHub rejects APPROVE and REQUEST_CHANGES
+// from the PR author's own account, so the daemon falls back to a COMMENT
+// review and records that outcome instead of silently losing the verdict state.
+type AOReviewGithubState string
+
+// GitHub review states, as the reviews API reports them.
+const (
+	AOReviewGithubApproved         AOReviewGithubState = "APPROVED"
+	AOReviewGithubChangesRequested AOReviewGithubState = "CHANGES_REQUESTED"
+	AOReviewGithubCommented        AOReviewGithubState = "COMMENTED"
+)
+
+// Valid reports whether s is a GitHub review state AO records.
+func (s AOReviewGithubState) Valid() bool {
+	switch s {
+	case AOReviewGithubApproved, AOReviewGithubChangesRequested, AOReviewGithubCommented:
+		return true
+	}
+	return false
+}
+
+// ReviewEventForVerdict maps a recorded verdict to the pull-request reviews API
+// event that carries it. An unrecorded verdict publishes as COMMENT — that
+// call path cannot happen for a fresh submission (a verdict is required), and
+// keeps the mapping total for recovery reposts.
+func ReviewEventForVerdict(v AOReviewVerdict) string {
+	switch v {
+	case AOReviewVerdictApproved:
+		return "APPROVE"
+	case AOReviewVerdictChangesRequested:
+		return "REQUEST_CHANGES"
+	default:
+		return "COMMENT"
+	}
+}
+
+// GithubStateForEvent is the review state the reviews API assigns when it
+// accepts the given event.
+func GithubStateForEvent(event string) AOReviewGithubState {
+	switch event {
+	case "APPROVE":
+		return AOReviewGithubApproved
+	case "REQUEST_CHANGES":
+		return AOReviewGithubChangesRequested
+	default:
+		return AOReviewGithubCommented
+	}
+}
+
 // AOReviewState is the current AO review state for one pull request head.
 type AOReviewState string
 

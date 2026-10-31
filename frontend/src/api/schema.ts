@@ -6385,6 +6385,7 @@ export interface components {
             deliveredAt?: null | string;
             findings?: components["schemas"]["DomainReviewFinding"][];
             githubReviewId: string;
+            githubReviewState: string;
             harness: string;
             id: string;
             prUrl: string;

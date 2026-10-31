@@ -174,3 +174,40 @@ func typescriptStringArray(t *testing.T, data []byte, name string) []string {
 	}
 	return out
 }
+
+func TestReviewEventForVerdictCarriesTheVerdictState(t *testing.T) {
+	// Issue #188: the event the daemon publishes must carry the recorded
+	// verdict on the provider, and the accepted event's state must match what
+	// review_run records.
+	for _, tc := range []struct {
+		verdict contract.AOReviewVerdict
+		event   string
+		state   contract.AOReviewGithubState
+	}{
+		{contract.AOReviewVerdictApproved, "APPROVE", contract.AOReviewGithubApproved},
+		{contract.AOReviewVerdictChangesRequested, "REQUEST_CHANGES", contract.AOReviewGithubChangesRequested},
+		// A total mapping keeps recovery reposts well-defined; an unrecorded
+		// verdict cannot carry a machine-readable state.
+		{contract.AOReviewVerdictNone, "COMMENT", contract.AOReviewGithubCommented},
+	} {
+		if event := contract.ReviewEventForVerdict(tc.verdict); event != tc.event {
+			t.Errorf("ReviewEventForVerdict(%q) = %q, want %q", tc.verdict, event, tc.event)
+		}
+		if state := contract.GithubStateForEvent(tc.event); state != tc.state {
+			t.Errorf("GithubStateForEvent(%q) = %q, want %q", tc.event, state, tc.state)
+		}
+	}
+}
+
+func TestAOReviewGithubStateValid(t *testing.T) {
+	for _, state := range []contract.AOReviewGithubState{contract.AOReviewGithubApproved, contract.AOReviewGithubChangesRequested, contract.AOReviewGithubCommented} {
+		if !state.Valid() {
+			t.Errorf("%q reported invalid", state)
+		}
+	}
+	for _, state := range []string{"", "approved", "PENDING", "DISMISSED"} {
+		if contract.AOReviewGithubState(state).Valid() {
+			t.Errorf("%q reported valid", state)
+		}
+	}
+}

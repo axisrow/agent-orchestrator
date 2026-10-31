@@ -15,9 +15,9 @@ import (
 var _ ports.SCMReviewPublisher = (*Provider)(nil)
 var _ ports.SCMReviewPublicationFinder = (*Provider)(nil)
 
-// PublishReview creates one COMMENT review on a GitHub pull request: the
-// summary body plus optional inline comments, anchored at the reviewed commit.
-// The daemon owns review publication since #5701; reviewers submit to AO.
+// PublishReview creates one review on a GitHub pull request: the summary body
+// plus optional inline comments, anchored at the reviewed commit. The daemon
+// owns review publication since #5701; reviewers submit to AO.
 func (p *Provider) PublishReview(ctx context.Context, request ports.SCMReviewPublishRequest) (ports.SCMReviewPublishResult, error) {
 	if p == nil || p.client == nil {
 		return ports.SCMReviewPublishResult{}, fmt.Errorf("github scm: review publisher is not configured")
@@ -25,14 +25,16 @@ func (p *Provider) PublishReview(ctx context.Context, request ports.SCMReviewPub
 	if request.PR.Number <= 0 || strings.TrimSpace(request.PR.Repo.Owner) == "" || strings.TrimSpace(request.PR.Repo.Name) == "" {
 		return ports.SCMReviewPublishResult{}, fmt.Errorf("github scm: invalid pull request reference")
 	}
-	// Reviews are always COMMENT: AO reviews are posted from the PR author's
-	// own account, and GitHub rejects APPROVE and REQUEST_CHANGES there.
+	event := strings.TrimSpace(request.Event)
+	if event == "" {
+		event = "COMMENT"
+	}
 	payload := struct {
 		Event    string                   `json:"event"`
 		CommitID string                   `json:"commit_id,omitempty"`
 		Body     string                   `json:"body"`
 		Comments []map[string]interface{} `json:"comments,omitempty"`
-	}{Event: "COMMENT", CommitID: strings.TrimSpace(request.CommitSHA), Body: request.Body}
+	}{Event: event, CommitID: strings.TrimSpace(request.CommitSHA), Body: request.Body}
 	for _, comment := range request.Comments {
 		payload.Comments = append(payload.Comments, map[string]interface{}{
 			"path": comment.Path,
@@ -57,6 +59,7 @@ func (p *Provider) PublishReview(ctx context.Context, request ports.SCMReviewPub
 	var created struct {
 		ID      int64  `json:"id"`
 		HTMLURL string `json:"html_url"`
+		State   string `json:"state"`
 	}
 	// A 2xx response means GitHub accepted the review; only the handle is
 	// unreadable. Like a transport outage, the review's existence is known and
@@ -68,7 +71,7 @@ func (p *Provider) PublishReview(ctx context.Context, request ports.SCMReviewPub
 	if created.ID == 0 {
 		return ports.SCMReviewPublishResult{}, fmt.Errorf("%w: github scm: created review returned no id", ports.ErrSCMPublishOutcomeUnknown)
 	}
-	return ports.SCMReviewPublishResult{ReviewID: strconv.FormatInt(created.ID, 10), HTMLURL: created.HTMLURL}, nil
+	return ports.SCMReviewPublishResult{ReviewID: strconv.FormatInt(created.ID, 10), HTMLURL: created.HTMLURL, State: strings.TrimSpace(created.State)}, nil
 }
 
 // FindPublishedReview locates a review this daemon previously published by
@@ -102,13 +105,14 @@ func (p *Provider) FindPublishedReview(ctx context.Context, ref ports.SCMPRRef, 
 		ID      int64  `json:"id"`
 		HTMLURL string `json:"html_url"`
 		Body    string `json:"body"`
+		State   string `json:"state"`
 	}
 	if err := json.Unmarshal(resp.Body, &reviews); err != nil {
 		return ports.SCMReviewPublishResult{}, false, fmt.Errorf("github scm: decode review list: %w", err)
 	}
 	for _, review := range reviews {
 		if strings.Contains(review.Body, bodyMarker) {
-			return ports.SCMReviewPublishResult{ReviewID: strconv.FormatInt(review.ID, 10), HTMLURL: review.HTMLURL}, true, nil
+			return ports.SCMReviewPublishResult{ReviewID: strconv.FormatInt(review.ID, 10), HTMLURL: review.HTMLURL, State: strings.TrimSpace(review.State)}, true, nil
 		}
 	}
 	return ports.SCMReviewPublishResult{}, false, nil
