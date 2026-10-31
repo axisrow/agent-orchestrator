@@ -425,6 +425,7 @@ describe("prCardPresentation AO review verdict", () => {
 		body: "",
 		createdAt: "2026-06-15T00:00:00Z",
 		githubReviewId: "",
+		githubReviewState: "",
 		harness: "codex",
 		id: "run-1",
 		prUrl: "https://github.com/acme/repo/pull/7",
