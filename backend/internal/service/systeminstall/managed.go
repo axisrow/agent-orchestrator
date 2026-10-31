@@ -356,7 +356,7 @@ func (s *Service) runManagedInstall(ctx context.Context, plan Plan, baseline *in
 			pin = baseline.latest
 		}
 	}
-	binRel := managedBinRel(s.goos, plan.Method, cli)
+	var binRel string
 	if recipe, ok := s.officialManagedRecipeFor(plan); ok {
 		if err := s.runOfficialManagedInstall(ctx, plan, recipe, pin, dir, env, out); err != nil {
 			return err
