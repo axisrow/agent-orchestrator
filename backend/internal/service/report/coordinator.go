@@ -19,9 +19,6 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 )
 
-// ReportInterruptWindow is the durable per-worker urgent interruption limit.
-const ReportInterruptWindow = 3 * time.Minute
-
 // ReportOrchestratorBackoff reschedules a due batch whose project has no
 // active orchestrator, instead of retrying it every tick forever.
 const ReportOrchestratorBackoff = time.Minute
@@ -51,7 +48,6 @@ type DeliveryStore interface {
 	MarkReportBatchEmitted(context.Context, domain.ProjectID, string, time.Time) (int, error)
 	AcknowledgeAcceptedReportBatches(context.Context, domain.ProjectID, string, time.Time) (int, error)
 	ExpireStaleReportDeliveries(context.Context, time.Time) (int, error)
-	AcquireReportInterrupt(context.Context, domain.SessionID, time.Time, time.Duration) (bool, time.Time, error)
 }
 
 // Delivery submits accepted semantic context and interrupts active work.
@@ -266,28 +262,9 @@ func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.Proje
 	} else if accepted {
 		return nil
 	}
-	if batch.hasState(domain.ReportStuck) {
-		interrupted := false
-		var nextInterrupt time.Time
-		for _, worker := range batch.stuckWorkers() {
-			acquired, next, acquireErr := c.store.AcquireReportInterrupt(ctx, worker, c.now().UTC(), ReportInterruptWindow)
-			if acquireErr != nil {
-				return c.release(ctx, batch, acquireErr)
-			}
-			if acquired {
-				interrupted = true
-				if interruptErr := c.delivery.Interrupt(ctx, target.ID); interruptErr != nil {
-					return c.release(ctx, batch, interruptErr)
-				}
-			} else if nextInterrupt.IsZero() || next.Before(nextInterrupt) {
-				nextInterrupt = next
-			}
-		}
-		if !interrupted && !batch.hasState(domain.ReportNeedsInput) {
-			_, deferErr := c.store.DeferReportBatch(ctx, batch.ProjectID, batch.Token, nextInterrupt, "repeated stuck report coalesced inside interrupt window")
-			return deferErr
-		}
-	}
+	// Stuck reports ride the normal submit path in every session mode: the
+	// fork runs terminal orchestrators only, so there is no chat-mode
+	// interrupt lane to rate-limit (upstream #7435's chat branch removed).
 	visible, emitErr := c.EmitVisible(ctx, batch)
 	if emitErr != nil {
 		return c.release(ctx, batch, emitErr)
@@ -312,11 +289,12 @@ func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.Proje
 	c.log.Info("report: batch emitted", "batch", batch.IdempotencyKey(), "project", batch.ProjectID, "target", target.ID, "reports", len(batch.Reports), "attempts", batch.MaxDeliveryAttempts())
 	if err := c.delivery.Submit(ctx, target.ID, batch.Render(), batch.IdempotencyKey()); err != nil {
 		// Fail loud (fork issue #179): an emission whose acceptance did not
-		// match is a failed delivery. It is never acked here — the batch goes
-		// back to pending with last_error set and re-emits on the quiet
-		// window — but the attempt itself names its batch in the log.
+		// match is a failed delivery. It is never acked here — the batch backs
+		// off by the retry delay with last_error set instead of rejoining the
+		// head of the queue (#7435) — but the attempt itself names its batch in
+		// the log.
 		c.log.Warn("report: batch delivery failed", "batch", batch.IdempotencyKey(), "project", batch.ProjectID, "target", target.ID, "attempts", batch.MaxDeliveryAttempts(), "err", err)
-		return c.release(ctx, batch, err)
+		return c.retryLater(ctx, batch, err)
 	}
 	return c.ackBatch(ctx, batch.ProjectID, batch.Token)
 }
@@ -522,6 +500,17 @@ func (c *Coordinator) release(ctx context.Context, batch PreparedBatch, cause er
 	return cause
 }
 
+// retryLater queues a refused submission behind every report that is already
+// due. Schedule selection takes the earliest pending report across projects,
+// so an orchestrator that keeps refusing must not hold that place.
+func (c *Coordinator) retryLater(ctx context.Context, batch PreparedBatch, cause error) error {
+	_, deferErr := c.store.DeferReportBatch(ctx, batch.ProjectID, batch.Token, c.now().UTC().Add(c.retryDelay), cause.Error())
+	if deferErr != nil {
+		return errors.Join(cause, deferErr)
+	}
+	return cause
+}
+
 const (
 	chatReportOpen  = "<ao-worker-reports>"
 	chatReportClose = "</ao-worker-reports>"
@@ -615,27 +604,6 @@ func (b PreparedBatch) emittedAt() time.Time {
 		}
 	}
 	return latest
-}
-
-func (b PreparedBatch) hasState(state domain.ReportState) bool {
-	for _, report := range b.Reports {
-		if report.State == state {
-			return true
-		}
-	}
-	return false
-}
-
-func (b PreparedBatch) stuckWorkers() []domain.SessionID {
-	seen := map[domain.SessionID]bool{}
-	var out []domain.SessionID
-	for _, report := range b.Reports {
-		if report.State == domain.ReportStuck && !seen[report.SessionID] {
-			seen[report.SessionID] = true
-			out = append(out, report.SessionID)
-		}
-	}
-	return out
 }
 
 func coalesceReports(in []domain.ReportRecord) []domain.ReportRecord {
