@@ -4,11 +4,10 @@
 # ТРИ РЕЖИМА (политика 2026-10-21: «из апстрима только багфиксы, фичи не нужны
 # совсем»):
 #
-#   (без аргументов) = --new: read-only обзор неразобранного апстрима (ниже).
-#     Сам синк — ВСЕГДА явным флагом: мутации по «sync-by-reflex» выключены
-#     с 2026-10-30.
+#   (без аргументов) = fixes-only (дефолт с 2026-11-01; до этого — read-only
+#     обзор, а до 2026-10-30 сам синк требовал явного флага).
 #
-#   fixes-only (--fixes-only; дефолт до 2026-10-30, сейчас — явный флаг):
+#   fixes-only (дефолт; --fixes-only — то же самое явно):
 #     fetch → backup-тег → классификация fork/main..origin/main по ЛЕДЖЕРУ
 #     (local/toolbox/ao-upstream-ledger.txt) → cherry-pick -x только
 #     типизированных fix-коммитов → остальное в леджер как skipped →
@@ -28,7 +27,7 @@
 #     fork/main не переписывается, force-push не нужен. (Сжатие дельты обратно
 #     в 1 коммит — отдельный ручной squash-пасс, не часть синка.)
 #
-#   --new (read-only, режим по умолчанию с 2026-10-30):
+#   --new (read-only обзор неразобранного апстрима, явный флаг):
 #     fetch → тот же дифф против леджера, что в fixes-only → печать
 #     неклассифицированных апстрим-коммитов («<sha> <subject>») и exit 0.
 #     Ничего не пишет: без backup-тега, без маркера, без записей в леджер;
@@ -54,15 +53,15 @@
 set -e
 # NB: без `set -u` — та же причина, что в rebuild-ao.sh (macOS /bin/bash 3.2).
 
-# Режим запуска (см. шапку). Дефолт — read-only обзор; сам синк — явным
-# флагом: --fixes-only (политика 2026-10-21) или --merge-all (старое поведение).
+# Режим запуска (см. шапку). Дефолт с 2026-11-01 — fixes-only (синк);
+# --new — read-only обзор, --merge-all — старое поведение.
 MODE="fixes-only"
 LIST_ONLY=1
 case "${1:-}" in
   --merge-all) MODE="merge-all"; LIST_ONLY=0 ;;
   --fixes-only) LIST_ONLY=0 ;;
   --new) ;;
-  "") ;;
+  "") LIST_ONLY=0 ;;
   *) echo "!! неизвестный аргумент '$1' (допустимо: --fixes-only, --merge-all, --new)" >&2; exit 1 ;;
 esac
 
@@ -128,6 +127,11 @@ if [ -e "$GIT_DIR_SYNC/CHERRY_PICK_HEAD" ]; then
   echo "   затем git cherry-pick --continue (или git cherry-pick --abort) — и запусти снова." >&2
   exit 1
 fi
+if [ -e "$GIT_DIR_SYNC/MERGE_HEAD" ]; then
+  echo "!! Висит незавершённый merge fork/main: реши конфликты, git add <файлы>," >&2
+  echo "   затем git commit (или git merge --abort) — и запусти снова." >&2
+  exit 1
+fi
 
 # 2. fetch + backup-тег на текущий main (страховка перед merge).
 #
@@ -158,6 +162,24 @@ else
   git tag "$BACKUP_TAG" main 2>/dev/null || true
   printf '%s\n' "$BACKUP_TAG" > "$BACKUP_MARKER"
   echo "==> backup-тег: $BACKUP_TAG (на случай отката: git reset --hard $BACKUP_TAG)"
+fi
+
+# 2b. Автоподтягивание fork/main. GitHub-сторона форка уходит вперёд PR-мержами
+#     из других сессий, локальный main — cherry-pick-ами синка; без подтяжки
+#     накапливается divergence (инцидент 2026-11-01: ↑12↓7). Отставание
+#     fast-forward-ится, расхождение — merge-коммит; его конфликт = обычный
+#     merge-конфликт (стоп, решение за владельцем). Локальный main, который
+#     впереди (незапушенный батч), не трогаем — пуш остаётся ручным.
+echo "==> git fetch fork..."
+git fetch fork
+if [ "$(git rev-parse HEAD)" != "$(git rev-parse fork/main)" ]; then
+  if git merge-base --is-ancestor fork/main HEAD; then
+    echo "==> локальный main впереди fork/main (батч не запушен) — fork/main не трогаю."
+  else
+    echo "==> подтягиваю fork/main в main..."
+    git merge fork/main --no-edit
+    echo "==> fork/main подтянут ($(git rev-parse --short fork/main))."
+  fi
 fi
 
 LEDGER="$REPO_ROOT/local/toolbox/ao-upstream-ledger.txt"

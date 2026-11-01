@@ -113,7 +113,10 @@ orphan_workers_notification:9014
 app_settings_scm_proxy_url:9015
 report_emitted_at:20261022172135182
 review_run_current_head_lookup:20261022172135183
-delivery_ledger:20261027143000000"
+delivery_ledger:20261027143000000
+review_run_github_review_state:20261028124744442
+session_review_only:20261028124744444
+pr_last_seen_at:20261028124744445"
 
 is_fork_suffix() {
   printf '%s\n' "$FORK_SUFFIXES" | grep -qx "$1"
