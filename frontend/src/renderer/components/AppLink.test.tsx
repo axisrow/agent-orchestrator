@@ -42,6 +42,37 @@ describe("AppLink", () => {
 		expect(screen.getByRole("menuitem", { name: "Open in ao browser" })).toHaveAttribute("aria-disabled", "true");
 	});
 
+	it("opens web links externally on plain click when AO_LINKS_EXTERNAL=1", () => {
+		window.ao!.launch = { ...window.ao!.launch, linksExternal: true };
+		const open = vi.fn();
+		const external = vi.spyOn(aoBridge.app, "openExternal").mockResolvedValue(undefined);
+		try {
+			render(<AppBrowserLinkContext.Provider value={open}><AppLink href={url}>PR</AppLink></AppBrowserLinkContext.Provider>);
+			fireEvent.click(screen.getByRole("link"));
+			expect(external).toHaveBeenCalledExactlyOnceWith(url);
+			expect(open).not.toHaveBeenCalled();
+		} finally {
+			window.ao!.launch = { ...window.ao!.launch, linksExternal: false };
+		}
+	});
+
+	it("still offers the ao browser on right-click when AO_LINKS_EXTERNAL=1", async () => {
+		window.ao!.launch = { ...window.ao!.launch, linksExternal: true };
+		const user = userEvent.setup();
+		const open = vi.fn();
+		try {
+			render(<AppBrowserLinkContext.Provider value={open}><AppLink href={url}>PR</AppLink></AppBrowserLinkContext.Provider>);
+			fireEvent.contextMenu(screen.getByRole("link"));
+			expect(screen.getAllByRole("menuitem").map(item => item.textContent)).toEqual([
+				"Open in ao browser", "Open in external browser", "Copy link",
+			]);
+			await user.click(screen.getByRole("menuitem", { name: "Open in ao browser" }));
+			expect(open).toHaveBeenCalledExactlyOnceWith(url);
+		} finally {
+			window.ao!.launch = { ...window.ao!.launch, linksExternal: false };
+		}
+	});
+
 	it("preserves handlers that cancel navigation and fragment links", () => {
 		const open = vi.fn();
 		const handled = vi.fn((event) => event.preventDefault());

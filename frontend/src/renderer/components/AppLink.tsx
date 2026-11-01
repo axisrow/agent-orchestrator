@@ -2,7 +2,7 @@ import { createContext, useContext, type ComponentProps } from "react";
 import { Copy, ExternalLink, FileText, Globe } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { aoBridge } from "../lib/bridge";
-import { isWebLink, openLinkInSystemBrowser } from "../lib/external-link-policy";
+import { externalLinksDefault, isWebLink, openLinkInSystemBrowser } from "../lib/external-link-policy";
 import {
 	ContextMenu,
 	ContextMenuTrigger,
@@ -33,6 +33,12 @@ export function AppLink({ href, onClick, onBrowserOpen, inAppLink, filePath, onF
 				onClick?.(event);
 				if (event.defaultPrevented || !href || !browserLink) return;
 				event.preventDefault();
+				// AO_LINKS_EXTERNAL=1 flips the default click to the system browser;
+				// the AO Browser panel stays on the context menu in both modes.
+				if (webLink && externalLinksDefault()) {
+					void openLinkInSystemBrowser(href);
+					return;
+				}
 				if (openBrowser && (!webLink || (!event.ctrlKey && !event.metaKey && !event.altKey))) openBrowser(href);
 				else void openLinkInSystemBrowser(href);
 			}}

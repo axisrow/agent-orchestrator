@@ -75,6 +75,16 @@ export function isWorkspaceHtmlLink(url: string, workspacePaths: string[]): bool
 	return /\.html?$/i.test(url.split(/[?#]/, 1)[0]) && isWorkspaceFileLink(url, workspacePaths);
 }
 
+/**
+ * AO_LINKS_EXTERNAL=1: a plain click opens web links in the system browser.
+ * The AO Browser panel stays reachable through the context menu in both modes.
+ */
+export function externalLinksDefault(): boolean {
+	// `launch` is always present on the real bridge; partial bridge mocks in
+	// tests omit it, and a missing flag reads as unset.
+	return aoBridge.launch?.linksExternal === true;
+}
+
 export async function openLinkInSystemBrowser(url: string): Promise<void> {
 	try {
 		await aoBridge.app.openExternal(url);

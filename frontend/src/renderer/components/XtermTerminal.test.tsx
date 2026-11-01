@@ -2880,6 +2880,21 @@ describe("XtermTerminal", () => {
 		open.mockRestore();
 	});
 
+	it("opens web links in the system browser on plain click when AO_LINKS_EXTERNAL=1", () => {
+		window.ao!.launch = { ...window.ao!.launch, linksExternal: true };
+		const openExternal = vi.fn().mockResolvedValue(undefined);
+		window.ao!.app.openExternal = openExternal;
+		const onLinkOpen = vi.fn();
+		try {
+			render(<XtermTerminal onLinkOpen={onLinkOpen} theme="dark" />);
+			state.linkHandler!({} as MouseEvent, "https://example.com");
+			expect(openExternal).toHaveBeenCalledWith("https://example.com");
+			expect(onLinkOpen).not.toHaveBeenCalled();
+		} finally {
+			window.ao!.launch = { ...window.ao!.launch, linksExternal: false };
+		}
+	});
+
 	it("forces plain drag selection without raw xterm data forwarding", () => {
 		render(<XtermTerminal theme="dark" />);
 

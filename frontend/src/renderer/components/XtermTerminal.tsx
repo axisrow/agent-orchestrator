@@ -35,7 +35,7 @@ import type {
 import { aoBridge } from "../lib/bridge";
 import { isDialogOrMenuOpenOutside } from "../lib/dom-selectors";
 import { TERMINAL_FONT_SIZE_DEFAULT } from "../lib/design-tokens";
-import { isWebLink, openLinkInSystemBrowser } from "../lib/external-link-policy";
+import { externalLinksDefault, isWebLink, openLinkInSystemBrowser } from "../lib/external-link-policy";
 import { findSessionLinks } from "../lib/session-links";
 import { isMacPlatform } from "../lib/platform";
 import { applyDocumentTheme, applyDocumentThemeStyle } from "../lib/theme";
@@ -626,8 +626,10 @@ export function XtermTerminal(props: XtermTerminalProps) {
 			// via the main process's window-open handler. Right-click to open a web
 			// link in the system browser instead — see the context menu below. Cmd-click
 			// follows the same escape hatch as links in the Chat surface.
+			// AO_LINKS_EXTERNAL=1 flips the default click to the system browser; the
+			// AO Browser panel stays on the context menu in both modes.
 			if (isWebLink(uri)) {
-				if (event.altKey || event.metaKey) {
+				if (event.altKey || event.metaKey || externalLinksDefault()) {
 					void openLinkInSystemBrowser(uri);
 					return;
 				}
