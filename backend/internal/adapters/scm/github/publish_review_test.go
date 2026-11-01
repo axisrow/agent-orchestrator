@@ -169,6 +169,38 @@ func TestPublishReviewWrapsUndecodableBodyAsUnknownOutcome(t *testing.T) {
 	}
 }
 
+func TestPublishReviewSurfacesEnvelopeErrorDetails(t *testing.T) {
+	// Issue #221: GitHub puts the actionable reason for a 422 (e.g. an inline
+	// anchor outside the reviewed diff) in the envelope's errors[], not in the
+	// message field. The error text must carry those details so publish_error
+	// distinguishes rejection classes without provider access.
+	f := newFakeGH(t)
+	f.on(http.MethodPost, "/repos/octo/hello/pulls/42/reviews", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(`{"message":"Unprocessable Entity","errors":[{"resource":"PullRequestReviewComment","field":"line","code":"unprocessable","message":"line 189 is not part of the diff"},"anchor row out of range"]}`))
+	})
+	p := newProviderForTest(t, f)
+
+	_, err := p.PublishReview(ctx(), ports.SCMReviewPublishRequest{
+		PR:       ports.SCMPRRef{Number: 42, Repo: ports.SCMRepo{Owner: "octo", Name: "hello"}},
+		Body:     "body",
+		Comments: []ports.SCMReviewComment{{Path: "main.go", Line: 189, Body: "boom"}},
+	})
+	if err == nil {
+		t.Fatal("PublishReview: want error")
+	}
+	for _, want := range []string{
+		"422 Unprocessable Entity",
+		"PullRequestReviewComment: line: unprocessable: line 189 is not part of the diff",
+		"anchor row out of range",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q missing %q", err, want)
+		}
+	}
+}
+
 func TestFindPublishedReviewMatchesBodyMarker(t *testing.T) {
 	f := newFakeGH(t)
 	f.on(http.MethodGet, "/repos/octo/hello/pulls/42/reviews", func(w http.ResponseWriter, req *http.Request) {
