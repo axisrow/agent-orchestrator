@@ -697,7 +697,7 @@ func TestNotificationStore_StuckDeliverySourceKeyDedupesHundredFails(t *testing.
 	inserted := 0
 	for i := 0; i < 100; i++ {
 		_, ok, err := s.CreateNotification(ctx, domain.NotificationRecord{
-			ID: "ntf_stuck_" + string(rune('a'+i%26)) + string(rune('a'+i/26)),
+			ID:        "ntf_stuck_" + string(rune('a'+i%26)) + string(rune('a'+i/26)),
 			SessionID: sess.ID, ProjectID: sess.ProjectID,
 			Type: domain.NotificationStuckDelivery, Title: "Report delivery is failing",
 			Status: domain.NotificationUnread, CreatedAt: now,

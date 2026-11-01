@@ -305,7 +305,7 @@ func humanDeliveryAge(seconds float64) string {
 	case d < 48*time.Hour:
 		return d.Round(time.Hour).String()
 	default:
-		return d.Round(24*time.Hour).String()
+		return d.Round(24 * time.Hour).String()
 	}
 }
 
