@@ -2912,6 +2912,7 @@ type ConversationTurnResponse struct {
 	// HasRetryAttempt remains true when the attempt is outside the active branch.
 	HasRetryAttempt bool    `json:"hasRetryAttempt,omitempty"`
 	ErrorMessage    string  `json:"errorMessage,omitempty"`
+	FailureCode     string  `json:"failureCode,omitempty" enum:"provider_key_missing"`
 	RequestedAt     string  `json:"requestedAt"`
 	StartedAt       *string `json:"startedAt,omitempty"`
 	CompletedAt     *string `json:"completedAt,omitempty"`

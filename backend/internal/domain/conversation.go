@@ -538,10 +538,11 @@ type ConversationTurn struct {
 	HasRetryAttempt bool      `json:"hasRetryAttempt,omitempty"`
 	State           TurnState `json:"state"`
 	// ErrorMessage is set for failed turns. Interrupted turns are not errors.
-	ErrorMessage string     `json:"errorMessage,omitempty"`
-	RequestedAt  time.Time  `json:"requestedAt"`
-	StartedAt    *time.Time `json:"startedAt,omitempty"`
-	CompletedAt  *time.Time `json:"completedAt,omitempty"`
+	ErrorMessage string                  `json:"errorMessage,omitempty"`
+	FailureCode  ConversationFailureCode `json:"failureCode,omitempty"`
+	RequestedAt  time.Time               `json:"requestedAt"`
+	StartedAt    *time.Time              `json:"startedAt,omitempty"`
+	CompletedAt  *time.Time              `json:"completedAt,omitempty"`
 	// RolledBackAt is set when a rollback discarded this turn provider-side. The
 	// row survives because AO does not destroy durable facts, but the agent no
 	// longer remembers the exchange, so its messages and activities are left out
@@ -558,6 +559,12 @@ type ConversationTurn struct {
 	// earlier ones are the same plan with fewer steps ticked off.
 	Plan *ConversationPlan `json:"plan,omitempty"`
 }
+
+// ConversationFailureCode identifies a provider failure with a known recovery path.
+type ConversationFailureCode string
+
+// ConversationFailureProviderKeyMissing means the provider route lacks a configured API key.
+const ConversationFailureProviderKeyMissing ConversationFailureCode = "provider_key_missing"
 
 // ConversationTurnDiff is the turn's changed-file summary.
 //

@@ -406,6 +406,7 @@ type ConversationTurn struct {
 	PromotedToTurnID     sql.NullString
 	RetryOfTurnID        sql.NullString
 	HandledByReviewID    sql.NullString
+	FailureCode          string
 }
 
 type Cue struct {

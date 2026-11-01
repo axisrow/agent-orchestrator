@@ -119,6 +119,7 @@ export interface ConversationTurn {
 	/** A retry attempt exists, even if that child is outside the active branch. */
 	hasRetryAttempt?: boolean;
 	errorMessage?: string;
+	failureCode?: "provider_key_missing";
 	requestedAt: string;
 	startedAt?: string;
 	completedAt?: string;

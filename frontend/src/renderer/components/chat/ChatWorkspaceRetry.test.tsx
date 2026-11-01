@@ -15,6 +15,7 @@ import { ChatWorkspace } from "./ChatWorkspace";
 import { chatFixture } from "../../lib/chat-fixture";
 import type { ConversationSnapshot } from "../../types/conversation";
 import { TooltipProvider } from "../ui/tooltip";
+import { useUiStore } from "../../stores/ui-store";
 
 function render(ui: ReactElement) {
 	return rtlRender(<TooltipProvider>{ui}</TooltipProvider>);
@@ -54,6 +55,21 @@ describe("ChatWorkspace retry", () => {
 		// own turn id, which is what the snapshot exposes.
 		expect(onRetryTurn).toHaveBeenCalledWith("turn-1");
 	});
+
+	it("opens DeepSeek setup for a typed missing-key failure", async () => {
+		const snapshot = failedSnapshot();
+		snapshot.harness = "deepseek-harness";
+		snapshot.turns[0]!.failureCode = "provider_key_missing";
+		render(<ChatWorkspace snapshot={snapshot} retryControl={{ retry: vi.fn() }} />);
+
+		await userEvent.click(screen.getByRole("button", { name: "Set up DeepSeek" }));
+		expect(useUiStore.getState().settingsModal).toMatchObject({
+			scope: "global", section: "harness", focusAgentId: "deepseek-harness",
+			harnessView: "local", startLogin: true,
+		});
+		useUiStore.getState().closeSettings();
+	});
+
 
 	it("draws no retry control for a turn that succeeded", () => {
 		// The idle fixture has only completed turns, so retry must be absent.
