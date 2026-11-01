@@ -638,6 +638,7 @@ func (m *Manager) resumeChatController(
 	}
 	// Native continuity: the provider still holds the conversation, so the agent
 	// resumes with its own history rather than a replayed prompt.
+	m.emitRestored(restored, RestoreModeNative, restoreTrigger(operation))
 	return RestoreResult{Session: restored, Mode: RestoreModeNative}, nil
 }
 

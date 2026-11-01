@@ -4324,12 +4324,12 @@ func (f *fakeReviewerTerminator) TeardownReviewerTerminal(_ context.Context, id 
 	return f.teardownErr
 }
 
-func (f *fakeReviewerTerminator) RestoreReviewer(_ context.Context, id domain.SessionID) error {
+func (f *fakeReviewerTerminator) RestoreReviewer(_ context.Context, id domain.SessionID) (bool, error) {
 	f.restoreCalls = append(f.restoreCalls, id)
 	if f.sharedLog != nil {
 		*f.sharedLog = append(*f.sharedLog, "RestoreReviewer:"+string(id))
 	}
-	return f.restoreErr
+	return f.restoreErr == nil, f.restoreErr
 }
 
 // TestKill_ClosesScopedShellTerminalsBeforeWorkspaceTeardown is the regression

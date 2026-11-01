@@ -76,6 +76,44 @@ func TestClaudeSubmissionContextMatchesDurableNonce(t *testing.T) {
 	}
 }
 
+// Claude's SessionStart sub-source (startup|resume|clear|compact|fork) is the
+// only durable "who restarted this conversation" fact; it must ride the
+// activity signal to the daemon's observability trail (#109).
+func TestClaudeSessionStartForwardsHookSource(t *testing.T) {
+	t.Setenv("AO_SESSION_ID", "qa-1")
+	t.Setenv("AO_RUNTIME_LAUNCH_ID", "launch-1")
+	cfg := setConfigEnv(t)
+	srv, capture := activityServer(t, http.StatusOK, `{"ok":true}`)
+	writeRunFileFor(t, cfg, srv)
+	for _, tc := range []struct {
+		agent, payload, want string
+	}{
+		{"claude-code", `{"session_id":"native","source":"resume"}`, "resume"},
+		{"claude-code", `{"session_id":"native","source":"compact"}`, "compact"},
+		{"claude-code", `{"session_id":"native"}`, ""},
+		// Only Claude defines the SessionStart sub-source; Codex payloads with
+		// a like-named field must not leak into the trail.
+		{"codex", `{"session_id":"native","source":"resume"}`, ""},
+	} {
+		if _, _, err := executeCLI(t, Deps{
+			In:           strings.NewReader(tc.payload),
+			ProcessAlive: func(int) bool { return true },
+		}, "hooks", tc.agent, "session-start"); err != nil {
+			t.Fatal(err)
+		}
+		var request setActivityAPIRequest
+		if err := json.Unmarshal([]byte(capture.body), &request); err != nil {
+			t.Fatal(err)
+		}
+		if request.AgentSessionID != "native" {
+			t.Fatalf("%s session-start native id = %q, want native", tc.agent, request.AgentSessionID)
+		}
+		if request.HookSource != tc.want {
+			t.Fatalf("%s hookSource = %q, want %q", tc.agent, request.HookSource, tc.want)
+		}
+	}
+}
+
 func TestClaudeHookReportsNativeEntrypoint(t *testing.T) {
 	t.Setenv("AO_SESSION_ID", "qa-1")
 	t.Setenv("AO_RUNTIME_LAUNCH_ID", "launch-1")

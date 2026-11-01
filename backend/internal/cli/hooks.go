@@ -69,6 +69,7 @@ type setActivityAPIRequest struct {
 	SubmissionID                 string                              `json:"submissionId,omitempty"`
 	TranscriptPath               string                              `json:"transcriptPath,omitempty"`
 	LaunchID                     string                              `json:"launchId,omitempty"`
+	HookSource                   string                              `json:"hookSource,omitempty"`
 	Entrypoint                   string                              `json:"entrypoint,omitempty"`
 	ProcessID                    int                                 `json:"processId,omitempty"`
 	Usage                        *usageHookMetadata                  `json:"usage,omitempty"`
@@ -264,6 +265,23 @@ func hookAgentSessionID(payload []byte) string {
 		return ""
 	}
 	return id
+}
+
+// hookSessionStartSource extracts Claude Code's SessionStart sub-source
+// (startup|resume|clear|compact|fork). The settings matcher already
+// distinguishes these; carrying them on the activity signal is what lets the
+// daemon record which relaunch actually restarted the conversation (#109).
+func hookSessionStartSource(payload []byte) string {
+	payload = normalizeHookPayload(payload)
+	var p struct {
+		Source string `json:"source"`
+	}
+	_ = json.Unmarshal(payload, &p)
+	source := strings.TrimSpace(p.Source)
+	if len(source) > maxActivityMetaLen {
+		return ""
+	}
+	return source
 }
 
 // hookLaunchID extracts the runtime launch id a plugin embeds in its payload.
@@ -697,6 +715,10 @@ func (c *commandContext) runHook(ctx context.Context, agent, event string) error
 		agentSessionID = os.Getenv("MEMCODE_SESSION_ID")
 	}
 	usage := hookUsageMetadata(agent, payload)
+	hookSource := ""
+	if domain.AgentHarness(agent) == domain.HarnessClaudeCode && event == "session-start" {
+		hookSource = hookSessionStartSource(payload)
+	}
 	var subagentID string
 	var runningSubagentIDs *[]string
 	if domain.AgentHarness(agent) == domain.HarnessClaudeCode {
@@ -753,6 +775,7 @@ func (c *commandContext) runHook(ctx context.Context, agent, event string) error
 		ProviderTurnID:               conversation.ProviderTurnID,
 		TranscriptPath:               conversation.TranscriptPath,
 		LaunchID:                     launchID,
+		HookSource:                   hookSource,
 		Usage:                        usage,
 	}
 	if hasActivity {

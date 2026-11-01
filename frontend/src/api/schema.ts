@@ -6726,6 +6726,8 @@ export interface components {
             entrypoint?: string;
             /** @description AO hook sub-command that produced this state (e.g. post-tool-use). */
             event?: string;
+            /** @description Provider's own SessionStart sub-source when exposed (Claude's startup|resume|clear|compact|fork). */
+            hookSource?: string;
             /** @description Latest assistant update exposed by the provider hook. */
             latestAssistantUpdate?: string;
             /** @description Latest real user prompt exposed by the provider hook. */

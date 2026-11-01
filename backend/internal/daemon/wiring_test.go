@@ -1138,6 +1138,7 @@ func (*fakeSessionLifecycle) ResumeHarnessSessions(context.Context, []domain.Ses
 	return nil
 }
 func (*fakeSessionLifecycle) SetVersionTelemetry(ports.EventSink)                                {}
+func (*fakeSessionLifecycle) SetRestoreTelemetry(ports.EventSink)                                {}
 func (*fakeSessionLifecycle) SetVersionRefreshPolicy(func() sessionmanager.VersionRefreshPolicy) {}
 func (*fakeSessionLifecycle) RetryVersionMoves(context.Context) error                            { return nil }
 func (*fakeSessionLifecycle) ObserveChatVersionSwitch(domain.SessionID, string, string)          {}

@@ -18877,6 +18877,11 @@ components:
         event:
           description: AO hook sub-command that produced this state (e.g. post-tool-use).
           type: string
+        hookSource:
+          description: Provider's own SessionStart sub-source when exposed (Claude's
+            startup|resume|clear|compact|fork).
+          maxLength: 32
+          type: string
         latestAssistantUpdate:
           description: Latest assistant update exposed by the provider hook.
           maxLength: 16384

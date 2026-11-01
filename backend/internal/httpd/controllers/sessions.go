@@ -2417,6 +2417,7 @@ func (c *SessionsController) activity(w http.ResponseWriter, r *http.Request) {
 		SubmissionID:                 capActivityMeta(domain.SanitizeControlChars(strings.TrimSpace(in.SubmissionID))),
 		TranscriptPath:               capActivityText(domain.SanitizeControlChars(strings.TrimSpace(in.TranscriptPath)), 4096),
 		LaunchID:                     capActivityMeta(domain.SanitizeControlChars(strings.TrimSpace(in.LaunchID))),
+		HookSource:                   capActivityMeta(domain.SanitizeControlChars(strings.TrimSpace(in.HookSource))),
 		NativeEntrypoint:             capActivityMeta(domain.SanitizeControlChars(strings.TrimSpace(in.Entrypoint))),
 		ProcessID:                    max(in.ProcessID, 0),
 	}

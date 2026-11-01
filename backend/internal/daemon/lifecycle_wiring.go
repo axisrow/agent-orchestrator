@@ -219,6 +219,7 @@ type sessionLifecycle interface {
 	StopHarnessSessions(ctx context.Context, harness domain.AgentHarness) ([]domain.SessionID, error)
 	ResumeHarnessSessions(ctx context.Context, ids []domain.SessionID) error
 	SetVersionTelemetry(sink ports.EventSink)
+	SetRestoreTelemetry(sink ports.EventSink)
 	SetVersionRefreshPolicy(policy func() sessionmanager.VersionRefreshPolicy)
 	RetryVersionMoves(ctx context.Context) error
 	ObserveChatVersionSwitch(id domain.SessionID, version, result string)
