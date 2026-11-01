@@ -120,9 +120,9 @@ func TestTransportDistinguishesEmptyResponses(t *testing.T) {
 		}
 	})
 
-	t.Run("daemon error envelope keeps code and request id", func(t *testing.T) {
+	t.Run("daemon error envelope keeps code, details and request id", func(t *testing.T) {
 		cfg := setConfigEnv(t)
-		srv := transportServer(t, http.StatusNotFound, `{"message":"nope","code":"NOT_FOUND","requestId":"req-1"}`)
+		srv := transportServer(t, http.StatusNotFound, `{"message":"nope","code":"NOT_FOUND","requestId":"req-1","details":{"detail":"session orch-1 cannot hold pull requests"}}`)
 		c := transportContext(t, cfg, srv)
 		var out spawnResult
 		err := c.postJSON(ctx, "sessions", struct{}{}, &out)
@@ -132,6 +132,12 @@ func TestTransportDistinguishesEmptyResponses(t *testing.T) {
 		}
 		if apiErr.ErrorBody.Code != "NOT_FOUND" || apiErr.ErrorBody.RequestID != "req-1" {
 			t.Fatalf("envelope = %+v, want code NOT_FOUND request req-1", apiErr.ErrorBody)
+		}
+		if apiErr.ErrorBody.Details["detail"] != "session orch-1 cannot hold pull requests" {
+			t.Fatalf("details = %v, want the daemon's detail kept for rendering", apiErr.ErrorBody.Details)
+		}
+		if got := apiErr.Error(); !strings.Contains(got, "session orch-1 cannot hold pull requests") || !strings.Contains(got, "[request req-1]") {
+			t.Fatalf("rendered error = %q, want the detail text and the request id", got)
 		}
 	})
 }

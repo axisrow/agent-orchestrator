@@ -42,6 +42,8 @@ func TestReviewPRRefresherClaimsWithoutTakeoverAndTranslatesErrors(t *testing.T)
 		{sessionsvc.ErrPRNotOpen, reviewcore.ErrInvalid, "is not open"},
 		{sessionsvc.ErrProjectMismatch, reviewcore.ErrInvalid, "this project's repository"},
 		{sessionsvc.ErrSCMUnavailable, reviewcore.ErrInvalid, "could not fetch"},
+		{sessionsvc.ErrSessionNotClaimable, reviewcore.ErrInvalid, "cannot hold pull requests"},
+		{sessionsvc.ErrSessionNoWorkspace, reviewcore.ErrInvalid, "no workspace"},
 	}
 	for _, tc := range cases {
 		claimer := &fakeClaimer{err: tc.err}
@@ -57,6 +59,22 @@ func TestReviewPRRefresherClaimsWithoutTakeoverAndTranslatesErrors(t *testing.T)
 		}
 		if !errors.Is(err, tc.want) || !strings.Contains(err.Error(), tc.text) {
 			t.Fatalf("claim err %v -> %v, want %v containing %q", tc.err, err, tc.want, tc.text)
+		}
+	}
+}
+
+// Triggering a review on an orchestrator session (or any session that cannot
+// claim PRs) is a user error, not a daemon fault: the refresher must say which
+// session and how to fix it, and stay a typed 4xx through the controller.
+func TestReviewPRRefresherNotClaimableNamesSessionAndFix(t *testing.T) {
+	claimer := &fakeClaimer{err: sessionsvc.ErrSessionNotClaimable}
+	err := reviewPRRefresher{sessions: claimer}.RefreshPR(context.Background(), "orch-1", "https://github.com/o/r/pull/1")
+	if !errors.Is(err, reviewcore.ErrInvalid) {
+		t.Fatalf("err = %v, want reviewcore.ErrInvalid", err)
+	}
+	for _, want := range []string{"orch-1", "https://github.com/o/r/pull/1", "ao session claim-pr"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("err = %q, want it to name the session, the PR, and the claim-pr fix (%q)", err, want)
 		}
 	}
 }
