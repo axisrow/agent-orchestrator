@@ -360,6 +360,33 @@ describe("ProjectSettingsForm", () => {
 		expect(screen.queryByRole("textbox", { name: "Project name" })).not.toBeInTheDocument();
 	});
 
+	it("shows the prompt override entry as a settings row and opens its editor", async () => {
+		mockProject({
+			id: "proj-1",
+			name: "Project One",
+			kind: "single_repo",
+			path: "/repo/project-one",
+			repo: "",
+			defaultBranch: "main",
+			config: {
+				worker: { agent: "codex" },
+				orchestrator: { agent: "claude-code" },
+			},
+		});
+
+		renderSettings("proj-1", undefined, "agents");
+
+		const row = await screen.findByRole("button", { name: /^Prompt override/ });
+		// The entry is a real settings row (the shared bar treatment), carries
+		// the hint under the label, and opens the shared prompt override dialog.
+		expect(row).toHaveClass("settings-row-bar");
+		expect(row).toHaveTextContent("Override the hardcoded worker and orchestrator system prompts for this project.");
+
+		await userEvent.click(row);
+		expect(await screen.findByRole("heading", { name: "Project agent defaults" })).toBeInTheDocument();
+		expect(await screen.findByLabelText("Worker prompt override")).toBeInTheDocument();
+	});
+
 	it("does not navigate on Escape (dialog handles closing)", async () => {
 		mockProject({
 			id: "proj-1",
