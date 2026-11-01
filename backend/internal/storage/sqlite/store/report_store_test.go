@@ -150,6 +150,39 @@ func TestReportStoreMarksBatchEmittedWithTokenFence(t *testing.T) {
 	}
 }
 
+// TestReportStoreFailsQueuedBatchTerminally pins the fork issue #205 ledger
+// outcome: a batch whose target held its text in the message queue is retired
+// stale under its claim token — never pending again — and a wrong token fails
+// no rows.
+func TestReportStoreFailsQueuedBatchTerminally(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	seedProject(t, s, "ao")
+	sess, err := s.CreateSession(ctx, sampleRecord("ao"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	rec := domain.ReportRecord{ID: "rpt_queued", SessionID: sess.ID, ProjectID: sess.ProjectID, State: domain.ReportCheckpoint, Note: "context", CreatedAt: now, DeliveryState: domain.ReportPending, AvailableAt: now, RepeatCount: 1}
+	if _, err = s.CreateReport(ctx, rec); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.ClaimPendingReportBatch(ctx, sess.ProjectID, "queue-token", now); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.FailReportBatchQueued(ctx, sess.ProjectID, "wrong", "reason"); err != nil || n != 0 {
+		t.Fatalf("wrong token failed %d rows, err=%v", n, err)
+	}
+	reason := "session: prompt text is held in the target's message queue"
+	if n, err := s.FailReportBatchQueued(ctx, sess.ProjectID, "queue-token", reason); err != nil || n != 1 {
+		t.Fatalf("failed=%d err=%v", n, err)
+	}
+	got, ok, err := s.GetReport(ctx, rec.ID)
+	if err != nil || !ok || got.DeliveryState != domain.ReportStale || got.LastError != reason || got.ClaimToken != "" {
+		t.Fatalf("got=%+v ok=%v err=%v", got, ok, err)
+	}
+}
+
 func TestReportStoreRequeuesInterruptedClaimOnRestartAndFencesOldToken(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()

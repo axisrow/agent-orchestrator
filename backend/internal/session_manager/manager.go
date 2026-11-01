@@ -5155,6 +5155,12 @@ func (m *Manager) SendSemantic(ctx context.Context, id domain.SessionID, message
 	if semanticMessageAccepted(rec, clientMessageID) {
 		return nil
 	}
+	// A surface already holding queued input would queue this batch too — the
+	// pane write would append a copy that never becomes a prompt and never
+	// credits its correlation id (fork issue #205). Refuse before writing.
+	if m.promptHeldQueued(ctx, rec) {
+		return fmt.Errorf("%w: flush the queue before delivering (ctrl+x ctrl+s in the session)", ports.ErrPromptHeldQueued)
+	}
 	wrapped := domain.WrapReportDelivery(clientMessageID, message)
 	if err := m.send(ctx, id, wrapped, clientMessageID, ports.MessageDeliveryOptions{}); err != nil {
 		return err
@@ -5178,10 +5184,43 @@ func (m *Manager) SendSemantic(ctx context.Context, id domain.SessionID, message
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-deadline.C:
+			// A queue that caught the write mid-turn shows the same
+			// "not observed" deadline as a swallowed paste, but retrying it
+			// appends another queued copy. Classify it so the caller fails
+			// this delivery loudly instead of re-emitting (fork issue #205).
+			if m.promptHeldQueued(ctx, current) {
+				return fmt.Errorf("%w: prompt submission was not observed; flush the queue (ctrl+x ctrl+s in the session)", ports.ErrPromptHeldQueued)
+			}
 			return fmt.Errorf("%w: prompt submission was not observed", ErrSemanticAcceptanceUnsupported)
 		case <-ticker.C:
 		}
 	}
+}
+
+// promptHeldQueued reports whether the session's current terminal surface
+// shows typed input held in the provider's message queue. Best-effort: an
+// unavailable runtime, harness, or handle reports false so delivery keeps its
+// existing behavior.
+func (m *Manager) promptHeldQueued(ctx context.Context, rec domain.SessionRecord) bool {
+	if domain.NormalizeSessionMode(rec.Mode) != domain.SessionModeTUI || rec.Metadata.RuntimeHandleID == "" {
+		return false
+	}
+	if m.agents == nil {
+		return false
+	}
+	agent, ok := m.agents.Agent(rec.Harness)
+	if !ok {
+		return false
+	}
+	detector, ok := agent.(ports.QueuedPromptDetector)
+	if !ok {
+		return false
+	}
+	output, err := m.runtime.GetOutput(ctx, runtimeHandle(rec.Metadata), messageDeliveryReadyLines)
+	if err != nil {
+		return false
+	}
+	return detector.DetectQueuedPrompt(output)
 }
 
 func (m *Manager) harnessSemanticAcceptance(harness domain.AgentHarness) bool {

@@ -255,6 +255,26 @@ func (s *Store) MarkReportBatchEmitted(ctx context.Context, projectID domain.Pro
 	return int(n), nil
 }
 
+// FailReportBatchQueued retires the claimed batch holding token as stale with
+// the given reason (fork issue #205): the target held the batch text in its
+// message queue, so the delivery must not return to pending and re-append the
+// same content on every retry. Rows are fenced by the claim token like the
+// ack path; a zero count means the claim was lost.
+func (s *Store) FailReportBatchQueued(ctx context.Context, projectID domain.ProjectID, token, lastError string) (int, error) {
+	if projectID == "" || token == "" || lastError == "" {
+		return 0, domain.ErrInvalidReport
+	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	rows, err := s.qw.FailClaimedReportBatch(ctx, gen.FailClaimedReportBatchParams{
+		ProjectID: string(projectID), ClaimToken: token, LastError: lastError,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("fail queued project report batch: %w", err)
+	}
+	return len(rows), nil
+}
+
 // ExpireStaleReportDeliveries is the delivery ledger's terminal expiry: report
 // rows created before the cutoff that are still pending stop retrying forever
 // and become stale — readable in projections, never claimed again. Claims held
