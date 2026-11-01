@@ -79,10 +79,9 @@ func TestGroupStuckDeliveries(t *testing.T) {
 }
 
 type stuckStore struct {
-	mu       sync.Mutex
-	rows     []domain.ReportRecord
-	project  domain.ProjectRecord
-	sessions []domain.SessionRecord
+	mu      sync.Mutex
+	rows    []domain.ReportRecord
+	project domain.ProjectRecord
 }
 
 func (s *stuckStore) ListStuckDeliveryCandidates(_ context.Context, _ int64, _ time.Time) ([]domain.ReportRecord, error) {
