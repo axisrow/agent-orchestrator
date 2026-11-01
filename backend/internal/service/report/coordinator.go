@@ -19,9 +19,6 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 )
 
-// ReportInterruptWindow is the durable per-worker urgent interruption limit.
-const ReportInterruptWindow = 3 * time.Minute
-
 // ReportOrchestratorBackoff reschedules a due batch whose project has no
 // active orchestrator, instead of retrying it every tick forever.
 const ReportOrchestratorBackoff = time.Minute
@@ -51,7 +48,6 @@ type DeliveryStore interface {
 	MarkReportBatchEmitted(context.Context, domain.ProjectID, string, time.Time) (int, error)
 	AcknowledgeAcceptedReportBatches(context.Context, domain.ProjectID, string, time.Time) (int, error)
 	ExpireStaleReportDeliveries(context.Context, time.Time) (int, error)
-	AcquireReportInterrupt(context.Context, domain.SessionID, time.Time, time.Duration) (bool, time.Time, error)
 }
 
 // Delivery submits accepted semantic context and interrupts active work.
@@ -266,31 +262,9 @@ func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.Proje
 	} else if accepted {
 		return nil
 	}
-	// Terminal orchestrators queue typed input during a turn, and a Ctrl-C
-	// there cancels the running turn or a prompt that was just submitted, so
-	// stuck reports are delivered to them like any other report.
-	if batch.hasState(domain.ReportStuck) && domain.NormalizeSessionMode(target.Mode) == domain.SessionModeChat {
-		interrupted := false
-		var nextInterrupt time.Time
-		for _, worker := range batch.stuckWorkers() {
-			acquired, next, acquireErr := c.store.AcquireReportInterrupt(ctx, worker, c.now().UTC(), ReportInterruptWindow)
-			if acquireErr != nil {
-				return c.release(ctx, batch, acquireErr)
-			}
-			if acquired {
-				interrupted = true
-				if interruptErr := c.delivery.Interrupt(ctx, target.ID); interruptErr != nil {
-					return c.release(ctx, batch, interruptErr)
-				}
-			} else if nextInterrupt.IsZero() || next.Before(nextInterrupt) {
-				nextInterrupt = next
-			}
-		}
-		if !interrupted && !batch.hasState(domain.ReportNeedsInput) {
-			_, deferErr := c.store.DeferReportBatch(ctx, batch.ProjectID, batch.Token, nextInterrupt, "repeated stuck report coalesced inside interrupt window")
-			return deferErr
-		}
-	}
+	// Stuck reports ride the normal submit path in every session mode: the
+	// fork runs terminal orchestrators only, so there is no chat-mode
+	// interrupt lane to rate-limit (upstream #7435's chat branch removed).
 	visible, emitErr := c.EmitVisible(ctx, batch)
 	if emitErr != nil {
 		return c.release(ctx, batch, emitErr)
@@ -639,18 +613,6 @@ func (b PreparedBatch) hasState(state domain.ReportState) bool {
 		}
 	}
 	return false
-}
-
-func (b PreparedBatch) stuckWorkers() []domain.SessionID {
-	seen := map[domain.SessionID]bool{}
-	var out []domain.SessionID
-	for _, report := range b.Reports {
-		if report.State == domain.ReportStuck && !seen[report.SessionID] {
-			seen[report.SessionID] = true
-			out = append(out, report.SessionID)
-		}
-	}
-	return out
 }
 
 func coalesceReports(in []domain.ReportRecord) []domain.ReportRecord {

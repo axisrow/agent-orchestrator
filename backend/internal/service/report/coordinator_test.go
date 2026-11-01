@@ -74,44 +74,10 @@ func TestCoordinatorRoutesAtAttemptAndLeavesPendingWithoutOrchestrator(t *testin
 	}
 }
 
-func TestCoordinatorStuckInterruptRateLimitAndCoalescing(t *testing.T) {
-	now := time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
-	store := newCoordinatorStore(now)
-	store.sessions = []domain.SessionRecord{{ID: "orch", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeChat}}
-	first := reportAt("stuck-1", "worker", now, now, "cannot continue")
-	first.State = domain.ReportStuck
-	second := reportAt("stuck-2", "worker", now.Add(time.Second), now, "cannot continue")
-	second.State = domain.ReportStuck
-	store.add(first, second)
-	delivery := &coordinatorDelivery{}
-	c := NewCoordinator(CoordinatorDeps{Store: store, Delivery: delivery, Now: func() time.Time { return now }})
-	if _, err := c.RunDue(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if len(delivery.interrupts) != 1 {
-		t.Fatalf("interrupts = %v", delivery.interrupts)
-	}
-	if !strings.Contains(delivery.submissions[0].message, "repeated 2 times") {
-		t.Fatalf("message = %q", delivery.submissions[0].message)
-	}
-	repeat := reportAt("stuck-3", "worker", now.Add(time.Minute), now, "cannot continue")
-	repeat.State = domain.ReportStuck
-	store.add(repeat)
-	if _, err := c.RunDue(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if len(delivery.interrupts) != 1 {
-		t.Fatalf("rate limited interrupts = %v", delivery.interrupts)
-	}
-	if len(delivery.submissions) != 1 {
-		t.Fatalf("throttled repeat created an extra wakeup: %#v", delivery.submissions)
-	}
-}
-
-// Terminal orchestrators queue typed input during a turn, so a stuck report
-// must reach them via the normal submit path — never a Ctrl-C interrupt (#7435).
+// Stuck reports ride the normal submit path in every session mode — the fork
+// has no chat-mode interrupt lane to rate-limit (removed with upstream #7435).
 func TestCoordinatorNeverInterruptsTerminalOrchestrator(t *testing.T) {
-	for _, mode := range []domain.SessionMode{domain.SessionModeTUI, ""} {
+	for _, mode := range []domain.SessionMode{domain.SessionModeTUI, "", domain.SessionModeChat} {
 		now := time.Date(2026, 10, 28, 2, 10, 0, 0, time.UTC)
 		store := newCoordinatorStore(now)
 		store.sessions = []domain.SessionRecord{{ID: "orch", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: mode}}
@@ -267,30 +233,30 @@ func TestCoordinatorBusyClaimBlocksRunDue(t *testing.T) {
 }
 
 // TestCoordinatorDeferredBatchReclaimsAfterExpiry pins the literal issue #121
-// lane that already works: a stuck batch deferred inside the interrupt window
-// is re-claimed once the clock shifts past its availability and delivers.
+// lane that already works: a batch deferred by the retry backoff is re-claimed
+// once the clock shifts past its availability and delivers.
 func TestCoordinatorDeferredBatchReclaimsAfterExpiry(t *testing.T) {
 	now := time.Date(2026, 10, 21, 15, 0, 0, 0, time.UTC)
 	store := newCoordinatorStore(now)
-	store.sessions = []domain.SessionRecord{{ID: "orch", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeChat}}
+	store.sessions = []domain.SessionRecord{{ID: "orch", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeTUI}}
 	stuck := reportAt("stuck", "worker", now, now, "cannot continue")
 	stuck.State = domain.ReportStuck
 	store.add(stuck)
-	// The interrupt budget is spent, so the first pass defers inside the window.
-	store.interrupts["worker"] = now
-	delivery := &coordinatorDelivery{}
-	c := NewCoordinator(CoordinatorDeps{Store: store, Delivery: delivery, Now: func() time.Time { return now }})
-	if _, err := c.RunDue(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+	// The submit is refused, so the first pass backs off by the retry delay.
+	// The refusal surfaces as RunDue's error and is expected here.
+	delivery := &coordinatorDelivery{submitErr: errors.New("composer is not empty")}
+	c := NewCoordinator(CoordinatorDeps{Store: store, Delivery: delivery, Now: func() time.Time { return now }, NewToken: func() string { return "claim" }, RetryDelay: 10 * time.Minute})
+	_, _ = c.RunDue(context.Background())
 	if store.reports[0].DeliveryState != domain.ReportPending || !store.reports[0].AvailableAt.After(now) {
 		t.Fatalf("deferred batch = %+v", store.reports[0])
 	}
 
-	// The clock shifts past the deferral while the old orchestrator is gone;
-	// the replacement session is running by the time the deferral expires.
-	now = now.Add(10 * time.Minute)
-	store.sessions = []domain.SessionRecord{{ID: "replacement", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeChat, CreatedAt: now}}
+	// The clock shifts past the retry backoff and the emit TTL while the old
+	// orchestrator is gone; the replacement session is running by then.
+	now = now.Add(20 * time.Minute)
+	delivery.submitErr = nil
+	delivery.submissions = nil
+	store.sessions = []domain.SessionRecord{{ID: "replacement", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeTUI, CreatedAt: now}}
 	if _, err := c.RunDue(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -806,17 +772,16 @@ func TestEmitVisibleAtMostOncePerTTL(t *testing.T) {
 }
 
 type coordinatorStore struct {
-	mu         sync.Mutex
-	now        time.Time
-	reports    []domain.ReportRecord
-	sessions   []domain.SessionRecord
-	interrupts map[domain.SessionID]time.Time
-	acked      int
-	fenceAcks  bool
+	mu        sync.Mutex
+	now       time.Time
+	reports   []domain.ReportRecord
+	sessions  []domain.SessionRecord
+	acked     int
+	fenceAcks bool
 }
 
 func newCoordinatorStore(now time.Time) *coordinatorStore {
-	return &coordinatorStore{now: now, interrupts: map[domain.SessionID]time.Time{}}
+	return &coordinatorStore{now: now}
 }
 
 func reportAt(id string, worker domain.SessionID, created, available time.Time, note string) domain.ReportRecord {
@@ -976,17 +941,6 @@ func (s *coordinatorStore) ExpireStaleReportDeliveries(_ context.Context, cutoff
 		}
 	}
 	return count, nil
-}
-
-func (s *coordinatorStore) AcquireReportInterrupt(_ context.Context, worker domain.SessionID, at time.Time, window time.Duration) (bool, time.Time, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	last, ok := s.interrupts[worker]
-	if ok && last.After(at.Add(-window)) {
-		return false, last.Add(window), nil
-	}
-	s.interrupts[worker] = at
-	return true, at, nil
 }
 
 func sortReports(records []domain.ReportRecord) {

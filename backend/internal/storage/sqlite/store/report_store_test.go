@@ -359,38 +359,6 @@ func TestReportStoreExpiresStalePendingReports(t *testing.T) {
 	}
 }
 
-func TestReportStoreInterruptLimitSurvivesRestart(t *testing.T) {
-	ctx := context.Background()
-	dir := t.TempDir()
-	s, err := sqlite.Open(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	seedProject(t, s, "ao")
-	sess, err := s.CreateSession(ctx, sampleRecord("ao"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	now := time.Now().UTC().Truncate(time.Second)
-	if acquired, _, err := s.AcquireReportInterrupt(ctx, sess.ID, now, 3*time.Minute); err != nil || !acquired {
-		t.Fatalf("first acquired = %v, err = %v", acquired, err)
-	}
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
-	}
-	s, err = sqlite.Open(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	if acquired, next, err := s.AcquireReportInterrupt(ctx, sess.ID, now.Add(2*time.Minute), 3*time.Minute); err != nil || acquired || !next.Equal(now.Add(3*time.Minute)) {
-		t.Fatalf("restart acquired = %v, err = %v", acquired, err)
-	}
-	if acquired, _, err := s.AcquireReportInterrupt(ctx, sess.ID, now.Add(3*time.Minute), 3*time.Minute); err != nil || !acquired {
-		t.Fatalf("boundary acquired = %v, err = %v", acquired, err)
-	}
-}
-
 func TestReportStoreDeferredBatchYieldsScheduleToOtherProjects(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

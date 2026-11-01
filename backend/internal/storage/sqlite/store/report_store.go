@@ -272,33 +272,6 @@ func (s *Store) ExpireStaleReportDeliveries(ctx context.Context, cutoff time.Tim
 	return int(rows), nil
 }
 
-// AcquireReportInterrupt durably enforces the per-worker interruption window.
-func (s *Store) AcquireReportInterrupt(ctx context.Context, sessionID domain.SessionID, at time.Time, window time.Duration) (bool, time.Time, error) {
-	if sessionID == "" || at.IsZero() || window <= 0 {
-		return false, time.Time{}, domain.ErrInvalidReport
-	}
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-	acquired := false
-	next := at
-	err := s.inTx(ctx, "acquire report interrupt", func(q *gen.Queries) error {
-		last, err := q.GetReportInterrupt(ctx, string(sessionID))
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return err
-		}
-		if err == nil && last.After(at.Add(-window)) {
-			next = last.Add(window)
-			return nil
-		}
-		if err := q.PutReportInterrupt(ctx, gen.PutReportInterruptParams{SessionID: string(sessionID), LastInterruptedAt: at}); err != nil {
-			return err
-		}
-		acquired = true
-		return nil
-	})
-	return acquired, next, err
-}
-
 // ListPendingReports returns reports eligible for a later delivery batch.
 func (s *Store) ListPendingReports(ctx context.Context, at time.Time, limit int64) ([]domain.ReportRecord, error) {
 	rows, err := s.qr.ListPendingReports(ctx, gen.ListPendingReportsParams{AvailableAt: at, Limit: limit})
