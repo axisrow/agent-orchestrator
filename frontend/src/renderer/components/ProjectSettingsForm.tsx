@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ProjectSettingsSection } from "@aoagents/product-ui";
+import { Pencil } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { useEffect, useRef, useState } from "react";
@@ -360,12 +361,20 @@ function SettingsBody({ project, projectId, hostId, hostConnected, onSaved, sect
 		gatewayExtra={<GatewayProvidersSection projectId={projectId} />}
 		agentsExtra={<>
 			<ProjectSettingsSection title={t("settings.project.agentDefaults")} grouped>
+				{/* The one link-style settings row: `settings-row-bar` keeps it
+				    identical to every other row in the card (hover, focus ring,
+				    inset), the description carries the hint, and the pencil marks
+				    the edit action (see issue #21). */}
 				<button
 					type="button"
-					className="w-full rounded-md bg-[var(--color-bg-settings-row)] px-4 py-3 text-left"
+					className="settings-row-bar w-full text-left transition-colors hover:bg-settings-menu-selected focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-weak"
 					onClick={() => setPromptOverrideOpen(true)}
 				>
-					{t("settings.project.promptOverride")}
+					<span className="min-w-0 flex-1">
+						<span className="block text-sm leading-5 text-settings-label">{t("settings.project.promptOverride")}</span>
+						<span className="mt-0.5 block text-pretty text-control leading-4 text-settings-muted">{t("settings.promptOverride.description", { scope: t("settings.promptOverride.projectScope") })}</span>
+					</span>
+					<Pencil className="size-icon-lg shrink-0 text-settings-muted" aria-hidden="true" />
 				</button>
 			</ProjectSettingsSection>
 			{promptOverrideOpen && (

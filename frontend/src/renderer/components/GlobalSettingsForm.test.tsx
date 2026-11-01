@@ -169,6 +169,20 @@ beforeEach(async () => {
 });
 
 describe("GlobalSettingsForm", () => {
+	it("shows the agent defaults entry as a settings row and opens its editor", async () => {
+		const user = userEvent.setup();
+		renderForm("general");
+
+		const row = await screen.findByRole("button", { name: /^Agent defaults/ });
+		// Same treatment as the project-scope prompt-override row (issue #21):
+		// a real settings-row-bar row carrying the hint, opening the dialog.
+		expect(row).toHaveClass("settings-row-bar");
+		expect(row).toHaveTextContent("Override the hardcoded worker and orchestrator system prompts globally (all projects).");
+
+		await user.click(row);
+		expect(await screen.findByRole("dialog", { name: "Agent defaults" })).toBeInTheDocument();
+	});
+
 	it("keeps window transparency in Appearance when Developer Mode changes", async () => {
 		isMacPlatform.mockReturnValue(true);
 		const user = userEvent.setup();
