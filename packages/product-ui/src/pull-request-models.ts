@@ -46,7 +46,8 @@ export type PRCardPresentation = {
 	statusRows?: PRCardStatus[];
 	readiness?: {
 		label: string;
-		detail: string;
+		/** Only when the verdict says something the status rows above do not. */
+		detail?: string;
 		tone: PRDisplayTone;
 	};
 };

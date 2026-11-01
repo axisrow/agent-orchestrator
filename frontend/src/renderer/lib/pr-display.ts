@@ -224,7 +224,7 @@ export function prCardPresentation(pr: SessionPRSummary, aoReview?: PRReviewStat
 	if (pr.state === "open") {
 		const statusRows: PRCardStatus[] = [];
 		if (pr.mergeability.state === "conflicting") {
-			statusRows.push(cardStatus("merge", "pr.card.mergeConflict", "error", "Resolve before merging", mergeLinks(pr)));
+			statusRows.push(cardStatus("merge", "pr.card.mergeConflict", "error", undefined, mergeLinks(pr)));
 		}
 		if (pr.ci.state === "passing") {
 			statusRows.push(cardStatus("ci", "pr.card.checksPassing", "success", undefined, [], prChecksUrl(pr)));
@@ -358,13 +358,14 @@ function aoReviewCardRow(pr: SessionPRSummary, ao: PRReviewState | undefined): P
 	return undefined;
 }
 
-function mergeReadinessDetail(pr: SessionPRSummary): string {
-	if (pr.mergeability.state === "conflicting") return appI18n.t("pr.merge.reasonConflict");
-	if (pr.ci.state === "failing") return appI18n.t("pr.merge.reasonChecksFailing");
-	if (!reviewAllowsMerge(pr.review.decision)) return appI18n.t("pr.merge.reasonReview");
+// The status rows above the verdict already show the conflict, checks, and
+// review facts once each, so the verdict detail carries only what is not
+// visible elsewhere on the card.
+function mergeReadinessDetail(pr: SessionPRSummary): string | undefined {
+	if (pr.mergeability.state === "conflicting") return undefined;
 	if (pr.review.hasUnresolvedHumanComments) return appI18n.t("pr.merge.reasonComments");
 	if (pr.mergeability.state !== "mergeable") return providerBlockedDetail(pr);
-	return appI18n.t("pr.merge.reasonReady");
+	return undefined;
 }
 
 function providerBlockedDetail(pr: SessionPRSummary): string {

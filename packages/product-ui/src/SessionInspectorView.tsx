@@ -327,7 +327,7 @@ export type InspectorPullRequest = PRSummaryMetadata & {
 	state: InspectorPullRequestState;
 	stateLabel: string;
 	title?: string;
-	/** owner/name, shown before the number when a session's PRs span several repositories. */
+	/** owner/name of the repository this pull request targets, shown before the number. */
 	repositoryLabel?: string;
 	reviewDetailsAction?: ReactNode;
 };

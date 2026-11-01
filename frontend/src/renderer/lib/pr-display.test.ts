@@ -247,6 +247,10 @@ describe("prCardPresentation", () => {
 			readiness === "Mergeable" ? ["Checks passing", "Review status"] : overrides.mergeability?.state === "conflicting" ? ["Merge conflict", "Checks passing", "Review status"] : ["Checks failing", "Review status"],
 		);
 		expect(presentation.readiness?.label).toBe(readiness);
+		// The rows already state the conflict, checks, and approval, so the
+		// verdict stays one line instead of repeating them (#160).
+		expect(presentation.readiness?.detail).toBeUndefined();
+		expect(presentation.statusRows?.find((status) => status.key === "merge")?.detail).toBeUndefined();
 	});
 
 	it("shows a required review once instead of repeating it as a merge blocker", () => {
@@ -277,9 +281,9 @@ describe("prCardPresentation", () => {
 
 		expect(presentation.readiness).toMatchObject({
 			label: "Mergeable",
-			detail: "No merge conflict, checks are passing, and the review requirement is satisfied.",
 			tone: "success",
 		});
+		expect(presentation.readiness?.detail).toBeUndefined();
 		expect(presentation.statusRows?.find((status) => status.key === "review")?.detail).toBe("No review required");
 	});
 

@@ -630,10 +630,10 @@ describe("SessionInspector PR section", () => {
 
     expect(screen.getByText("Pull requests (3)")).toBeInTheDocument();
     const cards = prSection("Pull requests (3)")
-      .getAllByText(/^PR #\d+$/)
+      .getAllByText(/^my-app PR #\d+$/)
       .map((el) => el.textContent);
     // open (41), draft (42), merged (40)
-    expect(cards).toEqual(["PR #41", "PR #42", "PR #40"]);
+    expect(cards).toEqual(["my-app PR #41", "my-app PR #42", "my-app PR #40"]);
   });
 
   it("uses the singular heading and shows enriched facts for a single PR", () => {
@@ -655,7 +655,7 @@ describe("SessionInspector PR section", () => {
 
     expect(screen.getByText("Pull request")).toBeInTheDocument();
     expect(screen.queryByText(/Pull requests \(/)).not.toBeInTheDocument();
-    expect(prSection("Pull request").getByText("PR #7")).toBeInTheDocument();
+    expect(prSection("Pull request").getByText("acme/repo PR #7")).toBeInTheDocument();
     expect(
       prSection("Pull request").getByText("Mergeable"),
     ).toBeInTheDocument();
@@ -880,7 +880,7 @@ describe("SessionInspector PR section", () => {
     );
 
     const card = prSection("Pull request")
-      .getByText("PR #7")
+      .getByText("my-app PR #7")
       .closest("article") as HTMLElement;
     expect(within(card).getByText("merged", { exact: true })).toHaveClass(
       "border-border-strong",
@@ -941,7 +941,7 @@ describe("SessionInspector PR section", () => {
       "Archive session when pull requests merge",
     );
     const prCard = prSection("Pull request")
-      .getByText("PR #7")
+      .getByText("my-app PR #7")
       .closest("article") as HTMLElement;
     const appearsBefore = (first: HTMLElement, second: HTMLElement) =>
       Boolean(
@@ -1061,7 +1061,7 @@ describe("SessionInspector PR section", () => {
     );
 
     const card = prSection("Pull request")
-      .getByText("PR #7")
+      .getByText("acme/repo PR #7")
       .closest("article") as HTMLElement;
     expect(within(card).getByText("Checks failing")).toBeInTheDocument();
     expect(within(card).queryByText("CI failures not injected")).not.toBeInTheDocument();
@@ -1137,7 +1137,7 @@ describe("SessionInspector Artifacts section", () => {
 
     expect(screen.getByText("Pull request")).toBeInTheDocument();
     expect(screen.getByText("Artifact")).toBeInTheDocument();
-    expect(screen.getAllByText("PR #7").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("my-app PR #7").length).toBeGreaterThan(0);
     expect(screen.getByText("notes.md")).toBeInTheDocument();
   });
 
