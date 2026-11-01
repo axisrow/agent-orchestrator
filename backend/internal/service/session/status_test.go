@@ -27,6 +27,17 @@ func silentRec(age time.Duration) domain.SessionRecord {
 	}
 }
 
+// restoredRec builds the row MarkSpawned leaves behind a restart: idle re-seeded
+// at the restore instant and FirstSignalAt cleared, so each generation must
+// re-prove its hook pipeline. receiptAt is when the restored runtime's
+// metadata-only identity receipt (e.g. Claude's SessionStart) was last observed;
+// the zero time means no receipt has arrived since the restore.
+func restoredRec(age time.Duration, receiptAt time.Time) domain.SessionRecord {
+	rec := silentRec(age)
+	rec.Metadata.NativeIdentityObservedAt = receiptAt
+	return rec
+}
+
 // chatRec marks a record as a Chat-mode session, whose activity reaches AO
 // through its own controller rather than an agent hook pipeline.
 func chatRec(rec domain.SessionRecord) domain.SessionRecord {
@@ -66,6 +77,34 @@ func TestServiceDerivesStatusFromSessionFactsAndPR(t *testing.T) {
 		// A live session whose hook-capable agent never signaled is no_signal
 		// once the grace passes — never a confident idle.
 		{"no-signal-after-grace", silentRec(noSignalGrace + time.Second), nil, false, domain.StatusNoSignal},
+		// A restored session that finished its work will not prompt: the
+		// metadata-only SessionStart identity receipt its runtime sent after the
+		// restore is liveness proof on its own, so silence past the grace stays
+		// honest idle instead of a sticky false no_signal (#209).
+		{
+			"restored-idle-receipt-proves-liveness",
+			restoredRec(2*noSignalGrace, statusNow.Add(-noSignalGrace)),
+			nil, false, domain.StatusIdle,
+		},
+		// A receipt from an earlier generation predates the restore stamp and
+		// proves nothing about the current runtime: hook-silence stays no_signal.
+		{
+			"restored-idle-stale-receipt-stays-no-signal",
+			restoredRec(2*noSignalGrace, statusNow.Add(-3*noSignalGrace)),
+			nil, false, domain.StatusNoSignal,
+		},
+		// A prompt delivered to a hung runtime is not liveness either: only a
+		// received signal or receipt proves the pipeline, so the watchdog for a
+		// runtime gone quiet after a prompt keeps firing as before (#209).
+		{
+			"prompted-but-hook-silent-stays-no-signal",
+			func() domain.SessionRecord {
+				rec := silentRec(2 * noSignalGrace)
+				rec.Metadata.LatestUserPromptAt = statusNow.Add(-noSignalGrace)
+				return rec
+			}(),
+			nil, false, domain.StatusNoSignal,
+		},
 		// A hook-less harness can never signal: its silence stays idle forever
 		// instead of degrading into a false "needs you".
 		{"hookless-silent-stays-idle", silentRec(2 * noSignalGrace), nil, true, domain.StatusIdle},

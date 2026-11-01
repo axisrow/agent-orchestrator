@@ -916,6 +916,36 @@ func TestActivity_MetadataOnlyStoresAgentSessionIDWithoutChangingActivity(t *tes
 	}
 }
 
+// A restored session's metadata-only identity receipt (its SessionStart naming
+// the native conversation) is the liveness proof the status classifier reads:
+// it must advance NativeIdentityObservedAt past the restore stamp while leaving
+// turn activity and FirstSignalAt untouched (#209).
+func TestActivity_MetadataOnlyReceiptStampsNativeIdentityObservedAt(t *testing.T) {
+	m, st, _ := newManager()
+	rec := working("mer-1")
+	rec.Metadata.RuntimeLaunchID = "launch-1"
+	receiptAt := time.Unix(700, 0).UTC()
+	rec.Metadata.NativeIdentityObservedAt = receiptAt.Add(-time.Minute)
+	st.sessions[rec.ID] = rec
+
+	if err := m.ApplyActivitySignal(ctx, rec.ID, ports.ActivitySignal{
+		Event: "session-start", LaunchID: "launch-1", AgentSessionID: "native-session-1",
+		Timestamp: receiptAt,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got := st.sessions[rec.ID]
+	if !got.Metadata.NativeIdentityObservedAt.Equal(receiptAt) {
+		t.Fatalf("NativeIdentityObservedAt = %s, want %s", got.Metadata.NativeIdentityObservedAt, receiptAt)
+	}
+	if got.Metadata.AgentSessionID != "native-session-1" {
+		t.Fatalf("AgentSessionID = %q, want native-session-1", got.Metadata.AgentSessionID)
+	}
+	if got.Activity != rec.Activity || !got.FirstSignalAt.Equal(rec.FirstSignalAt) {
+		t.Fatalf("receipt leaked turn activity: activity %+v, first signal %v", got.Activity, got.FirstSignalAt)
+	}
+}
+
 func TestActivity_UserPromptStoresItsSignalTimestamp(t *testing.T) {
 	m, st, _ := newManager()
 	rec := working("mer-1")

@@ -34,10 +34,25 @@ func toContractSessionFacts(rec domain.SessionRecord, signalCapable bool) contra
 	return contract.SessionFacts{
 		Activity:       contract.ActivityState(rec.Activity.State),
 		LastActivityAt: rec.Activity.LastActivityAt,
-		HasSignal:      !rec.FirstSignalAt.IsZero(),
+		HasSignal:      hasGenerationSignal(rec),
 		SignalExpected: signalCapable && rec.Mode != domain.SessionModeChat,
 		IsTerminated:   rec.IsTerminated,
 	}
+}
+
+// hasGenerationSignal reports whether the CURRENT runtime generation has
+// proven its hook pipeline to the daemon. A state-bearing hook stamps
+// FirstSignalAt; a metadata-only receipt — e.g. a restored session's
+// SessionStart naming its native identity — stamps NativeIdentityObservedAt
+// without carrying turn activity. Either fact newer than the spawn/restore
+// stamp (Activity.LastActivityAt) proves the runtime is alive and reaching the
+// daemon, so a restored session that finished its work and will not prompt
+// stays honest idle instead of degrading into no_signal. A receipt from an
+// earlier generation predates the stamp and keeps the watchdog armed for a
+// runtime that has really gone silent.
+func hasGenerationSignal(rec domain.SessionRecord) bool {
+	return !rec.FirstSignalAt.IsZero() ||
+		rec.Metadata.NativeIdentityObservedAt.After(rec.Activity.LastActivityAt)
 }
 
 func toContractPRFacts(prs []domain.PRFacts) []contract.PRFacts {
