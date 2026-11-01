@@ -253,7 +253,10 @@ var shippedMigrations = map[int64]string{
 func burnedVersion(v int64) bool {
 	// 9004 (review_run_publication) shipped in fork builds and was then dropped
 	// with the daemon-owned publication contract; never reuse the number.
-	return v == 22 || v == 9003 || v == 9004
+	// 9016 (review_run_github_review_state) shipped in fork main builds (PR
+	// #189) and was then renumbered to 20261028124744442; never reuse the
+	// number.
+	return v == 22 || v == 9003 || v == 9004 || v == 9016
 }
 
 // TestMigrationVersionLedger enforces the append-only migration ledger: every
