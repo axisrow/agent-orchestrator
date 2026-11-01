@@ -744,9 +744,9 @@ type Session struct {
 	StaleBinarySwitchFailedAt        sql.NullTime
 	BranchNaming                     bool
 	TemporaryBranch                  string
+	ReviewOnly                       bool
 	ProviderBaseURL                  string
 	ProviderModel                    string
-	ReviewOnly                       bool
 }
 
 type SessionAgentAccount struct {
