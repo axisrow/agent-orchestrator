@@ -170,11 +170,11 @@ func TestReportStoreFailsQueuedBatchTerminally(t *testing.T) {
 	if _, err = s.ClaimPendingReportBatch(ctx, sess.ProjectID, "queue-token", now); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := s.FailReportBatchQueued(ctx, sess.ProjectID, "wrong", "reason"); err != nil || n != 0 {
+	if n, err := s.FailReportBatchTerminally(ctx, sess.ProjectID, "wrong", "reason"); err != nil || n != 0 {
 		t.Fatalf("wrong token failed %d rows, err=%v", n, err)
 	}
 	reason := "session: prompt text is held in the target's message queue"
-	if n, err := s.FailReportBatchQueued(ctx, sess.ProjectID, "queue-token", reason); err != nil || n != 1 {
+	if n, err := s.FailReportBatchTerminally(ctx, sess.ProjectID, "queue-token", reason); err != nil || n != 1 {
 		t.Fatalf("failed=%d err=%v", n, err)
 	}
 	got, ok, err := s.GetReport(ctx, rec.ID)

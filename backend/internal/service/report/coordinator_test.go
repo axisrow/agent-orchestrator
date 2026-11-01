@@ -696,6 +696,70 @@ func TestCoordinatorQueuedPromptFailsBatchTerminally(t *testing.T) {
 	}
 }
 
+// TestCoordinatorArchivedProjectRetiresPendingBatch pins fork issue #208: a
+// pending report whose project the owner archived has a recipient that can
+// never exist again, so the batch retires terminally — stale with the reason
+// in last_error — instead of deferring once a minute forever, and the WARN
+// names the archived reason.
+func TestCoordinatorArchivedProjectRetiresPendingBatch(t *testing.T) {
+	now := time.Date(2026, 11, 1, 13, 0, 0, 0, time.UTC)
+	store := newCoordinatorStore(now)
+	store.archived = true
+	store.add(reportAt("orphan", "worker", now, now, "context"))
+	var logs bytes.Buffer
+	c := NewCoordinator(CoordinatorDeps{Store: store, Delivery: &coordinatorDelivery{}, Now: func() time.Time { return now }, Log: slog.New(slog.NewTextHandler(&logs, nil))})
+	if _, err := c.RunDue(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if rec := store.reports[0]; rec.DeliveryState != domain.ReportStale || !strings.Contains(rec.LastError, "archived") {
+		t.Fatalf("record = %+v, want terminal stale with the archived reason", store.reports[0])
+	}
+	if got := logs.String(); !strings.Contains(got, "project archived") {
+		t.Fatalf("retirement evidence = %q", got)
+	}
+	// Stale rows leave the schedule: later cycles neither claim nor retry them.
+	now = now.Add(10 * ReportOrchestratorBackoff)
+	if delay, err := c.RunDue(context.Background()); err != nil || delay >= 0 {
+		t.Fatalf("post-retirement delay = %v, err = %v, want an idle schedule", delay, err)
+	}
+	if rec := store.reports[0]; rec.DeliveryAttempts != 1 {
+		t.Fatalf("attempts = %d, want frozen at the single retirement attempt", rec.DeliveryAttempts)
+	}
+}
+
+// TestCoordinatorLiveProjectWithoutOrchestratorStaysDeliverable pins the fork
+// issue #208 grace side: a live (not archived) project whose orchestrator is
+// only temporarily absent — a daemon restart or a terminated session the owner
+// resumes or replaces — keeps its pending batch retryable across cycles; the
+// absence alone never retires it, and delivery resumes once an orchestrator is
+// back.
+func TestCoordinatorLiveProjectWithoutOrchestratorStaysDeliverable(t *testing.T) {
+	now := time.Date(2026, 11, 1, 13, 0, 0, 0, time.UTC)
+	store := newCoordinatorStore(now)
+	store.add(reportAt("restart", "worker", now, now, "context"))
+	delivery := &coordinatorDelivery{}
+	c := NewCoordinator(CoordinatorDeps{Store: store, Delivery: delivery, Now: func() time.Time { return now }})
+	// Cycles of absence: every one defers at the backoff and leaves the batch
+	// pending — never stale.
+	for i := 0; i < 3; i++ {
+		if delay, err := c.RunDue(context.Background()); err != nil || delay != ReportOrchestratorBackoff {
+			t.Fatalf("absence cycle %d delay = %v, err = %v", i, delay, err)
+		}
+		if store.reports[0].DeliveryState != domain.ReportPending {
+			t.Fatalf("absence cycle %d state = %s, want pending", i, store.reports[0].DeliveryState)
+		}
+		now = now.Add(ReportOrchestratorBackoff)
+	}
+	// The orchestrator returns and the batch delivers — the grace window held.
+	store.sessions = []domain.SessionRecord{{ID: "orch", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeChat}}
+	if _, err := c.RunDue(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(delivery.submissions) != 1 || store.acked != 1 {
+		t.Fatalf("submissions = %d acked = %d, want delivery after the orchestrator returned", len(delivery.submissions), store.acked)
+	}
+}
+
 func TestCoordinatorEmissionLogsEvidence(t *testing.T) {
 	now := time.Date(2026, 10, 22, 12, 30, 0, 0, time.UTC)
 	store := newCoordinatorStore(now)
@@ -814,6 +878,7 @@ type coordinatorStore struct {
 	now       time.Time
 	reports   []domain.ReportRecord
 	sessions  []domain.SessionRecord
+	archived  bool
 	acked     int
 	fenceAcks bool
 }
@@ -831,6 +896,13 @@ func (s *coordinatorStore) add(records ...domain.ReportRecord) {
 }
 func (s *coordinatorStore) ListSessions(context.Context, domain.ProjectID) ([]domain.SessionRecord, error) {
 	return append([]domain.SessionRecord(nil), s.sessions...), nil
+}
+func (s *coordinatorStore) GetProject(_ context.Context, id string) (domain.ProjectRecord, bool, error) {
+	rec := domain.ProjectRecord{ID: id}
+	if s.archived {
+		rec.ArchivedAt = s.now
+	}
+	return rec, true, nil
 }
 func (s *coordinatorStore) GetSession(_ context.Context, id domain.SessionID) (domain.SessionRecord, bool, error) {
 	for _, rec := range s.sessions {
@@ -951,7 +1023,7 @@ func (s *coordinatorStore) MarkReportBatchEmitted(_ context.Context, project dom
 	return count, nil
 }
 
-func (s *coordinatorStore) FailReportBatchQueued(_ context.Context, project domain.ProjectID, token string, reason string) (int, error) {
+func (s *coordinatorStore) FailReportBatchTerminally(_ context.Context, project domain.ProjectID, token string, reason string) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	count := 0

@@ -40,6 +40,7 @@ var ErrReportDeliveryModeUnsupported = errors.New("report delivery requires a se
 // DeliveryStore is the durable report scheduling and routing boundary.
 type DeliveryStore interface {
 	ListSessions(context.Context, domain.ProjectID) ([]domain.SessionRecord, error)
+	GetProject(context.Context, string) (domain.ProjectRecord, bool, error)
 	GetSession(context.Context, domain.SessionID) (domain.SessionRecord, bool, error)
 	ListPendingReportSchedule(context.Context, int64) ([]domain.ReportRecord, error)
 	ClaimPendingReportBatch(context.Context, domain.ProjectID, string, time.Time) ([]domain.ReportRecord, error)
@@ -47,7 +48,7 @@ type DeliveryStore interface {
 	ReleaseReportBatch(context.Context, domain.ProjectID, string, time.Time, string) (int, error)
 	DeferReportBatch(context.Context, domain.ProjectID, string, time.Time, string) (int, error)
 	MarkReportBatchEmitted(context.Context, domain.ProjectID, string, time.Time) (int, error)
-	FailReportBatchQueued(context.Context, domain.ProjectID, string, string) (int, error)
+	FailReportBatchTerminally(context.Context, domain.ProjectID, string, string) (int, error)
 	AcknowledgeAcceptedReportBatches(context.Context, domain.ProjectID, string, time.Time) (int, error)
 	ExpireStaleReportDeliveries(context.Context, time.Time) (int, error)
 }
@@ -302,7 +303,7 @@ func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.Proje
 			// batch onto that queue forever; retire it terminally instead.
 			// The already-queued copies need a manual flush (ctrl+x ctrl+s in
 			// the session); new reports flow again once the queue is clear.
-			if _, failErr := c.store.FailReportBatchQueued(ctx, batch.ProjectID, batch.Token, err.Error()); failErr != nil {
+			if _, failErr := c.store.FailReportBatchTerminally(ctx, batch.ProjectID, batch.Token, err.Error()); failErr != nil {
 				return errors.Join(err, failErr)
 			}
 			return err
@@ -312,17 +313,45 @@ func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.Proje
 	return c.ackBatch(ctx, batch.ProjectID, batch.Token)
 }
 
-// deferWithoutOrchestrator keeps a due batch retryable while no orchestrator
-// can receive it. It claims the batch so the attempt is durable and visible
+// deferWithoutOrchestrator routes a due batch whose project has no active
+// orchestrator. It claims the batch so the attempt is durable and visible
 // (delivery_attempts, last_error) and reschedules instead of leaving a silent
-// pending head that starves every other project's due work.
+// pending head that starves every other project's due work. An archived
+// project (fork issue #208) is a recipient that can never exist again: its
+// batch retires terminally instead of deferring, because archiving is an owner
+// action and no restart can bring a recipient back. A live project's absence
+// is temporary — a daemon restart or a terminated orchestrator the owner may
+// resume or replace — so its batch keeps retrying at the orchestrator backoff
+// and is never terminalized for the absence alone; the ledger's weekly expiry
+// stays the only exit for a recipient that never returns.
 func (c *Coordinator) deferWithoutOrchestrator(ctx context.Context, projectID domain.ProjectID) error {
 	batch, err := c.claim(ctx, projectID)
 	if err != nil || len(batch.Reports) == 0 {
 		return err
 	}
+	if c.projectArchived(ctx, projectID) {
+		reason := "project archived: no report recipient can exist (fork issue #208)"
+		if _, failErr := c.store.FailReportBatchTerminally(ctx, projectID, batch.Token, reason); failErr != nil {
+			return failErr
+		}
+		c.log.Warn("report: batch retired terminally; project archived", "project", projectID, "batch", batch.IdempotencyKey(), "reports", len(batch.Reports), "attempts", batch.MaxDeliveryAttempts())
+		return nil
+	}
+	c.log.Warn("report: project has no active orchestrator; delivery deferred", "project", projectID, "batch", batch.IdempotencyKey(), "reports", len(batch.Reports), "attempts", batch.MaxDeliveryAttempts(), "retry", ReportOrchestratorBackoff)
 	_, err = c.store.DeferReportBatch(ctx, projectID, batch.Token, c.now().UTC().Add(ReportOrchestratorBackoff), "project has no active orchestrator")
 	return err
+}
+
+// projectArchived reports whether the owner closed the project (fork issue
+// #208). A lookup failure reads as live: a transient store error must not
+// retire reports a later cycle could still deliver.
+func (c *Coordinator) projectArchived(ctx context.Context, projectID domain.ProjectID) bool {
+	project, ok, err := c.store.GetProject(ctx, string(projectID))
+	if err != nil {
+		c.log.Warn("report: project lookup failed; assuming live", "project", projectID, "err", err)
+		return false
+	}
+	return ok && !project.ArchivedAt.IsZero()
 }
 
 func (c *Coordinator) activeOrchestrator(ctx context.Context, projectID domain.ProjectID) (domain.SessionRecord, bool, error) {
