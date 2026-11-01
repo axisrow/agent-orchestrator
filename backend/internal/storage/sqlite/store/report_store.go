@@ -255,12 +255,13 @@ func (s *Store) MarkReportBatchEmitted(ctx context.Context, projectID domain.Pro
 	return int(n), nil
 }
 
-// FailReportBatchQueued retires the claimed batch holding token as stale with
-// the given reason (fork issue #205): the target held the batch text in its
-// message queue, so the delivery must not return to pending and re-append the
-// same content on every retry. Rows are fenced by the claim token like the
-// ack path; a zero count means the claim was lost.
-func (s *Store) FailReportBatchQueued(ctx context.Context, projectID domain.ProjectID, token, lastError string) (int, error) {
+// FailReportBatchTerminally retires the claimed batch holding token as stale
+// with the given reason — the delivery has no future attempt: the target held
+// the batch text in its message queue (fork issue #205), so retrying would
+// re-append the same content forever, or the project was archived (fork issue
+// #208) and its report recipient can never exist again. Rows are fenced by the
+// claim token like the ack path; a zero count means the claim was lost.
+func (s *Store) FailReportBatchTerminally(ctx context.Context, projectID domain.ProjectID, token, lastError string) (int, error) {
 	if projectID == "" || token == "" || lastError == "" {
 		return 0, domain.ErrInvalidReport
 	}
