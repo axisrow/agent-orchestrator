@@ -1188,9 +1188,36 @@ func (s *Service) publishOne(ctx context.Context, workerID domain.SessionID, run
 				// failing, so recovery reconciles against the provider.
 				s.recordPublishState(ctx, run, domain.ReviewPublishUncertain, "", "", fmt.Sprintf("COMMENT fallback outcome unknown: %v", fallbackErr))
 			default:
-				// Report the verdict-event rejection: it is the cause the run
-				// was published for, and no review exists to reconcile.
-				s.recordPublishState(ctx, run, domain.ReviewPublishFailed, "", "", err.Error())
+				if len(comments) == 0 {
+					// The body-only attempt below is identical to the COMMENT
+					// fallback just rejected: nothing left to try.
+					s.recordPublishState(ctx, run, domain.ReviewPublishFailed, "", "", err.Error())
+					return
+				}
+				// Issue #221: with findings attached, the fallback can fail for
+				// a reason the event fallback cannot fix — GitHub validates each
+				// inline anchor (path/line) against the reviewed diff and answers
+				// 422 for lines outside it, deterministically. Retrying those
+				// comments can never succeed, so the last rung republishes
+				// body-only with the findings folded into the body as text,
+				// keeping each finding's meaning and its path:line binding.
+				// Both rejections were definitive (4xx ⇒ no review was created),
+				// so this attempt cannot duplicate anything.
+				reason := fmt.Sprintf("published as body-only COMMENT: provider rejected %s (%v) and the inline comments (%v)", event, err, fallbackErr)
+				slog.Default().WarnContext(ctx, "review inline comments rejected; publishing findings as body text", "run", run.ID, "event", event, "err", err, "fallbackErr", fallbackErr)
+				bodyOnly, lastErr := s.publisher.PublishReview(ctx, ports.SCMReviewPublishRequest{PR: ref, CommitSHA: run.TargetSHA, Event: "COMMENT", Body: run.Body + "\n\n" + renderFindingsAsText(run.Findings) + "\n\n" + reviewPublishMarker(run)})
+				switch {
+				case lastErr == nil:
+					s.recordPublishState(ctx, run, domain.ReviewPublishPublished, bodyOnly.ReviewID, githubStateFromPublication(bodyOnly, "COMMENT"), reason)
+				case publishOutcomeUnknown(lastErr):
+					// The body-only attempt may have landed; same uncertainty
+					// contract as the COMMENT fallback above.
+					s.recordPublishState(ctx, run, domain.ReviewPublishUncertain, "", "", fmt.Sprintf("body-only COMMENT outcome unknown: %v", lastErr))
+				default:
+					// Report the verdict-event rejection: it is the cause the run
+					// was published for, and no review exists to reconcile.
+					s.recordPublishState(ctx, run, domain.ReviewPublishFailed, "", "", err.Error())
+				}
 			}
 			return
 		}
@@ -1235,6 +1262,18 @@ func (s *Service) recordPublishState(ctx context.Context, run *domain.ReviewRun,
 // guessed or duplicated.
 func reviewPublishMarker(run *domain.ReviewRun) string {
 	return fmt.Sprintf("<!-- ao-review-run:%s -->", run.ID)
+}
+
+// renderFindingsAsText folds inline findings into a body-safe list for the
+// body-only fallback: the provider rejected the structured anchors, so each
+// finding keeps its path:line binding as text instead of as a review comment.
+func renderFindingsAsText(findings []domain.ReviewFinding) string {
+	var b strings.Builder
+	b.WriteString("**Inline findings (the provider rejected inline anchors; kept as text):**")
+	for _, finding := range findings {
+		fmt.Fprintf(&b, "\n- `%s:%d` — %s", finding.Path, finding.Line, finding.Body)
+	}
+	return b.String()
 }
 
 // findPublishedReview asks the provider whether this run's review already

@@ -369,6 +369,13 @@ type fakePublisher struct {
 	// event key — the shape GitHub produces when it refuses a verdict event on
 	// the PR author's own account.
 	failEvents map[string]error
+	// failWhenComments definitively rejects any attempt carrying inline
+	// comments — the shape of GitHub's 422 for an anchor outside the reviewed
+	// diff, where reposting the same comments cannot succeed (issue #221).
+	failWhenComments error
+	// failWhenNoComments definitively rejects body-only attempts, completing
+	// the all-rungs-rejected shape.
+	failWhenNoComments error
 }
 
 func (p *fakePublisher) PublishReview(_ context.Context, request ports.SCMReviewPublishRequest) (ports.SCMReviewPublishResult, error) {
@@ -377,6 +384,12 @@ func (p *fakePublisher) PublishReview(_ context.Context, request ports.SCMReview
 	p.events = append(p.events, request.Event)
 	if err, ok := p.failEvents[request.Event]; ok {
 		return ports.SCMReviewPublishResult{}, err
+	}
+	if len(request.Comments) > 0 && p.failWhenComments != nil {
+		return ports.SCMReviewPublishResult{}, p.failWhenComments
+	}
+	if len(request.Comments) == 0 && p.failWhenNoComments != nil {
+		return ports.SCMReviewPublishResult{}, p.failWhenNoComments
 	}
 	if p.err != nil {
 		return ports.SCMReviewPublishResult{}, p.err
@@ -1397,6 +1410,113 @@ func TestSubmitSelfReviewFallsBackToCommentAndRecordsOutcome(t *testing.T) {
 				t.Fatalf("publish error = %q, want the recorded fallback reason", run.PublishError)
 			}
 		})
+	}
+}
+
+func TestSubmitRejectedInlineAnchorsFallBackToBodyOnlyComment(t *testing.T) {
+	// Issue #221: when the verdict event and the inline-comment fallback are
+	// both rejected — GitHub 422s on anchors outside the reviewed diff — the
+	// last rung republishes body-only with the findings folded into the body
+	// as text, so each finding survives with its path:line binding.
+	st := &fakeStore{ok: true, run: domain.ReviewRun{
+		ID: "run-1", SessionID: "worker-1", PRURL: "https://github.com/acme/app/pull/9",
+		TargetSHA: "sha1", Status: domain.ReviewRunRunning,
+	}}
+	pub := &fakePublisher{
+		failEvents: map[string]error{
+			"REQUEST_CHANGES": errors.New("github scm: 422 Unprocessable Entity (github errors: line 189 is not part of the diff)"),
+		},
+		failWhenComments: errors.New("github scm: 422 Unprocessable Entity (github errors: line 189 is not part of the diff)"),
+	}
+	svc := publicationTestService(t, st, pub)
+
+	run, err := svc.Submit(context.Background(), "worker-1", "run-1", domain.VerdictChangesRequested, "review body", []domain.ReviewFinding{{Path: "a.go", Line: 189, Body: "boom"}})
+	if err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	if len(pub.events) != 3 || pub.events[0] != "REQUEST_CHANGES" || pub.events[1] != "COMMENT" || pub.events[2] != "COMMENT" {
+		t.Fatalf("events = %v, want [REQUEST_CHANGES COMMENT COMMENT]", pub.events)
+	}
+	if run.PublishState != domain.ReviewPublishPublished || run.GithubReviewID == "" {
+		t.Fatalf("run = %q/%q, want published with a review id", run.PublishState, run.GithubReviewID)
+	}
+	if len(pub.last.Comments) != 0 {
+		t.Fatalf("last attempt comments = %#v, want none", pub.last.Comments)
+	}
+	if !strings.Contains(pub.last.Body, "`a.go:189` — boom") || !strings.Contains(pub.last.Body, "ao-review-run:run-1") {
+		t.Fatalf("body-only body missing finding text or marker: %q", pub.last.Body)
+	}
+	for _, want := range []string{"published as body-only COMMENT", "REQUEST_CHANGES", "inline comments"} {
+		if !strings.Contains(run.PublishError, want) {
+			t.Fatalf("publish error = %q, missing %q", run.PublishError, want)
+		}
+	}
+}
+
+func TestSubmitBodyOnlyFallbackUnknownOutcomeStaysUncertain(t *testing.T) {
+	// The body-only rung obeys the same uncertainty contract as the COMMENT
+	// fallback: an unknown outcome stays uncertain so recovery reconciles
+	// against the provider instead of reposting.
+	st := &fakeStore{ok: true, run: domain.ReviewRun{
+		ID: "run-1", SessionID: "worker-1", PRURL: "https://github.com/acme/app/pull/9",
+		TargetSHA: "sha1", Status: domain.ReviewRunRunning,
+	}}
+	pub := &fakePublisher{
+		failEvents: map[string]error{
+			"APPROVE": errors.New("403: Can not approve your own pull request"),
+		},
+		failWhenComments:   errors.New("github scm: 422 Unprocessable Entity"),
+		failWhenNoComments: fmt.Errorf("post timeout: %w", ports.ErrSCMPublishOutcomeUnknown),
+	}
+	svc := publicationTestService(t, st, pub)
+
+	run, err := svc.Submit(context.Background(), "worker-1", "run-1", domain.VerdictApproved, "review body", []domain.ReviewFinding{{Path: "a.go", Line: 7, Body: "boom"}})
+	if err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	if len(pub.events) != 3 {
+		t.Fatalf("events = %v, want one verdict attempt, one inline fallback, one body-only", pub.events)
+	}
+	if run.PublishState != domain.ReviewPublishUncertain || run.PublishError == "" {
+		t.Fatalf("run = %q/%q, want uncertain with a reason", run.PublishState, run.PublishError)
+	}
+	if !strings.Contains(run.PublishError, "body-only COMMENT outcome unknown") {
+		t.Fatalf("publish error = %q, want the body-only unknown-outcome reason", run.PublishError)
+	}
+	if run.GithubReviewState != "" {
+		t.Fatalf("state = %q, want empty for an unknown outcome", run.GithubReviewState)
+	}
+}
+
+func TestSubmitAllPublicationRungsRejectedRecordsFailed(t *testing.T) {
+	// When every rung is definitively rejected, the run fails with the
+	// verdict-event rejection — the cause the review was published for — and
+	// no review id, so a retry can republish without duplicating.
+	st := &fakeStore{ok: true, run: domain.ReviewRun{
+		ID: "run-1", SessionID: "worker-1", PRURL: "https://github.com/acme/app/pull/9",
+		TargetSHA: "sha1", Status: domain.ReviewRunRunning,
+	}}
+	pub := &fakePublisher{
+		failEvents: map[string]error{
+			"REQUEST_CHANGES": errors.New("github scm: 422 Unprocessable Entity (github errors: commit_id is not part of the pull request)"),
+		},
+		failWhenComments:   errors.New("github scm: 422 Unprocessable Entity (github errors: line is not part of the diff)"),
+		failWhenNoComments: errors.New("github scm: 422 Unprocessable Entity (github errors: body is too long)"),
+	}
+	svc := publicationTestService(t, st, pub)
+
+	run, err := svc.Submit(context.Background(), "worker-1", "run-1", domain.VerdictChangesRequested, "review body", []domain.ReviewFinding{{Path: "a.go", Line: 3, Body: "boom"}})
+	if err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	if pub.calls != 3 {
+		t.Fatalf("publisher calls = %d, want 3", pub.calls)
+	}
+	if run.PublishState != domain.ReviewPublishFailed || run.GithubReviewID != "" {
+		t.Fatalf("run = %q/%q, want failed with no review id", run.PublishState, run.GithubReviewID)
+	}
+	if !strings.Contains(run.PublishError, "commit_id is not part of the pull request") {
+		t.Fatalf("publish error = %q, want the verdict-event rejection details", run.PublishError)
 	}
 }
 

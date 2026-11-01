@@ -471,14 +471,57 @@ func rateLimited(resp *http.Response, msg string) error {
 	return e
 }
 
+// githubMessage renders a GitHub error envelope for an error string. The
+// actionable reason usually lives in the envelope's errors[] (e.g. "Line 189
+// is not part of the diff" for a rejected review comment), so dropping it
+// makes every 422 look identical; the details are appended when present.
 func githubMessage(body []byte) string {
 	var p struct {
-		Message string `json:"message"`
+		Message string            `json:"message"`
+		Errors  []json.RawMessage `json:"errors"`
 	}
-	if json.Unmarshal(body, &p) == nil && p.Message != "" {
+	if json.Unmarshal(body, &p) != nil || p.Message == "" {
+		return strings.TrimSpace(string(body))
+	}
+	if len(p.Errors) == 0 {
 		return p.Message
 	}
-	return strings.TrimSpace(string(body))
+	parts := make([]string, 0, len(p.Errors))
+	for _, raw := range p.Errors {
+		if detail := githubErrorDetail(raw); detail != "" {
+			parts = append(parts, detail)
+		}
+	}
+	if len(parts) == 0 {
+		return p.Message
+	}
+	return p.Message + " (github errors: " + strings.Join(parts, "; ") + ")"
+}
+
+// githubErrorDetail renders one entry of an error envelope's errors[]. GitHub
+// entries are either plain strings or objects whose resource/field/code/message
+// fields are individually optional.
+func githubErrorDetail(raw json.RawMessage) string {
+	var text string
+	if json.Unmarshal(raw, &text) == nil {
+		return strings.TrimSpace(text)
+	}
+	var obj struct {
+		Resource string `json:"resource"`
+		Field    string `json:"field"`
+		Code     string `json:"code"`
+		Message  string `json:"message"`
+	}
+	if json.Unmarshal(raw, &obj) != nil {
+		return ""
+	}
+	fields := make([]string, 0, 4)
+	for _, v := range []string{obj.Resource, obj.Field, obj.Code, obj.Message} {
+		if v != "" {
+			fields = append(fields, v)
+		}
+	}
+	return strings.Join(fields, ": ")
 }
 
 func firstNonEmptyHeader(a, b string) string {
