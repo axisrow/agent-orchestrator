@@ -2017,3 +2017,125 @@ func TestRunPromptSuggestionTaskPassesForkSourceWithScratchPolicy(t *testing.T) 
 		t.Fatal("scratch workspace survived suggestion")
 	}
 }
+
+// envCapturingLauncher records the base ChatStart.Env before
+// PrepareControllerEnv replaces it, so a test can assert both the
+// pre-launch environment and the final prepared launch environment.
+type envCapturingLauncher struct {
+	*recordingLauncher
+	baseEnvs []map[string]string
+}
+
+func (l *envCapturingLauncher) StartChat(ctx context.Context, cfg ChatStart) (ChatStarted, error) {
+	l.baseEnvs = append(l.baseEnvs, cfg.Env)
+	return l.recordingLauncher.StartChat(ctx, cfg)
+}
+
+// assertControllerRoleEnv is the shared assertion for the chat launch paths:
+// the environment the controller process receives carries role-level Env
+// overlaying the project's (role wins on collision), keeps project-only
+// vars, and never lets role env bypass the reserved AO_ namespace.
+func assertControllerRoleEnv(t *testing.T, name string, env map[string]string, sessionID domain.SessionID) {
+	t.Helper()
+	if got := env["ANTHROPIC_BASE_URL"]; got != "https://role.example" {
+		t.Fatalf("%s env ANTHROPIC_BASE_URL = %q, want role value overlaying the project value", name, got)
+	}
+	if got := env["CHAT_ROLE_ONLY"]; got != "role" {
+		t.Fatalf("%s env dropped role-level var: %#v", name, env)
+	}
+	if got := env["CHAT_PROJECT_ONLY"]; got != "project" {
+		t.Fatalf("%s env dropped project-only var: %#v", name, env)
+	}
+	if got := env[EnvSessionID]; got != string(sessionID) {
+		t.Fatalf("%s env AO_SESSION_ID = %q, want the AO-owned value %q (role env must not bypass the reserved namespace)", name, got, string(sessionID))
+	}
+}
+
+// TestChatSpawnAppliesRoleEnvToController: a chat spawn launches the
+// controller with the same environment a fresh terminal spawn builds —
+// role-level Env overlays the project's on both the base environment and the
+// prepared launch environment. Mirrors TestSwitchAgentAppliesRoleEnvToTarget.
+func TestChatSpawnAppliesRoleEnvToController(t *testing.T) {
+	launcher := &envCapturingLauncher{recordingLauncher: &recordingLauncher{}}
+	m, st, _ := newChatManager(launcher)
+	project := st.projects[string(chatTestProject)]
+	project.Config.Env = map[string]string{
+		"ANTHROPIC_BASE_URL": "https://project.example",
+		"CHAT_PROJECT_ONLY":  "project",
+	}
+	project.Config.Worker = domain.RoleOverride{
+		Harness: domain.HarnessCodex,
+		AgentConfig: domain.AgentConfig{Env: map[string]string{
+			"ANTHROPIC_BASE_URL": "https://role.example",
+			"CHAT_ROLE_ONLY":     "role",
+			"AO_SESSION_ID":      "role-injected",
+		}},
+	}
+	st.projects[string(chatTestProject)] = project
+
+	rec, _, _, err := m.Spawn(context.Background(), ports.SpawnConfig{
+		ProjectID: chatTestProject, Kind: domain.KindWorker, Harness: domain.HarnessCodex,
+		RequestedMode: domain.SessionModeChat,
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	if len(launcher.baseEnvs) != 1 || len(launcher.started) != 1 {
+		t.Fatalf("StartChat calls = %d base / %d started, want 1", len(launcher.baseEnvs), len(launcher.started))
+	}
+	assertControllerRoleEnv(t, "base", launcher.baseEnvs[0], rec.ID)
+	assertControllerRoleEnv(t, "prepared launch", launcher.started[0].Env, rec.ID)
+}
+
+// TestChatRestoreAppliesRoleEnvToController: a chat controller rebuilt after a
+// daemon restart launches with the same merged environment as the fresh spawn.
+func TestChatRestoreAppliesRoleEnvToController(t *testing.T) {
+	launcher := &envCapturingLauncher{recordingLauncher: &recordingLauncher{}}
+	st := newFakeStore()
+	st.projects["scratch"] = domain.ProjectRecord{ID: "scratch", Kind: domain.ProjectKindScratch}
+	project := st.projects["scratch"]
+	project.Config.Env = map[string]string{
+		"ANTHROPIC_BASE_URL": "https://project.example",
+		"CHAT_PROJECT_ONLY":  "project",
+	}
+	project.Config.Worker = domain.RoleOverride{
+		Harness: domain.HarnessCursor,
+		AgentConfig: domain.AgentConfig{Env: map[string]string{
+			"ANTHROPIC_BASE_URL": "https://role.example",
+			"CHAT_ROLE_ONLY":     "role",
+			"AO_SESSION_ID":      "role-injected",
+		}},
+	}
+	st.projects["scratch"] = project
+	lcm := &fakeLCM{store: st}
+	m := New(Deps{
+		Runtime:   &fakeRuntime{},
+		Agents:    fakeAgents{},
+		Workspace: &fakeWorkspace{},
+		Store:     st,
+		Messenger: &fakeMessenger{},
+		Lifecycle: lcm,
+		Chat:      launcher,
+		DataDir:   "/ao-test-data",
+		LookPath:  func(string) (string, error) { return "/bin/true", nil },
+	})
+	rec := domain.SessionRecord{
+		ID: "scratch-chat", ProjectID: "scratch", Kind: domain.KindWorker,
+		Harness: domain.HarnessCursor, Mode: domain.SessionModeChat,
+		Metadata: domain.SessionMetadata{
+			WorkspacePath: "/ws/scratch-chat", ProviderConversationID: "cursor-thread",
+			ControllerGeneration: "generation-old",
+		},
+		Activity: domain.Activity{State: domain.ActivityActive},
+	}
+	st.sessions[rec.ID] = rec
+
+	if err := m.reconcileLive(context.Background(), rec); err != nil {
+		t.Fatalf("reconcileLive: %v", err)
+	}
+	if len(launcher.baseEnvs) != 1 || len(launcher.started) != 1 {
+		t.Fatalf("StartChat calls = %d base / %d started, want 1", len(launcher.baseEnvs), len(launcher.started))
+	}
+	assertControllerRoleEnv(t, "base", launcher.baseEnvs[0], rec.ID)
+	assertControllerRoleEnv(t, "prepared launch", launcher.started[0].Env, rec.ID)
+}
