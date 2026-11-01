@@ -313,3 +313,23 @@ b097c11b1ac5fdd0377d2cac304c145223972e62 skipped perf(cloud): usable Chat sooner
 818a2ba863ec9e7796debb1caa63da7c28f9f32d taken fix(billing): say Free connects from anywhere via Tailscale or the tunnel (#6964) — 7 живых локалей взяты, ru.json форк-удаление сохранено
 4255167840b8c9024abb1b51f97ecb7619598fc6 taken fix(workspace): move orphaned worktree folders aside before add (#7483)
 9041e10a6c1dd0acb3e254063265d03ee95268d1 taken fix: preserve newer files when removing cancelled downloads (#6377) — живые файлы взяты, ru.json форк-удаление сохранено
+aa432f3d4cebecbdd9c05de7c2da93adaefc251f skipped fix(mobile): Android sign-in Unmatched Route and production WorkOS client (#7542) — mobile: владелец не пользуется
+ecf8a4cd1cb42870efc7ce612ef0ff83afb7119a taken fix: restore Cline sessions with resumable IDs (#2904)
+b691ffc74b6a1f03e16b5395bac4e3661190903d skipped feat(telemetry): extend #7304's usage counts and add session outcomes (telemetry v2) (#7420)
+609c4c7278eefec234a4486f4010af5214b082f1 taken fix: clarify the linked CLI description (#7099)
+10393e25aad345c54308104b415f82f8e44ffdea skipped feat(chat): open the session when its link hover card is clicked (#7508)
+c16fef64904e17c8b2b95c769b9504802b802487 skipped feat(files): search the branch menu from two branches and show cut-off names in full (#7497)
+479bfd788f849c65982c25b60929c9dc68254086 skipped feat(artifacts): delete cloud artifacts from session cards and preview more cloud text files (#7465)
+254ec57baf39a770780d66e7f854435c5bda0afb skipped feat(artifacts): preview cloud PDF artifacts (#7466)
+829bc6cf7e73013173c7d749752830ce8ca42754 taken fix(chat): show only the question and answer on answered question cards (#7535)
+a7d8bcfcaaf6898a232ebfeaab2c208923e20e37 skipped fix(updater): show one sentence instead of raw updater errors (#7427) — auto-updater выпилен из форка
+7690e4e7ea0535757aa80441159d860309677860 skipped feat(chat): let users steer or cancel their queued Browser annotations (#7458)
+85f47aba961a25a21a7b9280d26f0608b0a944e9 taken fix(desktop): extend the macOS sidebar over the center panel inset (#7552)
+3c51c71a9f074f13cdc62fe76385f67f3464e76c skipped feat(desktop): map Cmd+Backspace to delete-to-line-start (#5202)
+648d8379f7d4ef0b618ab4fbdc91483f775bf962 skipped fix(chat): draw live work in the conversation, not a nested scroll box (#7528) — зависит от скипнутой worker-updates чат-структуры апстрима (renderWorkerRun и пр.); порт = ручной, LiveActivityWindow в форке нет
+a40c241331f71d22f95dbbc6f2ec0bface8223e0 taken fix: keep AO's ao first after login-shell startup files (#7429)
+9785047f8172156aee186c22b9fda177f6807824 skipped feat(desktop): ask Local or Cloud before listing project sources (#7554)
+17d060345a9a885f8f998ddc402d4df79a666bc5 taken fix(chat): support Codex structured user input (#7186)
+6e37fc410cd54ae4be9ebe7491327c309b3a93a2 taken fix: follow chat selections and add Ctrl/Cmd+L attachment (#7489)
+021072c453889aca29fa6a62a879b1bd4f0cbb55 skipped fix(desktop): block shell reload and devtools in packaged builds (#7558) — конфликт с fork-дельтой main-процесса (desktop-quit vs quitConfirm, свой devtools-хендлер); порт не верифицируем без пересборки .app
+b303d2fe60beaf2712bc8b8071d8c08a6389bee4 skipped fix: consolidate AO side-chat commands to /btw (#7501) — side chats выпилены из форка целиком
