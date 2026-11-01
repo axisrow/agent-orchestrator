@@ -215,11 +215,11 @@ func TestReviewsTrigger_PassesPRURLThrough(t *testing.T) {
 	}
 }
 
-// Triggering a review on a session that cannot claim PRs (an orchestrator) is
-// a user error: it must surface as a typed 422 naming the cause, never the
-// bare 500 REVIEW_OPERATION_FAILED bucket.
+// Triggering a review on a session that cannot claim PRs (an orchestrator, a
+// scratch-project session) is a user error: it must surface as a typed 422
+// naming the cause, never the bare 500 REVIEW_OPERATION_FAILED bucket.
 func TestReviewsTrigger_NotClaimableSessionReturns422(t *testing.T) {
-	srv := newReviewTestServer(t, &fakeReviewService{triggerErr: fmt.Errorf("%w: session orch-1 cannot hold pull requests (orchestrator sessions do not claim PRs)", reviewsvc.ErrInvalid)})
+	srv := newReviewTestServer(t, &fakeReviewService{triggerErr: fmt.Errorf("%w: session orch-1 cannot hold pull requests (orchestrator sessions and scratch projects do not claim PRs)", reviewsvc.ErrInvalid)})
 
 	body, status, headers := doRequest(t, srv, "POST", "/api/v1/sessions/orch-1/reviews/trigger", "")
 	assertJSON(t, headers)
