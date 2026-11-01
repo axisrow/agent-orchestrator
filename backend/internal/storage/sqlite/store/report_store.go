@@ -398,3 +398,27 @@ func reportFromGen(r gen.Delivery) domain.ReportRecord {
 		DeliveryBatchID: r.DeliveryBatchID,
 	}
 }
+
+// ListStuckDeliveryCandidates returns the read-only visibility sweep's rows
+// (fork issue #211): pending report deliveries past the stuck threshold plus
+// every terminal stale row. Outputs are not loaded: grouping needs only the
+// delivery facts, and the sweep runs every cycle. Rows are ordered by project,
+// created_at, id so a group's first row is its oldest delivery.
+func (s *Store) ListStuckDeliveryCandidates(ctx context.Context, minAttempts int64, ageCutoff time.Time) ([]domain.ReportRecord, error) {
+	rows, err := s.qr.ListStuckDeliveryCandidates(ctx, gen.ListStuckDeliveryCandidatesParams{
+		MinAttempts: minAttempts,
+		AgeCutoff:   ageCutoff,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list stuck delivery candidates: %w", err)
+	}
+	out := make([]domain.ReportRecord, len(rows))
+	for i, row := range rows {
+		out[i] = domain.ReportRecord{
+			ID: row.ID, SessionID: domain.SessionID(row.SessionID), ProjectID: domain.ProjectID(row.ProjectID),
+			DeliveryState: domain.ReportDeliveryState(row.DeliveryState), DeliveryAttempts: row.DeliveryAttempts,
+			CreatedAt: row.CreatedAt, LastError: row.LastError,
+		}
+	}
+	return out, nil
+}

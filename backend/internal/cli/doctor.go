@@ -43,6 +43,27 @@ type doctorReport struct {
 	OK       bool          `json:"ok"`
 	Failures int           `json:"failures"`
 	Checks   []doctorCheck `json:"checks"`
+	// StuckDeliveries mirrors the daemon's stuck-delivery groups (fork issue
+	// #211) so --json stays machine-readable beyond the flat check messages.
+	// Empty unless the running daemon answered the stuck-deliveries probe.
+	StuckDeliveries []doctorStuckDelivery `json:"stuckDeliveries,omitempty"`
+}
+
+// doctorStuckDelivery mirrors the daemon's stuck-delivery group DTO (fork
+// issue #211): one (project, cause-class) group of report deliveries past the
+// visibility threshold, or one terminal stale group.
+type doctorStuckDelivery struct {
+	ProjectID        string  `json:"projectId"`
+	SessionID        string  `json:"sessionId"`
+	Recipient        string  `json:"recipient"`
+	CauseClass       string  `json:"causeClass"`
+	Cause            string  `json:"cause,omitempty"`
+	Attempts         int64   `json:"attempts"`
+	AgeSeconds       float64 `json:"ageSeconds"`
+	OldestDeliveryAt string  `json:"oldestDeliveryAt"`
+	Deliveries       int     `json:"deliveries"`
+	Zombie           bool    `json:"zombie"`
+	Terminal         bool    `json:"terminal"`
 }
 
 const (
@@ -51,6 +72,7 @@ const (
 	doctorSectionAgents         = "Agent harnesses"
 	doctorSectionGitHub         = "GitHub"
 	doctorSectionGitLab         = "GitLab"
+	doctorSectionDeliveries     = "Deliveries"
 	minGitVersion               = "2.25.0"
 	githubDoctorUserAgent       = "ao-agent-orchestrator/doctor"
 	gitlabDoctorUserAgent       = "ao-agent-orchestrator/doctor"
@@ -104,6 +126,8 @@ func newDoctorCommand(ctx *commandContext) *cobra.Command {
 		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			checks := ctx.runDoctor(cmd.Context())
+			stuckChecks, stuck := ctx.checkStuckDeliveries(cmd.Context())
+			checks = append(checks, stuckChecks...)
 			failures := 0
 			for _, check := range checks {
 				if check.Level == doctorFail {
@@ -113,7 +137,7 @@ func newDoctorCommand(ctx *commandContext) *cobra.Command {
 
 			if asJSON {
 				if err := writeJSON(cmd.OutOrStdout(), doctorReport{
-					OK: failures == 0, Failures: failures, Checks: checks,
+					OK: failures == 0, Failures: failures, Checks: checks, StuckDeliveries: stuck,
 				}); err != nil {
 					return err
 				}
@@ -223,6 +247,66 @@ func (c *commandContext) runDoctor(ctx context.Context) []doctorCheck {
 	}
 	checks = append(checks, c.checkCodexLaunchFlags(ctx), c.checkGitHubToken(ctx), c.checkGitLabToken(ctx))
 	return checks
+}
+
+// checkStuckDeliveries renders the daemon's stuck-delivery visibility section
+// (fork issue #211). It is informational by contract: WARN-level checks and a
+// structured list, never a FAIL — stuck deliveries are undelivered worker
+// reports, not a broken daemon, and the exit code must keep saying so. A
+// daemon that is not running skips the section quietly: the daemon check
+// already reports that, and an absent daemon cannot have a stuck ledger to
+// show.
+func (c *commandContext) checkStuckDeliveries(ctx context.Context) ([]doctorCheck, []doctorStuckDelivery) {
+	var out struct {
+		Groups []doctorStuckDelivery `json:"groups"`
+	}
+	if err := c.getJSON(ctx, "reports/deliveries/stuck", &out); err != nil {
+		if errors.Is(err, errDaemonUnavailable) {
+			return nil, nil
+		}
+		return []doctorCheck{{
+			Level: doctorWarn, Section: doctorSectionDeliveries, Name: "stuck-deliveries",
+			Message: fmt.Sprintf("could not read stuck deliveries from the daemon: %v", err),
+		}}, nil
+	}
+	if len(out.Groups) == 0 {
+		return []doctorCheck{{
+			Level: doctorPass, Section: doctorSectionDeliveries, Name: "stuck-deliveries",
+			Message: "no stuck report deliveries",
+		}}, out.Groups
+	}
+	checks := make([]doctorCheck, 0, len(out.Groups))
+	for _, group := range out.Groups {
+		age := humanDeliveryAge(group.AgeSeconds)
+		if group.Terminal {
+			checks = append(checks, doctorCheck{
+				Level: doctorWarn, Section: doctorSectionDeliveries, Name: "delivery-died",
+				Message: fmt.Sprintf("%s: %s; retired after %s, %d delivery(ies) - these will never be delivered", group.ProjectID, group.CauseClass, age, group.Deliveries),
+			})
+			continue
+		}
+		checks = append(checks, doctorCheck{
+			Level: doctorWarn, Section: doctorSectionDeliveries, Name: "stuck-delivery",
+			Message: fmt.Sprintf("%s -> %s: %s; %d attempt(s), failing for %s, %d delivery(ies)", group.ProjectID, group.Recipient, group.CauseClass, group.Attempts, age, group.Deliveries),
+		})
+	}
+	return checks, out.Groups
+}
+
+// humanDeliveryAge renders a stuck-delivery age at doctor granularity: the
+// bucket boundaries match the thresholds a reader compares against (minutes to
+// the hour threshold, hours to the day escalation).
+func humanDeliveryAge(seconds float64) string {
+	switch d := time.Duration(seconds * float64(time.Second)); {
+	case d < 2*time.Minute:
+		return d.Round(time.Second).String()
+	case d < 2*time.Hour:
+		return d.Round(time.Minute).String()
+	case d < 48*time.Hour:
+		return d.Round(time.Hour).String()
+	default:
+		return d.Round(24 * time.Hour).String()
+	}
 }
 
 // checkStore inspects the SQLite store WITHOUT opening or migrating it. The

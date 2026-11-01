@@ -489,6 +489,8 @@ var schemaNames = map[string]string{ //nolint:gosec // Public OpenAPI type names
 	"ControllersReportOutputResponse":             "ReportOutputResponse",
 	"ControllersReportResponse":                   "ReportResponse",
 	"ControllersListReportsResponse":              "ListReportsResponse",
+	"ControllersStuckDeliveryGroupResponse":       "StuckDeliveryGroupResponse",
+	"ControllersListStuckDeliveriesResponse":      "ListStuckDeliveriesResponse",
 	"ControllersClearNotificationsResponse":       "ClearNotificationsResponse",
 	"ControllersUsageHookMetadata":                "UsageHookMetadata",
 	"ControllersListUsageSessionsQuery":           "ListUsageSessionsQuery",
@@ -802,6 +804,14 @@ func reportOperations() []operation {
 			{http.StatusCreated, controllers.CreateReportResponse{}},
 			{http.StatusBadRequest, envelope.APIError{}},
 			{http.StatusNotFound, envelope.APIError{}},
+			{http.StatusInternalServerError, envelope.APIError{}},
+			{http.StatusNotImplemented, envelope.APIError{}},
+		},
+	}, {
+		method: http.MethodGet, path: "/api/v1/reports/deliveries/stuck", id: "listStuckDeliveries", tag: "reports",
+		summary: "Group report deliveries stuck past the visibility threshold without changing delivery state",
+		resps: []respUnit{
+			{http.StatusOK, controllers.ListStuckDeliveriesResponse{}},
 			{http.StatusInternalServerError, envelope.APIError{}},
 			{http.StatusNotImplemented, envelope.APIError{}},
 		},

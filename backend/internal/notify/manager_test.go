@@ -73,6 +73,49 @@ func (f *fakeStore) resolveMatching(at time.Time, match func(domain.Notification
 	return out
 }
 
+func (f *fakeStore) ResolveStuckDeliveryNotifications(_ context.Context, at time.Time, keep map[string]bool) ([]domain.NotificationRecord, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.resolveMatching(at, func(rec domain.NotificationRecord) bool {
+		return rec.Type == domain.NotificationStuckDelivery && !keep[rec.SourceKey]
+	}), nil
+}
+
+// The sweep's resolution path publishes every row it closed, so open
+// dashboards drop the incident live (fork issue #211).
+func TestManagerResolveStuckDeliveriesPublishesResolutions(t *testing.T) {
+	now := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+	st := &fakeStore{rows: []domain.NotificationRecord{
+		{ID: "ntf_ended", SessionID: "mer-1", ProjectID: "mer", Type: domain.NotificationStuckDelivery, SourceKey: "stuck-deliveries:mer:no active orchestrator:open"},
+		{ID: "ntf_live", SessionID: "mer-1", ProjectID: "mer", Type: domain.NotificationStuckDelivery, SourceKey: "stuck-deliveries:mer:queued-input:open"},
+	}}
+	hub := NewHub()
+	ch, unsub := hub.Subscribe("")
+	defer unsub()
+	mgr := New(Deps{Store: st, Publisher: hub, Clock: func() time.Time { return now }})
+
+	keep := map[string]bool{"stuck-deliveries:mer:queued-input:open": true}
+	resolved, err := mgr.ResolveStuckDeliveries(context.Background(), now, keep)
+	if err != nil {
+		t.Fatalf("ResolveStuckDeliveries: %v", err)
+	}
+	if len(resolved) != 1 || resolved[0].ID != "ntf_ended" {
+		t.Fatalf("resolved = %+v, want only ntf_ended", resolved)
+	}
+	if st.rows[1].Resolved() {
+		t.Fatalf("kept row resolved: %+v", st.rows[1])
+	}
+	select {
+	case got := <-ch:
+		if got.Kind != domain.NotificationResolved || got.Record.ID != "ntf_ended" {
+			t.Fatalf("published = %+v", got)
+		}
+	default:
+		t.Fatal("expected published resolution")
+	}
+}
+
 func TestManagerNotifyPersistsThenPublishes(t *testing.T) {
 	st := &fakeStore{}
 	hub := NewHub()

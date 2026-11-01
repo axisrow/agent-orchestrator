@@ -406,3 +406,41 @@ func notificationsFromGen(rows []gen.Notification) []domain.NotificationRecord {
 	}
 	return out
 }
+
+// ResolveStuckDeliveryNotifications closes every open stuck_delivery row whose
+// source key is absent from keep, and returns the rows it changed. The
+// stuck-delivery sweep (fork issue #211) computes keep from the deliveries
+// table: a row stays open only while its key is the current incident key.
+func (s *Store) ResolveStuckDeliveryNotifications(ctx context.Context, at time.Time, keep map[string]bool) ([]domain.NotificationRecord, error) {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	var resolved []domain.NotificationRecord
+	err := s.inTx(ctx, "resolve stuck delivery notifications", func(q *gen.Queries) error {
+		open, err := q.ListOpenStuckDeliveryNotifications(ctx)
+		if err != nil {
+			return err
+		}
+		for _, row := range open {
+			if keep[row.SourceKey] {
+				continue
+			}
+			// RETURNING carries the post-update row, so the resolved event the
+			// manager publishes actually carries resolved_at.
+			updated, err := q.ResolveStuckDeliveryNotification(ctx, gen.ResolveStuckDeliveryNotificationParams{
+				ResolvedAt: nullTime(at),
+				ID:         row.ID,
+			})
+			if err != nil {
+				return err
+			}
+			if len(updated) > 0 {
+				resolved = append(resolved, notificationFromGen(updated[0]))
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("resolve stuck delivery notifications: %w", err)
+	}
+	return resolved, nil
+}

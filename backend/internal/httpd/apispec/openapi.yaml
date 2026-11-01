@@ -4755,6 +4755,32 @@ paths:
       summary: Persist a worker report for later orchestrator delivery
       tags:
       - reports
+  /api/v1/reports/deliveries/stuck:
+    get:
+      operationId: listStuckDeliveries
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListStuckDeliveriesResponse'
+          description: OK
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: Group report deliveries stuck past the visibility threshold without
+        changing delivery state
+      tags:
+      - reports
   /api/v1/reviews/{reviewId}/conversation:
     get:
       operationId: getReviewerConversation
@@ -16529,6 +16555,15 @@ components:
       required:
       - shellTerminals
       type: object
+    ListStuckDeliveriesResponse:
+      properties:
+        groups:
+          items:
+            $ref: '#/components/schemas/StuckDeliveryGroupResponse'
+          type: array
+      required:
+      - groups
+      type: object
     ListWorkspaceFilesResponse:
       properties:
         ahead:
@@ -16882,6 +16917,8 @@ components:
           - review_completed
           - review_changes_requested
           - orphan_workers
+          - stuck_delivery
+          - delivery_died
           type: string
       required:
       - id
@@ -19581,6 +19618,45 @@ components:
       required:
       - outcome
       - duplicate
+      type: object
+    StuckDeliveryGroupResponse:
+      properties:
+        ageSeconds:
+          format: double
+          type: number
+        attempts:
+          format: int64
+          type: integer
+        cause:
+          type: string
+        causeClass:
+          type: string
+        deliveries:
+          type: integer
+        oldestDeliveryAt:
+          format: date-time
+          type: string
+        projectId:
+          type: string
+        recipient:
+          type: string
+        sessionId:
+          type: string
+        terminal:
+          type: boolean
+        zombie:
+          type: boolean
+      required:
+      - projectId
+      - sessionId
+      - recipient
+      - causeClass
+      - attempts
+      - ageSeconds
+      - oldestDeliveryAt
+      - deliveries
+      - zombie
+      - terminal
       type: object
     SubmitAgentHandoffRequest:
       properties:

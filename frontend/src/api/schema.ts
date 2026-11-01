@@ -1875,6 +1875,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/reports/deliveries/stuck": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Group report deliveries stuck past the visibility threshold without changing delivery state */
+        get: operations["listStuckDeliveries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/reviews/{reviewId}/conversation": {
         parameters: {
             query?: never;
@@ -5781,6 +5798,9 @@ export interface components {
         ListShellTerminalsResponse: {
             shellTerminals: components["schemas"]["ShellTerminalResponse"][];
         };
+        ListStuckDeliveriesResponse: {
+            groups: components["schemas"]["StuckDeliveryGroupResponse"][];
+        };
         ListWorkspaceFilesResponse: {
             ahead?: null | number;
             behind?: null | number;
@@ -5924,7 +5944,7 @@ export interface components {
             target: components["schemas"]["NotificationTarget"];
             title: string;
             /** @enum {string} */
-            type: "needs_input" | "ready_to_merge" | "pr_merged" | "pr_closed_unmerged" | "review_completed" | "review_changes_requested" | "orphan_workers";
+            type: "needs_input" | "ready_to_merge" | "pr_merged" | "pr_closed_unmerged" | "review_completed" | "review_changes_requested" | "orphan_workers" | "stuck_delivery" | "delivery_died";
         };
         NotificationTarget: {
             /** @enum {string} */
@@ -6994,6 +7014,22 @@ export interface components {
             /** @enum {string} */
             state?: "queued" | "running" | "completed" | "recovered" | "interrupted" | "failed";
             turnId?: string;
+        };
+        StuckDeliveryGroupResponse: {
+            /** Format: double */
+            ageSeconds: number;
+            /** Format: int64 */
+            attempts: number;
+            cause?: string;
+            causeClass: string;
+            deliveries: number;
+            /** Format: date-time */
+            oldestDeliveryAt: string;
+            projectId: string;
+            recipient: string;
+            sessionId: string;
+            terminal: boolean;
+            zombie: boolean;
         };
         SubmitAgentHandoffRequest: {
             /** @description Structured, source-agent-authored handoff enrichment. */
@@ -13639,6 +13675,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    listStuckDeliveries: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListStuckDeliveriesResponse"];
                 };
             };
             /** @description Internal Server Error */

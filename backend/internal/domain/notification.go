@@ -26,13 +26,26 @@ const (
 	// allow or deny their removal. The batch report hangs off the first
 	// affected session; its Body lists every one of them.
 	NotificationOrphanWorkers NotificationType = "orphan_workers"
+	// NotificationStuckDelivery means a group of pending report deliveries that
+	// share one cause (fork issue #211) has been failing past the visibility
+	// threshold: at least 10 delivery attempts or an hour without success. The
+	// row hangs off the oldest affected delivery's session; its Body carries the
+	// project, cause class, attempts, and age. Delivery success, a cause-class
+	// change, or a terminal outcome resolves it.
+	NotificationStuckDelivery NotificationType = "stuck_delivery"
+	// NotificationDeliveryDied records the terminal outcome of a stuck delivery
+	// group: its rows retired as stale, so nothing will deliver them anymore.
+	// Like the PR outcomes it is a fact that already happened — surfaced once,
+	// never held as unresolved.
+	NotificationDeliveryDied NotificationType = "delivery_died"
 )
 
 // Valid reports whether t is one of the v1 notification kinds.
 func (t NotificationType) Valid() bool {
 	switch t {
 	case NotificationNeedsInput, NotificationReadyToMerge, NotificationPRMerged, NotificationPRClosedUnmerged,
-		NotificationReviewCompleted, NotificationReviewChangesRequested, NotificationOrphanWorkers:
+		NotificationReviewCompleted, NotificationReviewChangesRequested, NotificationOrphanWorkers,
+		NotificationStuckDelivery, NotificationDeliveryDied:
 		return true
 	default:
 		return false
@@ -44,7 +57,7 @@ func (t NotificationType) Valid() bool {
 // Terminal facts — a PR that merged or closed — describe something that already
 // happened, so they are surfaced once as unseen and never held as unresolved.
 func (t NotificationType) NeedsResolution() bool {
-	return t == NotificationNeedsInput || t == NotificationReadyToMerge
+	return t == NotificationNeedsInput || t == NotificationReadyToMerge || t == NotificationStuckDelivery
 }
 
 // NotificationStatus is the seen state for a stored notification. The stored

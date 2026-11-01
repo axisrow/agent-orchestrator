@@ -681,3 +681,84 @@ func TestNotificationStore_MarkNotificationsReadOnlyTouchesGivenIDs(t *testing.T
 		t.Fatalf("unread count = %d err=%v, want 1 (ntf_3 must stay reachable)", count, err)
 	}
 }
+
+// The stuck-delivery acceptance (fork issue #211): 100 consecutive failures of
+// the same cause propose the same incident key 100 times, and exactly one row
+// comes out of it.
+func TestNotificationStore_StuckDeliverySourceKeyDedupesHundredFails(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	seedProject(t, s, "mer")
+	sess, err := s.CreateSession(ctx, sampleRecord("mer"))
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	inserted := 0
+	for i := 0; i < 100; i++ {
+		_, ok, err := s.CreateNotification(ctx, domain.NotificationRecord{
+			ID:        "ntf_stuck_" + string(rune('a'+i%26)) + string(rune('a'+i/26)),
+			SessionID: sess.ID, ProjectID: sess.ProjectID,
+			Type: domain.NotificationStuckDelivery, Title: "Report delivery is failing",
+			Status: domain.NotificationUnread, CreatedAt: now,
+			SourceKey: "stuck-deliveries:mer:no active orchestrator:open",
+		})
+		if err != nil {
+			t.Fatalf("create %d: %v", i, err)
+		}
+		if ok {
+			inserted++
+		}
+	}
+	if inserted != 1 {
+		t.Fatalf("inserted = %d, want exactly 1", inserted)
+	}
+}
+
+func TestNotificationStore_ResolveStuckDeliveryKeepsCurrentIncident(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	seedProject(t, s, "mer")
+	sess, err := s.CreateSession(ctx, sampleRecord("mer"))
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	mk := func(id, key string) domain.NotificationRecord {
+		return domain.NotificationRecord{
+			ID: id, SessionID: sess.ID, ProjectID: sess.ProjectID,
+			Type: domain.NotificationStuckDelivery, Title: "Report delivery is failing",
+			Status: domain.NotificationUnread, CreatedAt: now, SourceKey: key,
+		}
+	}
+	live := mk("ntf_live", "stuck-deliveries:mer:queued-input:open")
+	superseded := mk("ntf_sup", "stuck-deliveries:mer:no active orchestrator:open")
+	for _, rec := range []domain.NotificationRecord{live, superseded} {
+		if _, ok, err := s.CreateNotification(ctx, rec); err != nil || !ok {
+			t.Fatalf("create %s: inserted=%v err=%v", rec.ID, ok, err)
+		}
+	}
+	resolved, err := s.ResolveStuckDeliveryNotifications(ctx, now, map[string]bool{live.SourceKey: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resolved) != 1 || resolved[0].ID != superseded.ID {
+		t.Fatalf("resolved = %+v, want only the superseded row", resolved)
+	}
+	// The published row must be post-update: a resolved event carrying
+	// resolved_at=NULL leaves the row stuck in the dashboard badge.
+	if resolved[0].Resolved() != true || !resolved[0].ResolvedAt.Equal(now) {
+		t.Fatalf("resolved row resolved_at = %v, want %v", resolved[0].ResolvedAt, now)
+	}
+	// The current incident stays open; re-proposing it dedupes as before.
+	_, ok, err := s.CreateNotification(ctx, live)
+	if err != nil || ok {
+		t.Fatalf("live re-create inserted=%v err=%v, want false", ok, err)
+	}
+	// The resolved key frees nothing permanently, but the row itself is
+	// resolved now: the unresolved list must not count it anymore.
+	count, err := s.CountUnresolvedNotifications(ctx)
+	if err != nil || count != 1 {
+		t.Fatalf("unresolved count = %d err=%v, want 1", count, err)
+	}
+}

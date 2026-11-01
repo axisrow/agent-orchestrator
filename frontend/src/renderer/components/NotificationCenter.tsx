@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useParams } from "@tanstack/react-router";
 import {
+	ArchiveX,
 	ArrowUpRight,
 	Bell,
 	BellRing,
@@ -17,6 +18,7 @@ import {
 	MessageSquareDiff,
 	MessageSquareDot,
 	RotateCcw,
+	TimerOff,
 	Trash2,
 	X,
 } from "lucide-react";
@@ -1419,6 +1421,10 @@ function notificationIcon(type: string) {
 			return GitPullRequestClosed;
 		case "orphan_workers":
 			return Trash2;
+		case "stuck_delivery":
+			return TimerOff;
+		case "delivery_died":
+			return ArchiveX;
 		default:
 			return Bell;
 	}
@@ -1432,6 +1438,7 @@ function notificationIconClass(type: string): string {
 		case "needs_input":
 		case "review_feedback":
 		case "orphan_workers":
+		case "stuck_delivery":
 			return "text-warning";
 		case "agent_failed":
 			return "text-error";

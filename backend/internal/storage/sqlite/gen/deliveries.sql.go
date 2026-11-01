@@ -881,6 +881,71 @@ func (q *Queries) ListReportsBySession(ctx context.Context, sessionID string) ([
 	return items, nil
 }
 
+const listStuckDeliveryCandidates = `-- name: ListStuckDeliveryCandidates :many
+SELECT id, session_id, project_id, delivery_state, delivery_attempts, last_error, created_at
+FROM deliveries
+WHERE kind = 'report'
+  AND delivery_state IN ('pending', 'claimed', 'stale')
+  AND (
+    delivery_state = 'stale'
+    OR delivery_attempts >= ?1
+    OR created_at <= ?2
+  )
+ORDER BY project_id, created_at, id
+`
+
+type ListStuckDeliveryCandidatesParams struct {
+	MinAttempts int64
+	AgeCutoff   time.Time
+}
+
+type ListStuckDeliveryCandidatesRow struct {
+	ID               string
+	SessionID        string
+	ProjectID        string
+	DeliveryState    string
+	DeliveryAttempts int64
+	LastError        string
+	CreatedAt        time.Time
+}
+
+// Read-only visibility sweep for stuck deliveries (fork issue #211): report
+// rows past the stuck threshold (attempts or age) plus every terminal stale
+// row, grouped by (project, cause) in the service. No delivery state changes.
+// Claimed rows stay in the sweep: a claim in flight is undelivered work, and
+// dropping it would let the sweep resolve an open incident mid-delivery,
+// which the source-key dedupe would then never re-open.
+func (q *Queries) ListStuckDeliveryCandidates(ctx context.Context, arg ListStuckDeliveryCandidatesParams) ([]ListStuckDeliveryCandidatesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listStuckDeliveryCandidates, arg.MinAttempts, arg.AgeCutoff)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListStuckDeliveryCandidatesRow{}
+	for rows.Next() {
+		var i ListStuckDeliveryCandidatesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.SessionID,
+			&i.ProjectID,
+			&i.DeliveryState,
+			&i.DeliveryAttempts,
+			&i.LastError,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markReportBatchEmitted = `-- name: MarkReportBatchEmitted :execrows
 UPDATE deliveries
 SET emitted_at = ?1

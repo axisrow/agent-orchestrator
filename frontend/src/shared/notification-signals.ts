@@ -19,7 +19,9 @@ export type NotificationType =
 	| "pr_merged"
 	| "pr_closed_unmerged"
 	| "review_completed"
-	| "review_changes_requested";
+	| "review_changes_requested"
+	| "stuck_delivery"
+	| "delivery_died";
 
 /**
  * The only event classes allowed to signal (bell, OS toast, sound, dock
@@ -27,15 +29,19 @@ export type NotificationType =
  * (`needs_input` — the backend creates it from the session's domain
  * waiting-for-input state, not from text heuristics), a review verdict of
  * changes requested on the user's or curated PRs (`review_changes_requested`;
- * the cloud control plane reports the same verdict as `review_feedback`), and
- * a failed agent (`agent_failed`, cloud) that can only resume with the
- * owner's help. Deliberately quiet: done/checkpoint reports, `ready_to_merge`
- * and PR outcomes, spawns, panel activity, other lifecycle events. New types
- * default to quiet — extending this set is an explicit policy decision.
+ * the cloud control plane reports the same verdict as `review_feedback`), a
+ * failed agent (`agent_failed`, cloud) that can only resume with the owner's
+ * help, and report deliveries stuck past the visibility threshold
+ * (`stuck_delivery` — edge-triggered once per (project, cause-class)
+ * incident, so it rings at most once per incident, fork issue #211).
+ * Deliberately quiet: done/checkpoint reports, `ready_to_merge`
+ * and PR outcomes, spawns, panel activity, terminal `delivery_died` records.
+ * New types default to quiet — extending this set is an explicit policy decision.
  */
 const HUMAN_FEEDBACK_TYPES: ReadonlySet<string> = new Set<string>([
 	"needs_input",
 	"review_changes_requested",
+	"stuck_delivery",
 	// Cloud control-plane types for the same signal classes.
 	"review_feedback",
 	"agent_failed",
