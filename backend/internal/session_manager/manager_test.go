@@ -11124,6 +11124,14 @@ type semanticSignalingAgent struct{ signalingAgent }
 
 func (semanticSignalingAgent) EmitsSemanticMessageAcceptance() bool { return true }
 
+// queuedDetectingSemanticAgent advertises semantic acceptance plus the queue
+// detection capability the fork issue #205 gate consults before writing.
+type queuedDetectingSemanticAgent struct{ semanticSignalingAgent }
+
+func (queuedDetectingSemanticAgent) DetectQueuedPrompt(output string) bool {
+	return strings.Contains(output, "to send now") || strings.Contains(output, "edit queued messages")
+}
+
 type startupReadySignalingAgent struct{ fakeAgent }
 
 func (startupReadySignalingAgent) FirstSignalProvesInputReady() bool { return true }
@@ -11256,6 +11264,35 @@ func TestSendSemanticTUIDoesNotAcceptPaneWrite(t *testing.T) {
 	}
 }
 
+// TestSendSemanticTUIRefusesWhenPromptHeldQueued pins the fork issue #205
+// gate: a target whose surface already shows queued input must not receive a
+// pane write — writing would append another queued copy that can never become
+// a prompt — and the refusal is the typed terminal outcome.
+func TestSendSemanticTUIRefusesWhenPromptHeldQueued(t *testing.T) {
+	st := newFakeStore()
+	st.sessions["s1"] = pastStartupGate(domain.SessionRecord{
+		ID: "s1", Harness: domain.HarnessClaudeCode, Mode: domain.SessionModeTUI,
+		Activity: domain.Activity{State: domain.ActivityActive},
+		Metadata: domain.SessionMetadata{RuntimeHandleID: "h1", RuntimeLaunchID: "launch-1"},
+	})
+	msg := &fakeMessenger{}
+	m := newSendTestManager(t, queuedDetectingSemanticAgent{}, msg, st)
+	m.runtime.(*fakeRuntime).outputs = []string{
+		"✻ Worked for 8s\n\n────────\n│ ❯\n────────\n  queued  Reports since… (ctrl+x ctrl+s to send now)\n",
+	}
+
+	err := m.SendSemantic(context.Background(), "s1", "report", "report-batch:queued")
+	if !errors.Is(err, ports.ErrPromptHeldQueued) {
+		t.Fatalf("SendSemantic error = %v, want ErrPromptHeldQueued", err)
+	}
+	if len(msg.msgs) != 0 {
+		t.Fatalf("pane writes = %d, want 0: a queue-held target must not receive text", len(msg.msgs))
+	}
+}
+
+// TestSendSemanticTUIRejectsAdapterWithoutAcceptanceSignal keeps its original
+// shape: without the queue capability, or with a clean surface, delivery
+// behaves exactly as before #205.
 func TestSendSemanticTUIRejectsAdapterWithoutAcceptanceSignal(t *testing.T) {
 	st := newFakeStore()
 	st.sessions["s1"] = pastStartupGate(domain.SessionRecord{

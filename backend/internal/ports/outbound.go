@@ -75,6 +75,22 @@ type AgentMessenger interface {
 	Send(ctx context.Context, id domain.SessionID, message string) error
 }
 
+// ErrPromptHeldQueued reports a delivery whose text landed in the target TUI's
+// provider message queue instead of a submitted prompt: the pane write
+// succeeded, but no prompt left the composer, so no prompt-submit acceptance
+// can ever be observed until the queue is flushed. Retrying the same write
+// appends another queued copy — callers must treat this as a terminal
+// delivery outcome, not a retryable failure (fork issue #205).
+var ErrPromptHeldQueued = errors.New("session: prompt text is held in the target's message queue")
+
+// QueuedPromptDetector is an opt-in adapter capability reporting whether a
+// TUI's current terminal surface shows typed input held in the provider's
+// message queue — the state where text waits ("ctrl+x ctrl+s to send now")
+// instead of having been submitted as a prompt.
+type QueuedPromptDetector interface {
+	DetectQueuedPrompt(output string) bool
+}
+
 // ---- runtime / agent / workspace plugin ports ----
 
 // Runtime is the full runtime adapter contract: session creation/teardown plus

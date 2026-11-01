@@ -452,6 +452,70 @@ func (q *Queries) ExpireStalePendingReports(ctx context.Context, cutoff time.Tim
 	return result.RowsAffected()
 }
 
+const failClaimedReportBatch = `-- name: FailClaimedReportBatch :many
+UPDATE deliveries
+SET delivery_state = 'stale', claim_token = '', claimed_at = NULL,
+    last_error = ?1
+WHERE project_id = ?2 AND delivery_state = 'claimed'
+  AND claim_token = ?3
+RETURNING id, kind, session_id, project_id, recipient_session_id, state, note, message, created_at, delivery_state, available_at, settlement_deadline, repeat_count, claim_token, claimed_at, delivery_attempts, acknowledged_at, last_error, emitted_at, delivery_batch_id
+`
+
+type FailClaimedReportBatchParams struct {
+	LastError  string
+	ProjectID  string
+	ClaimToken string
+}
+
+// Terminal outcome of a delivery whose target held the text in its message
+// queue (fork issue #205): the batch is retired as stale with the reason in
+// last_error instead of returning to pending, so no retry re-appends the same
+// content to the queue. Stale is the ledger's only terminal state; the stale
+// expiry query never touches claimed rows, so this fences like the ack path.
+func (q *Queries) FailClaimedReportBatch(ctx context.Context, arg FailClaimedReportBatchParams) ([]Delivery, error) {
+	rows, err := q.db.QueryContext(ctx, failClaimedReportBatch, arg.LastError, arg.ProjectID, arg.ClaimToken)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Delivery{}
+	for rows.Next() {
+		var i Delivery
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.SessionID,
+			&i.ProjectID,
+			&i.RecipientSessionID,
+			&i.State,
+			&i.Note,
+			&i.Message,
+			&i.CreatedAt,
+			&i.DeliveryState,
+			&i.AvailableAt,
+			&i.SettlementDeadline,
+			&i.RepeatCount,
+			&i.ClaimToken,
+			&i.ClaimedAt,
+			&i.DeliveryAttempts,
+			&i.AcknowledgedAt,
+			&i.LastError,
+			&i.EmittedAt,
+			&i.DeliveryBatchID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getReport = `-- name: GetReport :one
 SELECT id, kind, session_id, project_id, recipient_session_id, state, note, message, created_at, delivery_state, available_at, settlement_deadline, repeat_count, claim_token, claimed_at, delivery_attempts, acknowledged_at, last_error, emitted_at, delivery_batch_id FROM deliveries WHERE id = ?
 `

@@ -84,6 +84,19 @@ SET emitted_at = sqlc.arg(emitted_at)
 WHERE project_id = sqlc.arg(project_id) AND delivery_state = 'claimed'
   AND claim_token = sqlc.arg(claim_token);
 
+-- name: FailClaimedReportBatch :many
+-- Terminal outcome of a delivery whose target held the text in its message
+-- queue (fork issue #205): the batch is retired as stale with the reason in
+-- last_error instead of returning to pending, so no retry re-appends the same
+-- content to the queue. Stale is the ledger's only terminal state; the stale
+-- expiry query never touches claimed rows, so this fences like the ack path.
+UPDATE deliveries
+SET delivery_state = 'stale', claim_token = '', claimed_at = NULL,
+    last_error = sqlc.arg(last_error)
+WHERE project_id = sqlc.arg(project_id) AND delivery_state = 'claimed'
+  AND claim_token = sqlc.arg(claim_token)
+RETURNING *;
+
 -- name: AcknowledgeAcceptedPendingReports :many
 -- The acceptance-gated settle (fork issue #179): only batches whose durable
 -- correlation id is named by the recipient's current coordination checkpoint

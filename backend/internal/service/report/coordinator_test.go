@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
+	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 )
 
 func TestCoordinatorFixedFallbackAndSettlementBatch(t *testing.T) {
@@ -658,6 +660,42 @@ func TestCoordinatorExhaustedBatchStillReemits(t *testing.T) {
 	}
 }
 
+// TestCoordinatorQueuedPromptFailsBatchTerminally pins the fork issue #205
+// contract: a submit refused because the target TUI held the batch text in its
+// message queue retires the batch terminally — it never returns to pending, so
+// no later cycle re-appends the same content to the queue — and the WARN log
+// names the distinguishable queue-held reason.
+func TestCoordinatorQueuedPromptFailsBatchTerminally(t *testing.T) {
+	now := time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC)
+	store := newCoordinatorStore(now)
+	store.sessions = []domain.SessionRecord{{ID: "orch", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeTUI}}
+	store.add(reportAt("queued", "worker", now, now, "context"))
+	delivery := &coordinatorDelivery{submitErr: fmt.Errorf("session: %w: prompt submission was not observed; batch text is queued in the session", ports.ErrPromptHeldQueued)}
+	var logs bytes.Buffer
+	c := NewCoordinator(CoordinatorDeps{Store: store, Delivery: delivery, Now: func() time.Time { return now }, Log: slog.New(slog.NewTextHandler(&logs, nil))})
+	ctx := context.Background()
+	if _, err := c.RunDue(ctx); err == nil {
+		t.Fatal("first attempt should surface the queue-held error")
+	}
+	rec := store.reports[0]
+	if rec.DeliveryState != domain.ReportStale || rec.LastError == "" || !strings.Contains(rec.LastError, "message queue") {
+		t.Fatalf("record = %+v, want terminal stale with the queue-held reason", rec)
+	}
+	if got := logs.String(); !strings.Contains(got, "report: batch delivery failed") || !strings.Contains(got, "message queue") {
+		t.Fatalf("delivery failure evidence = %q", got)
+	}
+	// Later cycles never re-append the batch: the stale row leaves the schedule
+	// entirely, even after a daemon-restart requeue sweep.
+	now = now.Add(6 * time.Hour)
+	store.requeue()
+	if delay, err := c.RunDue(ctx); err != nil || delay >= 0 {
+		t.Fatalf("post-failure delay = %v, err = %v, want an idle schedule", delay, err)
+	}
+	if len(delivery.submissions) != 1 {
+		t.Fatalf("submissions = %d, want 1: a queue-held batch was re-emitted", len(delivery.submissions))
+	}
+}
+
 func TestCoordinatorEmissionLogsEvidence(t *testing.T) {
 	now := time.Date(2026, 10, 22, 12, 30, 0, 0, time.UTC)
 	store := newCoordinatorStore(now)
@@ -907,6 +945,19 @@ func (s *coordinatorStore) MarkReportBatchEmitted(_ context.Context, project dom
 	for i := range s.reports {
 		if s.reports[i].ProjectID == project && s.reports[i].DeliveryState == domain.ReportClaimed && s.reports[i].ClaimToken == token {
 			s.reports[i].EmittedAt = at
+			count++
+		}
+	}
+	return count, nil
+}
+
+func (s *coordinatorStore) FailReportBatchQueued(_ context.Context, project domain.ProjectID, token string, reason string) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	count := 0
+	for i := range s.reports {
+		if s.reports[i].ProjectID == project && s.reports[i].DeliveryState == domain.ReportClaimed && s.reports[i].ClaimToken == token {
+			s.reports[i].DeliveryState, s.reports[i].ClaimToken, s.reports[i].LastError = domain.ReportStale, "", reason
 			count++
 		}
 	}

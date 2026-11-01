@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
+	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 )
 
 // ReportOrchestratorBackoff reschedules a due batch whose project has no
@@ -46,6 +47,7 @@ type DeliveryStore interface {
 	ReleaseReportBatch(context.Context, domain.ProjectID, string, time.Time, string) (int, error)
 	DeferReportBatch(context.Context, domain.ProjectID, string, time.Time, string) (int, error)
 	MarkReportBatchEmitted(context.Context, domain.ProjectID, string, time.Time) (int, error)
+	FailReportBatchQueued(context.Context, domain.ProjectID, string, string) (int, error)
 	AcknowledgeAcceptedReportBatches(context.Context, domain.ProjectID, string, time.Time) (int, error)
 	ExpireStaleReportDeliveries(context.Context, time.Time) (int, error)
 }
@@ -294,6 +296,17 @@ func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.Proje
 		// head of the queue (#7435) — but the attempt itself names its batch in
 		// the log.
 		c.log.Warn("report: batch delivery failed", "batch", batch.IdempotencyKey(), "project", batch.ProjectID, "target", target.ID, "attempts", batch.MaxDeliveryAttempts(), "err", err)
+		if errors.Is(err, ports.ErrPromptHeldQueued) {
+			// The target TUI queued the batch text instead of submitting a
+			// prompt (fork issue #205). Backing off would re-emit the same
+			// batch onto that queue forever; retire it terminally instead.
+			// The already-queued copies need a manual flush (ctrl+x ctrl+s in
+			// the session); new reports flow again once the queue is clear.
+			if _, failErr := c.store.FailReportBatchQueued(ctx, batch.ProjectID, batch.Token, err.Error()); failErr != nil {
+				return errors.Join(err, failErr)
+			}
+			return err
+		}
 		return c.retryLater(ctx, batch, err)
 	}
 	return c.ackBatch(ctx, batch.ProjectID, batch.Token)
