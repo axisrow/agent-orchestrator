@@ -25,7 +25,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1]
+        shard: [0, 1, 2, 3]
     defaults:
       run:
         working-directory: backend
@@ -79,7 +79,7 @@ jobs:
         # a required check must still run every test. Compilation stays cached.
         run: |
           packages=$(go list ./... | grep -v -e '/internal/storage/sqlite$' -e '/internal/service/chat$' -e '/internal/session_manager$' -e '/internal/storage/sqlite/store$')
-          selected=$(printf '%s\n' "$packages" | awk -v shard=${{ matrix.shard }} '((NR - 1) % 2) == shard')
+          selected=$(printf '%s\n' "$packages" | awk -v shard=${{ matrix.shard }} '((NR - 1) % 4) == shard')
           test -n "$selected"
           printf '%s\n' "$selected" | xargs go test -race -count=1 -timeout=20m
 
@@ -88,7 +88,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1]
+        # Shards 0-3 round-robin the package's tests; shard 4 isolates the
+        # heaviest single test (~25% of the package's race time) so it cannot
+        # dominate one round-robin shard. If upstream renames the test, the
+        # round-robin shards pick it up again and the name check in shard 4
+        # fails loudly — coverage never silently drops.
+        shard: [0, 1, 2, 3, 4]
     defaults:
       run:
         working-directory: backend
@@ -100,14 +105,54 @@ jobs:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
 
-      - name: Test chat
+      - name: Test chat shard
+        if: matrix.shard != 4
         run: |
-          tests=$(go test -race -list . ./internal/service/chat | grep -E '^(Test|Example|Fuzz)')
-          selected=$(printf '%s\n' "$tests" | awk -v shard=${{ matrix.shard }} '((NR - 1) % 2) == shard' | paste -sd '|' -)
+          tests=$(go test -race -list . ./internal/service/chat | grep -E '^(Test|Example|Fuzz)' | grep -v '^TestACPReplayProjectsExactlyOnceAcrossDaemonRestarts$')
+          selected=$(printf '%s\n' "$tests" | awk -v shard=${{ matrix.shard }} '((NR - 1) % 4) == shard' | paste -sd '|' -)
           test -n "$selected"
           go test -race -count=1 -timeout=20m -run "^($selected)$" ./internal/service/chat
 
-  session-store-race:
+      - name: Test chat ACP replay projection
+        if: matrix.shard == 4
+        run: |
+          go test -race -list '^TestACPReplayProjectsExactlyOnceAcrossDaemonRestarts$' ./internal/service/chat | grep -qx 'TestACPReplayProjectsExactlyOnceAcrossDaemonRestarts'
+          go test -race -count=1 -timeout=20m -run '^TestACPReplayProjectsExactlyOnceAcrossDaemonRestarts$' ./internal/service/chat
+
+  session-manager-race:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Same shape as chat-race: shards 0-1 round-robin, shard 2 isolates the
+        # heaviest single test (~40% of the package's race time).
+        shard: [0, 1, 2]
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Test session manager shard
+        if: matrix.shard != 2
+        run: |
+          tests=$(go test -race -list . ./internal/session_manager | grep -E '^(Test|Example|Fuzz)' | grep -v '^TestSessionModelSurvivesRestore$')
+          selected=$(printf '%s\n' "$tests" | awk -v shard=${{ matrix.shard }} '((NR - 1) % 2) == shard' | paste -sd '|' -)
+          test -n "$selected"
+          go test -race -count=1 -timeout=20m -run "^($selected)$" ./internal/session_manager
+
+      - name: Test session model restore
+        if: matrix.shard == 2
+        run: |
+          go test -race -list '^TestSessionModelSurvivesRestore$' ./internal/session_manager | grep -qx 'TestSessionModelSurvivesRestore'
+          go test -race -count=1 -timeout=20m -run '^TestSessionModelSurvivesRestore$' ./internal/session_manager
+
+  sqlite-store-race:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -120,15 +165,19 @@ jobs:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
 
-      - name: Test session manager and SQLite store
-        run: go test -race -count=1 -timeout=20m ./internal/session_manager ./internal/storage/sqlite/store
+      - name: Test SQLite store
+        run: go test -race -count=1 -timeout=20m ./internal/storage/sqlite/store
 
   sqlite-race:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3]
+        # Shards 0-7 round-robin the package's tests; shard 8 isolates the
+        # heaviest single test (~15% of the package's race time: every case
+        # runs the full migration chain through Open). Same fail-safe as
+        # chat-race if upstream renames the test.
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8]
     defaults:
       run:
         working-directory: backend
@@ -141,23 +190,31 @@ jobs:
           cache-dependency-path: backend/go.sum
 
       - name: Test SQLite shard
+        if: matrix.shard != 8
         run: |
-          tests=$(go test -race -list . ./internal/storage/sqlite | grep -E '^(Test|Example|Fuzz)')
-          selected=$(printf '%s\n' "$tests" | awk -v shard=${{ matrix.shard }} '((NR - 1) % 4) == shard' | paste -sd '|' -)
+          tests=$(go test -race -list . ./internal/storage/sqlite | grep -E '^(Test|Example|Fuzz)' | grep -v '^TestOpenPreservesDataDirectoryCharacters$')
+          selected=$(printf '%s\n' "$tests" | awk -v shard=${{ matrix.shard }} '((NR - 1) % 8) == shard' | paste -sd '|' -)
           test -n "$selected"
           go test -race -count=1 -timeout=20m -run "^($selected)$" ./internal/storage/sqlite
+
+      - name: Test SQLite data-directory path handling
+        if: matrix.shard == 8
+        run: |
+          go test -race -list '^TestOpenPreservesDataDirectoryCharacters$' ./internal/storage/sqlite | grep -qx 'TestOpenPreservesDataDirectoryCharacters'
+          go test -race -count=1 -timeout=20m -run '^TestOpenPreservesDataDirectoryCharacters$' ./internal/storage/sqlite
 
   # Keep the existing required check as the gate for every backend race test.
   build-test:
     if: always()
-    needs: [backend-core, chat-race, session-store-race, sqlite-race]
+    needs: [backend-core, chat-race, session-manager-race, sqlite-store-race, sqlite-race]
     runs-on: ubuntu-latest
     steps:
       - name: Check backend results
         run: |
           test '${{ needs.backend-core.result }}' = success
           test '${{ needs.chat-race.result }}' = success
-          test '${{ needs.session-store-race.result }}' = success
+          test '${{ needs.session-manager-race.result }}' = success
+          test '${{ needs.sqlite-store-race.result }}' = success
           test '${{ needs.sqlite-race.result }}' = success
 
   # The suite above only ever runs on Linux, so the packages whose behaviour is
