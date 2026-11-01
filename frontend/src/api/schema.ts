@@ -1237,23 +1237,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/link-preview": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Fetch link-preview metadata (Open Graph) for an external URL */
-        get: operations["getLinkPreview"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/mobile/devices": {
         parameters: {
             query?: never;
@@ -5011,6 +4994,7 @@ export interface components {
             prs: components["schemas"]["SessionPRFacts"][];
             /** @enum {string} */
             requestedOutput?: "artifact";
+            reviewOnly?: boolean;
             reviewerConfig?: components["schemas"]["AgentConfig"];
             /** @enum {string} */
             reviewerHarness?: "claude-code" | "codex" | "copilot" | "cursor" | "kilocode" | "opencode" | "opencode-v2" | "kiro" | "pi" | "agy" | "devin" | "droid" | "kimi" | "kimchi" | "muse" | "amp" | "aider" | "grok" | "crush" | "auggie" | "cline" | "autohand";
@@ -5708,14 +5692,6 @@ export interface components {
             ok: boolean;
             sessionId: string;
         };
-        LinkPreviewResponse: {
-            description?: string;
-            faviconUrl?: string;
-            imageUrl?: string;
-            siteName?: string;
-            title?: string;
-            url: string;
-        };
         ListAgentAuthPlansResponse: {
             plans: components["schemas"]["AgentAuthPlan"][];
         };
@@ -6141,6 +6117,7 @@ export interface components {
             orchestrator?: components["schemas"]["RoleOverride"];
             orchestratorPromptOverride?: string;
             orchestratorRules?: string;
+            ownAccounts?: string[];
             postCreate?: string[];
             preRemove?: string[];
             reviewers?: components["schemas"]["DomainReviewerConfig"][];
@@ -6622,6 +6599,8 @@ export interface components {
             deletions: number;
             headSha: string;
             htmlUrl?: string;
+            /** Format: date-time */
+            lastSeenAt?: null | string;
             mergeability: components["schemas"]["SessionPRMergeabilitySummary"];
             number: number;
             /** Format: date-time */
@@ -6915,6 +6894,7 @@ export interface components {
             prompt?: string;
             /** @enum {string} */
             requestedOutput?: "artifact";
+            reviewOnly?: boolean;
             /** @enum {string} */
             trackerProvider?: "github" | "gitlab";
         };
@@ -11439,65 +11419,6 @@ export interface operations {
             };
             /** @description Not Implemented */
             501: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["APIError"];
-                };
-            };
-        };
-    };
-    getLinkPreview: {
-        parameters: {
-            query?: {
-                /** @description Absolute http(s) URL of the page to preview. */
-                url?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LinkPreviewResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["APIError"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["APIError"];
-                };
-            };
-            /** @description Not Implemented */
-            501: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["APIError"];
-                };
-            };
-            /** @description Bad Gateway */
-            502: {
                 headers: {
                     [name: string]: unknown;
                 };

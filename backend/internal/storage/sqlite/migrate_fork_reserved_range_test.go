@@ -62,6 +62,8 @@ var forkLocalMigrations = []string{
 	"app_settings_scm_proxy_url",
 	"delivery_ledger",
 	"review_run_github_review_state",
+	"session_review_only",
+	"pr_last_seen_at",
 	// "app_settings_scm_proxy_url" first shipped as 9014 in open PR #116; PR
 	// #113 claimed the same number in flight, so the file renumbered to 9015
 	// before merge (neither number reached an install).

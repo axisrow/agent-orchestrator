@@ -35,6 +35,8 @@ export type ProjectSettingsDraft = {
 	autoReview: boolean;
 	/** Local-only: workers may ask AO to review their own PRs. */
 	workersRequestReview?: boolean;
+	/** Comma-separated GitHub accounts counted as own for PR review ownership. */
+	ownAccounts?: string;
 	intakeEnabled: boolean;
 	intakeRepo: string;
 	intakeAssignee: string;
@@ -64,6 +66,8 @@ type Capabilities = {
 	reviewer: boolean;
 	requiredAgents: boolean;
 	workersRequestReview?: boolean;
+	/** Local-only: the own accounts that widen PR review ownership. */
+	ownAccounts?: boolean;
 	nameLimit?: number;
 	requiredBranch?: boolean;
 	/** Cloud defaults and tuning belong to its runtime, rather than the local catalog. */
@@ -200,6 +204,7 @@ export function ProjectSettingsEditor({ initialValues, section, capabilities, de
 					<ProjectSettingsSection title={t("settings.project.pullRequests")} grouped>
 						<ProjectAutoReviewToggle description={autoReviewDescription} checked={draft.autoReview} onCheckedChange={(autoReview) => patch({ autoReview })} />
 						{capabilities.workersRequestReview && <ProjectWorkersRequestReviewToggle checked={draft.workersRequestReview ?? false} onCheckedChange={(workersRequestReview) => patch({ workersRequestReview })} />}
+						{capabilities.ownAccounts && <ProjectSettingsInputRow id="ownAccounts" label={t("settings.project.ownAccounts")} editLabel={t("settings.field.edit", { label: t("settings.project.ownAccounts") })} editIcon={<Pencil className="settings-inline-edit-icon" aria-hidden="true" />} value={draft.ownAccounts ?? ""} placeholder={t("settings.project.ownAccountsPlaceholder")} onChange={(ownAccounts) => patch({ ownAccounts })} />}
 					</ProjectSettingsSection>
 				</>}
 				{generalExtra}

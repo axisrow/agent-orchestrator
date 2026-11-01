@@ -507,6 +507,13 @@ type SpawnSessionRequest struct {
 	// the ordinary task flow.
 	RequestedOutput domain.RequestedOutput `json:"requestedOutput,omitempty" enum:"artifact"`
 
+	// ReviewOnly spawns a review-only session: its launch denies file-editing and
+	// push tools, auto-review is forced on, and review auto-inject stays off so
+	// findings never route back as a fix loop. It requires the native terminal
+	// interface and a project checkout, and cannot be combined with artifact
+	// delivery. Used by the unified PR review entrypoint for foreign PRs.
+	ReviewOnly bool `json:"reviewOnly,omitempty"`
+
 	// DisplayName is the sidebar label for the session, capped at 100 characters.
 	// `ao spawn --name` always sets it; other clients (e.g. the desktop new-task
 	// dialog) may omit it and fall back to the session id in the read model.
@@ -1250,6 +1257,7 @@ type SessionPRSummary struct {
 	ObservedAt       time.Time                    `json:"observedAt,omitempty"`
 	CIObservedAt     time.Time                    `json:"ciObservedAt,omitempty"`
 	ReviewObservedAt time.Time                    `json:"reviewObservedAt,omitempty"`
+	LastSeenAt       *time.Time                   `json:"lastSeenAt,omitempty"`
 }
 
 // SessionPRCISummary is the CI status block for a session PR summary.
@@ -1365,6 +1373,7 @@ func NewSessionPRSummary(in sessionsvc.PRSummary) SessionPRSummary {
 		ObservedAt:       in.ObservedAt,
 		CIObservedAt:     in.CIObservedAt,
 		ReviewObservedAt: in.ReviewObservedAt,
+		LastSeenAt:       optionalTime(in.LastSeenAt),
 	}
 }
 
@@ -2434,23 +2443,6 @@ type EndpointsResponse struct {
 type IdentityResponse struct {
 	HostID     string `json:"hostId"`
 	APIVersion int    `json:"apiVersion"`
-}
-
-// LinkPreviewQuery selects the external page to unfurl.
-type LinkPreviewQuery struct {
-	URL string `query:"url" description:"Absolute http(s) URL of the page to preview."`
-}
-
-// LinkPreviewResponse is the body of GET /api/v1/link-preview (200). Only URL
-// is guaranteed; every other field is omitted when the page does not provide
-// it, so the renderer renders whatever subset arrived.
-type LinkPreviewResponse struct {
-	URL         string `json:"url"`
-	Title       string `json:"title,omitempty"`
-	Description string `json:"description,omitempty"`
-	ImageURL    string `json:"imageUrl,omitempty"`
-	SiteName    string `json:"siteName,omitempty"`
-	FaviconURL  string `json:"faviconUrl,omitempty"`
 }
 
 // MobileStatusResponse is the body of the Connect Mobile status/enable/disable/

@@ -12,6 +12,7 @@ import { TooltipProvider } from "./ui/tooltip";
 import type { SessionInterfaceTransitionStatus } from "../hooks/useSessionInterfaceTransition";
 import type { BrowserTabsState, BrowserAgentActivityState } from "../../main/browser-view-host";
 import { inspectorIsOpen, rememberedFileDisplayMode, useUiStore, type InspectorView } from "../stores/ui-store";
+import { aoBridge } from "../lib/bridge";
 import { useTerminalResetStore } from "../stores/terminal-reset-store";
 import type { WorkspaceSession, WorkspaceSummary } from "../types/workspace";
 import { setChatDraftBoundary } from "../lib/chat-draft-boundary";
@@ -5018,15 +5019,36 @@ describe("SessionView", () => {
 		expect(screen.getByTestId("panel-inspector")).toHaveAttribute("data-state", "expanded");
 	});
 
-	it("starts the orchestrator Browser closed and opens it with the inspector shortcut", () => {
+	it("starts the orchestrator Browser closed and opens it with the shared inspector toggle", () => {
 		render(<SessionView sessionId="sess-orch" />);
 		expect(inspectorOpen("sess-orch")).toBe(false);
 		expect(screen.queryByTestId("inspector-collapsed-rail")).not.toBeInTheDocument();
-		expect(screen.getByRole("button", { name: "Open Browser" })).toHaveAttribute("aria-pressed", "false");
+		expect(screen.getByRole("button", { name: "Open inspector panel" })).toHaveAttribute("aria-pressed", "false");
 		act(() => appShortcutBus.emit({ id: "toggle-inspector" }));
 		expect(inspectorOpen("sess-orch")).toBe(true);
-		expect(screen.getByRole("button", { name: "Close Browser" })).toHaveAttribute("aria-pressed", "true");
+		expect(screen.getByRole("button", { name: "Close inspector panel" })).toHaveAttribute("aria-pressed", "true");
 		expect(useUiStore.getState().inspectorSessions["sess-orch"]?.view).toBe("browser");
+	});
+
+	it("applies the AO_RIGHT_PANEL=expanded default to a worker and an orchestrator session alike", () => {
+		aoBridge.launch.rightPanelExpanded = true;
+		try {
+			useUiStore.setState({ inspectorSessions: {} });
+			const worker = render(<SessionView sessionId="sess-1" />);
+			expect(inspectorOpen("sess-1")).toBe(true);
+			expect(screen.getByTestId("panel-inspector")).toHaveAttribute("data-state", "expanded");
+			worker.unmount();
+
+			render(<SessionView sessionId="sess-orch" />);
+			expect(inspectorOpen("sess-orch")).toBe(true);
+			expect(screen.getByTestId("panel-inspector")).toHaveAttribute("data-state", "expanded");
+			expect(useUiStore.getState().inspectorSessions["sess-orch"]?.view).toBe("browser");
+			// The one shared toggle closes it on both session types.
+			fireEvent.click(screen.getByRole("button", { name: "Close inspector panel" }));
+			expect(inspectorOpen("sess-orch")).toBe(false);
+		} finally {
+			aoBridge.launch.rightPanelExpanded = false;
+		}
 	});
 
 	it("opens an absolute chat path at the workspace-relative path the daemon returns", async () => {
@@ -5132,11 +5154,11 @@ describe("SessionView", () => {
 		orchestrator.previewRevision = 1;
 		rerender(<SessionView sessionId="sess-orch" />);
 		expect(inspectorOpen("sess-orch")).toBe(true);
-		fireEvent.click(screen.getByRole("button", { name: "Close Browser" }));
+		fireEvent.click(screen.getByRole("button", { name: "Close inspector panel" }));
 		orchestrator.previewRevision = 2;
 		rerender(<SessionView sessionId="sess-orch" />);
 		expect(inspectorOpen("sess-orch")).toBe(true);
-		fireEvent.click(screen.getByRole("button", { name: "Close Browser" }));
+		fireEvent.click(screen.getByRole("button", { name: "Close inspector panel" }));
 		// Quiet by default: passive agent activity after the user closes the
 		// panel does not reopen it.
 		browserViewState.agentBrowserActive = true;

@@ -11,9 +11,12 @@ import (
 	"strings"
 	"text/tabwriter"
 	"time"
+	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+
+	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 )
 
 const (
@@ -174,7 +177,290 @@ func newReviewCommand(ctx *commandContext) *cobra.Command {
 	cmd.AddCommand(newReviewSubmitCommand(ctx))
 	cmd.AddCommand(newReviewCancelCommand(ctx))
 	cmd.AddCommand(newReviewTriggerCommand(ctx))
+	cmd.AddCommand(newReviewPRCommand(ctx))
 	return cmd
+}
+
+// Review modes of the unified PR review entrypoint. Own PRs get a full
+// implementation worker whose review findings loop back as fixes; foreign PRs
+// get a review-only session that cannot mutate code.
+const (
+	reviewModeOwn     = "own"
+	reviewModeForeign = "foreign"
+)
+
+type reviewPROptions struct {
+	project    string
+	mode       string
+	name       string
+	noTakeover bool
+}
+
+// ghPRFacts carries the provider metadata ownership detection needs. Author is
+// an object in `gh pr view --json author`; only the login is read.
+type ghPRFacts struct {
+	URL    string `json:"url"`
+	Number int    `json:"number"`
+	Title  string `json:"title"`
+	Author struct {
+		Login string `json:"login"`
+	} `json:"author"`
+}
+
+func newReviewPRCommand(ctx *commandContext) *cobra.Command {
+	var opts reviewPROptions
+	cmd := &cobra.Command{
+		Use:   "pr <pr-ref>",
+		Short: "One entry point to review a PR: spawns the worker, claims own PRs, starts the reviewer",
+		Long: `Review a pull request through one entry point that branches by ownership.
+
+The PR repository is compared against the project's canonical repo (see
+` + "`ao project set-config --canonical-repo-url`" + `), and its author and repository
+owner against the project's own accounts (` + "`--own-account`" + `). A match spawns a
+full implementation worker (review+fix): the PR is claimed, and when the project
+has auto-review enabled the AO reviewer is triggered, its inline findings are
+delivered to the worker, and the worker pushes fixes until approval. Anything
+else spawns a review-only session (foreign): the launch denies file-editing and
+push tools, nothing is claimed, and the reviewer's verdict is published on
+GitHub with no fix loop.
+
+Pass --mode own or --mode foreign to override detection. The active mode is
+stated in the spawn output, the session prompt, and ` + "`ao session get`" + `.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return ctx.reviewPR(cmd, args[0], opts)
+		},
+	}
+	cmd.Flags().StringVar(&opts.project, "project", "", "Project id to spawn the review session in (default: AO_PROJECT_ID or the current registered repo)")
+	cmd.Flags().StringVar(&opts.mode, "mode", "", "Force the review mode: own (review+fix) or foreign (review-only; default: detect by ownership)")
+	cmd.Flags().StringVar(&opts.name, "name", "", "Display name for the spawned session (default: derived from the PR title)")
+	cmd.Flags().BoolVar(&opts.noTakeover, "no-takeover", false, "Own mode: refuse if another active session owns the PR")
+	return cmd
+}
+
+func (c *commandContext) reviewPR(cmd *cobra.Command, ref string, opts reviewPROptions) error {
+	switch opts.mode {
+	case "", reviewModeOwn, reviewModeForeign:
+	default:
+		return usageError{fmt.Errorf(`--mode must be "own" or "foreign"`)}
+	}
+	if opts.noTakeover && opts.mode == reviewModeForeign {
+		return usageError{fmt.Errorf("--no-takeover applies to own PRs only")}
+	}
+	project, err := c.resolveSpawnProject(cmd.Context(), opts.project)
+	if err != nil {
+		return err
+	}
+	if isScratchProject(project) {
+		return usageError{fmt.Errorf("scratch projects do not support PR review")}
+	}
+	prURL, err := c.resolvePRRef(cmd.Context(), ref, project)
+	if err != nil {
+		return err
+	}
+	// One gh lookup in the project checkout provides every ownership fact: the
+	// PR's repository, its author, and a display title.
+	raw, err := c.deps.CommandOutputInDir(cmd.Context(), project.Path, "gh", "pr", "view", prURL, "--json", "url,number,title,author")
+	if err != nil {
+		return fmt.Errorf("gh could not read PR %s: %w", prURL, err)
+	}
+	var facts ghPRFacts
+	if err := json.Unmarshal(raw, &facts); err != nil || strings.TrimSpace(facts.URL) == "" {
+		return fmt.Errorf("gh returned unreadable PR metadata for %s", prURL)
+	}
+	var config projectConfig
+	if project.Config != nil {
+		config = *project.Config
+	}
+	mode := detectReviewMode(opts.mode, config.CanonicalRepoURL, project.Repo, config.OwnAccounts, facts.URL, facts.Author.Login)
+	name := strings.TrimSpace(opts.name)
+	if name == "" {
+		name = formatReviewSessionName(facts.Title, facts.Number, mode)
+	}
+
+	prompt := reviewSessionPrompt(mode, prURL, facts.URL)
+	req := spawnRequest{
+		ProjectID:   project.ID,
+		Kind:        "worker",
+		Harness:     config.Worker.Agent,
+		Mode:        "tui",
+		Prompt:      prompt,
+		DisplayName: name,
+		ReviewOnly:  mode == reviewModeForeign,
+	}
+	var res spawnResult
+	if err := c.postSetupJSON(cmd.Context(), "sessions", req, &res); err != nil {
+		return err
+	}
+	if strings.TrimSpace(res.Session.ID) == "" {
+		return fmt.Errorf("daemon returned empty session id for review spawn")
+	}
+
+	out := cmd.OutOrStdout()
+	modeLabel := "review+fix (own)"
+	if mode == reviewModeForeign {
+		modeLabel = "review-only (foreign)"
+	}
+	if _, err := fmt.Fprintf(out, "spawned %s review session %s %q for %s\n", mode, res.Session.ID, name, prURL); err != nil {
+		return err
+	}
+
+	if mode == reviewModeOwn {
+		var claim claimPRResponse
+		if err := c.postJSON(cmd.Context(), "sessions/"+url.PathEscape(res.Session.ID)+"/pr/claim", claimPRRequest{PR: prURL, AllowTakeover: !opts.noTakeover}, &claim); err != nil {
+			if killErr := c.rollbackSpawnedSession(cmd.Context(), res.Session.ID); killErr != nil {
+				return fmt.Errorf("failed to claim PR %s: %w; rollback of session %s failed: %w", prURL, err, res.Session.ID, killErr)
+			}
+			return fmt.Errorf("failed to claim PR %s: %w; rolled back session %s", prURL, err, res.Session.ID)
+		}
+		claimed := prURL
+		if len(claim.PRs) > 0 && claim.PRs[0].URL != "" {
+			claimed = claim.PRs[0].URL
+		}
+		if _, err := fmt.Fprintf(out, "claimed %s\n", claimed); err != nil {
+			return err
+		}
+		if !config.AutoReview {
+			_, err := fmt.Fprintf(out, "project auto-review is off; start the reviewer with `ao review trigger %s`\n", res.Session.ID)
+			return err
+		}
+	} else if _, err := fmt.Fprintf(out, "mode %s: editing tools are denied on this session; nothing will be claimed or pushed\n", modeLabel); err != nil {
+		return err
+	}
+
+	// Own mode: the reviewer's inline findings must reach the worker (the fix
+	// loop), so auto-inject stays on. Foreign mode: findings stay in the
+	// session's review record (--no-inject), and only the verdict is published.
+	triggerOpts := reviewTriggerOptions{
+		session:  res.Session.ID,
+		prURL:    prURL,
+		noInject: mode == reviewModeForeign,
+	}
+	if err := c.triggerReview(cmd, nil, triggerOpts); err != nil {
+		// The auto-review coordinator may have started the same pass seconds
+		// earlier; an already-running or already-reviewed head is success for
+		// the entrypoint, not an error.
+		if isAlreadyReviewedError(err) {
+			_, err := fmt.Fprintf(out, "reviewer already covering %s\n", prURL)
+			return err
+		}
+		return err
+	}
+	_, err = fmt.Fprintf(out, "mode: %s\n", modeLabel)
+	return err
+}
+
+// isAlreadyReviewedError reports whether a review trigger failed only because
+// the head is already being reviewed or already has a review.
+func isAlreadyReviewedError(err error) bool {
+	var apiErr apiResponseError
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	switch apiErr.ErrorBody.Code {
+	case "REVIEW_ALREADY_RUNNING", "REVIEW_HEAD_ALREADY_REVIEWED":
+		return true
+	}
+	return false
+}
+
+// detectReviewMode resolves the unified entrypoint's review mode. The manual
+// override wins. Otherwise the PR is own when its repository matches the
+// project's canonical repo (or the checkout origin when canonical is unset),
+// or when its author or repository owner is one of the project's own
+// accounts. An empty ownAccounts list keeps the repository match as the only
+// ownership rule, and anything else — including an unparsable repository —
+// resolves to the foreign-safe default.
+func detectReviewMode(override, canonicalRepo, originRepo string, ownAccounts []string, prRepoURL, prAuthor string) string {
+	switch override {
+	case reviewModeOwn, reviewModeForeign:
+		return override
+	}
+	prHost, prOwner, prName, prOK := cliRepoIdentityFromPR(prRepoURL)
+	for _, own := range []string{canonicalRepo, originRepo} {
+		if !prOK {
+			break
+		}
+		host, owner, name, err := cliRepoFromURL(own)
+		if err != nil {
+			continue
+		}
+		if strings.EqualFold(host, prHost) && strings.EqualFold(owner, prOwner) && strings.EqualFold(name, prName) {
+			return reviewModeOwn
+		}
+	}
+	login := domain.NormalizeOwnAccount(prAuthor)
+	for _, account := range ownAccounts {
+		normalized := domain.NormalizeOwnAccount(account)
+		if normalized == "" {
+			continue
+		}
+		if login != "" && normalized == login {
+			return reviewModeOwn
+		}
+		if prOK && normalized == domain.NormalizeOwnAccount(prOwner) {
+			return reviewModeOwn
+		}
+	}
+	return reviewModeForeign
+}
+
+// cliRepoIdentityFromPR normalizes a PR/MR URL (or a bare repository URL)
+// into its repository identity: host, owner, and name.
+func cliRepoIdentityFromPR(prURL string) (host, owner, name string, ok bool) {
+	if host, owner, name, _, err := cliParsePRURL(prURL); err == nil {
+		return host, owner, name, true
+	}
+	host, owner, name, err := cliRepoFromURL(prURL)
+	if err != nil {
+		return "", "", "", false
+	}
+	return host, owner, name, true
+}
+
+// sameCLIRepo compares two repository URLs by normalized host, owner, and
+// name, the way providers treat them: case-insensitive, .git suffix ignored.
+func sameCLIRepo(a, b string) bool {
+	hostA, ownerA, nameA, errA := cliRepoFromURL(a)
+	hostB, ownerB, nameB, errB := cliRepoFromURL(b)
+	if errA != nil || errB != nil {
+		return false
+	}
+	return strings.EqualFold(hostA, hostB) && strings.EqualFold(ownerA, ownerB) && strings.EqualFold(nameA, nameB)
+}
+
+// formatReviewSessionName derives the spawned session's sidebar label.
+func formatReviewSessionName(title string, number int, mode string) string {
+	label := "review"
+	if mode == reviewModeForeign {
+		label = "review-only"
+	}
+	name := fmt.Sprintf("%s #%d: %s", label, number, strings.TrimSpace(title))
+	name = strings.Join(strings.Fields(name), " ")
+	if utf8.RuneCountInString(name) > maxDisplayNameLen {
+		runes := []rune(name)
+		name = string(runes[:maxDisplayNameLen])
+	}
+	return name
+}
+
+// reviewSessionPrompt builds the spawned worker's task prompt. The mode is
+// stated in the prompt itself so the session's report always carries it.
+func reviewSessionPrompt(mode, prURL, repoURL string) string {
+	var b strings.Builder
+	if mode == reviewModeForeign {
+		fmt.Fprintf(&b, "AO review mode: review-only (foreign). PR under review: %s (repository %s).\n", prURL, repoURL)
+		b.WriteString("This session is review-only: file-editing and push tools are denied by the launch policy. Do not attempt to modify files, commit, or push.\n")
+		b.WriteString("The AO native reviewer is reviewing this PR and will publish the verdict on GitHub; findings stay in this session's review record (`ao review ls`).\n")
+		b.WriteString("Summarize the review outcome in your report. Do not post comments to the PR yourself.\n")
+		b.WriteString("State the active mode (review-only (foreign)) in every report you emit.\n")
+		return b.String()
+	}
+	fmt.Fprintf(&b, "AO review mode: review+fix (own). PR under review: %s — it is claimed by this session; work in this worktree.\n", prURL)
+	b.WriteString("The AO native reviewer posts inline findings on the PR, and they are delivered here automatically.\n")
+	b.WriteString("For each finding: fix it, commit, and push to the PR branch, then wait for the next review pass. Repeat until the AO review approves.\n")
+	b.WriteString("State the active mode (review+fix (own)) in every report you emit.\n")
+	return b.String()
 }
 
 func newReviewListCommand(ctx *commandContext) *cobra.Command {

@@ -941,17 +941,21 @@ func (m *Manager) preflightTerminalLaunch(
 	var cmd []string
 	if nativeConversationID == "" {
 		cmd, _, _, err = freshLaunchArgv(ctx, agent, rec.ID, rec.Metadata.WorkspacePath,
-			rec.Metadata, systemPrompt, "", config, rec.Kind, m.dataDir, true)
+			rec.Metadata, systemPrompt, "", config, rec.Kind, m.dataDir, true, rec.ReviewOnly)
 	} else {
 		var resumable bool
-		cmd, resumable, err = agent.GetRestoreCommand(ctx, ports.RestoreConfig{
+		restoreCfg := ports.RestoreConfig{
 			Session: ports.SessionRef{
 				ID: string(rec.ID), WorkspacePath: rec.Metadata.WorkspacePath,
 				Metadata: map[string]string{ports.MetadataKeyAgentSessionID: nativeConversationID},
 			},
 			Kind: rec.Kind, DataDir: m.dataDir, SystemPrompt: systemPrompt,
 			Config: config, Permissions: config.Permissions,
-		})
+		}
+		if rec.ReviewOnly {
+			pinReviewOnlyRestorePolicy(&restoreCfg)
+		}
+		cmd, resumable, err = agent.GetRestoreCommand(ctx, restoreCfg)
 		if err == nil && !resumable {
 			return ErrNativeConversationMissing
 		}

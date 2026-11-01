@@ -97,8 +97,6 @@ func Build() ([]byte, error) {
 			"Read-only filesystem browsing for remote clients"),
 		*(&openapi31.Tag{Name: "system"}).WithDescription(
 			"Local machine readiness checks the desktop app runs before showing the board"),
-		*(&openapi31.Tag{Name: "link-preview"}).WithDescription(
-			"Server-side unfurl of external links for the CSP-locked renderer"),
 		*(&openapi31.Tag{Name: "github"}).WithDescription(
 			"Local GitHub personal access token storage and repository listing"),
 	}
@@ -566,8 +564,6 @@ var schemaNames = map[string]string{ //nolint:gosec // Public OpenAPI type names
 	"MobilebridgeTunnelStatus":         "MobileTunnelStatus",
 	"ControllersIdentityResponse":      "IdentityResponse",
 	"ControllersEndpointsResponse":     "EndpointsResponse",
-	"ControllersLinkPreviewQuery":      "LinkPreviewQuery",
-	"ControllersLinkPreviewResponse":   "LinkPreviewResponse",
 	"ControllersMobileDeviceResponse":  "MobileDeviceResponse",
 	"ControllersMobileDevicesResponse": "MobileDevicesResponse",
 	"ControllersMuteDeviceRequest":     "MuteDeviceRequest",
@@ -733,7 +729,6 @@ func operations() []operation {
 	ops = append(ops, processOperations()...)
 	ops = append(ops, identityOperations()...)
 	ops = append(ops, endpointsOperations()...)
-	ops = append(ops, linkPreviewOperations()...)
 	return ops
 }
 
@@ -752,26 +747,6 @@ func automationOperations() []operation {
 		{method: http.MethodPatch, path: "/api/v1/automations/{automationId}", id: "updateAutomation", tag: "automations", summary: "Update a recurring automation", pathParams: id, reqBody: controllers.UpdateAutomationRequest{}, resps: append([]respUnit{{http.StatusOK, controllers.AutomationEnvelope{}}}, commonErrors...)},
 		{method: http.MethodDelete, path: "/api/v1/automations/{automationId}", id: "deleteAutomation", tag: "automations", summary: "Delete an automation and its run history", pathParams: id, resps: append([]respUnit{{http.StatusNoContent, nil}}, commonErrors...)},
 		{method: http.MethodGet, path: "/api/v1/automations/{automationId}/runs", id: "listAutomationRuns", tag: "automations", summary: "List durable automation run history", pathParams: []any{controllers.AutomationIDParam{}, controllers.ListAutomationRunsQuery{}}, resps: append([]respUnit{{http.StatusOK, controllers.ListAutomationRunsResponse{}}}, commonErrors...)},
-	}
-}
-
-// linkPreviewOperations declares the server-side link unfurl. Must stay 1:1
-// with the routes LinkPreviewController.Register mounts (enforced by the
-// parity test).
-func linkPreviewOperations() []operation {
-	return []operation{
-		{
-			method: http.MethodGet, path: "/api/v1/link-preview", id: "getLinkPreview", tag: "link-preview",
-			summary:    "Fetch link-preview metadata (Open Graph) for an external URL",
-			pathParams: []any{controllers.LinkPreviewQuery{}},
-			resps: []respUnit{
-				{http.StatusOK, controllers.LinkPreviewResponse{}},
-				{http.StatusBadRequest, envelope.APIError{}},
-				{http.StatusNotFound, envelope.APIError{}},
-				{http.StatusBadGateway, envelope.APIError{}},
-				{http.StatusNotImplemented, envelope.APIError{}},
-			},
-		},
 	}
 }
 

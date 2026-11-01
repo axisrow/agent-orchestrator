@@ -1,5 +1,5 @@
 import { useIsMutating, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Globe2, Loader2, PanelRight, Plus } from "lucide-react";
+import { Loader2, PanelRight, Plus } from "lucide-react";
 import { useBlocker } from "@tanstack/react-router";
 import { motion } from "motion/react";
 import {
@@ -1378,14 +1378,14 @@ export function SessionView({ sessionId, cloudOrgId, projectId, hostId }: Sessio
 	// only preview work arriving afterward may reveal Browser automatically.
 	useLayoutEffect(() => {
 		if (!session) return;
-		if (browserOnly) {
-			const current = useUiStore.getState().inspectorSessions[uiSessionId];
-			if (!current) setInspectorOpenForSession(uiSessionId, false);
-			if (current?.view !== "browser") setInspectorViewForSession(uiSessionId, "browser");
-			return;
-		}
+		// One entry mechanic for every session type: the AO_RIGHT_PANEL=expanded
+		// default and manual-close stickiness apply to orchestrators too. An
+		// orchestrator only pins its view to Browser as panel content.
 		initializeInspectorSession(uiSessionId, hasBrowserContent, hasInspector);
-	}, [browserOnly, hasBrowserContent, hasInspector, session, uiSessionId, initializeInspectorSession, setInspectorOpenForSession, setInspectorViewForSession]);
+		if (browserOnly && useUiStore.getState().inspectorSessions[uiSessionId]?.view !== "browser") {
+			setInspectorViewForSession(uiSessionId, "browser");
+		}
+	}, [browserOnly, hasBrowserContent, hasInspector, session, uiSessionId, initializeInspectorSession, setInspectorViewForSession]);
 
 	// Keep rejecting another session's shell/reviewer handle here as well, so it
 	// can never be cached under the destination session.
@@ -2174,28 +2174,20 @@ export function SessionView({ sessionId, cloudOrgId, projectId, hostId }: Sessio
 				<div className="session-pinned-actions" data-testid="session-pinned-actions" style={noDragStyle}>
 					<Tooltip>
 						<TooltipTrigger asChild>
+							{/* One panel toggle for every session type; only the panel's
+							    content differs (an orchestrator shows Browser). */}
 							<TopbarButton
-								aria-label={
-									browserOnly
-										? `${isInspectorOpen ? t("common.close") : t("inspector.open")} ${t("inspector.browser")}`
-										: isInspectorOpen ? t("shell.closeInspector") : t("shell.openInspector")
-								}
+								aria-label={isInspectorOpen ? t("shell.closeInspector") : t("shell.openInspector")}
 								aria-pressed={isInspectorOpen}
 								onClick={handleToggleInspector}
 								style={noDragStyle}
 								variant="icon"
 							>
-								{browserOnly ? (
-									<Globe2 aria-hidden="true" className="size-icon-md" />
-								) : (
-									<PanelRight className="size-icon-md" aria-hidden="true" />
-								)}
+								<PanelRight className="size-icon-md" aria-hidden="true" />
 							</TopbarButton>
 						</TooltipTrigger>
 						<TooltipContent side="bottom">
-							{browserOnly
-								? `${isInspectorOpen ? t("common.close") : t("inspector.open")} ${t("inspector.browser")}`
-								: isInspectorOpen ? t("shell.closeInspectorTitle") : t("shell.openInspectorTitle")}
+							{isInspectorOpen ? t("shell.closeInspectorTitle") : t("shell.openInspectorTitle")}
 						</TooltipContent>
 					</Tooltip>
 					{/* Keep the global notification action trailing at the window edge. */}

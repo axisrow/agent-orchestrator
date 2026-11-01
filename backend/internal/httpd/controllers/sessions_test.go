@@ -2280,6 +2280,46 @@ func TestSessionsAPI_SpawnRejectsUnknownRequestedOutput(t *testing.T) {
 	}
 }
 
+// Review-only spawns (the unified PR review entrypoint's foreign mode) carry
+// the flag into the service, and combinations the enforcement cannot honor are
+// rejected before any session is created.
+func TestSessionsAPI_SpawnReviewOnlyPassthrough(t *testing.T) {
+	svc := newFakeSessionService()
+	srv := newSessionTestServer(t, svc)
+
+	body, status, _ := doRequest(t, srv, "POST", "/api/v1/sessions", `{"projectId":"ao","kind":"worker","mode":"tui","harness":"codex","reviewOnly":true,"displayName":"foreign review"}`)
+	if status != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body=%s", status, body)
+	}
+	if !svc.lastSpawn.ReviewOnly {
+		t.Fatalf("ReviewOnly = false, want true")
+	}
+}
+
+func TestSessionsAPI_SpawnRejectsInvalidReviewOnly(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+		code string
+	}{
+		{name: "chat mode", body: `{"projectId":"ao","kind":"worker","mode":"chat","reviewOnly":true}`, code: "REVIEW_ONLY_MODE_INVALID"},
+		{name: "orchestrator", body: `{"projectId":"ao","kind":"orchestrator","reviewOnly":true}`, code: "REVIEW_ONLY_KIND_INVALID"},
+		{name: "standalone", body: `{"kind":"worker","harness":"codex","reviewOnly":true}`, code: "REVIEW_ONLY_PROJECT_REQUIRED"},
+		{name: "artifact output", body: `{"projectId":"ao","kind":"worker","reviewOnly":true,"requestedOutput":"artifact"}`, code: "REVIEW_ONLY_OUTPUT_INVALID"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := newFakeSessionService()
+			srv := newSessionTestServer(t, svc)
+
+			body, status, _ := doRequest(t, srv, "POST", "/api/v1/sessions", tc.body)
+			assertErrorCode(t, body, status, http.StatusBadRequest, tc.code)
+			if svc.lastSpawn.ReviewOnly {
+				t.Fatalf("rejected reviewOnly request reached the service: %#v", svc.lastSpawn)
+			}
+		})
+	}
+}
+
 func TestSessionsAPI_PreviewDiscoversAndServesStaticIndex(t *testing.T) {
 	svc := newFakeSessionService()
 	workspace := t.TempDir()

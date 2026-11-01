@@ -89,6 +89,7 @@ type Store interface {
 	ListWorkspaceRepos(ctx context.Context, projectID string) ([]domain.WorkspaceRepoRecord, error)
 	ListPRsBySession(ctx context.Context, sessionID domain.SessionID) ([]domain.PullRequest, error)
 	ListChecks(ctx context.Context, prURL string) ([]domain.PullRequestCheck, error)
+	TouchPRSeen(ctx context.Context, prURL string, at time.Time) error
 	WriteSCMObservation(ctx context.Context, pr domain.PullRequest, checks []domain.PullRequestCheck, reviews []domain.PullRequestReview, threads []domain.PullRequestReviewThread, comments []domain.PullRequestComment, reviewMode ports.ReviewWriteMode) error
 }
 
@@ -593,6 +594,13 @@ func (o *Observer) Poll(ctx context.Context) (pollErr error) {
 		}
 		prepared := o.prepareForPersistence(obs, local, opts, now)
 		if !prepared.Changed.Metadata && !prepared.Changed.CI && !prepared.Changed.Review {
+			// No-op poll: content hashes matched, nothing is written, so the
+			// observation stamps stay frozen. Advance the last_seen freshness
+			// cursor instead — a healthy observer must keep quiet PRs reading
+			// as fresh (issue #199 review).
+			if err := o.store.TouchPRSeen(ctx, local.URL, now); err != nil {
+				o.logger.Warn("scm observer: pr seen touch failed", "pr", local.URL, "err", err)
+			}
 			prRefreshOK[key] = true
 			continue
 		}
@@ -649,6 +657,9 @@ func (o *Observer) Poll(ctx context.Context) (pollErr error) {
 		// this branch (it returns at the unchanged-hashes check above), so
 		// its repo stays refresh-incomplete and the ETag/cursor stay pinned.
 		markRepoRefreshOK(subj.repo)
+		if err := o.store.TouchPRSeen(ctx, finalPR.URL, now); err != nil {
+			o.logger.Warn("scm observer: pr seen touch failed", "pr", finalPR.URL, "err", err)
+		}
 		prRefreshOK[key] = true
 	}
 	for key, ok := range prRefreshOK {

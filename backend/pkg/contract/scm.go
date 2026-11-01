@@ -217,6 +217,10 @@ type PullRequestSummary struct {
 	ObservedAt       time.Time                      `json:"observedAt"`
 	CIObservedAt     time.Time                      `json:"ciObservedAt"`
 	ReviewObservedAt time.Time                      `json:"reviewObservedAt"`
+	// LastSeenAt is when the observer last refreshed the PR, including no-op
+	// polls where nothing changed. Zero until the first refresh; the
+	// ci/review observed stamps are change timestamps, not freshness ones.
+	LastSeenAt time.Time `json:"lastSeenAt,omitempty"`
 }
 
 // AOReviewRun is one transport-neutral AO review pass.

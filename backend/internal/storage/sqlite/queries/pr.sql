@@ -515,3 +515,8 @@ SELECT pr.session_id, sessions.is_terminated
 FROM pr
 JOIN sessions ON sessions.id = pr.session_id
 WHERE pr.url = ?;
+
+-- name: TouchPRSeen :exec
+-- Freshness cursor: bumped on every successful observation of the PR,
+-- including no-op polls whose content hashes matched (those skip the pr write).
+UPDATE pr SET last_seen_at = ? WHERE url = ?;

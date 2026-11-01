@@ -1231,6 +1231,11 @@ func (m *Manager) spawn(ctx context.Context, cfg ports.SpawnConfig, timings *spa
 	// adapter so `ao spawn --agent amp --model high` launches Amp with `--mode
 	// high`, while metadata keeps the original resolved Model for the API view.
 	adapterConfig := normalizeAgentConfigForHarness(cfg.Harness, agentConfig)
+	if cfg.ReviewOnly {
+		// Deny rules only bind off bypass; auto keeps the review unattended-safe.
+		agentConfig.Permissions = ports.PermissionModeAuto
+		adapterConfig.Permissions = ports.PermissionModeAuto
+	}
 
 	// A chat session runs no agent inside a terminal runtime, so the terminal
 	// prerequisites are not its concern.
@@ -1595,6 +1600,9 @@ func (m *Manager) spawn(ctx context.Context, cfg ports.SpawnConfig, timings *spa
 		IssueID:          string(cfg.IssueID),
 		Config:           adapterConfig,
 		Permissions:      adapterConfig.Permissions,
+	}
+	if cfg.ReviewOnly {
+		pinReviewOnlyLaunchPolicy(&launchCfg)
 	}
 	delivery, err := agent.GetPromptDeliveryStrategy(ctx, launchCfg)
 	if err != nil {
@@ -2496,6 +2504,11 @@ func restoredAgentConfig(rec domain.SessionRecord, cfg domain.ProjectConfig) por
 	merged.Effort = rec.Metadata.Effort
 	if rec.Metadata.Permissions != "" {
 		merged.Permissions = rec.Metadata.Permissions
+	}
+	if rec.ReviewOnly {
+		// Survives daemon restarts: the durable flag re-derives the enforced
+		// non-bypass policy on every restore, whatever project defaults say.
+		merged.Permissions = reviewOnlyPermissions()
 	}
 	return merged
 }
@@ -3730,9 +3743,13 @@ func (m *Manager) relaunchSessionWithPolicyAndGeneration(ctx context.Context, op
 			err = ErrNotResumable
 		} else if identityUnverified {
 			argv, delivery, mode, err = freshLaunchArgv(ctx, agent, rec.ID, ws.Path, rec.Metadata,
-				systemPrompt, systemPromptFile, agentConfig, rec.Kind, m.dataDir, true)
+				systemPrompt, systemPromptFile, agentConfig, rec.Kind, m.dataDir, true, rec.ReviewOnly)
 		} else {
-			initialization, err = restorer.PrepareNativeRestore(ctx, ports.RestoreConfig{Session: ports.SessionRef{ID: string(rec.ID), WorkspacePath: ws.Path, Metadata: map[string]string{ports.MetadataKeyAgentSessionID: rec.Metadata.AgentSessionID}}, DataDir: m.dataDir, Kind: rec.Kind, Config: agentConfig, Permissions: agentConfig.Permissions, SystemPrompt: systemPrompt, SystemPromptFile: systemPromptFile})
+			restoreCfg := ports.RestoreConfig{Session: ports.SessionRef{ID: string(rec.ID), WorkspacePath: ws.Path, Metadata: map[string]string{ports.MetadataKeyAgentSessionID: rec.Metadata.AgentSessionID}}, DataDir: m.dataDir, Kind: rec.Kind, Config: agentConfig, Permissions: agentConfig.Permissions, SystemPrompt: systemPrompt, SystemPromptFile: systemPromptFile}
+			if rec.ReviewOnly {
+				pinReviewOnlyRestorePolicy(&restoreCfg)
+			}
+			initialization, err = restorer.PrepareNativeRestore(ctx, restoreCfg)
 			if err == nil {
 				argv = initialization.Argv()
 				for key, value := range initialization.LaunchEnv() {
@@ -3741,15 +3758,15 @@ func (m *Manager) relaunchSessionWithPolicyAndGeneration(ctx context.Context, op
 				delivery, mode = ports.PromptDeliveryInCommand, RestoreModeNative
 			} else if errors.Is(err, ports.ErrNativeHistoryUnavailable) && !requireNativeHistory {
 				argv, delivery, mode, err = freshLaunchArgv(ctx, agent, rec.ID, ws.Path, rec.Metadata,
-					systemPrompt, systemPromptFile, agentConfig, rec.Kind, m.dataDir, true)
+					systemPrompt, systemPromptFile, agentConfig, rec.Kind, m.dataDir, true, rec.ReviewOnly)
 			}
 		}
 	} else if forceFresh {
 		argv, delivery, mode, err = freshLaunchArgv(ctx, agent, rec.ID, ws.Path, rec.Metadata,
-			systemPrompt, systemPromptFile, agentConfig, rec.Kind, m.dataDir, true)
+			systemPrompt, systemPromptFile, agentConfig, rec.Kind, m.dataDir, true, rec.ReviewOnly)
 	} else {
 		argv, delivery, mode, err = restoreArgv(ctx, agent, rec.ID, ws.Path, rec.Metadata,
-			systemPrompt, systemPromptFile, agentConfig, rec.Kind, rec.Harness, m.dataDir, env)
+			systemPrompt, systemPromptFile, agentConfig, rec.Kind, rec.Harness, m.dataDir, env, rec.ReviewOnly)
 	}
 	if err != nil {
 		m.cleanupSystemPromptDir(rec.ID)
@@ -3769,6 +3786,9 @@ func (m *Manager) relaunchSessionWithPolicyAndGeneration(ctx context.Context, op
 		SystemPromptFile: systemPromptFile,
 		Config:           agentConfig,
 		Permissions:      agentConfig.Permissions,
+	}
+	if rec.ReviewOnly {
+		pinReviewOnlyLaunchPolicy(&launchCfg)
 	}
 	afterStartPrompt := rec.Metadata.Prompt
 	if delivery == ports.PromptDeliveryAfterStart && mode != RestoreModeNative {
@@ -5866,6 +5886,11 @@ func normalizeWorkspacePath(p string) string {
 // ---- helpers ----
 
 func seedRecord(cfg ports.SpawnConfig, projectConfig domain.ProjectConfig, now time.Time) domain.SessionRecord {
+	permissions := applySpawnAgentConfig(effectiveAgentConfig(cfg.Harness, cfg.Kind, projectConfig), cfg.AgentConfig).Permissions
+	if cfg.ReviewOnly {
+		// Pin the enforced non-bypass policy so every restore resolves to it.
+		permissions = reviewOnlyPermissions()
+	}
 	return domain.SessionRecord{
 		ProjectID:         cfg.ProjectID,
 		IssueID:           cfg.IssueID,
@@ -5881,12 +5906,15 @@ func seedRecord(cfg ports.SpawnConfig, projectConfig domain.ProjectConfig, now t
 		// Resolved before this point and persisted here. There is no UPDATE
 		// statement that can change it afterwards.
 		Mode:              domain.NormalizeSessionMode(cfg.RequestedMode),
-		Metadata:          domain.SessionMetadata{Permissions: applySpawnAgentConfig(effectiveAgentConfig(cfg.Harness, cfg.Kind, projectConfig), cfg.AgentConfig).Permissions},
+		Metadata:          domain.SessionMetadata{Permissions: permissions},
 		RequestedOutput:   cfg.RequestedOutput,
 		OutputType:        domain.SessionOutputNone,
-		AutoReviewEnabled: projectConfig.AutoReview,
-		AutoInjectReview:  true,
-		AutoInjectCI:      true,
+		AutoReviewEnabled: projectConfig.AutoReview || cfg.ReviewOnly,
+		// A review-only session never receives review findings as turns: the
+		// verdict is collected in its review record, not routed back as a fix loop.
+		AutoInjectReview: !cfg.ReviewOnly,
+		AutoInjectCI:     true,
+		ReviewOnly:       cfg.ReviewOnly,
 	}
 }
 
@@ -7205,7 +7233,7 @@ func sleepContext(ctx context.Context, d time.Duration) error {
 // signals via ok=false (e.g. no native session id captured yet). Returns
 // ErrNotResumable when transcript-preserving restore is required but unavailable,
 // or when a promptless, unresumable worker has nothing to restore from.
-func restoreArgv(ctx context.Context, agent ports.Agent, id domain.SessionID, workspacePath string, meta domain.SessionMetadata, systemPrompt, systemPromptFile string, agentConfig ports.AgentConfig, kind domain.SessionKind, _ domain.AgentHarness, dataDir string, env map[string]string) ([]string, ports.PromptDeliveryStrategy, RestoreMode, error) {
+func restoreArgv(ctx context.Context, agent ports.Agent, id domain.SessionID, workspacePath string, meta domain.SessionMetadata, systemPrompt, systemPromptFile string, agentConfig ports.AgentConfig, kind domain.SessionKind, _ domain.AgentHarness, dataDir string, env map[string]string, reviewOnly bool) ([]string, ports.PromptDeliveryStrategy, RestoreMode, error) {
 	ref := ports.SessionRef{
 		ID:            string(id),
 		WorkspacePath: workspacePath,
@@ -7214,7 +7242,11 @@ func restoreArgv(ctx context.Context, agent ports.Agent, id domain.SessionID, wo
 			ports.MetadataKeySessionMode:    string(domain.SessionModeTUI),
 		},
 	}
-	cmd, ok, err := agent.GetRestoreCommand(ctx, ports.RestoreConfig{Session: ref, Kind: kind, DataDir: dataDir, SystemPrompt: systemPrompt, SystemPromptFile: systemPromptFile, Config: agentConfig, Permissions: agentConfig.Permissions})
+	restoreCfg := ports.RestoreConfig{Session: ref, Kind: kind, DataDir: dataDir, SystemPrompt: systemPrompt, SystemPromptFile: systemPromptFile, Config: agentConfig, Permissions: agentConfig.Permissions}
+	if reviewOnly {
+		pinReviewOnlyRestorePolicy(&restoreCfg)
+	}
+	cmd, ok, err := agent.GetRestoreCommand(ctx, restoreCfg)
 	if err != nil {
 		return nil, "", "", fmt.Errorf("restore command: %w", err)
 	}
@@ -7232,7 +7264,7 @@ func restoreArgv(ctx context.Context, agent ports.Agent, id domain.SessionID, wo
 	// a saved prompt, rather than stranding the work behind ErrNotResumable. A
 	// worker that never got that far (no id, no prompt) still stays unresumable.
 	return freshLaunchArgv(ctx, agent, id, workspacePath, meta, systemPrompt,
-		systemPromptFile, agentConfig, kind, dataDir, conversationLost)
+		systemPromptFile, agentConfig, kind, dataDir, conversationLost, reviewOnly)
 }
 
 // nativeConversationMissing reports whether the agent can see a persisted
@@ -7267,7 +7299,7 @@ func nativeConversationMissing(ctx context.Context, agent ports.Agent, ref ports
 // freshLaunchArgv builds the non-resume half of restoreArgv. Interface
 // transitions also use it when an adapter proves its reserved id has no
 // persisted history, both for preflight and for the actual target launch.
-func freshLaunchArgv(ctx context.Context, agent ports.Agent, id domain.SessionID, workspacePath string, meta domain.SessionMetadata, systemPrompt, systemPromptFile string, agentConfig ports.AgentConfig, kind domain.SessionKind, dataDir string, allowPromptless bool) ([]string, ports.PromptDeliveryStrategy, RestoreMode, error) {
+func freshLaunchArgv(ctx context.Context, agent ports.Agent, id domain.SessionID, workspacePath string, meta domain.SessionMetadata, systemPrompt, systemPromptFile string, agentConfig ports.AgentConfig, kind domain.SessionKind, dataDir string, allowPromptless, reviewOnly bool) ([]string, ports.PromptDeliveryStrategy, RestoreMode, error) {
 	// A saved prompt is replayed fresh. An orchestrator is promptless by design
 	// and relaunches with the system prompt only. A promptless WORKER has no task
 	// and no session id to restore from: do not blank-relaunch it.
@@ -7287,6 +7319,9 @@ func freshLaunchArgv(ctx context.Context, agent ports.Agent, id domain.SessionID
 		SystemPromptFile: systemPromptFile,
 		Config:           agentConfig,
 		Permissions:      agentConfig.Permissions,
+	}
+	if reviewOnly {
+		pinReviewOnlyLaunchPolicy(&launchCfg)
 	}
 	delivery, err := agent.GetPromptDeliveryStrategy(ctx, launchCfg)
 	if err != nil {

@@ -424,11 +424,30 @@ export function prDiffSummary(pr: SessionPRSummary): string | undefined {
 	return parts.length > 0 ? parts.join(" · ") : undefined;
 }
 
+// CI facts older than this mean the observer's refreshes are failing (it
+// ticks every 30s and force-refetches every 5min), so the card's check
+// verdicts may lag the provider's live rollup (issue #199). The threshold
+// reads lastSeenAt — the observer's freshness cursor, bumped on every
+// successful refresh including no-op polls — never ciObservedAt, which is a
+// change timestamp frozen while a green PR stays quiet. ponytail: fixed
+// threshold; expose a setting if users need to tune it.
+const CI_STALE_AFTER_MS = 15 * 60 * 1000;
+
+export function ciDataStale(pr: SessionPRSummary, now: number = Date.now()): boolean {
+	if (pr.state !== "open" && pr.state !== "draft") return false;
+	const at = Date.parse(pr.lastSeenAt ?? "");
+	return Number.isFinite(at) && now - at > CI_STALE_AFTER_MS;
+}
+
 function ciSummary(pr: SessionPRSummary): string | undefined {
-	if (pr.ci.state === "failing") {
-		return pr.ci.failingChecks.length === 0 ? appI18n.t("pr.ci.noFailingLink") : undefined;
+	const parts: string[] = [];
+	if (pr.ci.state === "failing" && pr.ci.failingChecks.length === 0) {
+		parts.push(appI18n.t("pr.ci.noFailingLink"));
 	}
-	return undefined;
+	if (ciDataStale(pr)) {
+		parts.push(appI18n.t("pr.ci.staleData"));
+	}
+	return parts.length > 0 ? parts.join(" ") : undefined;
 }
 
 function ciLinks(pr: SessionPRSummary): PRSummaryLink[] {

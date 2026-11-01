@@ -35,6 +35,7 @@ type fakeStore struct {
 	workspaceRepos map[string][]domain.WorkspaceRepoRecord
 	prs            map[domain.SessionID][]domain.PullRequest
 	checks         map[string][]domain.PullRequestCheck
+	seenAt         map[string]time.Time
 	writeErr       error
 
 	writes []fakeWrite
@@ -105,6 +106,16 @@ func (s *fakeStore) ListChecks(_ context.Context, prURL string) ([]domain.PullRe
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]domain.PullRequestCheck(nil), s.checks[prURL]...), nil
+}
+
+func (s *fakeStore) TouchPRSeen(_ context.Context, prURL string, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.seenAt == nil {
+		s.seenAt = map[string]time.Time{}
+	}
+	s.seenAt[prURL] = at
+	return nil
 }
 
 func (s *fakeStore) WriteSCMObservation(_ context.Context, pr domain.PullRequest, checks []domain.PullRequestCheck, reviews []domain.PullRequestReview, threads []domain.PullRequestReviewThread, comments []domain.PullRequestComment, reviewMode ports.ReviewWriteMode) error {
@@ -333,6 +344,7 @@ func testStoreWithSession() *fakeStore {
 		projects: map[string]domain.ProjectRecord{"p": {ID: "p", RepoOriginURL: "https://github.com/o/r.git"}},
 		prs:      map[domain.SessionID][]domain.PullRequest{},
 		checks:   map[string][]domain.PullRequestCheck{},
+		seenAt:   map[string]time.Time{},
 	}
 }
 
@@ -487,6 +499,7 @@ func TestPoll_LogsStartAndCompletionTiming(t *testing.T) {
 		projects: map[string]domain.ProjectRecord{},
 		prs:      map[domain.SessionID][]domain.PullRequest{},
 		checks:   map[string][]domain.PullRequestCheck{},
+		seenAt:   map[string]time.Time{},
 	}
 	var logs bytes.Buffer
 	obs := New(&fakeProvider{}, store, &fakeLifecycle{}, Config{
@@ -620,6 +633,7 @@ func TestStart_LogsDisabledWarningWhenNoTokenAndNoSubjects(t *testing.T) {
 		projects: map[string]domain.ProjectRecord{},
 		prs:      map[domain.SessionID][]domain.PullRequest{},
 		checks:   map[string][]domain.PullRequestCheck{},
+		seenAt:   map[string]time.Time{},
 	}
 	provider := &fakeProvider{
 		credentialGate: true,
@@ -706,6 +720,37 @@ func TestPoll_NoOpenPRsCommitsRepoETag(t *testing.T) {
 	}
 	if len(provider.fetchBatches) != 0 {
 		t.Fatalf("empty listing should not fetch PR batch: %#v", provider.fetchBatches)
+	}
+}
+
+// Issue #199 review: a quiet PR is healthy, not stale. A poll whose content
+// hashes match the stored state writes nothing — the observation stamps stay
+// frozen — so the last_seen cursor is the only freshness signal that keeps
+// moving under a healthy observer.
+func TestPoll_NoOpRefreshAdvancesLastSeenCursor(t *testing.T) {
+	store := testStoreWithSession()
+	local := knownPR(1)
+	store.prs["p-1"] = []domain.PullRequest{local}
+
+	provider := &fakeProvider{
+		repoGuards:   map[string]ports.SCMGuardResult{prKey(testRepo, 0): {ETag: "v2"}},
+		openPRs:      map[string][]ports.SCMPRObservation{prKey(testRepo, 0): {{ProviderID: "PR_stable_1", URL: "https://github.com/o/r/pull/1", Number: 1, SourceBranch: "feat", HeadRepo: "o/r", TargetBranch: "main", HeadSHA: "sha1"}}},
+		observations: map[string]ports.SCMObservation{prKey(testRepo, 1): testObs(1)},
+	}
+	lc := &fakeLifecycle{}
+	obs := newTestObserver(store, provider, lc, time.Unix(1, 0).UTC())
+	if err := obs.Poll(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(store.writes) != 0 {
+		t.Fatalf("unchanged observation must be a no-op write: writes=%d", len(store.writes))
+	}
+	seen, ok := store.seenAt["https://github.com/o/r/pull/1"]
+	if !ok {
+		t.Fatalf("no-op poll did not advance the last_seen cursor: seenAt=%v", store.seenAt)
+	}
+	if !seen.Equal(time.Unix(1, 0).UTC()) {
+		t.Fatalf("last_seen cursor = %v, want the poll time", seen)
 	}
 }
 
@@ -1108,6 +1153,7 @@ func TestPoll_DiscoversCrossForkPRFromUpstreamRemote(t *testing.T) {
 		projects: map[string]domain.ProjectRecord{"p": {ID: "p", Path: dir, RepoOriginURL: "https://github.com/o/r.git"}},
 		prs:      map[domain.SessionID][]domain.PullRequest{},
 		checks:   map[string][]domain.PullRequestCheck{},
+		seenAt:   map[string]time.Time{},
 	}
 	crossObs := ports.SCMObservation{
 		Fetched: true, Provider: "github", Host: "github.com", Repo: "up/r",
@@ -1169,6 +1215,7 @@ func TestPoll_IgnoresUpstreamPRFromForeignHead(t *testing.T) {
 		projects: map[string]domain.ProjectRecord{"p": {ID: "p", Path: dir, RepoOriginURL: "https://github.com/o/r.git"}},
 		prs:      map[domain.SessionID][]domain.PullRequest{},
 		checks:   map[string][]domain.PullRequestCheck{},
+		seenAt:   map[string]time.Time{},
 	}
 	provider := &fakeProvider{
 		repoGuards: map[string]ports.SCMGuardResult{prKey(testRepo, 0): {ETag: "origin"}, prKey(upstream, 0): {ETag: "up"}},
@@ -2164,6 +2211,7 @@ func TestPoll_DuplicateTrackedPRKeepsFirstSession(t *testing.T) {
 		projects: map[string]domain.ProjectRecord{"p": {ID: "p", RepoOriginURL: "https://github.com/o/r.git"}},
 		prs:      map[domain.SessionID][]domain.PullRequest{},
 		checks:   map[string][]domain.PullRequestCheck{},
+		seenAt:   map[string]time.Time{},
 	}
 	pr1 := knownPR(1)
 	pr1.MetadataHash = "old-1"
@@ -2205,6 +2253,7 @@ func TestDiscoverSubjects_BackfillsRepoOriginURL(t *testing.T) {
 		projects: map[string]domain.ProjectRecord{"p": {ID: "p", Path: dir}}, // empty RepoOriginURL
 		prs:      map[domain.SessionID][]domain.PullRequest{},
 		checks:   map[string][]domain.PullRequestCheck{},
+		seenAt:   map[string]time.Time{},
 	}
 	provider := &fakeProvider{}
 	obs := newTestObserver(store, provider, &fakeLifecycle{}, time.Unix(0, 0).UTC())
@@ -2313,6 +2362,7 @@ func TestDiscoverSubjects_NonGitPathDoesNotBackfill(t *testing.T) {
 		projects: map[string]domain.ProjectRecord{"p": {ID: "p", Path: dir}},
 		prs:      map[domain.SessionID][]domain.PullRequest{},
 		checks:   map[string][]domain.PullRequestCheck{},
+		seenAt:   map[string]time.Time{},
 	}
 	obs := newTestObserver(store, &fakeProvider{}, &fakeLifecycle{}, time.Unix(0, 0).UTC())
 	subjects, sessionRepos, err := obs.discoverSubjects(context.Background())
@@ -3413,6 +3463,7 @@ func TestPoll_SecondScanNameDoesNotRebaselineTrackedPR(t *testing.T) {
 				projects: map[string]domain.ProjectRecord{"p": {ID: "p", Path: "/proj", RepoOriginURL: "https://github.com/new/r.git"}},
 				prs:      map[domain.SessionID][]domain.PullRequest{"p-1": {tracked}},
 				checks:   map[string][]domain.PullRequestCheck{},
+				seenAt:   map[string]time.Time{},
 			}
 			provider := &fakeProvider{
 				repoGuards: map[string]ports.SCMGuardResult{

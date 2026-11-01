@@ -194,67 +194,6 @@ func TestManagedUpdateInstallsSideBySideAndSwitches(t *testing.T) {
 	}
 }
 
-// @github/copilot declares only bin/copilot, its Node loader; the native
-// executable belongs to an @github/copilot-<os>-<arch> optional dependency,
-// so npm links it only into that dependency's node_modules/.bin, never into
-// the release's bin. The update must find it there, run it, and point the
-// launcher at it.
-func TestManagedUpdateFindsACLIBinaryADependencyShips(t *testing.T) {
-	f := newManagedCodexFixture(t, nil)
-	f.s.installCommands = installCommandRunnerFunc(func(_ context.Context, command ports.InstallCommand, _, _ io.Writer) error {
-		prefix := command.Argv[slices.Index(command.Argv, "--prefix")+1]
-		spec := command.Argv[len(command.Argv)-1]
-		version := spec[strings.LastIndex(spec, "@")+1:]
-		// npm's global layout with no bin/<cli>: the CLI is a dependency's bin.
-		bin := filepath.Join(prefix, "lib", "node_modules", "@github", "copilot", "node_modules", ".bin")
-		if err := os.MkdirAll(bin, 0o755); err != nil {
-			return err
-		}
-		// The fake binary's content is its version; the probe below reads it.
-		return os.WriteFile(filepath.Join(bin, "codex"), []byte(version+"\n"), 0o755)
-	})
-
-	job := f.update(t, "1.1.0")
-	if job.Status != StatusSucceeded {
-		t.Fatalf("managed update with a dependency bin = %+v", job)
-	}
-	binRel := filepath.Join("lib", "node_modules", "@github", "copilot", "node_modules", ".bin", "codex")
-	if record, ok := f.s.readManagedRecord(TargetCodex); !ok || record.BinRel != binRel {
-		t.Fatalf("record.BinRel = %q, %t; want %q", record.BinRel, ok, binRel)
-	}
-	want := filepath.Join("..", "codex", "current", binRel)
-	if target, _ := os.Readlink(filepath.Join(f.root, "bin", "codex")); target != want {
-		t.Fatalf("launcher = %q, want %q", target, want)
-	}
-}
-
-// npm hoists non-conflicting dependencies and links their bins into the
-// release's top node_modules/.bin; a nested package's own .bin appears only
-// on a version conflict.
-func TestManagedUpdateFindsAHoistedDependencyBin(t *testing.T) {
-	f := newManagedCodexFixture(t, nil)
-	f.s.installCommands = installCommandRunnerFunc(func(_ context.Context, command ports.InstallCommand, _, _ io.Writer) error {
-		prefix := command.Argv[slices.Index(command.Argv, "--prefix")+1]
-		spec := command.Argv[len(command.Argv)-1]
-		version := spec[strings.LastIndex(spec, "@")+1:]
-		binRel := filepath.Join("lib", "node_modules", ".bin", "codex")
-		if err := os.MkdirAll(filepath.Join(prefix, filepath.Dir(binRel)), 0o755); err != nil {
-			return err
-		}
-		// The fake binary's content is its version; the probe below reads it.
-		return os.WriteFile(filepath.Join(prefix, binRel), []byte(version+"\n"), 0o755)
-	})
-
-	job := f.update(t, "1.1.0")
-	if job.Status != StatusSucceeded {
-		t.Fatalf("managed update with a hoisted dependency bin = %+v", job)
-	}
-	binRel := filepath.Join("lib", "node_modules", ".bin", "codex")
-	if record, ok := f.s.readManagedRecord(TargetCodex); !ok || record.BinRel != binRel {
-		t.Fatalf("record.BinRel = %q, %t; want %q", record.BinRel, ok, binRel)
-	}
-}
-
 func TestManagedUpdateRunsAlongsideSessionsOnEveryPlatform(t *testing.T) {
 	for _, goos := range []string{"darwin", "linux", "windows"} {
 		s := newTestService(goos, "npm")
@@ -307,49 +246,6 @@ func TestFailedManagedInstallLeavesTheCurrentReleaseAlone(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(f.root, "codex", "versions", "v2")); !os.IsNotExist(err) {
 		t.Fatalf("the failed release directory was kept: %v", err)
-	}
-}
-
-func TestFailedManagedStartupIncludesOutputAndKeepsCurrentRelease(t *testing.T) {
-	f := newManagedCodexFixture(t, nil)
-	if job := f.update(t, "1.1.0"); job.Status != StatusSucceeded {
-		t.Fatalf("first update = %+v", job)
-	}
-	commands := f.s.commands
-	f.s.commands = commandRunnerFunc(func(ctx context.Context, argv []string, stdout, stderr io.Writer) error {
-		if len(argv) == 2 && argv[1] == "--version" {
-			_, _ = io.WriteString(stdout, "starting candidate\n")
-			_, _ = io.WriteString(stderr, "error: missing native binding\n")
-			return errors.New("exit status 1")
-		}
-		return commands.Run(ctx, argv, stdout, stderr)
-	})
-	job := f.update(t, "1.2.0")
-	if job.Status != StatusFailed || job.Error != "The new codex did not start." {
-		t.Fatalf("failed startup = %+v", job)
-	}
-	for _, want := range []string{"starting candidate", "error: missing native binding", "exit status 1"} {
-		if !strings.Contains(job.Output, want) {
-			t.Errorf("diagnostics missing %q:\n%s", want, job.Output)
-		}
-		if strings.Contains(job.Error, want) {
-			t.Errorf("startup output leaked into the short notice: %s", job.Error)
-		}
-	}
-	if target, _ := os.Readlink(filepath.Join(f.root, "codex", "current")); target != filepath.Join("versions", "v1") {
-		t.Fatalf("current moved after a failed startup: %q", target)
-	}
-	if record, ok := f.s.readManagedRecord(TargetCodex); !ok || record.Version != "1.1.0" || record.Dir != "v1" {
-		t.Fatalf("working install record changed: %+v, %t", record, ok)
-	}
-	if f.releases.current[domain.HarnessCodex] != "v1" {
-		t.Fatal("failed candidate replaced the recorded working release")
-	}
-	if got := readFile(filepath.Join(f.root, "bin", "codex")); got != "1.1.0\n" {
-		t.Fatalf("working launcher changed: %q", got)
-	}
-	if _, err := os.Stat(filepath.Join(f.root, "codex", "versions", "v2")); !os.IsNotExist(err) {
-		t.Fatalf("the failed candidate directory was kept: %v", err)
 	}
 }
 

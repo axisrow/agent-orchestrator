@@ -10,6 +10,7 @@ package conpty
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -39,6 +40,58 @@ var hostIdleExit = 5 * time.Minute
 // slowClientGrace is how long output waits on a viewer that frees no queue
 // space before dropping it (a variable so tests can shorten it).
 var slowClientGrace = 3 * time.Second
+
+// Flow-controlled input: how report delivery reaches a TUI that may not be
+// reading stdin.
+//
+// A pty input queue holds only ~1 KiB of unread bytes on macOS (1022-1024 in
+// the field): a master write beyond the clamp returns the full count with a
+// nil error while the kernel silently drops the excess — the transport behind
+// the truncated report deliveries of #177. tmux never loses bytes to this
+// because its server queues pane input in its own memory and feeds the tty
+// only as the child reads. MsgTerminalInputSync gives the pty-host the same
+// role: pace the payload in chunks that always fit beside the worst leftover
+// queue, waiting (bounded) for the recipient to drain before writing more. A
+// recipient that never reads fails the write loudly instead of silently
+// eating the message, and the stalled partial is flushed so nothing truncated
+// is ever left behind for the recipient to submit later.
+const (
+	// inputFlowChunkBytes stays well under the ~1022-byte clamp: the worst
+	// queue right after one write is a full chunk plus a just-under-watermark
+	// leftover (511+384=895), so the kernel never has a reason to drop.
+	inputFlowChunkBytes = 384
+	// inputFlowWaitWatermark: while at least this much input is still unread,
+	// write nothing and wait for the child to drain.
+	inputFlowWaitWatermark = 512
+	// inputFlowPollInterval is the unread-queue poll cadence while waiting.
+	inputFlowPollInterval = 10 * time.Millisecond
+)
+
+// inputFlowTimeout bounds the total stall a sync sequence may accumulate on
+// one connection. Ten seconds covers a recipient that pauses reading across a
+// turn boundary; SendSemantic's own 10s acceptance window fails the batch and
+// retries it wholesale when a delivery cannot land, so pacing longer would
+// only delay the same retry. The client's ack budget (ptyInputAckTimeout)
+// rides on this bound staying smaller than itself.
+var inputFlowTimeout = 10 * time.Second
+
+// inputFlowController is the optional ptyConn capability behind flow-controlled
+// input: unread-queue observation plus an emergency flush. The unix PTY conns
+// implement it through a slave-side fd; ConPTY (windows) and the deferred PTY
+// do not and fall back to a plain write — ConPTY input is a pipe with real
+// backpressure, so the silent kernel-clamp loss class does not exist there.
+//
+// ponytail: PendingInput counts what read() would return. In raw mode (every
+// TUI recipient) that is all unread bytes; in canonical mode an incomplete
+// line is invisible, so a newline-free flood past the clamp stays the kernel's
+// own MAX_CANON policy — pacing cannot see it, same as before this change.
+type inputFlowController interface {
+	// PendingInput returns how many bytes already written to the PTY the child
+	// has not read yet.
+	PendingInput() (int, error)
+	// FlushInput discards queued unread input.
+	FlushInput() error
+}
 
 // ptyConn is the host's handle to the running agent's pseudo-terminal.
 // The real impl (conptyConn) lives in host_conpty_windows.go; tests use a fake.
@@ -92,6 +145,16 @@ func newHost(cfg ServeConfig) *host {
 type clientState struct {
 	cols, rows int
 	sized      bool
+
+	// inputFailed marks a connection whose flow-controlled write failed: later
+	// MsgTerminalInputSync frames on it are refused without touching the PTY.
+	// flowWait accumulates the time pacing has stalled on this connection —
+	// one shared budget for the whole sync sequence, so a slow-draining
+	// recipient cannot stretch total pacing past it frame by frame. Both are
+	// touched only by the connection's reader goroutine (handleClientMsg), so
+	// they need no lock.
+	inputFailed bool
+	flowWait    time.Duration
 
 	out       chan []byte
 	drained   chan struct{} // signalled when the writer frees queue space
@@ -149,6 +212,11 @@ type host struct {
 	// curCols/curRows are the grid the host last applied to the shared PTY (0,0
 	// = none applied yet). Guarded by mu; used to skip redundant resizes.
 	curCols, curRows int
+
+	// syncMu serializes flow-controlled input writes so two concurrent report
+	// deliveries cannot each see a drained queue and overrun the input clamp
+	// together. Held across the whole paced write.
+	syncMu sync.Mutex
 
 	shutdownOnce sync.Once
 	shutdownC    chan struct{} // closed when Shutdown is called
@@ -558,6 +626,21 @@ func (h *host) handleClientMsg(conn net.Conn, msgType byte, payload []byte) {
 			}
 		}
 
+	case MsgTerminalInputSync:
+		// Report delivery. Every frame is answered, so the sender always learns
+		// whether its bytes reached the PTY; a failure also refuses the rest of
+		// this connection's sync frames — after a stalled partial there is no
+		// honest way to continue the sequence, and an Enter must never submit a
+		// half-delivered message.
+		err := h.syncInput(conn, payload)
+		if err != nil {
+			if cs := h.clientStateFor(conn); cs != nil {
+				cs.inputFailed = true
+			}
+			fmt.Fprintf(os.Stderr, "pty-host [%s]: sync input (%d bytes): %v\n", h.cfg.SessionID, len(payload), err)
+		}
+		h.ackInput(conn, payload, err)
+
 	case MsgResize:
 		if _, alive := h.cfg.PTY.ExitCode(); !alive {
 			var rp ResizePayload
@@ -622,4 +705,104 @@ func statusFrame(alive bool, pid int, exitCode *int) []byte {
 	b, _ := json.Marshal(sp)
 	frame, _ := EncodeMessage(MsgStatusRes, b) // b is small JSON, never overflows uint32
 	return frame
+}
+
+// clientStateFor returns the connection's state, or nil once it is gone.
+func (h *host) clientStateFor(conn net.Conn) *clientState {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.clients[conn]
+}
+
+// syncInput performs one flow-controlled input write, refusing frames that
+// must not reach the PTY.
+func (h *host) syncInput(conn net.Conn, payload []byte) error {
+	cs := h.clientStateFor(conn)
+	if cs != nil && cs.inputFailed {
+		return errors.New("refused: an earlier input write on this connection failed")
+	}
+	if _, exited := h.cfg.PTY.ExitCode(); exited {
+		return errors.New("pty child has exited")
+	}
+	return h.writeInputFlow(cs, payload)
+}
+
+// ackInput answers one MsgTerminalInputSync with its MsgInputAckRes.
+func (h *host) ackInput(conn net.Conn, payload []byte, err error) {
+	ack := InputAckPayload{Bytes: len(payload)}
+	if err != nil {
+		ack.Err = err.Error()
+	}
+	b, _ := json.Marshal(ack)
+	frame, encErr := EncodeMessage(MsgInputAckRes, b)
+	if encErr != nil {
+		return
+	}
+	h.sendTo(conn, frame)
+}
+
+// writeInputFlow writes payload to the PTY under flow control, serialized per
+// host (see the inputFlow block comment above). PTYs that cannot observe their
+// input queue fall back to the historical single write, but only before the
+// first chunk of the sequence is committed — past that point a degrade would
+// be the silent kernel-clamp drop this path exists to prevent.
+//
+// cs is the sending connection's state. Its flowWait is one shared stall
+// budget across the whole sync sequence (a slow-draining recipient cannot
+// stretch total pacing past it frame by frame), and a closed done channel —
+// the sender abandoned the sequence — aborts pacing and flushes the queued
+// partial, so a retried batch cannot land on top of a half-delivered one.
+func (h *host) writeInputFlow(cs *clientState, payload []byte) error {
+	flow, ok := h.cfg.PTY.(inputFlowController)
+	if !ok {
+		_, err := h.cfg.PTY.Write(payload)
+		return err
+	}
+	if cs == nil {
+		// The sending connection is already gone: none of this sequence may
+		// reach the PTY.
+		_ = flow.FlushInput()
+		return errors.New("sender connection is gone; sequence aborted and queued input flushed")
+	}
+	h.syncMu.Lock()
+	defer h.syncMu.Unlock()
+	for off := 0; off < len(payload); {
+		select {
+		case <-cs.done:
+			_ = flow.FlushInput()
+			return fmt.Errorf("sender abandoned the sequence after %d bytes; queued input flushed", off)
+		default:
+		}
+		pending, err := flow.PendingInput()
+		if err != nil {
+			if off > 0 {
+				if ferr := flow.FlushInput(); ferr != nil {
+					fmt.Fprintf(os.Stderr, "pty-host [%s]: input flush after probe failure: %v\n", h.cfg.SessionID, ferr)
+				}
+				return fmt.Errorf("input flow probe failed mid-sequence after %d bytes; queued input flushed: %w", off, err)
+			}
+			// Nothing committed yet: degrade to the historical write-through
+			// rather than fail every delivery on a probe hiccup.
+			fmt.Fprintf(os.Stderr, "pty-host [%s]: input flow probe failed, writing through: %v\n", h.cfg.SessionID, err)
+			_, werr := h.cfg.PTY.Write(payload[off:])
+			return werr
+		}
+		if pending >= inputFlowWaitWatermark {
+			cs.flowWait += inputFlowPollInterval
+			if cs.flowWait > inputFlowTimeout {
+				if ferr := flow.FlushInput(); ferr != nil {
+					fmt.Fprintf(os.Stderr, "pty-host [%s]: input flush after stall: %v\n", h.cfg.SessionID, ferr)
+				}
+				return fmt.Errorf("recipient did not read input: %d bytes unread after %s of stalled pacing; queued input flushed", pending, inputFlowTimeout)
+			}
+			time.Sleep(inputFlowPollInterval)
+			continue
+		}
+		n := min(inputFlowChunkBytes, len(payload)-off)
+		if _, err := h.cfg.PTY.Write(payload[off : off+n]); err != nil {
+			return err
+		}
+		off += n
+	}
+	return nil
 }

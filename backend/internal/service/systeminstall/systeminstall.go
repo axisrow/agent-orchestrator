@@ -207,10 +207,6 @@ type Plan struct {
 	managed bool
 	// managedPin is the release a managed reinstall installs again.
 	managedPin string
-	// sourceMethod/sourcePackage identify the existing owner during a planned
-	// migration. Method and Package always describe what the operation runs.
-	sourceMethod  string
-	sourcePackage string
 
 	// daemonRuntimeRejected and daemonPrefixRejected mark an npm plan rejected
 	// only for the daemon's own Node/npm or global prefix. An install runs
@@ -225,13 +221,6 @@ type Plan struct {
 	// ownerPrefixFound records that targetInstalledCopy located the npm prefix
 	// that owns the installed binary.
 	ownerPrefixFound bool
-}
-
-func (plan Plan) ownershipMethod() string {
-	if plan.sourceMethod != "" {
-		return plan.sourceMethod
-	}
-	return plan.Method
 }
 
 // AgentPlan is the display-safe plan returned to the settings page. Command is
@@ -551,7 +540,10 @@ func (s *Service) AgentPlans(ctx context.Context) ([]AgentPlan, error) {
 	for _, target := range agentTargets {
 		plans := planner.agentMethodPlans(target, AgentOperationInstall)
 		reinstallPlans := planner.agentMethodPlans(target, AgentOperationReinstall)
-		reinstallByMethod := plansByMethod(reinstallPlans)
+		reinstallByMethod := make(map[string]Plan, len(reinstallPlans))
+		for _, reinstallPlan := range reinstallPlans {
+			reinstallByMethod[reinstallPlan.Method] = reinstallPlan
+		}
 		recommended := recommendedPlanIndex(plans)
 		plan := plans[recommended]
 		updateByMethod := plansByMethod(planner.agentMethodPlans(target, AgentOperationUpdate))
@@ -585,7 +577,7 @@ func (s *Service) AgentPlans(ctx context.Context) ([]AgentPlan, error) {
 func plansByMethod(plans []Plan) map[string]Plan {
 	out := make(map[string]Plan, len(plans))
 	for _, plan := range plans {
-		out[plan.ownershipMethod()] = plan
+		out[plan.Method] = plan
 	}
 	return out
 }
@@ -937,7 +929,7 @@ func (s *Service) owningUpdatePlan(ctx context.Context, target Target, plans []P
 	s.mu.Unlock()
 	if hasAdvisory && advisory.MaintenanceMethod != "" {
 		for _, plan := range plans {
-			if plan.ownershipMethod() == advisory.MaintenanceMethod && !plan.Unsupported {
+			if plan.Method == advisory.MaintenanceMethod && !plan.Unsupported {
 				return plan, true
 			}
 		}
@@ -1554,7 +1546,13 @@ func (s *Service) resolvePlan(target Target) Plan {
 // "; " rather than "&&": a failed step is noted and Command still runs.
 func displayCommand(plan Plan) string {
 	if plan.Script != nil {
-		return fmt.Sprintf("%s <downloaded from %s>", strings.Join(plan.Script.Interpreter, " "), plan.Script.URL)
+		display := fmt.Sprintf("%s <downloaded from %s>", strings.Join(plan.Script.Interpreter, " "), plan.Script.URL)
+		// Disclose the installer's flags too: a managed OMP update shows the
+		// --binary/--ref invocation it will actually run (upstream #6536).
+		if len(plan.Script.Args) > 0 {
+			display += " " + strings.Join(plan.Script.Args, " ")
+		}
+		return display
 	}
 	argv := plan.Command
 	if plan.NeedsRoot && len(argv) > 0 {

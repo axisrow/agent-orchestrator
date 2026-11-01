@@ -540,6 +540,7 @@ type PR struct {
 	ProviderID               string
 	AuthorAvatarURL          string
 	ReviewPartial            bool
+	LastSeenAt               sql.NullTime
 }
 
 type PRCheck struct {
@@ -745,6 +746,7 @@ type Session struct {
 	TemporaryBranch                  string
 	ProviderBaseURL                  string
 	ProviderModel                    string
+	ReviewOnly                       bool
 }
 
 type SessionAgentAccount struct {

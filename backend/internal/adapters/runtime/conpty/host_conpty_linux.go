@@ -28,6 +28,10 @@ type linuxPTYConn struct {
 	pty *os.File
 	cmd *exec.Cmd
 
+	// probe observes the input queue for flow-controlled writes (nil when the
+	// slave could not be opened; sync input then degrades to write-through).
+	probe *ptyInputProbe
+
 	closeOnce sync.Once
 	doneC     chan struct{}
 	exitMu    sync.Mutex
@@ -74,8 +78,31 @@ func newConPTY(cwd, shellCmd string, shellArgs []string, cols, rows uint16) (pty
 		leaderPID:       leaderPID,
 		leaderStartTime: leaderStartTime,
 	}
+	// Best effort: without the probe, flow-controlled input degrades to the
+	// historical write-through (writeInputFlow's fallback).
+	if probe, probeErr := newPtyInputProbe(f); probeErr == nil {
+		c.probe = probe
+	} else {
+		fmt.Fprintf(os.Stderr, "linux pty: input flow probe unavailable: %v\n", probeErr)
+	}
 	go c.wait()
 	return c, nil
+}
+
+// PendingInput reports unread PTY input via the slave-side probe.
+func (c *linuxPTYConn) PendingInput() (int, error) {
+	if c.probe == nil {
+		return 0, errors.New("linux pty: no input probe")
+	}
+	return c.probe.PendingInput()
+}
+
+// FlushInput discards queued unread PTY input via the slave-side probe.
+func (c *linuxPTYConn) FlushInput() error {
+	if c.probe == nil {
+		return errors.New("linux pty: no input probe")
+	}
+	return c.probe.FlushInput()
 }
 
 func (c *linuxPTYConn) wait() {
@@ -85,6 +112,12 @@ func (c *linuxPTYConn) wait() {
 		code = c.cmd.ProcessState.ExitCode()
 	} else if err != nil {
 		code = -1
+	}
+	// Release the probe's slave fd before announcing the exit: while it is
+	// open the kernel does not hang the tty up, the master's read never sees
+	// the EIO that ends every output pump, and readers wait forever.
+	if c.probe != nil {
+		_ = c.probe.Close()
 	}
 	c.exitMu.Lock()
 	c.exitCode = code
@@ -133,6 +166,9 @@ func (c *linuxPTYConn) Close() error {
 		}
 		if c.pty != nil {
 			closeErr = c.pty.Close()
+		}
+		if c.probe != nil {
+			_ = c.probe.Close()
 		}
 	})
 	return closeErr

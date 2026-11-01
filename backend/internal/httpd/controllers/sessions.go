@@ -344,6 +344,26 @@ func (c *SessionsController) spawn(w http.ResponseWriter, r *http.Request) {
 		envelope.WriteAPIError(w, r, http.StatusBadRequest, "validation", "INVALID_REQUESTED_OUTPUT", "requestedOutput must be \"artifact\" or omitted", nil)
 		return
 	}
+	if in.ReviewOnly {
+		// Review-only enforcement lives in the native terminal launch path; a
+		// chat controller would launch without the tool deny list.
+		if in.Mode == domain.SessionModeChat {
+			envelope.WriteAPIError(w, r, http.StatusBadRequest, "validation", "REVIEW_ONLY_MODE_INVALID", "reviewOnly sessions run in the native terminal interface; mode \"chat\" is not supported", nil)
+			return
+		}
+		if in.Kind == domain.KindOrchestrator {
+			envelope.WriteAPIError(w, r, http.StatusBadRequest, "validation", "REVIEW_ONLY_KIND_INVALID", "reviewOnly sessions are workers", nil)
+			return
+		}
+		if in.ProjectID == "" {
+			envelope.WriteAPIError(w, r, http.StatusBadRequest, "validation", "REVIEW_ONLY_PROJECT_REQUIRED", "reviewOnly sessions require a project checkout", nil)
+			return
+		}
+		if in.RequestedOutput == domain.RequestedOutputArtifact {
+			envelope.WriteAPIError(w, r, http.StatusBadRequest, "validation", "REVIEW_ONLY_OUTPUT_INVALID", "reviewOnly sessions do not support requestedOutput \"artifact\"", nil)
+			return
+		}
+	}
 	if len(in.Prompt) > maxPromptLen {
 		envelope.WriteAPIError(w, r, http.StatusBadRequest, "bad_request", "PROMPT_TOO_LONG", "Prompt must be 16 KiB or fewer", nil)
 		return
@@ -372,7 +392,7 @@ func (c *SessionsController) spawn(w http.ResponseWriter, r *http.Request) {
 		keyless.Attachments = nil
 		requestHash = clientRequestFingerprint("session", keyless, attachments)
 	}
-	sess, promptBytes, systemPromptBytes, err := c.Svc.Spawn(r.Context(), ports.SpawnConfig{ProjectID: in.ProjectID, IssueID: in.IssueID, ParentSessionID: in.ParentSessionID, TrackerProvider: in.TrackerProvider, Kind: in.Kind, Harness: in.Harness, Branch: in.Branch, RequestedMode: in.Mode, Prompt: in.Prompt, RequestedOutput: in.RequestedOutput, DisplayName: displayName, Attachments: attachments, AgentConfig: ports.AgentConfig{Model: in.Model, Effort: in.Effort, Permissions: in.ApprovalMode}, EffortOverride: strings.TrimSpace(in.Effort) != "", ClientRequestID: in.ClientRequestID, ClientRequestHash: requestHash})
+	sess, promptBytes, systemPromptBytes, err := c.Svc.Spawn(r.Context(), ports.SpawnConfig{ProjectID: in.ProjectID, IssueID: in.IssueID, ParentSessionID: in.ParentSessionID, TrackerProvider: in.TrackerProvider, Kind: in.Kind, Harness: in.Harness, Branch: in.Branch, RequestedMode: in.Mode, Prompt: in.Prompt, RequestedOutput: in.RequestedOutput, ReviewOnly: in.ReviewOnly, DisplayName: displayName, Attachments: attachments, AgentConfig: ports.AgentConfig{Model: in.Model, Effort: in.Effort, Permissions: in.ApprovalMode}, EffortOverride: strings.TrimSpace(in.Effort) != "", ClientRequestID: in.ClientRequestID, ClientRequestHash: requestHash})
 	if err != nil {
 		envelope.WriteError(w, r, err)
 		return

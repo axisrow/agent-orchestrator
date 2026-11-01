@@ -21,6 +21,12 @@ const (
 	ptyInputChunkDelay = 15 * time.Millisecond
 	// ptyInputEnterDelay is the pause before sending Enter. Mirrors PTY_INPUT_ENTER_DELAY_MS.
 	ptyInputEnterDelay = 300 * time.Millisecond
+	// ptyInputAckTimeout bounds one send sequence as a whole: frame writes,
+	// the pre-Enter pause, and the ack wait share this single deadline. The
+	// host's pacing budget (inputFlowTimeout) bounds its own stall total from
+	// below, so a stalled sequence is failed and flushed by the host first and
+	// the client learns of it through an error ack instead of this deadline.
+	ptyInputAckTimeout = 15 * time.Second
 
 	dialTimeout      = 3 * time.Second
 	getOutputTimeout = 3 * time.Second
@@ -51,29 +57,42 @@ func armClientDeadline(ctx context.Context, conn net.Conn, timeout time.Duration
 }
 
 // clientSendMessage chunks message by 512 runes and sends each as a
-// MsgTerminalInput frame with 15ms gaps, then pauses 300ms and sends "\r".
-// Mirrors ptyHostSendMessage from pty-client.ts.
+// MsgTerminalInputSync frame with 15ms gaps, then pauses 300ms and sends "\r"
+// (sync too). Unlike raw MsgTerminalInput, every frame is answered: the host
+// writes the bytes into the PTY input queue whole under flow control or
+// returns an error — the guarantee report delivery rides on (#177). A host
+// older than v3 ignores sync frames, so SendMessage refuses them up front.
+// Mirrors ptyHostSendMessage from pty-client.ts, upgraded for sync input.
 func clientSendMessage(addr, message string) error {
 	conn, err := dialHost(addr, dialTimeout)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = conn.Close() }()
+	// One deadline for the whole sequence: if the host's pacing drags past it,
+	// the sender must leave (and drop the conn) rather than linger while the
+	// host keeps writing — the host notices the dead conn, aborts, and flushes
+	// the queued partial, so the retry starts clean.
+	if err := conn.SetDeadline(time.Now().Add(ptyInputAckTimeout)); err != nil {
+		return err
+	}
 
 	runes := []rune(message)
+	frames := 0
 	for i := 0; i < len(runes); i += ptyInputChunkRunes {
 		end := i + ptyInputChunkRunes
 		if end > len(runes) {
 			end = len(runes)
 		}
 		chunk := string(runes[i:end])
-		frame, err := EncodeMessage(MsgTerminalInput, []byte(chunk))
+		frame, err := EncodeMessage(MsgTerminalInputSync, []byte(chunk))
 		if err != nil {
 			return err
 		}
 		if _, err := conn.Write(frame); err != nil {
 			return err
 		}
+		frames++
 		// Inter-chunk delay only between chunks, not after the last one.
 		if end < len(runes) {
 			time.Sleep(ptyInputChunkDelay)
@@ -87,12 +106,60 @@ func clientSendMessage(addr, message string) error {
 	if len(runes) > 0 {
 		time.Sleep(ptyInputEnterDelay)
 	}
-	frame, err := EncodeMessage(MsgTerminalInput, []byte("\r"))
+	frame, err := EncodeMessage(MsgTerminalInputSync, []byte("\r"))
 	if err != nil {
 		return err
 	}
-	_, err = conn.Write(frame)
-	return err
+	if _, err := conn.Write(frame); err != nil {
+		return err
+	}
+	frames++
+
+	return awaitInputAcks(conn, frames)
+}
+
+// awaitInputAcks reads frames until every sent sync frame is answered, under
+// the sequence deadline the caller set on the connection. The host
+// interleaves terminal-output broadcasts on the same connection, so frames
+// that are not acks are skipped. The first failed ack aborts: the delivery
+// failed loudly and the caller (SendSemantic's acceptance loop) owns the
+// retry.
+func awaitInputAcks(conn net.Conn, want int) error {
+	ackC := make(chan InputAckPayload, want)
+	parser := NewMessageParser(func(msgType byte, payload []byte) {
+		if msgType != MsgInputAckRes {
+			return
+		}
+		var ack InputAckPayload
+		if json.Unmarshal(payload, &ack) == nil {
+			select {
+			case ackC <- ack:
+			default:
+			}
+		}
+	})
+	buf := make([]byte, 4096)
+	for got := 0; got < want; {
+		// Drain acks already parsed before blocking on the socket: the host may
+		// answer every frame of a batch in one TCP segment.
+		select {
+		case ack := <-ackC:
+			if ack.Err != "" {
+				return fmt.Errorf("pty-host rejected input: %s", ack.Err)
+			}
+			got++
+			continue
+		default:
+		}
+		n, err := conn.Read(buf)
+		if n > 0 {
+			parser.Feed(buf[:n])
+		}
+		if err != nil {
+			return fmt.Errorf("read pty-host input acks: %w", err)
+		}
+	}
+	return nil
 }
 
 func clientSendInput(addr, input string) error {

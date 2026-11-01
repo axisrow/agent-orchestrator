@@ -1493,32 +1493,60 @@ func TestFetchPullRequestsFetchesRemainingCheckContexts(t *testing.T) {
 	}
 }
 
-func TestFetchPullRequestsFailsWhenCheckContextFallbackFails(t *testing.T) {
+// Issue #199: a PR whose check-context pagination fails must degrade to a
+// per-ref Fetched=false observation instead of failing the whole batch, so
+// other PRs sharing the batch keep refreshing and the failing PR keeps its
+// retry pressure instead of freezing its stale check snapshot forever.
+func TestFetchPullRequestsDegradesCheckContextFallbackFailurePerRef(t *testing.T) {
 	fake := newFakeGH(t)
-	fx := basePRFixture()
-	var pr map[string]any
-	fx.prData(func(m map[string]any) {
-		pr = m
-		commits := m["commits"].(map[string]any)["nodes"].([]any)[0].(map[string]any)
+	good := basePRFixture()
+	bad := basePRFixture()
+	bad.owner, bad.number = "octocat", 43
+	bad.prData(func(pr map[string]any) {
+		pr["number"] = 43
+		pr["url"] = "https://github.com/octocat/hello/pull/43"
+		commits := pr["commits"].(map[string]any)["nodes"].([]any)[0].(map[string]any)
 		commit := commits["commit"].(map[string]any)
 		ctxs := commit["statusCheckRollup"].(map[string]any)["contexts"].(map[string]any)
 		ctxs["pageInfo"] = map[string]any{"hasNextPage": true, "endCursor": "cursor-1"}
 	})
+	good.install(t, fake)
+	bad.install(t, fake)
 	fake.on(http.MethodPost, "/graphql", func(w http.ResponseWriter, r *http.Request) {
 		call := fake.callsTo(http.MethodPost, "/graphql")
+		w.Header().Set("Content-Type", "application/json")
 		if call == 1 {
-			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"data": map[string]any{"pr0": map[string]any{"pullRequest": pr}},
+				"data": map[string]any{
+					"pr0": map[string]any{"pullRequest": batchPRData(good)},
+					"pr1": map[string]any{"pullRequest": batchPRData(bad)},
+				},
 			})
 			return
 		}
+		// Fallback page for the paginated PR: provider explodes.
 		http.Error(w, `{"message":"graphql down"}`, http.StatusInternalServerError)
 	})
 	p := newProviderForTest(t, fake)
-	if _, err := p.FetchPullRequests(ctx(), []ports.SCMPRRef{{Repo: ports.SCMRepo{Provider: "github", Host: "github.com", Owner: "octocat", Name: "hello", Repo: "octocat/hello"}, Number: 42}}); err == nil {
-		t.Fatal("FetchPullRequests error = nil, want fallback failure")
+	repo := ports.SCMRepo{Provider: "github", Host: "github.com", Owner: "octocat", Name: "hello", Repo: "octocat/hello"}
+	obs, err := p.FetchPullRequests(ctx(), []ports.SCMPRRef{{Repo: repo, Number: 42}, {Repo: repo, Number: 43}})
+	if err != nil {
+		t.Fatalf("FetchPullRequests: %v, want per-ref degradation, not a batch failure", err)
 	}
+	if len(obs) != 2 {
+		t.Fatalf("observations = %#v", obs)
+	}
+	if !obs[0].Fetched || obs[0].PR.Number != 42 || obs[0].CI.Summary != string(domain.CIPassing) {
+		t.Fatalf("healthy PR must still refresh: fetched=%v number=%d ci=%q", obs[0].Fetched, obs[0].PR.Number, obs[0].CI.Summary)
+	}
+	if obs[1].Fetched || obs[1].PR.Number != 43 || obs[1].Error == nil {
+		t.Fatalf("paginated PR must degrade to Fetched=false with Error: fetched=%v err=%v", obs[1].Fetched, obs[1].Error)
+	}
+}
+
+// batchPRData extracts the pullRequest payload a batch response needs.
+func batchPRData(fx *prFixture) map[string]any {
+	return fx.graphql["data"].(map[string]any)["repository"].(map[string]any)["pullRequest"].(map[string]any)
 }
 
 func TestFetchReviewThreadsUsesLatestWindowWithoutFallbackWhenOldestResolved(t *testing.T) {

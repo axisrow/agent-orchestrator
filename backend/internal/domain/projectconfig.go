@@ -89,6 +89,12 @@ type ProjectConfig struct {
 	// after spawn.
 	AutoReview bool `json:"autoReview,omitempty"`
 
+	// OwnAccounts names GitHub accounts treated as this project's own for PR
+	// review ownership: a PR whose repository does not match the canonical repo
+	// still counts as own when its author or repository owner is listed here.
+	// Empty keeps the canonical-repo match as the only ownership rule.
+	OwnAccounts []string `json:"ownAccounts,omitempty"`
+
 	// MaxReviewersPerHead caps how many distinct reviewers may hold a live or
 	// completed pass on one PR head. The default (0) means 1: a trigger asking
 	// for a second reviewer on the same head is rejected server-side. Raising
@@ -332,7 +338,27 @@ func (c ProjectConfig) Validate() error {
 	if c.MaxReviewersPerHead < 0 {
 		return fmt.Errorf("maxReviewersPerHead: must not be negative")
 	}
+	seenAccounts := make(map[string]bool, len(c.OwnAccounts))
+	for _, account := range c.OwnAccounts {
+		login := NormalizeOwnAccount(account)
+		if login == "" {
+			return fmt.Errorf("ownAccounts: empty account name")
+		}
+		if seenAccounts[login] {
+			return fmt.Errorf("ownAccounts: duplicate account %q", login)
+		}
+		seenAccounts[login] = true
+	}
 	return nil
+}
+
+// NormalizeOwnAccount canonicalizes one GitHub account name: surrounding
+// whitespace and a leading @ are stripped and the login is lowercased, since
+// GitHub logins are case-insensitive.
+func NormalizeOwnAccount(account string) string {
+	login := strings.TrimSpace(account)
+	login = strings.TrimPrefix(login, "@")
+	return strings.ToLower(login)
 }
 
 func validEnvName(name string) bool {
