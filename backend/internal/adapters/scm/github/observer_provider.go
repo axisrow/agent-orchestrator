@@ -592,13 +592,18 @@ func scmObservationFromGraphQL(ref ports.SCMPRRef, pr map[string]any) ports.SCMO
 }
 
 // ciSummaryFromRollupState maps the batch-query rollup onto domain.CIState.
-// With a complete (non-paginated) context set the nodes are ground truth:
-// GitHub's aggregate state can stay FAILURE after a cancelled/superseded
-// check is re-run green while the contexts already show the green rerun
-// (issue #230) — trusting the aggregate there froze ci_state=failing over
-// zero failing checks and kept mergeability blocked on ci_failing. An
-// empty or paginated view keeps the conservative aggregate verdict: a
-// failure could hide on the unseen page.
+// With a complete (non-paginated) context set the nodes are ground truth —
+// classified by the latest run per check name (ciStateFromContextNodes):
+// GitHub's aggregate state can stay FAILURE while re-run superseded red
+// checks already show green (issue #230), and trusting it froze
+// ci_state=failing over zero failing checks with mergeability blocked on
+// ci_failing. A paginated view still defaults to the conservative aggregate
+// verdict (a failure could hide on the unseen page) — except when the
+// visible nodes themselves prove the aggregate's failure signal benign: a
+// superseded failure-class run whose name's latest run is green. An empty
+// view falls back to the aggregate, but a FAILURE verdict is dropped when
+// the provider reports mergeStateStatus CLEAN (the same stale-aggregate
+// pattern; UNSTABLE/BLOCKED keep it).
 func ciSummaryFromRollupState(pr map[string]any) domain.CIState {
 	roll := statusRollup(pr)
 	if roll == nil {
@@ -606,10 +611,57 @@ func ciSummaryFromRollupState(pr map[string]any) domain.CIState {
 	}
 	contexts, _ := roll["contexts"].(map[string]any)
 	rawNodes := nodes(contexts["nodes"])
-	if len(rawNodes) == 0 || pageInfoHasMore(contexts) {
-		return mapRollupState(str(roll["state"]))
+	if len(rawNodes) == 0 {
+		state := mapRollupState(str(roll["state"]))
+		if state == domain.CIFailing && mergeStateStatusClean(pr) {
+			return domain.CIPassing
+		}
+		return state
 	}
-	return ciStateFromContextNodes(rawNodes)
+	state := ciStateFromContextNodes(rawNodes)
+	if !pageInfoHasMore(contexts) {
+		return state
+	}
+	if state == domain.CIFailing {
+		return domain.CIFailing
+	}
+	if state == domain.CIPassing && nodesHideSupersededFailures(rawNodes) {
+		return domain.CIPassing
+	}
+	return mapRollupState(str(roll["state"]))
+}
+
+// nodesHideSupersededFailures reports whether collapsing rawNodes to the
+// latest run per check name removed at least one failure-class run whose
+// replacement is not failure-class — i.e. the visible set contains a
+// superseded red run (cancelled/failed) that GitHub's check UI does not
+// render, which explains a FAILURE aggregate without any current failure.
+func nodesHideSupersededFailures(rawNodes []map[string]any) bool {
+	latest := make(map[string]int, len(rawNodes))
+	for i, n := range rawNodes {
+		name := checkNodeName(n)
+		if name == "" {
+			continue
+		}
+		prev, seen := latest[name]
+		if !seen || checkRunDatabaseID(n) >= checkRunDatabaseID(rawNodes[prev]) {
+			latest[name] = i
+		}
+	}
+	for i, n := range rawNodes {
+		st := checkStatusFromGraphQL(n)
+		if st != domain.PRCheckFailed && st != domain.PRCheckCancelled {
+			continue
+		}
+		keptIdx, ok := latest[checkNodeName(n)]
+		if !ok || keptIdx == i {
+			continue
+		}
+		if ks := checkStatusFromGraphQL(rawNodes[keptIdx]); ks != domain.PRCheckFailed && ks != domain.PRCheckCancelled {
+			return true
+		}
+	}
+	return false
 }
 
 func scmContextsPaginated(pr map[string]any) bool {
@@ -619,7 +671,7 @@ func scmContextsPaginated(pr map[string]any) bool {
 func scmChecksFromGraphQL(pr map[string]any) []ports.SCMCheckObservation {
 	roll := statusRollup(pr)
 	contexts, _ := roll["contexts"].(map[string]any)
-	rawNodes := nodes(contexts["nodes"])
+	rawNodes := latestRunNodesByName(nodes(contexts["nodes"]))
 	out := make([]ports.SCMCheckObservation, 0, len(rawNodes))
 	for _, n := range rawNodes {
 		typ := str(n["__typename"])

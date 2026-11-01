@@ -1346,6 +1346,150 @@ func TestSCMObservationCancelledCheckRerunToSuccessClearsFailing(t *testing.T) {
 	}
 }
 
+// beamCraft407RollupNodes is the shape observed live on BeamCraft#407 head
+// 114ae3607 (issue #230, 2026-11-01): re-running a failed workflow creates a
+// NEW CheckRun while the superseded red run stays in
+// statusCheckRollup.contexts. GitHub's check UI renders only the latest run
+// per name ("All checks have passed"), but the aggregate state counts the old
+// red runs and stays FAILURE. Real databaseIds from the live response: the
+// green rerun always carries the greater id.
+func beamCraft407RollupNodes() []any {
+	return []any{
+		map[string]any{"__typename": "CheckRun", "name": "validate local test report", "status": "COMPLETED", "conclusion": "FAILURE", "databaseId": float64(124895480377)},
+		map[string]any{"__typename": "CheckRun", "name": "validate local test report", "status": "COMPLETED", "conclusion": "SUCCESS", "databaseId": float64(124896398565)},
+		map[string]any{"__typename": "CheckRun", "name": "CI verdict", "status": "COMPLETED", "conclusion": "FAILURE", "databaseId": float64(124896079553)},
+		map[string]any{"__typename": "CheckRun", "name": "CI verdict", "status": "COMPLETED", "conclusion": "SUCCESS", "databaseId": float64(124898706376)},
+		map[string]any{"__typename": "CheckRun", "name": "wasm32 check", "status": "COMPLETED", "conclusion": "SKIPPED", "databaseId": float64(124896080033)},
+		map[string]any{"__typename": "CheckRun", "name": "wasm32 check", "status": "COMPLETED", "conclusion": "SUCCESS", "databaseId": float64(124896446664)},
+		map[string]any{"__typename": "CheckRun", "name": "build", "status": "COMPLETED", "conclusion": "SUCCESS", "databaseId": float64(124896000001)},
+	}
+}
+
+// Issue #230 (live villain, follow-up to PR #231): the complete non-paginated
+// context set contains superseded red runs next to their green reruns, and
+// the verdict must follow the latest run per check name — the rows GitHub UI
+// renders — not every raw context node. The #231 classifier counted the
+// superseded FAILURE runs, so ci_state=failing was re-recorded over zero
+// failing checks (pr_checks upsert collapses duplicates to the last row) and
+// mergeability stayed blocked on the ci_failing phantom.
+func TestSCMObservationSupersededRunsDedupToLatestPerName(t *testing.T) {
+	fx := basePRFixture()
+	var pr map[string]any
+	fx.prData(func(m map[string]any) {
+		pr = m
+		roll := m["commits"].(map[string]any)["nodes"].([]any)[0].(map[string]any)["commit"].(map[string]any)["statusCheckRollup"].(map[string]any)
+		roll["state"] = "FAILURE"
+		ctxs := roll["contexts"].(map[string]any)
+		ctxs["nodes"] = beamCraft407RollupNodes()
+		ctxs["pageInfo"] = map[string]any{"hasNextPage": false}
+	})
+	ref := ports.SCMPRRef{Repo: ports.SCMRepo{Provider: "github", Host: "github.com", Owner: "octocat", Name: "hello", Repo: "octocat/hello"}, Number: 42}
+	obs := scmObservationFromGraphQL(ref, pr)
+	if obs.CI.Summary != string(domain.CIPassing) {
+		t.Fatalf("CI summary = %q, want passing: every check's latest run is green; superseded FAILURE runs must not decide the verdict", obs.CI.Summary)
+	}
+	if len(obs.CI.FailedChecks) != 0 {
+		t.Fatalf("FailedChecks = %+v, want empty — superseded runs are not failures", obs.CI.FailedChecks)
+	}
+	names := map[string]bool{}
+	for _, ch := range obs.CI.Checks {
+		names[ch.Name] = true
+	}
+	if len(names) != 4 {
+		t.Fatalf("checks = %d distinct names (%v), want 4 — duplicate runs must collapse to the latest per name", len(names), names)
+	}
+	if obs.Mergeability.State != string(domain.MergeMergeable) {
+		t.Fatalf("mergeability = %q, want mergeable — must not stay blocked on superseded runs", obs.Mergeability.State)
+	}
+}
+
+// Issue #230 acceptance: paginated contexts with a FAILURE aggregate caused
+// by a cancelled attend whose rerun is already green on the visible page.
+// The rerun (higher databaseId) is the check's current state, so the verdict
+// is passing; the aggregate must not resurrect failing from the superseded
+// attend.
+func TestSCMObservationPaginatedCancelledRerunGreenOverridesFailureAggregate(t *testing.T) {
+	fx := basePRFixture()
+	var pr map[string]any
+	fx.prData(func(m map[string]any) {
+		pr = m
+		roll := m["commits"].(map[string]any)["nodes"].([]any)[0].(map[string]any)["commit"].(map[string]any)["statusCheckRollup"].(map[string]any)
+		roll["state"] = "FAILURE"
+		ctxs := roll["contexts"].(map[string]any)
+		ctxs["nodes"] = []any{
+			map[string]any{"__typename": "CheckRun", "name": "ci", "status": "COMPLETED", "conclusion": "CANCELLED", "databaseId": float64(10)},
+			map[string]any{"__typename": "CheckRun", "name": "ci", "status": "COMPLETED", "conclusion": "SUCCESS", "databaseId": float64(11)},
+			map[string]any{"__typename": "CheckRun", "name": "build", "status": "COMPLETED", "conclusion": "SUCCESS", "databaseId": float64(12)},
+		}
+		ctxs["pageInfo"] = map[string]any{"hasNextPage": true}
+	})
+	ref := ports.SCMPRRef{Repo: ports.SCMRepo{Provider: "github", Host: "github.com", Owner: "octocat", Name: "hello", Repo: "octocat/hello"}, Number: 42}
+	obs := scmObservationFromGraphQL(ref, pr)
+	if obs.CI.Summary != string(domain.CIPassing) {
+		t.Fatalf("CI summary = %q, want passing: the FAILURE aggregate is explained by the superseded cancelled attend visible on the page", obs.CI.Summary)
+	}
+}
+
+// Issue #230 acceptance: a cached/empty context view must not resurrect
+// failing from the aggregate when the provider itself reports the merge
+// state CLEAN — CLEAN means GitHub considers every required check green, so
+// a FAILURE aggregate alongside it is the proven-lie pattern. Non-clean
+// states (UNSTABLE/BLOCKED) keep the conservative aggregate verdict.
+func TestSCMObservationEmptyContextsWithFailureAggregateNotFailingWhenClean(t *testing.T) {
+	fx := basePRFixture()
+	var pr map[string]any
+	fx.prData(func(m map[string]any) {
+		pr = m
+		roll := m["commits"].(map[string]any)["nodes"].([]any)[0].(map[string]any)["commit"].(map[string]any)["statusCheckRollup"].(map[string]any)
+		roll["state"] = "FAILURE"
+		ctxs := roll["contexts"].(map[string]any)
+		ctxs["nodes"] = []any{}
+		ctxs["pageInfo"] = map[string]any{"hasNextPage": false}
+	})
+	ref := ports.SCMPRRef{Repo: ports.SCMRepo{Provider: "github", Host: "github.com", Owner: "octocat", Name: "hello", Repo: "octocat/hello"}, Number: 42}
+	obs := scmObservationFromGraphQL(ref, pr)
+	if obs.CI.Summary == string(domain.CIFailing) {
+		t.Fatalf("CI summary = failing, want not-failing: aggregate FAILURE with a CLEAN provider merge state is the stale-aggregate pattern")
+	}
+	if obs.Mergeability.State != string(domain.MergeMergeable) {
+		t.Fatalf("mergeability = %q, want mergeable", obs.Mergeability.State)
+	}
+
+	// Careful branch: a non-clean merge state keeps the aggregate verdict.
+	pr["mergeStateStatus"] = "UNSTABLE"
+	obs = scmObservationFromGraphQL(ref, pr)
+	if obs.CI.Summary != string(domain.CIFailing) {
+		t.Fatalf("UNSTABLE provider + FAILURE aggregate: CI summary = %q, want failing (guard only fires on CLEAN)", obs.CI.Summary)
+	}
+}
+
+// The single Observe path shares the latest-run-per-name classification: a
+// complete context set with superseded red runs next to green reruns must
+// yield passing, not failing.
+func TestObserve_SupersededRerunGreenClearsFailing(t *testing.T) {
+	f := newFakeGH(t)
+	fx := basePRFixture()
+	fx.prData(func(pr map[string]any) {
+		commits := pr["commits"].(map[string]any)["nodes"].([]any)[0].(map[string]any)
+		commit := commits["commit"].(map[string]any)
+		roll := commit["statusCheckRollup"].(map[string]any)
+		roll["state"] = "FAILURE"
+		ctxs := roll["contexts"].(map[string]any)
+		ctxs["nodes"] = beamCraft407RollupNodes()
+		ctxs["pageInfo"] = map[string]any{"hasNextPage": false}
+	})
+	fx.install(t, f)
+	p := newProviderForTest(t, f)
+
+	obs, err := p.Observe(ctx(), fx.prURL())
+	if err != nil {
+		t.Fatalf("Observe: %v", err)
+	}
+	if obs.CI != domain.CIPassing {
+		t.Fatalf("CI = %q, want passing from latest-run-per-name classification", obs.CI)
+	}
+}
+
 func TestSCMBatchQueryRequestsStablePullRequestID(t *testing.T) {
 	query, _ := buildSCMBatchQuery([]ports.SCMPRRef{{
 		Repo:   ports.SCMRepo{Provider: "github", Host: "github.com", Owner: "octocat", Name: "hello"},
