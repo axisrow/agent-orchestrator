@@ -659,10 +659,10 @@ type ReviewRun struct {
 	BatchID           string
 	AutoInjectReview  bool
 	TriggerSource     domain.ReviewTriggerSource
+	GithubReviewState string
 	Findings          string
 	PublishState      string
 	PublishError      string
-	GithubReviewState string
 }
 
 type Session struct {

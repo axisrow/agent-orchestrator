@@ -606,15 +606,6 @@ func (b PreparedBatch) emittedAt() time.Time {
 	return latest
 }
 
-func (b PreparedBatch) hasState(state domain.ReportState) bool {
-	for _, report := range b.Reports {
-		if report.State == state {
-			return true
-		}
-	}
-	return false
-}
-
 func coalesceReports(in []domain.ReportRecord) []domain.ReportRecord {
 	out := make([]domain.ReportRecord, 0, len(in))
 	indexes := map[string]int{}

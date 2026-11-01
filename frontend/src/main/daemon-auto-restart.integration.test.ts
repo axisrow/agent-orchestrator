@@ -84,6 +84,7 @@ function setup() {
 		spawn, daemonEnv, browserRuntimeToken: "test-only", createListenPortScanner,
 		RUN_FILE_FRESHNESS_SKEW_MS: 1000, RUN_FILE_POLL_MS: 100, PORT_DISCOVERY_TIMEOUT_MS: 5000,
 		DAEMON_RESTART_STOP_TIMEOUT_MS: 5000, appendDaemonOutput: vi.fn(), slowDaemonStartupStatus: () => ({ state: "starting" }),
+		openDaemonLog: vi.fn(), writeDaemonLog: vi.fn(), closeDaemonLog: vi.fn(), daemonLogPath: () => "/owned/daemon.log",
 		planDaemonAutoRestart, daemonExitWasUngraceful, disposeBrowserRuntimeLink: vi.fn(), captureSideChatState: async () => undefined,
 		desktopQuit: { handleBeforeQuit: () => false }, chatDraftRisks: [], browserCleanupComplete: true,
 		disposeBrowserStreamLink: vi.fn(), trayLifecycle: { dispose: vi.fn() },
