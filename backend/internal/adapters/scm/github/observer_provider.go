@@ -591,12 +591,25 @@ func scmObservationFromGraphQL(ref ports.SCMPRRef, pr map[string]any) ports.SCMO
 	return obs
 }
 
+// ciSummaryFromRollupState maps the batch-query rollup onto domain.CIState.
+// With a complete (non-paginated) context set the nodes are ground truth:
+// GitHub's aggregate state can stay FAILURE after a cancelled/superseded
+// check is re-run green while the contexts already show the green rerun
+// (issue #230) — trusting the aggregate there froze ci_state=failing over
+// zero failing checks and kept mergeability blocked on ci_failing. An
+// empty or paginated view keeps the conservative aggregate verdict: a
+// failure could hide on the unseen page.
 func ciSummaryFromRollupState(pr map[string]any) domain.CIState {
 	roll := statusRollup(pr)
 	if roll == nil {
 		return domain.CIUnknown
 	}
-	return mapRollupState(str(roll["state"]))
+	contexts, _ := roll["contexts"].(map[string]any)
+	rawNodes := nodes(contexts["nodes"])
+	if len(rawNodes) == 0 || pageInfoHasMore(contexts) {
+		return mapRollupState(str(roll["state"]))
+	}
+	return ciStateFromContextNodes(rawNodes)
 }
 
 func scmContextsPaginated(pr map[string]any) bool {
