@@ -35,6 +35,7 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/runtime/runtimeselect"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/systemexec"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/telemetry/policyauthority"
+	"github.com/aoagents/agent-orchestrator/backend/internal/agentlaunch"
 	"github.com/aoagents/agent-orchestrator/backend/internal/attachmentstore"
 	"github.com/aoagents/agent-orchestrator/backend/internal/autoreview"
 	"github.com/aoagents/agent-orchestrator/backend/internal/browserruntime"
@@ -308,6 +309,11 @@ func Run() error {
 	// Non-fatal: the skill is an enhancement over `ao --help`, not required.
 	if err := skillassets.Install(cfg.DataDir); err != nil {
 		log.Warn("install using-ao skill", "err", err)
+	}
+	// Before any session starts: an AppImage remounts under a new path on every
+	// launch, so sessions get a link under the data dir that follows it.
+	if err := agentlaunch.UseStableExecutable(cfg.DataDir, os.Getenv); err != nil {
+		log.Warn("link a stable ao for sessions of this AppImage", "err", err)
 	}
 
 	// Product telemetry answers to AO_TELEMETRY_EVENTS alone. The agent-switch
