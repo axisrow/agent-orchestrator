@@ -2054,38 +2054,57 @@ func (e *Engine) SendMessageToReviewerHandle(ctx stdctx.Context, ref, message st
 	if err != nil {
 		return err
 	}
-	var found domain.ReviewerHandle
+	// One worker can hold several review rows naming the same handle: the
+	// handle is derived from the worker id, and a harness switch with a pass
+	// still running leaves the old harness row holding it while Spawn recreates
+	// the pane under the new row with a fresh launch id. The scan has no order,
+	// so a match is only a candidate: reload and vet each one and deliver to
+	// the first viable row instead of trusting the first match.
+	want := "review-" + name
+	matched, deadRow, archived := false, (*domain.Review)(nil), false
 	for _, h := range handles {
-		if normalizeStoredReviewerHandle(h.HandleID) == "review-"+name {
-			found = h
-			break
+		if normalizeStoredReviewerHandle(h.HandleID) != want {
+			continue
 		}
+		matched = true
+		// The handle scan returns only identity columns; reload the row for the
+		// interface mode, launch id, and archive state the delivery checks need.
+		review, ok, err := e.store.GetReviewBySessionAndHarness(ctx, h.SessionID, h.Harness)
+		if err != nil {
+			return err
+		}
+		if !ok || review.ID != h.ReviewID {
+			continue
+		}
+		if review.IsArchived {
+			archived = true
+			continue
+		}
+		if review.InterfaceMode == domain.ReviewerInterfaceChat {
+			continue
+		}
+		// A dead pane is skipped in favor of a later candidate, not fatal: a
+		// probe is per-launch, so the stale row of a harness switch probes dead
+		// while the replacement pane is alive. A failed probe is unknown, not
+		// dead (same policy as reconcileExitedReviewer), so the delivery itself
+		// then reports what actually happened.
+		if alive, err := e.launcher.Alive(ctx, review.ReviewerHandleID, review.ReviewerLaunchID); err == nil && !alive {
+			row := review
+			deadRow = &row
+			continue
+		}
+		return e.launcher.Message(ctx, review.ReviewerHandleID, message)
 	}
-	if found.ReviewID == "" {
-		return fmt.Errorf("%w: no live reviewer pane %q; check `ao review ls --json` for the current reviewerHandleId", ErrNotFound, "review-"+name)
+	if deadRow != nil {
+		return fmt.Errorf("%w: reviewer pane %q for session %q is not running; restore it from the reviewer tab in the desktop app, or start a new pass with `ao review trigger %s --rerun`", ErrNotFound, deadRow.ReviewerHandleID, deadRow.SessionID, deadRow.SessionID)
 	}
-	// The handle scan returns only identity columns; reload the row for the
-	// interface mode, launch id, and archive state the delivery checks need.
-	review, ok, err := e.store.GetReviewBySessionAndHarness(ctx, found.SessionID, found.Harness)
-	if err != nil {
-		return err
+	if archived {
+		return fmt.Errorf("%w: reviewer pane %q is archived; start a new pass with `ao review trigger`", ErrNotFound, want)
 	}
-	if !ok || review.ID != found.ReviewID {
-		return fmt.Errorf("%w: reviewer pane %q", ErrNotFound, found.HandleID)
+	if !matched {
+		return fmt.Errorf("%w: no live reviewer pane %q; check `ao review ls --json` for the current reviewerHandleId", ErrNotFound, want)
 	}
-	if review.IsArchived {
-		return fmt.Errorf("%w: reviewer pane %q is archived; start a new pass with `ao review trigger`", ErrNotFound, found.HandleID)
-	}
-	if review.InterfaceMode == domain.ReviewerInterfaceChat {
-		return fmt.Errorf("%w: reviewer %q for session %q uses the chat interface and has no terminal; send through its conversation", ErrInvalid, review.ID, found.SessionID)
-	}
-	// A dead pane gets its own error rather than the runtime's raw failure. A
-	// failed probe is unknown, not dead (same policy as reconcileExitedReviewer),
-	// so the delivery itself then reports what actually happened.
-	if alive, err := e.launcher.Alive(ctx, review.ReviewerHandleID, review.ReviewerLaunchID); err == nil && !alive {
-		return fmt.Errorf("%w: reviewer pane %q for session %q is not running; restore it from the reviewer tab in the desktop app, or start a new pass with `ao review trigger %s --rerun`", ErrNotFound, found.HandleID, found.SessionID, found.SessionID)
-	}
-	return e.launcher.Message(ctx, review.ReviewerHandleID, message)
+	return fmt.Errorf("%w: reviewer pane %q is not deliverable", ErrNotFound, want)
 }
 
 // reviewerSelection resolves which reviewer reviews the worker's PR: a

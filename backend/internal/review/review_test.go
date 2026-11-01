@@ -463,6 +463,8 @@ type fakeLauncher struct {
 	messagedHandle   string
 	messages         []string
 	messageErr       error
+	aliveLaunchIDs   map[string]bool
+	aliveProbes      []string
 }
 
 func (f *fakeLauncher) InterfaceMode(domain.ReviewerHarness) domain.ReviewerInterfaceMode {
@@ -520,8 +522,12 @@ func (f *fakeLauncher) Notify(_ context.Context, handleID string, spec LaunchSpe
 	}
 	return f.notifyErr
 }
-func (f *fakeLauncher) Alive(_ context.Context, _, _ string) (bool, error) {
+func (f *fakeLauncher) Alive(_ context.Context, _, launchID string) (bool, error) {
 	f.aliveChecked = true
+	f.aliveProbes = append(f.aliveProbes, launchID)
+	if f.aliveLaunchIDs != nil {
+		return f.aliveLaunchIDs[launchID], f.aliveErr
+	}
 	return f.alive || f.spawned || f.restored, f.aliveErr
 }
 func (f *fakeLauncher) Message(_ context.Context, handleID, message string) error {
@@ -1433,6 +1439,60 @@ func TestSendMessageToReviewerHandleDeliversWhenProbeFails(t *testing.T) {
 	}
 	if len(launcher.messages) != 1 {
 		t.Fatalf("probe failure blocked delivery: messages = %v", launcher.messages)
+	}
+}
+
+// A harness switch with a pass still running leaves the old harness row
+// holding the (worker-derived) handle while Spawn recreates the pane under the
+// new row with a fresh launch id. The stale row must not win the scan: the
+// delivery goes to the first candidate whose pane probes alive.
+func TestSendMessageToReviewerHandleSkipsStaleRowSharingTheHandle(t *testing.T) {
+	store := &fakeStore{
+		liveHandles: []domain.ReviewerHandle{
+			{ReviewID: "rev-old", SessionID: "mer-1", Harness: domain.ReviewerCodex, HandleID: "review-mer-1"},
+			{ReviewID: "rev-new", SessionID: "mer-1", Harness: domain.ReviewerClaudeCode, HandleID: "review-mer-1"},
+		},
+		reviews: map[domain.ReviewerHarness]domain.Review{
+			domain.ReviewerCodex:      {ID: "rev-old", SessionID: "mer-1", Harness: domain.ReviewerCodex, ReviewerHandleID: "review-mer-1", ReviewerLaunchID: "launch-old", InterfaceMode: domain.ReviewerInterfaceTUI},
+			domain.ReviewerClaudeCode: {ID: "rev-new", SessionID: "mer-1", Harness: domain.ReviewerClaudeCode, ReviewerHandleID: "review-mer-1", ReviewerLaunchID: "launch-new", InterfaceMode: domain.ReviewerInterfaceTUI},
+		},
+	}
+	launcher := &fakeLauncher{aliveLaunchIDs: map[string]bool{"launch-new": true}}
+	eng := newEngineForTest(store, fakeSessions{rec: liveWorker(), ok: true}, fakePRs{}, fakeProjects{}, launcher)
+
+	if err := eng.SendMessageToReviewerHandle(context.Background(), "review-mer-1", "Continue the review"); err != nil {
+		t.Fatalf("SendMessageToReviewerHandle: %v", err)
+	}
+	if strings.Join(launcher.aliveProbes, ",") != "launch-old,launch-new" {
+		t.Fatalf("probes = %v, want the stale row probed first, then the live one", launcher.aliveProbes)
+	}
+	if len(launcher.messages) != 1 || launcher.messages[0] != "Continue the review" {
+		t.Fatalf("messages = %v", launcher.messages)
+	}
+}
+
+// When every candidate sharing the handle probes dead, the not-running error
+// is what the user sees — not a false success or a different miss.
+func TestSendMessageToReviewerHandleAllCandidatesDead(t *testing.T) {
+	store := &fakeStore{
+		liveHandles: []domain.ReviewerHandle{
+			{ReviewID: "rev-old", SessionID: "mer-1", Harness: domain.ReviewerCodex, HandleID: "review-mer-1"},
+			{ReviewID: "rev-new", SessionID: "mer-1", Harness: domain.ReviewerClaudeCode, HandleID: "review-mer-1"},
+		},
+		reviews: map[domain.ReviewerHarness]domain.Review{
+			domain.ReviewerCodex:      {ID: "rev-old", SessionID: "mer-1", Harness: domain.ReviewerCodex, ReviewerHandleID: "review-mer-1", ReviewerLaunchID: "launch-old", InterfaceMode: domain.ReviewerInterfaceTUI},
+			domain.ReviewerClaudeCode: {ID: "rev-new", SessionID: "mer-1", Harness: domain.ReviewerClaudeCode, ReviewerHandleID: "review-mer-1", ReviewerLaunchID: "launch-new", InterfaceMode: domain.ReviewerInterfaceTUI},
+		},
+	}
+	launcher := &fakeLauncher{}
+	eng := newEngineForTest(store, fakeSessions{rec: liveWorker(), ok: true}, fakePRs{}, fakeProjects{}, launcher)
+
+	err := eng.SendMessageToReviewerHandle(context.Background(), "review-mer-1", "hi")
+	if !errors.Is(err, ErrNotFound) || !strings.Contains(err.Error(), "is not running") {
+		t.Fatalf("err = %v, want not-found not-running", err)
+	}
+	if len(launcher.messages) != 0 {
+		t.Fatalf("messages = %v", launcher.messages)
 	}
 }
 
