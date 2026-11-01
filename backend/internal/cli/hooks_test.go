@@ -282,6 +282,11 @@ func assertActivityRequest(t *testing.T, got, want setActivityAPIRequest) {
 	}
 	// The exact timestamp has a separate deterministic wire-contract test.
 	got.ObservedAt = time.Time{}
+	// Every hook names the agent that sent it; the value has its own test.
+	if got.Harness == "" {
+		t.Fatal("hook omitted the agent that sent it")
+	}
+	got.Harness = ""
 	if got != want {
 		t.Fatalf("body = %+v, want %+v", got, want)
 	}
@@ -1300,7 +1305,7 @@ func TestHooks_ClineSessionStartIgnoresTaskID(t *testing.T) {
 	if err := json.Unmarshal([]byte(capture.body), &req); err != nil {
 		t.Fatalf("decode body: %v\nbody=%s", err, capture.body)
 	}
-	want := setActivityAPIRequest{State: "active", Event: "session-start", Harness: "cline"}
+	want := setActivityAPIRequest{State: "active", Event: "session-start"}
 	assertActivityRequest(t, req, want)
 }
 
@@ -1321,7 +1326,7 @@ func TestHooks_SessionStartReportsNativeSessionIDWithoutActivity(t *testing.T) {
 	if err := json.Unmarshal([]byte(capture.body), &req); err != nil {
 		t.Fatalf("decode body: %v\nbody=%s", err, capture.body)
 	}
-	want := setActivityAPIRequest{Event: "session-start", AgentSessionID: "019f6af0-codex-session", Harness: "codex"}
+	want := setActivityAPIRequest{Event: "session-start", AgentSessionID: "019f6af0-codex-session"}
 	assertActivityRequest(t, req, want)
 }
 
@@ -1342,7 +1347,7 @@ func TestHooks_ActivityAlsoReportsNativeSessionID(t *testing.T) {
 	if err := json.Unmarshal([]byte(capture.body), &req); err != nil {
 		t.Fatalf("decode body: %v\nbody=%s", err, capture.body)
 	}
-	want := setActivityAPIRequest{State: "idle", Event: "stop", AgentSessionID: "claude-session-1", Harness: "claude-code"}
+	want := setActivityAPIRequest{State: "idle", Event: "stop", AgentSessionID: "claude-session-1"}
 	assertActivityRequest(t, req, want)
 }
 
@@ -1404,7 +1409,7 @@ func TestHooks_PostToolUseCarriesCorrelationFields(t *testing.T) {
 	if err := json.Unmarshal([]byte(capture.body), &req); err != nil {
 		t.Fatalf("decode body: %v\nbody=%s", err, capture.body)
 	}
-	want := setActivityAPIRequest{State: "active", Event: "post-tool-use", ToolName: "Bash", ToolUseID: "toolu_42", Harness: "claude-code"}
+	want := setActivityAPIRequest{State: "active", Event: "post-tool-use", ToolName: "Bash", ToolUseID: "toolu_42"}
 	assertActivityRequest(t, req, want)
 }
 
@@ -1480,7 +1485,7 @@ func TestHooks_EventWithoutToolIdentityOmitsIt(t *testing.T) {
 	if err := json.Unmarshal([]byte(capture.body), &req); err != nil {
 		t.Fatalf("decode body: %v\nbody=%s", err, capture.body)
 	}
-	want := setActivityAPIRequest{State: "waiting_input", Event: "permission-request", ToolName: "Bash", ToolUseID: "", Harness: "codex"}
+	want := setActivityAPIRequest{State: "waiting_input", Event: "permission-request", ToolName: "Bash", ToolUseID: ""}
 	assertActivityRequest(t, req, want)
 }
 
@@ -1522,7 +1527,7 @@ func TestHooks_CodexSessionStartReportsAgentSessionID(t *testing.T) {
 	if err := json.Unmarshal([]byte(capture.body), &req); err != nil {
 		t.Fatalf("decode body: %v\nbody=%s", err, capture.body)
 	}
-	want := setActivityAPIRequest{Event: "session-start", AgentSessionID: "codex-native-1", Harness: "codex"}
+	want := setActivityAPIRequest{Event: "session-start", AgentSessionID: "codex-native-1"}
 	assertActivityRequest(t, req, want)
 }
 
@@ -1564,7 +1569,7 @@ func TestHooks_ClaudeCodeSessionStartReportsAgentSessionID(t *testing.T) {
 	if err := json.Unmarshal([]byte(capture.body), &req); err != nil {
 		t.Fatalf("decode body: %v\nbody=%s", err, capture.body)
 	}
-	want := setActivityAPIRequest{Event: "session-start", AgentSessionID: "claude-native-1", Harness: "claude-code"}
+	want := setActivityAPIRequest{Event: "session-start", AgentSessionID: "claude-native-1"}
 	assertActivityRequest(t, req, want)
 }
 
@@ -1608,7 +1613,7 @@ func TestHooks_ClaudeCompatibleSessionStartReportsAgentSessionID(t *testing.T) {
 			if err := json.Unmarshal([]byte(capture.body), &req); err != nil {
 				t.Fatalf("decode body: %v\nbody=%s", err, capture.body)
 			}
-			want := setActivityAPIRequest{Event: "session-start", AgentSessionID: agent + "-native-1", Harness: agent}
+			want := setActivityAPIRequest{Event: "session-start", AgentSessionID: agent + "-native-1"}
 			assertActivityRequest(t, req, want)
 		})
 	}
@@ -1631,7 +1636,7 @@ func TestHooks_MuseUserPromptReportsActive(t *testing.T) {
 	if err := json.Unmarshal([]byte(capture.body), &req); err != nil {
 		t.Fatalf("decode body: %v\nbody=%s", err, capture.body)
 	}
-	want := setActivityAPIRequest{State: "active", Event: "user-prompt-submit", AgentSessionID: "muse-native-1", Harness: "muse"}
+	want := setActivityAPIRequest{State: "active", Event: "user-prompt-submit", AgentSessionID: "muse-native-1"}
 	assertActivityRequest(t, req, want)
 }
 
@@ -1666,7 +1671,7 @@ func TestHooks_RegisteredHarnessSessionStartReportsAgentSessionID(t *testing.T) 
 			if err := json.Unmarshal([]byte(capture.body), &req); err != nil {
 				t.Fatalf("decode body: %v\nbody=%s", err, capture.body)
 			}
-			want := setActivityAPIRequest{State: wantState, Event: "session-start", AgentSessionID: agent + "-native-1", Harness: agent}
+			want := setActivityAPIRequest{State: wantState, Event: "session-start", AgentSessionID: agent + "-native-1"}
 			assertActivityRequest(t, req, want)
 		})
 	}
@@ -1743,7 +1748,7 @@ func TestHooks_CommandCodeSessionStartInjectsSystemPromptContext(t *testing.T) {
 	}
 	// Context injection is the reason SessionStart runs at all; the activity
 	// report stays metadata-only for Command Code.
-	want := setActivityAPIRequest{Event: "session-start", AgentSessionID: "command-code-native-1", Harness: "command-code"}
+	want := setActivityAPIRequest{Event: "session-start", AgentSessionID: "command-code-native-1"}
 	assertActivityRequest(t, request, want)
 }
 
@@ -1767,7 +1772,7 @@ func TestHooks_VibePostAgentReportsSessionIDAndIdle(t *testing.T) {
 	if err := json.Unmarshal([]byte(capture.body), &req); err != nil {
 		t.Fatalf("decode body: %v\nbody=%s", err, capture.body)
 	}
-	want := setActivityAPIRequest{State: "idle", Event: "post-agent", AgentSessionID: "vibe-native-1", Harness: "vibe"}
+	want := setActivityAPIRequest{State: "idle", Event: "post-agent", AgentSessionID: "vibe-native-1"}
 	assertActivityRequest(t, req, want)
 }
 
@@ -1801,7 +1806,7 @@ func TestHooks_AgySessionStartReportsConversationID(t *testing.T) {
 	if err := json.Unmarshal([]byte(capture.body), &req); err != nil {
 		t.Fatalf("decode body: %v\nbody=%s", err, capture.body)
 	}
-	want := setActivityAPIRequest{Event: "session-start", AgentSessionID: "agy-native-1", Harness: "agy"}
+	want := setActivityAPIRequest{Event: "session-start", AgentSessionID: "agy-native-1"}
 	assertActivityRequest(t, req, want)
 }
 
@@ -1843,7 +1848,7 @@ func TestHooks_OpenHandsUserPromptSubmitInjectsInstructions(t *testing.T) {
 	if err := json.Unmarshal([]byte(capture.body), &req); err != nil {
 		t.Fatalf("decode body: %v\nbody=%s", err, capture.body)
 	}
-	want := setActivityAPIRequest{State: "active", Event: "user-prompt-submit", AgentSessionID: "0b6c1f5e-5a4e-4d8b-9c55-0d5c2b1f7a10", Harness: "openhands"}
+	want := setActivityAPIRequest{State: "active", Event: "user-prompt-submit", AgentSessionID: "0b6c1f5e-5a4e-4d8b-9c55-0d5c2b1f7a10"}
 	assertActivityRequest(t, req, want)
 }
 
@@ -1877,7 +1882,7 @@ func TestHooks_OpenHandsSessionStartAndStopEmitNoOutput(t *testing.T) {
 			if err := json.Unmarshal([]byte(capture.body), &req); err != nil {
 				t.Fatalf("decode body: %v\nbody=%s", err, capture.body)
 			}
-			assertActivityRequest(t, req, setActivityAPIRequest{State: tc.state, Event: tc.event, AgentSessionID: "oh-native-1", Harness: "openhands"})
+			assertActivityRequest(t, req, setActivityAPIRequest{State: tc.state, Event: tc.event, AgentSessionID: "oh-native-1"})
 		})
 	}
 }
@@ -1946,7 +1951,7 @@ func TestHooks_CopilotSessionStartReportsSessionID(t *testing.T) {
 	if err := json.Unmarshal([]byte(capture.body), &req); err != nil {
 		t.Fatalf("decode body: %v\nbody=%s", err, capture.body)
 	}
-	want := setActivityAPIRequest{State: "active", Event: "session-start", AgentSessionID: "copilot-native-1", Harness: "copilot"}
+	want := setActivityAPIRequest{State: "active", Event: "session-start", AgentSessionID: "copilot-native-1"}
 	assertActivityRequest(t, req, want)
 }
 
