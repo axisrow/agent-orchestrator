@@ -1,4 +1,5 @@
 import { Fragment, Suspense, useState } from "react";
+import { Pencil } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { type GlobalSettingsSection as GlobalSettingsPage, type HarnessDiagnosticsRequest, useUiStore } from "../stores/ui-store";
 import { globalSettingsItemsFor } from "./settings/settingsCatalog";
@@ -52,13 +53,19 @@ export function GlobalSettingsForm({
 				className="flex w-full flex-col gap-(--size-settings-section-gap)"
 			>
 				{(all || section === "general") && (
-					<SettingsSection title={t("settings.agentDefaults")} titleHidden={titleHidden}>
+					<SettingsSection title={t("settings.agentDefaults")} titleHidden={titleHidden} grouped>
+						{/* Same link-style settings row as the project-scope trigger
+						    (issue #21): one affordance, identical everywhere. */}
 						<button
 							type="button"
-							className="w-full rounded-md bg-[var(--color-bg-settings-row)] px-4 py-3 text-left"
+							className="settings-row-bar w-full text-left transition-colors hover:bg-settings-menu-selected focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-weak"
 							onClick={() => setAgentDefaultsOpen(true)}
 						>
-							{t("settings.agentDefaults")}
+							<span className="min-w-0 flex-1">
+								<span className="block text-sm leading-5 text-settings-label">{t("settings.agentDefaults")}</span>
+								<span className="mt-0.5 block text-pretty text-control leading-4 text-settings-muted">{t("settings.promptOverride.description", { scope: t("settings.promptOverride.globalScope") })}</span>
+							</span>
+							<Pencil className="size-icon-lg shrink-0 text-settings-muted" aria-hidden="true" />
 						</button>
 					</SettingsSection>
 				)}
