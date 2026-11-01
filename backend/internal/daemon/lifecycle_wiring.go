@@ -862,6 +862,10 @@ func (r reviewPRRefresher) RefreshPR(ctx context.Context, workerID domain.Sessio
 		return fmt.Errorf("%w: %s is not a pull request in this project's repository", reviewcore.ErrInvalid, prURL)
 	case errors.Is(err, sessionsvc.ErrSCMUnavailable):
 		return fmt.Errorf("%w: AO could not fetch %s from the provider; try again shortly", reviewcore.ErrInvalid, prURL)
+	case errors.Is(err, sessionsvc.ErrSessionNotClaimable):
+		return fmt.Errorf("%w: session %s cannot hold pull requests (orchestrator sessions do not claim PRs); attach %s to the worker that owns the work with `ao session claim-pr <worker-id> %s`, then trigger the review on that worker", reviewcore.ErrInvalid, workerID, prURL, prURL)
+	case errors.Is(err, sessionsvc.ErrSessionNoWorkspace):
+		return fmt.Errorf("%w: session %s has no workspace to hold pull requests", reviewcore.ErrInvalid, workerID)
 	default:
 		return err
 	}

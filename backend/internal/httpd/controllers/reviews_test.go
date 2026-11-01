@@ -215,6 +215,23 @@ func TestReviewsTrigger_PassesPRURLThrough(t *testing.T) {
 	}
 }
 
+// Triggering a review on a session that cannot claim PRs (an orchestrator) is
+// a user error: it must surface as a typed 422 naming the cause, never the
+// bare 500 REVIEW_OPERATION_FAILED bucket.
+func TestReviewsTrigger_NotClaimableSessionReturns422(t *testing.T) {
+	srv := newReviewTestServer(t, &fakeReviewService{triggerErr: fmt.Errorf("%w: session orch-1 cannot hold pull requests (orchestrator sessions do not claim PRs)", reviewsvc.ErrInvalid)})
+
+	body, status, headers := doRequest(t, srv, "POST", "/api/v1/sessions/orch-1/reviews/trigger", "")
+	assertJSON(t, headers)
+	assertErrorCode(t, body, status, http.StatusUnprocessableEntity, "REVIEW_INVALID")
+
+	var got errorBody
+	mustJSON(t, body, &got)
+	if !strings.Contains(got.Message, "orch-1") || !strings.Contains(got.Message, "claim") {
+		t.Fatalf("message = %q, want the session and the resolution path", got.Message)
+	}
+}
+
 func TestReviewActivityPersistsReviewerNativeSessionID(t *testing.T) {
 	svc := &fakeReviewService{}
 	srv := newReviewTestServer(t, svc)

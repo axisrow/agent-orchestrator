@@ -10,6 +10,8 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/config"
@@ -29,9 +31,10 @@ const maxDrainedBodyBytes = 4 << 10
 // apiError is the subset of the daemon's JSON error envelope the CLI surfaces.
 // RequestID is surfaced so a failed command can be correlated with daemon logs.
 type apiError struct {
-	Message   string `json:"message"`
-	Code      string `json:"code"`
-	RequestID string `json:"requestId"`
+	Message   string         `json:"message"`
+	Code      string         `json:"code"`
+	RequestID string         `json:"requestId"`
+	Details   map[string]any `json:"details"`
 }
 
 type apiResponseError struct {
@@ -80,17 +83,38 @@ func (e apiResponseError) Error() string {
 	return e.ErrorBody.String()
 }
 
-// String renders the envelope for the user: "<message> (<code>) [request <id>]",
-// omitting whichever parts the daemon left empty.
+// String renders the envelope for the user:
+// "<message> (<code>) details: <k=v, …> [request <id>]", omitting whichever
+// parts the daemon left empty. Structured details are one line, keys sorted,
+// so the cause the daemon attached stays diagnosable from the CLI alone.
 func (e apiError) String() string {
 	msg := e.Message
 	if e.Code != "" {
 		msg = fmt.Sprintf("%s (%s)", msg, e.Code)
 	}
+	if detail := detailsLine(e.Details); detail != "" {
+		msg = fmt.Sprintf("%s details: %s", msg, detail)
+	}
 	if e.RequestID != "" {
 		msg = fmt.Sprintf("%s [request %s]", msg, e.RequestID)
 	}
 	return msg
+}
+
+func detailsLine(details map[string]any) string {
+	if len(details) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(details))
+	for k := range details {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	pairs := make([]string, 0, len(keys))
+	for _, k := range keys {
+		pairs = append(pairs, fmt.Sprintf("%s=%v", k, details[k]))
+	}
+	return strings.Join(pairs, ", ")
 }
 
 // getJSON sends GET /api/v1/<path> to the running daemon and decodes a 2xx
