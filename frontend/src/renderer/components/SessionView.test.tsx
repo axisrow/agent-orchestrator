@@ -4481,6 +4481,25 @@ describe("SessionView", () => {
 		expect(screen.getByTestId("terminal-target")).toHaveTextContent("worker");
 	});
 
+	it("keeps a remembered shell tab through the shell list's loading window", async () => {
+		shellTerminalsState.data = [{ handleId: "sh-a", sessionId: "sess-1", title: "sess-1-shell", workingDir: "/p", createdAt: "2026-07-24T00:00:00Z" }];
+		const view = render(<SessionView sessionId="sess-1" />);
+		fireEvent.click(screen.getByRole("button", { name: "select sess-1-shell" }));
+		expect(screen.getByTestId("terminal-target")).toHaveTextContent("sh-a");
+
+		// An app restart remounts the view while the shell list is still loading.
+		shellTerminalsState.loaded = false;
+		view.unmount();
+		const reloaded = render(<SessionView sessionId="sess-1" />);
+		expect(screen.getByTestId("terminal-target")).toHaveTextContent("sh-a");
+
+		// Once loaded, a vanished shell still falls back to the session pane.
+		shellTerminalsState.loaded = true;
+		shellTerminalsState.data = [];
+		reloaded.rerender(<SessionView sessionId="sess-1" />);
+		await waitFor(() => expect(reloaded.getByTestId("terminal-target")).toHaveTextContent("worker"));
+	});
+
 	it.each(["tui", "chat"] as const)(
 		"restores the selected reviewer terminal when a %s session becomes active again",
 		async (mode) => {

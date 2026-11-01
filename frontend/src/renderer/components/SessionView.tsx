@@ -1155,14 +1155,17 @@ export function SessionView({ sessionId, cloudOrgId, projectId, hostId }: Sessio
 	// If the pane is pointed at a shell that is not in THIS session's strip — e.g.
 	// after navigating to a different session whose globally-active shell belongs
 	// elsewhere — fall back to the session's own pane rather than render a tab
-	// that isn't shown here.
+	// that isn't shown here. An unloaded list is not an empty one: resetting a
+	// remembered shell tab during the loading window would lose it on every
+	// app restart, so wait for the data before judging a target gone.
 	useEffect(() => {
+		if (shellTerminalsQuery.data === undefined) return;
 		setTerminalTarget((current) =>
 			current.kind === "shell" && !shellTerminals.some((s) => s.handleId === current.handleId)
 				? { kind: "worker" }
 				: current,
 		);
-	}, [shellTerminals]);
+	}, [shellTerminals, shellTerminalsQuery.data]);
 	// Reviewer selection belongs to the tab, not its replaceable controller.
 	// Keep it through switch teardown, then follow the replacement surface.
 	useEffect(() => {
