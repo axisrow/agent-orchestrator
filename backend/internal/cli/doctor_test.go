@@ -831,3 +831,84 @@ func writeHooksLogLines(t *testing.T, dataDir string, lines ...string) {
 		t.Fatal(err)
 	}
 }
+
+// stuckDeliveriesDaemon serves the stuck-deliveries section `ao doctor` reads
+// from the running daemon (fork issue #211).
+func stuckDeliveriesDaemon(t *testing.T, body string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/reports/deliveries/stuck" {
+			t.Errorf("unexpected daemon request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, body)
+	}))
+	t.Cleanup(srv.Close)
+	cfg := setConfigEnv(t)
+	writeRunFileFor(t, cfg, srv)
+	return srv
+}
+
+func doctorContextAlive(t *testing.T, paths map[string]string) *commandContext {
+	t.Helper()
+	deps := Deps{
+		LookPath: func(name string) (string, error) {
+			path, ok := paths[name]
+			if !ok || path == "" {
+				return "", fmt.Errorf("%s missing", name)
+			}
+			return path, nil
+		},
+		ProcessAlive: func(int) bool { return true },
+	}
+	return &commandContext{deps: deps.withDefaults()}
+}
+
+// A stuck group renders as an informational WARN in the Deliveries section
+// (terminal retirements on their own line) and lands in --json as the same
+// data, machine-readable; neither fails doctor.
+func TestDoctorStuckDeliveriesSection(t *testing.T) {
+	stuckDeliveriesDaemon(t, `{"groups":[{"projectId":"ccstatusline","sessionId":"worker-1","recipient":"no active orchestrator","causeClass":"no active orchestrator","cause":"project ccstatusline has no orchestrator","attempts":3631,"ageSeconds":93600,"oldestDeliveryAt":"2026-10-29T15:46:00Z","deliveries":1,"zombie":true,"terminal":false},{"projectId":"q","sessionId":"worker-2","recipient":"","causeClass":"archived project","attempts":40,"ageSeconds":180000,"oldestDeliveryAt":"2026-10-30T00:41:00Z","deliveries":2,"zombie":true,"terminal":true}]}`)
+	c := doctorContextAlive(t, map[string]string{})
+
+	checks, groups := c.checkStuckDeliveries(context.Background())
+	if len(groups) != 2 || groups[0].ProjectID != "ccstatusline" || groups[1].Terminal != true {
+		t.Fatalf("groups = %+v", groups)
+	}
+	if len(checks) != 2 {
+		t.Fatalf("checks = %+v, want one per group", checks)
+	}
+	stuck := checks[0]
+	if stuck.Level != doctorWarn || stuck.Section != doctorSectionDeliveries || stuck.Name != "stuck-delivery" ||
+		!strings.Contains(stuck.Message, "ccstatusline -> no active orchestrator") ||
+		!strings.Contains(stuck.Message, "3631 attempt(s)") || !strings.Contains(stuck.Message, "26h") {
+		t.Fatalf("stuck check = %+v", stuck)
+	}
+	died := checks[1]
+	if died.Level != doctorWarn || died.Name != "delivery-died" || !strings.Contains(died.Message, "never be delivered") {
+		t.Fatalf("terminal check = %+v", died)
+	}
+	age := humanDeliveryAge(93600)
+	if age != "26h0m0s" {
+		t.Fatalf("age = %q", age)
+	}
+}
+
+func TestDoctorStuckDeliveriesEmptyAndSilentWithoutDaemon(t *testing.T) {
+	stuckDeliveriesDaemon(t, `{"groups":[]}`)
+	c := doctorContextAlive(t, map[string]string{})
+	checks, groups := c.checkStuckDeliveries(context.Background())
+	if len(groups) != 0 || len(checks) != 1 || checks[0].Level != doctorPass || checks[0].Name != "stuck-deliveries" {
+		t.Fatalf("empty checks = %+v groups = %+v", checks, groups)
+	}
+
+	// No run-file at all: the section stays out of the report quietly — the
+	// daemon check already fails on its own.
+	setConfigEnv(t)
+	checks, groups = c.checkStuckDeliveries(context.Background())
+	if len(checks) != 0 || len(groups) != 0 {
+		t.Fatalf("checks without daemon = %+v, want silent skip", checks)
+	}
+}

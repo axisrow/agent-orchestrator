@@ -164,3 +164,18 @@ UPDATE deliveries
 SET delivery_state = 'pending', claim_token = '', claimed_at = NULL,
     last_error = 'delivery claim recovered after daemon restart'
 WHERE delivery_state = 'claimed';
+
+-- name: ListStuckDeliveryCandidates :many
+-- Read-only visibility sweep for stuck deliveries (fork issue #211): pending
+-- report rows past the threshold (attempts or age) plus every terminal stale
+-- row, grouped by (project, cause) in the service. No delivery state changes.
+SELECT id, session_id, project_id, delivery_state, delivery_attempts, last_error, created_at
+FROM deliveries
+WHERE kind = 'report'
+  AND delivery_state IN ('pending', 'stale')
+  AND (
+    delivery_state = 'stale'
+    OR delivery_attempts >= sqlc.arg(min_attempts)
+    OR created_at <= sqlc.arg(age_cutoff)
+  )
+ORDER BY project_id, created_at, id;

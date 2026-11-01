@@ -21,6 +21,7 @@ type fakeReportService struct {
 	input   reportsvc.CreateInput
 	err     error
 	reports []domain.ReportRecord
+	stuck   []reportsvc.StuckDeliveryGroup
 }
 
 func (f *fakeReportService) ListProject(_ context.Context, projectID domain.ProjectID) ([]domain.ReportRecord, error) {
@@ -97,4 +98,40 @@ func reportContainsAll(s string, values ...string) bool {
 		}
 	}
 	return true
+}
+
+func (f *fakeReportService) StuckDeliveries(_ context.Context) ([]reportsvc.StuckDeliveryGroup, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.stuck, nil
+}
+
+// The stuck-delivery visibility section (fork issue #211): one line per
+// (project, cause-class) group, terminal stale groups separate from live
+// retries, and an empty ledger is a healthy answer.
+func TestReportsAPI_ListStuckDeliveries(t *testing.T) {
+	svc := &fakeReportService{}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	srv := httptest.NewServer(httpd.NewRouterWithControl(config.Config{}, log, nil, httpd.APIDeps{Reports: svc}, httpd.ControlDeps{}))
+	defer srv.Close()
+
+	body, status, _ := doRequest(t, srv, "GET", "/api/v1/reports/deliveries/stuck", "")
+	if status != http.StatusOK || strings.TrimSpace(string(body)) != `{"groups":[]}` {
+		t.Fatalf("status=%d body=%s, want empty groups", status, body)
+	}
+	svc.stuck = []reportsvc.StuckDeliveryGroup{
+		{ProjectID: "cc", SessionID: "worker-1", Recipient: "no active orchestrator", CauseClass: "no active orchestrator",
+			Cause: "project cc has no active orchestrator", Attempts: 3631, Age: 26 * time.Hour,
+			OldestDeliveryAt: time.Unix(1700, 0).UTC(), Deliveries: 1, Zombie: true},
+		{ProjectID: "q", SessionID: "worker-2", CauseClass: "archived project", Attempts: 40,
+			Age: time.Hour, Deliveries: 2, Terminal: true, Zombie: true},
+	}
+	body, status, _ = doRequest(t, srv, "GET", "/api/v1/reports/deliveries/stuck", "")
+	if status != http.StatusOK || !reportContainsAll(string(body),
+		`"projectId":"cc"`, `"recipient":"no active orchestrator"`, `"causeClass":"no active orchestrator"`,
+		`"attempts":3631`, `"zombie":true`, `"terminal":false`,
+		`"projectId":"q"`, `"terminal":true`, `"deliveries":2`) {
+		t.Fatalf("status=%d body=%s", status, body)
+	}
 }

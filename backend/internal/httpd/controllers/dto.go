@@ -72,6 +72,28 @@ type ReportResponse struct {
 	LastError        string                 `json:"lastError,omitempty"`
 }
 
+// StuckDeliveryGroupResponse is one (project, cause-class) group of stuck
+// report deliveries, as `ao doctor` and the diagnostics endpoint show it.
+type StuckDeliveryGroupResponse struct {
+	ProjectID        string    `json:"projectId"`
+	SessionID        string    `json:"sessionId"`
+	Recipient        string    `json:"recipient"`
+	CauseClass       string    `json:"causeClass"`
+	Cause            string    `json:"cause,omitempty"`
+	Attempts         int64     `json:"attempts"`
+	AgeSeconds       float64   `json:"ageSeconds"`
+	OldestDeliveryAt time.Time `json:"oldestDeliveryAt"`
+	Deliveries       int       `json:"deliveries"`
+	Zombie           bool      `json:"zombie"`
+	// Terminal marks a stale (retired) group: nothing will deliver it anymore.
+	Terminal bool `json:"terminal"`
+}
+
+// ListStuckDeliveriesResponse is the stuck-delivery visibility section.
+type ListStuckDeliveriesResponse struct {
+	Groups []StuckDeliveryGroupResponse `json:"groups"`
+}
+
 // ListReportsResponse contains a project's ordered persisted reports.
 type ListReportsResponse struct {
 	Reports []ReportResponse `json:"reports"`
@@ -2194,7 +2216,7 @@ type NotificationResponse struct {
 	SessionID string    `json:"sessionId"`
 	ProjectID string    `json:"projectId"`
 	PRURL     string    `json:"prUrl"`
-	Type      string    `json:"type" enum:"needs_input,ready_to_merge,pr_merged,pr_closed_unmerged,review_completed,review_changes_requested,orphan_workers"`
+	Type      string    `json:"type" enum:"needs_input,ready_to_merge,pr_merged,pr_closed_unmerged,review_completed,review_changes_requested,orphan_workers,stuck_delivery,delivery_died"`
 	Title     string    `json:"title"`
 	Body      string    `json:"body"`
 	Status    string    `json:"status" enum:"unread,read" description:"Seen state. unread means the user has not opened the notification panel since it arrived."`

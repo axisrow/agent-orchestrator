@@ -16,12 +16,21 @@ import {
 
 // The signal set spans two vocabularies: AO backend types and the cloud
 // control plane's names for the same event classes.
-const SIGNAL_TYPES: string[] = ["needs_input", "review_changes_requested", "review_feedback", "agent_failed"];
+const SIGNAL_TYPES: string[] = [
+	"needs_input",
+	"review_changes_requested",
+	"review_feedback",
+	"agent_failed",
+	// Edge-triggered once per (project, cause-class) incident (fork issue #211).
+	"stuck_delivery",
+];
 const SILENT_TYPES: NotificationType[] = [
 	"ready_to_merge",
 	"pr_merged",
 	"pr_closed_unmerged",
 	"review_completed",
+	// The terminal delivery record is a fact, not a call for feedback.
+	"delivery_died",
 ];
 
 describe("needsHumanFeedback", () => {

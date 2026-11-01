@@ -20,7 +20,8 @@ func enrich(intent Intent) (domain.NotificationRecord, error) {
 	if !intent.Type.Valid() {
 		return domain.NotificationRecord{}, domain.ErrInvalidNotificationType
 	}
-	if intent.Type != domain.NotificationNeedsInput && intent.Type != domain.NotificationOrphanWorkers && rec.PRURL == "" {
+	if intent.Type != domain.NotificationNeedsInput && intent.Type != domain.NotificationOrphanWorkers &&
+		intent.Type != domain.NotificationStuckDelivery && intent.Type != domain.NotificationDeliveryDied && rec.PRURL == "" {
 		return domain.NotificationRecord{}, domain.ErrInvalidNotificationRecord
 	}
 	rec.Title = titleForIntent(intent)
@@ -53,6 +54,10 @@ func titleForIntent(intent Intent) string {
 		return fmt.Sprintf("Review found changes for %s", prLabel(intent))
 	case domain.NotificationOrphanWorkers:
 		return "Orphaned worker processes found"
+	case domain.NotificationStuckDelivery:
+		return "Report delivery is failing"
+	case domain.NotificationDeliveryDied:
+		return "Report delivery died"
 	default:
 		return "Notification"
 	}
@@ -86,6 +91,8 @@ func bodyForIntent(intent Intent) string {
 	case domain.NotificationReviewChangesRequested:
 		return "Orchestrator finished reviewing this pull request and found changes to address."
 	case domain.NotificationOrphanWorkers:
+		return strings.TrimSpace(intent.Detail)
+	case domain.NotificationStuckDelivery, domain.NotificationDeliveryDied:
 		return strings.TrimSpace(intent.Detail)
 	default:
 		return ""

@@ -47,7 +47,7 @@ SELECT COUNT(*)
 FROM notifications
 WHERE resolved_at IS NULL
   AND dismissed_at IS NULL
-  AND type IN ('needs_input', 'ready_to_merge')
+  AND type IN ('needs_input', 'ready_to_merge', 'stuck_delivery')
 `
 
 func (q *Queries) CountUnresolvedNotifications(ctx context.Context) (int64, error) {
@@ -396,6 +396,54 @@ func (q *Queries) ListOpenReadyToMergeNotifications(ctx context.Context) ([]Noti
 	return items, nil
 }
 
+const listOpenStuckDeliveryNotifications = `-- name: ListOpenStuckDeliveryNotifications :many
+SELECT id, session_id, project_id, pr_url, type, title, body, status, created_at, resolved_at, dismissed_at, source_key
+FROM notifications
+WHERE type = 'stuck_delivery'
+  AND resolved_at IS NULL
+  AND dismissed_at IS NULL
+`
+
+// The stuck-delivery sweep (fork issue #211) owns resolution for its own type:
+// an open row stays open only while its source key is the current incident key
+// the sweep computed from the deliveries table; everything else (success,
+// cause-class change, age escalation supersede, terminal outcome) resolves.
+func (q *Queries) ListOpenStuckDeliveryNotifications(ctx context.Context) ([]Notification, error) {
+	rows, err := q.db.QueryContext(ctx, listOpenStuckDeliveryNotifications)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Notification{}
+	for rows.Next() {
+		var i Notification
+		if err := rows.Scan(
+			&i.ID,
+			&i.SessionID,
+			&i.ProjectID,
+			&i.PRURL,
+			&i.Type,
+			&i.Title,
+			&i.Body,
+			&i.Status,
+			&i.CreatedAt,
+			&i.ResolvedAt,
+			&i.DismissedAt,
+			&i.SourceKey,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUnreadNotificationsPage = `-- name: ListUnreadNotificationsPage :many
 SELECT id, session_id, project_id, pr_url, type, title, body, status, created_at, resolved_at, dismissed_at, source_key
 FROM notifications
@@ -457,7 +505,7 @@ SELECT id, session_id, project_id, pr_url, type, title, body, status, created_at
 FROM notifications
 WHERE resolved_at IS NULL
   AND dismissed_at IS NULL
-  AND type IN ('needs_input', 'ready_to_merge')
+  AND type IN ('needs_input', 'ready_to_merge', 'stuck_delivery')
   AND (
     CAST(?1 AS TEXT) = ''
     OR created_at < ?2
@@ -711,4 +759,26 @@ func (q *Queries) ResolveStaleNeedsInputNotifications(ctx context.Context, resol
 		return nil, err
 	}
 	return items, nil
+}
+
+const resolveStuckDeliveryNotification = `-- name: ResolveStuckDeliveryNotification :execrows
+UPDATE notifications
+SET resolved_at = ?1
+WHERE id = ?2
+  AND type = 'stuck_delivery'
+  AND resolved_at IS NULL
+  AND dismissed_at IS NULL
+`
+
+type ResolveStuckDeliveryNotificationParams struct {
+	ResolvedAt sql.NullTime
+	ID         string
+}
+
+func (q *Queries) ResolveStuckDeliveryNotification(ctx context.Context, arg ResolveStuckDeliveryNotificationParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, resolveStuckDeliveryNotification, arg.ResolvedAt, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }

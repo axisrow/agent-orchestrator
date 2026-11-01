@@ -429,3 +429,65 @@ func TestReportStoreDeferredBatchYieldsScheduleToOtherProjects(t *testing.T) {
 		t.Fatalf("refused = %+v ok=%v err=%v", refused, ok, err)
 	}
 }
+
+func TestReportStoreListsStuckDeliveryCandidates(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	defer s.Close()
+	seedProject(t, s, "ao")
+	seedProject(t, s, "st")
+	aoSess, err := s.CreateSession(ctx, sampleRecord("ao"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	stSess := sampleRecord("st")
+	stSess.Kind = domain.KindWorker
+	stSess.ID = ""
+	stSess, err = s.CreateSession(ctx, stSess)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	// Stale path: an old delivery of an archived project retires terminally and
+	// must show whatever its age.
+	old := domain.ReportRecord{ID: "rpt_old", SessionID: stSess.ID, ProjectID: stSess.ProjectID, Message: "old", CreatedAt: now.Add(-2 * time.Hour), DeliveryState: domain.ReportPending, AvailableAt: now, RepeatCount: 1}
+	// Attempts path: a fresh delivery that keeps failing climbs past the
+	// threshold without ever qualifying by age.
+	fresh := domain.ReportRecord{ID: "rpt_fresh", SessionID: aoSess.ID, ProjectID: aoSess.ProjectID, Message: "fresh", CreatedAt: now, DeliveryState: domain.ReportPending, AvailableAt: now, RepeatCount: 1}
+	for _, rec := range []domain.ReportRecord{old, fresh} {
+		if _, err := s.CreateReport(ctx, rec); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.ClaimPendingReportBatch(ctx, stSess.ProjectID, "tok-old", now); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.FailReportBatchTerminally(ctx, stSess.ProjectID, "tok-old", "project archived: no report recipient can exist (fork issue #208)"); err != nil || n == 0 {
+		t.Fatalf("terminal fail n=%d err=%v", n, err)
+	}
+	for i := 0; i < 10; i++ {
+		if _, err := s.ClaimPendingReportBatch(ctx, aoSess.ProjectID, "tok-fresh", now); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.ReleaseReportBatch(ctx, aoSess.ProjectID, "tok-fresh", now, "retry"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows, err := s.ListStuckDeliveryCandidates(ctx, 10, now.Add(-time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, row := range rows {
+		ids = append(ids, row.ID)
+	}
+	if len(ids) != 2 || ids[0] != "rpt_fresh" || ids[1] != "rpt_old" {
+		t.Fatalf("candidate ids = %v, want [rpt_fresh rpt_old]", ids)
+	}
+	if rows[1].DeliveryState != domain.ReportStale || rows[1].LastError == "" {
+		t.Fatalf("stale row = %+v", rows[1])
+	}
+	if rows[0].DeliveryAttempts < 10 {
+		t.Fatalf("fresh row attempts = %d, want >= 10", rows[0].DeliveryAttempts)
+	}
+}

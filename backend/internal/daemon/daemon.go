@@ -754,6 +754,15 @@ func Run() error {
 		stop()
 		<-reportDeliveryDone
 	}()
+	// Stuck-delivery visibility (fork issue #211): edge-triggered bell events
+	// from the deliveries ledger, same facts `ao doctor`'s Deliveries section
+	// reads. A failure never touches delivery itself — the sweep is read-only
+	// over the ledger and best effort over notifications.
+	stuckWatcher := reportsvc.NewStuckDeliveryWatcher(reportsvc.StuckDeliveryWatcherDeps{
+		Store: store, Notifier: notificationWriter, Log: log,
+	})
+	stuckWatcherDone := stuckWatcher.Start(ctx)
+	defer func() { <-stuckWatcherDone }()
 	lcStack.trackerDone = startTrackerIntake(ctx, cfg, store, sessionSvc, tracker, log)
 
 	// The agent catalog is the preflight dependency of ao spawn. A failure here

@@ -29,6 +29,41 @@ type ReportsController struct{ Svc ReportService }
 func (c *ReportsController) Register(r chi.Router) {
 	r.Post("/reports", c.create)
 	r.Get("/reports", c.list)
+	r.Get("/reports/deliveries/stuck", c.stuck)
+}
+
+// reportStuckReader is the stuck-delivery visibility slice of the report
+// service (fork issue #211). Asserted like reportProjectReader so the
+// controller keeps working against the creation-only surface in tests.
+type reportStuckReader interface {
+	StuckDeliveries(ctx context.Context) ([]reportsvc.StuckDeliveryGroup, error)
+}
+
+// stuck serves the read-only stuck-delivery groups behind `ao doctor`'s
+// Deliveries section. Informational by contract: an empty group list is the
+// healthy answer, never an error.
+func (c *ReportsController) stuck(w http.ResponseWriter, r *http.Request) {
+	reader, ok := c.Svc.(reportStuckReader)
+	if !ok {
+		apispec.NotImplemented(w, r, "GET", "/api/v1/reports/deliveries/stuck")
+		return
+	}
+	groups, err := reader.StuckDeliveries(r.Context())
+	if err != nil {
+		envelope.WriteError(w, r, err)
+		return
+	}
+	response := ListStuckDeliveriesResponse{Groups: make([]StuckDeliveryGroupResponse, len(groups))}
+	for i, group := range groups {
+		response.Groups[i] = StuckDeliveryGroupResponse{
+			ProjectID: string(group.ProjectID), SessionID: string(group.SessionID),
+			Recipient: group.Recipient, CauseClass: group.CauseClass, Cause: group.Cause,
+			Attempts: group.Attempts, AgeSeconds: group.Age.Seconds(),
+			OldestDeliveryAt: group.OldestDeliveryAt, Deliveries: group.Deliveries,
+			Zombie: group.Zombie, Terminal: group.Terminal,
+		}
+	}
+	envelope.WriteJSON(w, http.StatusOK, response)
 }
 
 func (c *ReportsController) list(w http.ResponseWriter, r *http.Request) {

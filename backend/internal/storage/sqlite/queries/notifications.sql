@@ -28,7 +28,7 @@ SELECT *
 FROM notifications
 WHERE resolved_at IS NULL
   AND dismissed_at IS NULL
-  AND type IN ('needs_input', 'ready_to_merge')
+  AND type IN ('needs_input', 'ready_to_merge', 'stuck_delivery')
   AND (
     CAST(sqlc.arg(before_id) AS TEXT) = ''
     OR created_at < sqlc.arg(before_created_at)
@@ -60,7 +60,7 @@ SELECT COUNT(*)
 FROM notifications
 WHERE resolved_at IS NULL
   AND dismissed_at IS NULL
-  AND type IN ('needs_input', 'ready_to_merge');
+  AND type IN ('needs_input', 'ready_to_merge', 'stuck_delivery');
 
 -- name: MarkNotificationRead :one
 UPDATE notifications
@@ -183,4 +183,23 @@ UPDATE notifications
 SET dismissed_at = CURRENT_TIMESTAMP,
     status = 'read'
 WHERE id = ?
+  AND dismissed_at IS NULL;
+
+-- The stuck-delivery sweep (fork issue #211) owns resolution for its own type:
+-- an open row stays open only while its source key is the current incident key
+-- the sweep computed from the deliveries table; everything else (success,
+-- cause-class change, age escalation supersede, terminal outcome) resolves.
+-- name: ListOpenStuckDeliveryNotifications :many
+SELECT *
+FROM notifications
+WHERE type = 'stuck_delivery'
+  AND resolved_at IS NULL
+  AND dismissed_at IS NULL;
+
+-- name: ResolveStuckDeliveryNotification :execrows
+UPDATE notifications
+SET resolved_at = sqlc.arg(resolved_at)
+WHERE id = sqlc.arg(id)
+  AND type = 'stuck_delivery'
+  AND resolved_at IS NULL
   AND dismissed_at IS NULL;

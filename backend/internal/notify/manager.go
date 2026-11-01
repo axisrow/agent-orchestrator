@@ -142,6 +142,29 @@ func (m *Manager) Resolve(ctx context.Context, res Resolution) error {
 	return m.publishResolved(ctx, resolved)
 }
 
+// ResolveStuckDeliveries closes every open stuck-delivery row the sweep
+// outlived — its source key is no longer a current incident key — and
+// publishes the rows it changed. Resolution stays derived from the durable
+// deliveries facts, never from a user action.
+func (m *Manager) ResolveStuckDeliveries(ctx context.Context, at time.Time, keep map[string]bool) ([]domain.NotificationRecord, error) {
+	if m == nil || m.store == nil {
+		return nil, errors.New("notify: store is required")
+	}
+	m.barrier.Lock()
+	defer m.barrier.Unlock()
+	resolver, ok := m.store.(interface {
+		ResolveStuckDeliveryNotifications(ctx context.Context, at time.Time, keep map[string]bool) ([]domain.NotificationRecord, error)
+	})
+	if !ok {
+		return nil, errors.New("notify: stuck delivery resolver is required")
+	}
+	resolved, err := resolver.ResolveStuckDeliveryNotifications(ctx, at, keep)
+	if err != nil {
+		return nil, fmt.Errorf("notify resolve stuck deliveries: %w", err)
+	}
+	return resolved, m.publishResolved(ctx, resolved)
+}
+
 // Reconcile closes notifications whose resolving transition happened while the
 // daemon was down. Lifecycle only observes live transitions, so without this a
 // restart could strand a needs-input row as unresolved forever.
