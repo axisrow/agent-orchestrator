@@ -41,6 +41,8 @@ type fakeStore struct {
 	recoverableReviewsErr  error
 	recoveryErrors         map[string]string
 	settledReviewIDs       []string
+	liveHandles            []domain.ReviewerHandle
+	liveHandlesErr         error
 }
 
 func (f *fakeStore) UpsertReview(_ context.Context, r domain.Review) error {
@@ -153,6 +155,16 @@ func (f *fakeStore) GetReviewBySessionAndHarness(_ context.Context, _ domain.Ses
 		return *f.review, true, nil
 	}
 	return domain.Review{}, false, nil
+}
+func (f *fakeStore) ListLiveReviewerHandles(_ context.Context) ([]domain.ReviewerHandle, error) {
+	if f.liveHandlesErr != nil {
+		return nil, f.liveHandlesErr
+	}
+	handles := f.liveHandles
+	if len(handles) == 0 && f.review != nil && f.review.ReviewerHandleID != "" {
+		handles = []domain.ReviewerHandle{{ReviewID: f.review.ID, SessionID: f.review.SessionID, Harness: f.review.Harness, HandleID: f.review.ReviewerHandleID}}
+	}
+	return handles, nil
 }
 func (f *fakeStore) ListReviewsBySession(_ context.Context, _ domain.SessionID) ([]domain.Review, error) {
 	if f.reviews != nil {
@@ -448,6 +460,9 @@ type fakeLauncher struct {
 	onSpawn          func(LaunchSpec)
 	onRestore        func(LaunchSpec)
 	onNotify         func(string, LaunchSpec)
+	messagedHandle   string
+	messages         []string
+	messageErr       error
 }
 
 func (f *fakeLauncher) InterfaceMode(domain.ReviewerHarness) domain.ReviewerInterfaceMode {
@@ -508,6 +523,11 @@ func (f *fakeLauncher) Notify(_ context.Context, handleID string, spec LaunchSpe
 func (f *fakeLauncher) Alive(_ context.Context, _, _ string) (bool, error) {
 	f.aliveChecked = true
 	return f.alive || f.spawned || f.restored, f.aliveErr
+}
+func (f *fakeLauncher) Message(_ context.Context, handleID string, message string) error {
+	f.messagedHandle = handleID
+	f.messages = append(f.messages, message)
+	return f.messageErr
 }
 func (f *fakeLauncher) Reusable(domain.ReviewerHarness) bool {
 	if f.reusableSet {
@@ -1304,6 +1324,115 @@ func TestCancelInterruptsReviewerAndCancelsRunningRuns(t *testing.T) {
 	}
 	if res.Reviews[0].Status == ReviewStateRunning {
 		t.Fatalf("review state still running: %+v", res.Reviews[0])
+	}
+}
+
+func TestSendMessageToReviewerHandleDeliversToLivePane(t *testing.T) {
+	store := &fakeStore{
+		review: &domain.Review{ID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerCodex,
+			ReviewerHandleID: "ptyhost-v1:review-mer-1", ReviewerLaunchID: "launch-1",
+			InterfaceMode: domain.ReviewerInterfaceTUI, ReviewerActivityState: domain.ActivityActive},
+	}
+	launcher := &fakeLauncher{alive: true}
+	eng := newEngineForTest(store, fakeSessions{rec: liveWorker(), ok: true}, fakePRs{}, fakeProjects{}, launcher)
+
+	// The bare handle a worker types (`ao send --session review-mer-1`) must
+	// match the stored, host-prefixed pane handle.
+	if err := eng.SendMessageToReviewerHandle(context.Background(), "review-mer-1", "Continue the review"); err != nil {
+		t.Fatalf("SendMessageToReviewerHandle: %v", err)
+	}
+	if launcher.messagedHandle != "ptyhost-v1:review-mer-1" {
+		t.Fatalf("messaged handle = %q, want the stored pane handle", launcher.messagedHandle)
+	}
+	if len(launcher.messages) != 1 || launcher.messages[0] != "Continue the review" {
+		t.Fatalf("messages = %v", launcher.messages)
+	}
+	if !launcher.aliveChecked {
+		t.Fatalf("pane liveness was not probed before delivery")
+	}
+
+	// The exact handle from `ao review ls --json` resolves to the same pane.
+	if err := eng.SendMessageToReviewerHandle(context.Background(), "ptyhost-v1:review-mer-1", "again"); err != nil {
+		t.Fatalf("prefixed handle: %v", err)
+	}
+	if len(launcher.messages) != 2 {
+		t.Fatalf("messages = %v", launcher.messages)
+	}
+}
+
+func TestSendMessageToReviewerHandleRefusesUndeliverableTargets(t *testing.T) {
+	tuiRow := func() *domain.Review {
+		return &domain.Review{ID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerCodex,
+			ReviewerHandleID: "review-mer-1", ReviewerLaunchID: "launch-1", InterfaceMode: domain.ReviewerInterfaceTUI}
+	}
+	cases := []struct {
+		name     string
+		store    *fakeStore
+		launcher *fakeLauncher
+		ref      string
+		message  string
+		wantErr  error
+	}{
+		{
+			name: "unknown handle", store: &fakeStore{}, launcher: &fakeLauncher{},
+			ref: "review-nobody", message: "hi", wantErr: ErrNotFound,
+		},
+		{
+			name: "dead pane", store: &fakeStore{review: tuiRow()}, launcher: &fakeLauncher{},
+			ref: "review-mer-1", message: "hi", wantErr: ErrNotFound,
+		},
+		{
+			name: "chat reviewer pane is not addressable", store: &fakeStore{review: &domain.Review{ID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerCodex,
+				ReviewerHandleID: "review-chat:rev-1", InterfaceMode: domain.ReviewerInterfaceChat}},
+			launcher: &fakeLauncher{},
+			ref:      "review-chat:rev-1", message: "hi", wantErr: ErrInvalid,
+		},
+		{
+			name: "archived reviewer", store: &fakeStore{review: func() *domain.Review {
+				row := tuiRow()
+				row.IsArchived = true
+				return row
+			}()}, launcher: &fakeLauncher{alive: true},
+			ref: "review-mer-1", message: "hi", wantErr: ErrNotFound,
+		},
+		{
+			name: "not a reviewer handle", store: &fakeStore{review: tuiRow()}, launcher: &fakeLauncher{alive: true},
+			ref: "mer-1", message: "hi", wantErr: ErrInvalid,
+		},
+		{
+			name: "empty message", store: &fakeStore{review: tuiRow()}, launcher: &fakeLauncher{alive: true},
+			ref: "review-mer-1", message: "   ", wantErr: ErrInvalid,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			eng := newEngineForTest(tc.store, fakeSessions{rec: liveWorker(), ok: true}, fakePRs{}, fakeProjects{}, tc.launcher)
+			err := eng.SendMessageToReviewerHandle(context.Background(), tc.ref, tc.message)
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("err = %v, want %v", err, tc.wantErr)
+			}
+			if tc.ref == "review-mer-1" && tc.message != "   " && len(tc.launcher.messages) != 0 {
+				t.Fatalf("refused target still received a message: %v", tc.launcher.messages)
+			}
+		})
+	}
+}
+
+// A failed liveness probe is unknown, not proof of death: delivery is still
+// attempted so the runtime's own error answers what happened.
+func TestSendMessageToReviewerHandleDeliversWhenProbeFails(t *testing.T) {
+	store := &fakeStore{
+		review: &domain.Review{ID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerCodex,
+			ReviewerHandleID: "review-mer-1", ReviewerLaunchID: "launch-1", InterfaceMode: domain.ReviewerInterfaceTUI},
+	}
+	launcher := &fakeLauncher{aliveErr: errors.New("probe unavailable")}
+	eng := newEngineForTest(store, fakeSessions{rec: liveWorker(), ok: true}, fakePRs{}, fakeProjects{}, launcher)
+
+	if err := eng.SendMessageToReviewerHandle(context.Background(), "review-mer-1", "hi"); err != nil {
+		t.Fatalf("SendMessageToReviewerHandle: %v", err)
+	}
+	if len(launcher.messages) != 1 {
+		t.Fatalf("probe failure blocked delivery: messages = %v", launcher.messages)
 	}
 }
 

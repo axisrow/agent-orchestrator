@@ -70,6 +70,7 @@ type Store interface {
 	SettleReviewChatWork(ctx stdctx.Context, reviewID string, now time.Time) error
 	SetSessionReviewerConfig(ctx stdctx.Context, id domain.SessionID, harness domain.ReviewerHarness, config domain.AgentConfig, updatedAt time.Time) (bool, error)
 	GetReviewBySession(ctx stdctx.Context, id domain.SessionID) (domain.Review, bool, error)
+	ListLiveReviewerHandles(ctx stdctx.Context) ([]domain.ReviewerHandle, error)
 	ClearReviewerHandle(ctx stdctx.Context, id domain.SessionID) error
 	GetReviewBySessionAndHarness(ctx stdctx.Context, id domain.SessionID, harness domain.ReviewerHarness) (domain.Review, bool, error)
 	ListReviewsBySession(ctx stdctx.Context, id domain.SessionID) ([]domain.Review, error)
@@ -2030,6 +2031,61 @@ func (e *Engine) terminateReviewer(ctx stdctx.Context, workerID domain.SessionID
 		cancelled = append(cancelled, run)
 	}
 	return TerminateResult{ReviewerHandleID: destroyedHandle, CancelledRuns: cancelled}, nil
+}
+
+// SendMessageToReviewerHandle types a free-form message into the terminal
+// reviewer pane named by ref — the reviewerHandleId `ao review ls --json`
+// reports (`review-<worker>`, with or without its runtime host prefix). It is
+// the CLI continuation path for a reviewer that stopped mid-pass: reviewers
+// have no session row of their own, so an ordinary `ao send` cannot resolve
+// them. Chat reviewers have no pane and are refused with their own error.
+func (e *Engine) SendMessageToReviewerHandle(ctx stdctx.Context, ref, message string) error {
+	name, ok := ReviewerHandleRefName(ref)
+	if !ok {
+		return fmt.Errorf("%w: %q does not name a reviewer pane; use the reviewerHandleId from `ao review ls --json`", ErrInvalid, ref)
+	}
+	if strings.TrimSpace(message) == "" {
+		return fmt.Errorf("%w: message is required", ErrInvalid)
+	}
+	if err := e.waitForChatRecovery(ctx); err != nil {
+		return err
+	}
+	handles, err := e.store.ListLiveReviewerHandles(ctx)
+	if err != nil {
+		return err
+	}
+	var found domain.ReviewerHandle
+	for _, h := range handles {
+		if normalizeStoredReviewerHandle(h.HandleID) == "review-"+name {
+			found = h
+			break
+		}
+	}
+	if found.ReviewID == "" {
+		return fmt.Errorf("%w: no live reviewer pane %q; check `ao review ls --json` for the current reviewerHandleId", ErrNotFound, "review-"+name)
+	}
+	// The handle scan returns only identity columns; reload the row for the
+	// interface mode, launch id, and archive state the delivery checks need.
+	review, ok, err := e.store.GetReviewBySessionAndHarness(ctx, found.SessionID, found.Harness)
+	if err != nil {
+		return err
+	}
+	if !ok || review.ID != found.ReviewID {
+		return fmt.Errorf("%w: reviewer pane %q", ErrNotFound, found.HandleID)
+	}
+	if review.IsArchived {
+		return fmt.Errorf("%w: reviewer pane %q is archived; start a new pass with `ao review trigger`", ErrNotFound, found.HandleID)
+	}
+	if review.InterfaceMode == domain.ReviewerInterfaceChat {
+		return fmt.Errorf("%w: reviewer %q for session %q uses the chat interface and has no terminal; send through its conversation", ErrInvalid, review.ID, found.SessionID)
+	}
+	// A dead pane gets its own error rather than the runtime's raw failure. A
+	// failed probe is unknown, not dead (same policy as reconcileExitedReviewer),
+	// so the delivery itself then reports what actually happened.
+	if alive, err := e.launcher.Alive(ctx, review.ReviewerHandleID, review.ReviewerLaunchID); err == nil && !alive {
+		return fmt.Errorf("%w: reviewer pane %q for session %q is not running; restore it from the reviewer tab in the desktop app, or start a new pass with `ao review trigger %s --rerun`", ErrNotFound, found.HandleID, found.SessionID, found.SessionID)
+	}
+	return e.launcher.Message(ctx, review.ReviewerHandleID, message)
 }
 
 // reviewerSelection resolves which reviewer reviews the worker's PR: a

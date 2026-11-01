@@ -204,6 +204,7 @@ func newAPIWithLogger(cfg config.Config, deps APIDeps, log *slog.Logger) *API {
 			ShellPreviewCapabilities: deps.ShellPreviewCapabilities,
 			AgentBrowser:             agentBrowserURL(cfg.AgentBrowserURL),
 			AgentBrowserToken:        cfg.AgentBrowserToken,
+			Reviews:                  deps.Reviews,
 		},
 		automations:   &controllers.AutomationsController{Svc: deps.Automations},
 		desktop:       &controllers.DesktopWorkspaceController{Svc: deps.DesktopWorkspaces},

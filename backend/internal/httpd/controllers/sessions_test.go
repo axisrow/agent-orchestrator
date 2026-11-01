@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -37,6 +38,7 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/previewserver"
 	browsersvc "github.com/aoagents/agent-orchestrator/backend/internal/service/browser"
 	projectsvc "github.com/aoagents/agent-orchestrator/backend/internal/service/project"
+	reviewsvc "github.com/aoagents/agent-orchestrator/backend/internal/service/review"
 	sessionsvc "github.com/aoagents/agent-orchestrator/backend/internal/service/session"
 	sessionmanager "github.com/aoagents/agent-orchestrator/backend/internal/session_manager"
 	"github.com/aoagents/agent-orchestrator/backend/pkg/contract"
@@ -49,6 +51,7 @@ type fakeSessionService struct {
 	sessions                   map[domain.SessionID]domain.Session
 	staleness                  []sessionsvc.ProviderStaleness
 	sent                       string
+	sendErr                    error
 	sentAttachment             *ports.SpawnAttachment
 	sentDeliveryOptions        ports.MessageDeliveryOptions
 	delegationInput            sessionsvc.DelegateTaskInput
@@ -552,12 +555,18 @@ func (f *fakeSessionService) Rename(_ context.Context, id domain.SessionID, disp
 }
 
 func (f *fakeSessionService) Send(_ context.Context, _ domain.SessionID, message string, attachment *ports.SpawnAttachment) error {
+	if f.sendErr != nil {
+		return f.sendErr
+	}
 	f.sent = message
 	f.sentAttachment = attachment
 	return nil
 }
 
 func (f *fakeSessionService) SendWithOptions(_ context.Context, _ domain.SessionID, message string, attachment *ports.SpawnAttachment, options ports.MessageDeliveryOptions) error {
+	if f.sendErr != nil {
+		return f.sendErr
+	}
 	f.sent = message
 	f.sentAttachment = attachment
 	f.sentDeliveryOptions = options
@@ -1155,6 +1164,17 @@ func (f *fakeSessionService) InvalidateWorkspaceCache(_ domain.SessionID) {}
 
 func newSessionTestServer(t *testing.T, svc *fakeSessionService) *httptest.Server {
 	return newSessionTestServerWithPreview(t, svc, nil)
+}
+
+// newSessionTestServerWithReviews wires a review service so the send route's
+// reviewer-handle fallback is active.
+func newSessionTestServerWithReviews(t *testing.T, svc *fakeSessionService, reviews *fakeReviewService) *httptest.Server {
+	t.Helper()
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	deps := httpd.APIDeps{Sessions: svc, Reviews: reviews}
+	srv := httptest.NewServer(httpd.NewRouterWithControl(config.Config{AllowedOrigins: []string{"app://renderer", "http://localhost:5173"}}, log, nil, deps, httpd.ControlDeps{}))
+	t.Cleanup(srv.Close)
+	return srv
 }
 
 func newSessionTestServerWithPreview(
@@ -4750,6 +4770,91 @@ func TestSessionsAPI_DelegateTaskRejectsOversizedBody(t *testing.T) {
 	assertErrorCode(t, body, status, http.StatusBadRequest, "INVALID_JSON")
 	if svc.delegationInput.ProjectID != "" {
 		t.Fatalf("delegate service called with oversized body: %#v", svc.delegationInput)
+	}
+}
+
+// The send route resolves reviewer panes — which have no session row of their
+// own — by handle, so `ao send --session <reviewer-handle>` reaches a reviewer
+// that stopped mid-pass.
+func TestSessionsAPI_SendReviewerHandleDeliversToReviewer(t *testing.T) {
+	svc := newFakeSessionService()
+	svc.sendErr = apierr.NotFound("SESSION_NOT_FOUND", "Unknown session")
+	reviews := &fakeReviewService{}
+	srv := newSessionTestServerWithReviews(t, svc, reviews)
+
+	body, status, _ := doRequest(t, srv, "POST", "/api/v1/sessions/review-mer-1/send", `{"message":"Continue the review"}`)
+	if status != http.StatusOK {
+		t.Fatalf("send = %d, want 200; body=%s", status, body)
+	}
+	if !strings.Contains(string(body), `"ok":true`) || !strings.Contains(string(body), `"review-mer-1"`) {
+		t.Fatalf("response = %s", body)
+	}
+	if reviews.sentRef != "review-mer-1" || reviews.sentMessage != "Continue the review" {
+		t.Fatalf("reviewer delivery = %q %q", reviews.sentRef, reviews.sentMessage)
+	}
+	// The ordinary session path never saw the message.
+	if svc.sent != "" {
+		t.Fatalf("session service received %q", svc.sent)
+	}
+
+	// The stored, host-prefixed form from `ao review ls --json` resolves too.
+	prefixedBody, prefixedStatus, _ := doRequest(t, srv, "POST", "/api/v1/sessions/ptyhost-v1%3Areview-mer-1/send", `{"message":"again"}`)
+	if prefixedStatus != http.StatusOK {
+		t.Fatalf("prefixed send = %d; body=%s", prefixedStatus, prefixedBody)
+	}
+	if reviews.sentRef != "ptyhost-v1:review-mer-1" {
+		t.Fatalf("prefixed ref = %q", reviews.sentRef)
+	}
+}
+
+func TestSessionsAPI_SendReviewerHandleSurfacesReviewerErrors(t *testing.T) {
+	svc := newFakeSessionService()
+	svc.sendErr = apierr.NotFound("SESSION_NOT_FOUND", "Unknown session")
+	reviews := &fakeReviewService{messageErr: fmt.Errorf("%w: no live reviewer pane %q", reviewsvc.ErrNotFound, "review-mer-1")}
+	srv := newSessionTestServerWithReviews(t, svc, reviews)
+
+	body, status, _ := doRequest(t, srv, "POST", "/api/v1/sessions/review-mer-1/send", `{"message":"Continue"}`)
+	assertErrorCode(t, body, status, http.StatusNotFound, "REVIEW_NOT_FOUND")
+}
+
+func TestSessionsAPI_SendReviewerHandleRejectsAttachment(t *testing.T) {
+	svc := newFakeSessionService()
+	svc.sendErr = apierr.NotFound("SESSION_NOT_FOUND", "Unknown session")
+	reviews := &fakeReviewService{}
+	srv := newSessionTestServerWithReviews(t, svc, reviews)
+
+	reqBody := `{"message":"Look.","attachment":{"mimeType":"image/png","data":"` + base64.StdEncoding.EncodeToString([]byte("snapshot")) + `"}}`
+	body, status, _ := doRequest(t, srv, "POST", "/api/v1/sessions/review-mer-1/send", reqBody)
+	assertErrorCode(t, body, status, http.StatusUnprocessableEntity, "REVIEW_INVALID")
+	if reviews.sentRef != "" {
+		t.Fatalf("reviewer received an attachment send: %q", reviews.sentRef)
+	}
+}
+
+// Sessions keep the ordinary path even with the review service wired: an
+// unknown non-handle id still reports SESSION_NOT_FOUND and never consults the
+// review service, and a handle-shaped session id whose Send fails with another
+// code is not rerouted either.
+func TestSessionsAPI_SendUnknownSessionUnchangedByReviewerFallback(t *testing.T) {
+	svc := newFakeSessionService()
+	svc.sendErr = apierr.NotFound("SESSION_NOT_FOUND", "Unknown session")
+	reviews := &fakeReviewService{}
+	srv := newSessionTestServerWithReviews(t, svc, reviews)
+
+	body, status, _ := doRequest(t, srv, "POST", "/api/v1/sessions/missing-session/send", `{"message":"hi"}`)
+	assertErrorCode(t, body, status, http.StatusNotFound, "SESSION_NOT_FOUND")
+	if reviews.sentRef != "" {
+		t.Fatalf("review service consulted for %q", reviews.sentRef)
+	}
+
+	existing := newFakeSessionService()
+	existing.sendErr = apierr.Conflict("SESSION_TERMINATED", "Session is terminated", nil)
+	existingReviews := &fakeReviewService{}
+	existingSrv := newSessionTestServerWithReviews(t, existing, existingReviews)
+	body, status, _ = doRequest(t, existingSrv, "POST", "/api/v1/sessions/review-ao-1/send", `{"message":"hi"}`)
+	assertErrorCode(t, body, status, http.StatusConflict, "SESSION_TERMINATED")
+	if existingReviews.sentRef != "" {
+		t.Fatalf("review service consulted for a resolvable session: %q", existingReviews.sentRef)
 	}
 }
 

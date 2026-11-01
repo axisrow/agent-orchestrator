@@ -51,6 +51,10 @@ type Launcher interface {
 	RestoreTerminal(ctx context.Context, spec LaunchSpec) (LaunchResult, error)
 	// Notify asks an already-running reviewer pane to review a new commit.
 	Notify(ctx context.Context, handleID string, spec LaunchSpec) error
+	// Message writes free-form text into an already-running reviewer pane,
+	// submitted — the same surface as typing in the desktop reviewer tab. It
+	// carries no review-task semantics: it is a person's continuation request.
+	Message(ctx context.Context, handleID string, message string) error
 	// Alive reports whether the exact reviewer process is still running.
 	Alive(ctx context.Context, handleID, launchID string) (bool, error)
 	// Reusable reports whether the harness accepts another review task in its
@@ -316,6 +320,30 @@ func looksLikeAuthFailure(err error) bool {
 // runtime handle validators reject (issue #37).
 func reviewerHandleID(workerID domain.SessionID) string {
 	return "review-" + domain.RuntimeHandleName(string(workerID))
+}
+
+// runtimeHandlePrefix is what the direct-host runtime stores in front of the
+// pane handle (runtimeselect.directHandlePrefix); legacy tmux handles are bare.
+const runtimeHandlePrefix = "ptyhost-v1:"
+
+// ReviewerHandleRefName reports whether ref names a terminal reviewer pane by
+// its handle — the reviewerHandleId `ao review ls --json` prints — and returns
+// the handle without its runtime host prefix. `review-<worker>` (bare) and
+// `ptyhost-v1:review-<worker>` (as stored) both resolve; chat-conversation
+// handles (`review-chat:<id>`) do not.
+func ReviewerHandleRefName(ref string) (string, bool) {
+	ref = strings.TrimPrefix(strings.TrimSpace(ref), runtimeHandlePrefix)
+	name, ok := strings.CutPrefix(ref, "review-")
+	if !ok || name == "" || strings.Contains(name, ":") {
+		return "", false
+	}
+	return name, true
+}
+
+// normalizeStoredReviewerHandle strips the runtime host prefix from a stored
+// handle so a bare reference matches it.
+func normalizeStoredReviewerHandle(handleID string) string {
+	return strings.TrimPrefix(handleID, runtimeHandlePrefix)
 }
 
 func (l *agentLauncher) invocation(spec LaunchSpec) ports.ReviewInvocation {
@@ -767,6 +795,18 @@ func (l *agentLauncher) Notify(ctx context.Context, handleID string, spec Launch
 	}
 	if err := l.runtime.SendMessage(ctx, ports.RuntimeHandle{ID: handleID}, msg); err != nil {
 		return fmt.Errorf("notify reviewer: %w", err)
+	}
+	return nil
+}
+
+// Message types a free-form message into a terminal reviewer pane, submitted.
+// Only terminal reviewers have a pane; chat reviewers are refused upstream.
+func (l *agentLauncher) Message(ctx context.Context, handleID string, message string) error {
+	if strings.TrimSpace(handleID) == "" {
+		return fmt.Errorf("reviewer handle is required")
+	}
+	if err := l.runtime.SendMessage(ctx, ports.RuntimeHandle{ID: handleID}, message); err != nil {
+		return fmt.Errorf("message reviewer: %w", err)
 	}
 	return nil
 }

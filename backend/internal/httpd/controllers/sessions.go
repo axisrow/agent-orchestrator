@@ -33,10 +33,12 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/attachmentstore"
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 	"github.com/aoagents/agent-orchestrator/backend/internal/httpd/apispec"
+	"github.com/aoagents/agent-orchestrator/backend/internal/httpd/apierr"
 	"github.com/aoagents/agent-orchestrator/backend/internal/httpd/envelope"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 	previewutil "github.com/aoagents/agent-orchestrator/backend/internal/preview"
 	"github.com/aoagents/agent-orchestrator/backend/internal/previewserver"
+	reviewcore "github.com/aoagents/agent-orchestrator/backend/internal/review"
 	projectsvc "github.com/aoagents/agent-orchestrator/backend/internal/service/project"
 	sessionsvc "github.com/aoagents/agent-orchestrator/backend/internal/service/session"
 	usagesvc "github.com/aoagents/agent-orchestrator/backend/internal/service/usage"
@@ -207,6 +209,17 @@ type SessionsController struct {
 	AgentBrowserToken string
 	// ArtifactVersions serves artifact version history; nil leaves those routes unimplemented.
 	ArtifactVersions ArtifactVersionService
+	// Reviews delivers messages to live reviewer panes, addressed by their
+	// handle; nil leaves `ao send --session <reviewer-handle>` reporting the
+	// plain SESSION_NOT_FOUND.
+	Reviews ReviewerMessageSender
+}
+
+// ReviewerMessageSender is the review-service surface the send route needs.
+// Reviewer panes have no session row of their own, so they are addressed by
+// handle (the reviewerHandleId from `ao review ls --json`).
+type ReviewerMessageSender interface {
+	SendMessageToReviewer(ctx context.Context, ref, message string) error
 }
 
 // Register mounts the session routes on the supplied router.
@@ -2191,6 +2204,35 @@ func (c *SessionsController) send(w http.ResponseWriter, r *http.Request) {
 		err = c.Svc.Send(r.Context(), sessionID(r), message, attachment)
 	}
 	if err != nil {
+		// A reviewer pane has no session row of its own, so an `ao send` to a
+		// reviewer handle lands here as SESSION_NOT_FOUND. When the id names a
+		// reviewer pane (the reviewerHandleId from `ao review ls --json`) and
+		// no session resolved first, deliver the message to that pane instead.
+		// Gating on the not-found code keeps real sessions on the ordinary
+		// path: their Send fails with other codes, and a session that does not
+		// exist can never be shadowed by a reviewer with a similar name.
+		var apiErr *apierr.Error
+		if errors.As(err, &apiErr) && apiErr.Code == "SESSION_NOT_FOUND" && c.Reviews != nil {
+			// chi leaves the path segment escaped, so the host prefix in
+			// `ptyhost-v1:review-<worker>` arrives as %3A; decode for the check
+			// and the delivery, the same way the CLI escaped it.
+			ref := string(sessionID(r))
+			if unescaped, unescapeErr := url.PathUnescape(ref); unescapeErr == nil {
+				ref = unescaped
+			}
+			if _, isHandle := reviewcore.ReviewerHandleRefName(ref); isHandle {
+				if attachment != nil {
+					envelope.WriteAPIError(w, r, http.StatusUnprocessableEntity, "unprocessable", "REVIEW_INVALID", "Reviewer panes accept text only; attachments are not supported", nil)
+					return
+				}
+				if sendErr := c.Reviews.SendMessageToReviewer(r.Context(), ref, message); sendErr != nil {
+					writeReviewError(w, r, sendErr)
+					return
+				}
+				envelope.WriteJSON(w, http.StatusOK, SendSessionMessageResponse{OK: true, SessionID: sessionID(r), Message: message})
+				return
+			}
+		}
 		envelope.WriteError(w, r, err)
 		return
 	}
