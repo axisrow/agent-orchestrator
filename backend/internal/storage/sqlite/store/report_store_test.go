@@ -473,6 +473,22 @@ func TestReportStoreListsStuckDeliveryCandidates(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// A claim in flight is undelivered work: the sweep must keep seeing the
+	// past-threshold group while its claim is held, or a mid-delivery pass
+	// would resolve the open incident and its source key would never re-open.
+	if _, err := s.ClaimPendingReportBatch(ctx, aoSess.ProjectID, "tok-fresh", now); err != nil {
+		t.Fatal(err)
+	}
+	inFlight, err := s.ListStuckDeliveryCandidates(ctx, 10, now.Add(-time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inFlight) != 2 || inFlight[0].ID != "rpt_fresh" || inFlight[0].DeliveryState != domain.ReportClaimed {
+		t.Fatalf("in-flight candidates = %+v, want the claimed rpt_fresh first", inFlight)
+	}
+	if _, err := s.ReleaseReportBatch(ctx, aoSess.ProjectID, "tok-fresh", now, "retry"); err != nil {
+		t.Fatal(err)
+	}
 	rows, err := s.ListStuckDeliveryCandidates(ctx, 10, now.Add(-time.Hour))
 	if err != nil {
 		t.Fatal(err)

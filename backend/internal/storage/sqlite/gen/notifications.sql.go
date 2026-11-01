@@ -761,13 +761,14 @@ func (q *Queries) ResolveStaleNeedsInputNotifications(ctx context.Context, resol
 	return items, nil
 }
 
-const resolveStuckDeliveryNotification = `-- name: ResolveStuckDeliveryNotification :execrows
+const resolveStuckDeliveryNotification = `-- name: ResolveStuckDeliveryNotification :many
 UPDATE notifications
 SET resolved_at = ?1
 WHERE id = ?2
   AND type = 'stuck_delivery'
   AND resolved_at IS NULL
   AND dismissed_at IS NULL
+RETURNING id, session_id, project_id, pr_url, type, title, body, status, created_at, resolved_at, dismissed_at, source_key
 `
 
 type ResolveStuckDeliveryNotificationParams struct {
@@ -775,10 +776,38 @@ type ResolveStuckDeliveryNotificationParams struct {
 	ID         string
 }
 
-func (q *Queries) ResolveStuckDeliveryNotification(ctx context.Context, arg ResolveStuckDeliveryNotificationParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, resolveStuckDeliveryNotification, arg.ResolvedAt, arg.ID)
+func (q *Queries) ResolveStuckDeliveryNotification(ctx context.Context, arg ResolveStuckDeliveryNotificationParams) ([]Notification, error) {
+	rows, err := q.db.QueryContext(ctx, resolveStuckDeliveryNotification, arg.ResolvedAt, arg.ID)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return result.RowsAffected()
+	defer rows.Close()
+	items := []Notification{}
+	for rows.Next() {
+		var i Notification
+		if err := rows.Scan(
+			&i.ID,
+			&i.SessionID,
+			&i.ProjectID,
+			&i.PRURL,
+			&i.Type,
+			&i.Title,
+			&i.Body,
+			&i.Status,
+			&i.CreatedAt,
+			&i.ResolvedAt,
+			&i.DismissedAt,
+			&i.SourceKey,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

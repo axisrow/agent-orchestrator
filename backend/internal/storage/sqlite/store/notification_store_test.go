@@ -745,6 +745,11 @@ func TestNotificationStore_ResolveStuckDeliveryKeepsCurrentIncident(t *testing.T
 	if len(resolved) != 1 || resolved[0].ID != superseded.ID {
 		t.Fatalf("resolved = %+v, want only the superseded row", resolved)
 	}
+	// The published row must be post-update: a resolved event carrying
+	// resolved_at=NULL leaves the row stuck in the dashboard badge.
+	if resolved[0].Resolved() != true || !resolved[0].ResolvedAt.Equal(now) {
+		t.Fatalf("resolved row resolved_at = %v, want %v", resolved[0].ResolvedAt, now)
+	}
 	// The current incident stays open; re-proposing it dedupes as before.
 	_, ok, err := s.CreateNotification(ctx, live)
 	if err != nil || ok {

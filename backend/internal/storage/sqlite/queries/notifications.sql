@@ -196,10 +196,11 @@ WHERE type = 'stuck_delivery'
   AND resolved_at IS NULL
   AND dismissed_at IS NULL;
 
--- name: ResolveStuckDeliveryNotification :execrows
+-- name: ResolveStuckDeliveryNotification :many
 UPDATE notifications
 SET resolved_at = sqlc.arg(resolved_at)
 WHERE id = sqlc.arg(id)
   AND type = 'stuck_delivery'
   AND resolved_at IS NULL
-  AND dismissed_at IS NULL;
+  AND dismissed_at IS NULL
+RETURNING *;

@@ -885,7 +885,7 @@ const listStuckDeliveryCandidates = `-- name: ListStuckDeliveryCandidates :many
 SELECT id, session_id, project_id, delivery_state, delivery_attempts, last_error, created_at
 FROM deliveries
 WHERE kind = 'report'
-  AND delivery_state IN ('pending', 'stale')
+  AND delivery_state IN ('pending', 'claimed', 'stale')
   AND (
     delivery_state = 'stale'
     OR delivery_attempts >= ?1
@@ -909,9 +909,12 @@ type ListStuckDeliveryCandidatesRow struct {
 	CreatedAt        time.Time
 }
 
-// Read-only visibility sweep for stuck deliveries (fork issue #211): pending
-// report rows past the threshold (attempts or age) plus every terminal stale
+// Read-only visibility sweep for stuck deliveries (fork issue #211): report
+// rows past the stuck threshold (attempts or age) plus every terminal stale
 // row, grouped by (project, cause) in the service. No delivery state changes.
+// Claimed rows stay in the sweep: a claim in flight is undelivered work, and
+// dropping it would let the sweep resolve an open incident mid-delivery,
+// which the source-key dedupe would then never re-open.
 func (q *Queries) ListStuckDeliveryCandidates(ctx context.Context, arg ListStuckDeliveryCandidatesParams) ([]ListStuckDeliveryCandidatesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listStuckDeliveryCandidates, arg.MinAttempts, arg.AgeCutoff)
 	if err != nil {

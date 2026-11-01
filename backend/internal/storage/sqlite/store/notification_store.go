@@ -424,6 +424,8 @@ func (s *Store) ResolveStuckDeliveryNotifications(ctx context.Context, at time.T
 			if keep[row.SourceKey] {
 				continue
 			}
+			// RETURNING carries the post-update row, so the resolved event the
+			// manager publishes actually carries resolved_at.
 			updated, err := q.ResolveStuckDeliveryNotification(ctx, gen.ResolveStuckDeliveryNotificationParams{
 				ResolvedAt: nullTime(at),
 				ID:         row.ID,
@@ -431,8 +433,8 @@ func (s *Store) ResolveStuckDeliveryNotifications(ctx context.Context, at time.T
 			if err != nil {
 				return err
 			}
-			if updated > 0 {
-				resolved = append(resolved, notificationFromGen(row))
+			if len(updated) > 0 {
+				resolved = append(resolved, notificationFromGen(updated[0]))
 			}
 		}
 		return nil
