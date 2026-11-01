@@ -978,6 +978,7 @@ retryProjection:
 		(s.AgentSessionID != "" && rec.Metadata.AgentSessionIDLaunchID != s.LaunchID) ||
 		(s.TranscriptPath != "" && rec.Metadata.NativeTranscriptPath != s.TranscriptPath) ||
 		checkpointChanged || subagentFacts != storedSubagentFacts
+	nativeEvents := m.nativeIdentityEvents(rec, s, now)
 	toolFlightBeforeProjection := cloneToolFlight(m.flights[id])
 	if s.Valid {
 		s = m.applyToolPrecedenceLocked(id, rec.Activity.State, s)
@@ -1027,6 +1028,9 @@ retryProjection:
 			goto retryProjection
 		}
 		m.mu.Unlock()
+		for _, ev := range nativeEvents {
+			m.emitTelemetry(ctx, ev)
+		}
 		return nil
 	}
 	if metadataChanged {
@@ -1068,6 +1072,9 @@ retryProjection:
 				return nil
 			}
 			m.mu.Unlock()
+			for _, ev := range nativeEvents {
+				m.emitTelemetry(ctx, ev)
+			}
 			return m.acknowledgeAgentSwitchTarget(ctx, id, s, now)
 		}
 		m.mu.Unlock()
@@ -1127,6 +1134,9 @@ retryProjection:
 	}
 	if err := m.acknowledgeAgentSwitchTarget(ctx, id, s, now); err != nil {
 		return err
+	}
+	for _, ev := range nativeEvents {
+		m.emitTelemetry(ctx, ev)
 	}
 	for _, ev := range waitingEvents {
 		m.emitTelemetry(ctx, ev)
@@ -1485,6 +1495,49 @@ func (m *Manager) applyToolPrecedenceLocked(id domain.SessionID, cur domain.Acti
 		}
 		return s
 	}
+}
+
+// nativeIdentityEvents builds the append-only observability trail for native
+// conversation identity (#109). Session metadata is latest-wins, so a
+// `claude --resume` outside the panel is unrecoverable after the fact: every
+// SessionStart-family hook becomes one ao.session.native_session_start row,
+// and every confirmation of a native id under a different RuntimeLaunchID
+// (the resume relaunch case) becomes one ao.session.native_identity_confirmed
+// row. The caller emits them only after the signal's metadata actually
+// commits.
+func (m *Manager) nativeIdentityEvents(rec domain.SessionRecord, s ports.ActivitySignal, now time.Time) []ports.TelemetryEvent {
+	if m.telemetry == nil || s.AgentSessionID == "" {
+		return nil
+	}
+	occurredAt := timeOr(s.Timestamp, now).UTC()
+	var events []ports.TelemetryEvent
+	if s.Event == "session-start" {
+		payload := map[string]any{"agentSessionId": s.AgentSessionID, "launchId": s.LaunchID}
+		if s.HookSource != "" {
+			payload["source"] = s.HookSource
+		}
+		events = append(events, ports.TelemetryEvent{
+			Name: "ao.session.native_session_start", Source: "lifecycle",
+			OccurredAt: occurredAt, Level: ports.TelemetryLevelInfo,
+			ProjectID: &rec.ProjectID, SessionID: &rec.ID, Payload: payload,
+		})
+	}
+	if s.LaunchID != "" && s.LaunchID != rec.Metadata.AgentSessionIDLaunchID {
+		payload := map[string]any{
+			"agentSessionId": s.AgentSessionID,
+			"launchId":       s.LaunchID,
+			"hookEvent":      s.Event,
+		}
+		if s.HookSource != "" {
+			payload["source"] = s.HookSource
+		}
+		events = append(events, ports.TelemetryEvent{
+			Name: "ao.session.native_identity_confirmed", Source: "lifecycle",
+			OccurredAt: occurredAt, Level: ports.TelemetryLevelInfo,
+			ProjectID: &rec.ProjectID, SessionID: &rec.ID, Payload: payload,
+		})
+	}
+	return events
 }
 
 func (m *Manager) waitingInputEvents(next domain.SessionRecord, prevState domain.ActivityState, prevAt, now time.Time) []ports.TelemetryEvent {

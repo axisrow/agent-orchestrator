@@ -321,7 +321,7 @@ func (c *ReviewsController) restore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	workerID := sessionID(r)
-	if err := c.Svc.RestoreReviewer(r.Context(), workerID); err != nil {
+	if _, err := c.Svc.RestoreReviewer(r.Context(), workerID); err != nil {
 		writeReviewError(w, r, err)
 		return
 	}

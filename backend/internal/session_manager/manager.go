@@ -333,7 +333,10 @@ type TerminalInputGate interface {
 type ReviewerTerminator interface {
 	TerminateReviewer(ctx context.Context, workerID domain.SessionID, body string) error
 	TeardownReviewerTerminal(ctx context.Context, workerID domain.SessionID) error
-	RestoreReviewer(ctx context.Context, workerID domain.SessionID) error
+	// RestoreReviewer reports whether a reviewer pane was actually restored:
+	// a worker without review history no-ops, and the restored trail must not
+	// log a phantom reviewer restore for it (#109).
+	RestoreReviewer(ctx context.Context, workerID domain.SessionID) (bool, error)
 }
 
 type runtimeController interface {
@@ -623,6 +626,9 @@ type Manager struct {
 	// versionTelemetry receives version-move events; nil drops them.
 	versionTelemetryMu sync.Mutex
 	versionTelemetry   ports.EventSink
+	// restoreTelemetry receives session-restored events; nil drops them.
+	restoreTelemetryMu sync.Mutex
+	restoreTelemetry   ports.EventSink
 
 	reviewersMu sync.Mutex
 	reviewers   ReviewerTerminator
@@ -799,12 +805,12 @@ func (m *Manager) teardownReviewerTerminal(ctx context.Context, id domain.Sessio
 	return terminator.TeardownReviewerTerminal(ctx, id)
 }
 
-func (m *Manager) restoreReviewer(ctx context.Context, id domain.SessionID) error {
+func (m *Manager) restoreReviewer(ctx context.Context, id domain.SessionID) (bool, error) {
 	m.reviewersMu.Lock()
 	reviewer := m.reviewers
 	m.reviewersMu.Unlock()
 	if reviewer == nil {
-		return nil
+		return false, nil
 	}
 	return reviewer.RestoreReviewer(ctx, id)
 }
@@ -3204,8 +3210,10 @@ func (m *Manager) relaunchRestoredSession(ctx context.Context, rec domain.Sessio
 		return RestoreResult{}, err
 	}
 	if rec.Kind == domain.KindWorker {
-		if err := m.restoreReviewer(ctx, rec.ID); err != nil {
+		if restoredReviewer, err := m.restoreReviewer(ctx, rec.ID); err != nil {
 			m.logger.Warn("restore: reviewer terminal restore failed; worker remains restored", "sessionID", rec.ID, "error", err)
+		} else if restoredReviewer {
+			m.emitRestored(rec, RestoreModeNative, "reviewer-restore")
 		}
 	}
 	return result, nil
@@ -3414,13 +3422,22 @@ func (m *Manager) WakeHibernatedChat(ctx context.Context, id domain.SessionID) e
 // identity and never changes the durable terminated flag as an intermediate
 // step.
 func (m *Manager) ResumeAgentWithMode(ctx context.Context, id domain.SessionID) (result RestoreResult, err error) {
-	return m.resumeAgentWithMode(ctx, id, false)
+	return m.resumeAgentWithOperation(ctx, id, false, "resume agent")
 }
 
-// resumeAgentWithMode preserves strict native-history intent for automatic
+// ResumeAgentForProviderSwitch relaunches an agent exited by a provider or
+// account switch. It exists so the restored telemetry names the real trigger
+// instead of "manual".
+func (m *Manager) ResumeAgentForProviderSwitch(ctx context.Context, id domain.SessionID) (result RestoreResult, err error) {
+	return m.resumeAgentWithOperation(ctx, id, false, "agent switch")
+}
+
+// resumeAgentWithOperation preserves strict native-history intent for automatic
 // retries, including update stops that have no stale-binary failure marker.
-func (m *Manager) resumeAgentWithMode(ctx context.Context, id domain.SessionID, requireNativeHistory bool) (result RestoreResult, err error) {
-	defer func() { m.logRelaunchFailure("resume agent", id, err) }()
+// operation labels the relaunch for failure logs and the restored telemetry
+// trigger (see restoreTrigger).
+func (m *Manager) resumeAgentWithOperation(ctx context.Context, id domain.SessionID, requireNativeHistory bool, operation string) (result RestoreResult, err error) {
+	defer func() { m.logRelaunchFailure(operation, id, err) }()
 	if err := m.beginAgentResume(ctx, id); err != nil {
 		return RestoreResult{}, fmt.Errorf("resume agent %s: %w", id, err)
 	}
@@ -3553,7 +3570,7 @@ func (m *Manager) resumeAgentWithMode(ctx context.Context, id domain.SessionID, 
 			return RestoreResult{}, fmt.Errorf("resume agent %s: hibernation state changed: %w", id, ErrResumeInProgress)
 		}
 	}
-	result, err = m.resumeAgentRecordWithPolicy(ctx, "resume agent", rec,
+	result, err = m.resumeAgentRecordWithPolicy(ctx, operation, rec,
 		requireNativeHistory || (rec.StaleBinary != nil && rec.StaleBinary.SwitchFailedAt != nil))
 	if err == nil && m.chat != nil && domain.NormalizeSessionMode(rec.Mode) == domain.SessionModeChat &&
 		rec.StaleBinary != nil && rec.StaleBinary.SwitchFailedAt != nil {
@@ -3929,6 +3946,9 @@ func (m *Manager) relaunchSessionWithPolicyAndGeneration(ctx context.Context, op
 	updated, err := m.getRecord(ctx, rec.ID)
 	if err != nil {
 		return RestoreResult{}, err
+	}
+	if mode == RestoreModeNative {
+		m.emitRestored(updated, mode, restoreTrigger(operation))
 	}
 	return RestoreResult{Session: updated, Mode: mode}, nil
 }

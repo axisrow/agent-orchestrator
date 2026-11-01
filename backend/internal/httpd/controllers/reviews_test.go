@@ -138,12 +138,12 @@ func (f *fakeReviewService) TeardownReviewerTerminal(context.Context, domain.Ses
 	return nil
 }
 
-func (f *fakeReviewService) RestoreReviewer(context.Context, domain.SessionID) error {
+func (f *fakeReviewService) RestoreReviewer(context.Context, domain.SessionID) (bool, error) {
 	f.restored = true
 	if f.list.ReviewerHandleID == "" {
 		f.list.ReviewerHandleID = "review-mer-1"
 	}
-	return nil
+	return true, nil
 }
 
 func (f *fakeReviewService) SwitchReviewer(_ context.Context, _ domain.SessionID, harness domain.ReviewerHarness, _ domain.AgentConfig) (reviewcore.SessionReviews, error) {

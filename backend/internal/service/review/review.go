@@ -77,7 +77,7 @@ type Manager interface {
 	TerminateReviewer(ctx context.Context, workerID domain.SessionID, body string) error
 	ArchiveReviewer(ctx context.Context, workerID domain.SessionID) error
 	TeardownReviewerTerminal(ctx context.Context, workerID domain.SessionID) error
-	RestoreReviewer(ctx context.Context, workerID domain.SessionID) error
+	RestoreReviewer(ctx context.Context, workerID domain.SessionID) (bool, error)
 	SwitchReviewer(ctx context.Context, workerID domain.SessionID, harness domain.ReviewerHarness, config domain.AgentConfig) (reviewcore.SessionReviews, error)
 	ApplyReviewActivitySignal(ctx context.Context, reviewSessionID string, signal ActivitySignal) error
 	Submit(ctx context.Context, workerID domain.SessionID, runID string, verdict domain.ReviewVerdict, body string, findings []domain.ReviewFinding) (domain.ReviewRun, error)
@@ -754,14 +754,16 @@ func (s *Service) TeardownReviewerTerminal(ctx context.Context, workerID domain.
 }
 
 // RestoreReviewer relaunches an idle reviewer pane after its worker has been restored.
-func (s *Service) RestoreReviewer(ctx context.Context, workerID domain.SessionID) error {
+// It reports whether a pane was actually restored; a worker without review
+// history no-ops.
+func (s *Service) RestoreReviewer(ctx context.Context, workerID domain.SessionID) (bool, error) {
 	release, err := s.acquireReviewerCodexAdmission(ctx, workerID, "")
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer release()
-	_, err = s.engine.RestoreReviewer(ctx, workerID)
-	return err
+	result, err := s.engine.RestoreReviewer(ctx, workerID)
+	return result.Restored, err
 }
 
 // SwitchReviewer atomically persists a worker's reviewer preference and returns

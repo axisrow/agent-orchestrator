@@ -80,6 +80,13 @@ type ActivitySignal struct {
 	// LaunchID is set by AO's process supervisor. Lifecycle rejects a signal
 	// from an older process generation of the same session.
 	LaunchID string
+	// HookSource is the provider's own SessionStart sub-source when the hook
+	// exposes one (Claude's startup|resume|clear|compact|fork). It is the only
+	// durable "who restarted this conversation" fact: AO's matcher already
+	// distinguishes these, but until it rode the signal the distinction was
+	// lost before any observability could record it. Empty on other events,
+	// older hook clients, and providers without the concept.
+	HookSource string
 	// NativeEntrypoint is the provider's own process-kind marker reported by
 	// the hook (Claude's CLAUDE_CODE_ENTRYPOINT). A side `claude -p` run in the
 	// session worktree inherits AO_SESSION_ID and the current LaunchID, so the

@@ -217,6 +217,21 @@ func (s *Service) ApplyProviderSwitch(ctx context.Context, sessionIDs []domain.S
 	return results, nil
 }
 
+// resumeAgentSwitchCommander lets the relaunch after a provider switch report
+// the honest restore trigger instead of "manual". Optional so focused service
+// fakes keep working.
+type resumeAgentSwitchCommander interface {
+	ResumeAgentForProviderSwitch(ctx context.Context, id domain.SessionID) (sessionmanager.RestoreResult, error)
+}
+
+func resumeAfterProviderSwitch(ctx context.Context, manager commander, id domain.SessionID) (sessionmanager.RestoreResult, error) {
+	if switcher, ok := manager.(resumeAgentSwitchCommander); ok {
+		return switcher.ResumeAgentForProviderSwitch(ctx, id)
+	}
+	res, err := manager.ResumeAgentWithMode(ctx, id)
+	return res, err
+}
+
 func (s *Service) applyProviderToSession(ctx context.Context, id domain.SessionID) ProviderApplyResult {
 	rec, ok, err := s.store.GetSession(ctx, id)
 	if err != nil {
@@ -245,7 +260,7 @@ func (s *Service) applyProviderToSession(ctx context.Context, id domain.SessionI
 	// A resume failure deliberately leaves the session exited: every failure
 	// path in the relaunch commits before MarkSpawned, so the session stays
 	// restorable and the error below is the user-facing signal.
-	if _, err := s.manager.ResumeAgentWithMode(ctx, id); err != nil {
+	if _, err := resumeAfterProviderSwitch(ctx, s.manager, id); err != nil {
 		return ProviderApplyResult{SessionID: id, State: providerApplyFailed, Error: err.Error()}
 	}
 	return ProviderApplyResult{SessionID: id, State: providerApplyApplied}
