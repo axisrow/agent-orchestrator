@@ -21,3 +21,20 @@ export function rightPanelPreloadArgs(env: Record<string, string | undefined>): 
 export function rightPanelExpandedFromArgv(argv: readonly string[]): boolean {
 	return argv.includes(RIGHT_PANEL_EXPANDED_ARG);
 }
+
+/** AO_LINKS_EXTERNAL=1: open web links in the system browser by default; the AO Browser panel stays on the context menu. */
+export const LINKS_EXTERNAL_ARG = "--ao-links-external";
+
+export function linksExternalFromEnv(env: Record<string, string | undefined>): boolean {
+	return env.AO_LINKS_EXTERNAL === "1";
+}
+
+/** Main process: the additionalArguments list to hand the shell WebContentsView. */
+export function linksExternalPreloadArgs(env: Record<string, string | undefined>): string[] {
+	return linksExternalFromEnv(env) ? [LINKS_EXTERNAL_ARG] : [];
+}
+
+/** Preload: whether the main process passed the flag through webPreferences. */
+export function linksExternalFromArgv(argv: readonly string[]): boolean {
+	return argv.includes(LINKS_EXTERNAL_ARG);
+}

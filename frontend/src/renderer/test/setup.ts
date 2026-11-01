@@ -136,6 +136,7 @@ if (typeof window !== "undefined") {
 	window.ao = {
 		launch: {
 			rightPanelExpanded: false,
+			linksExternal: false,
 		},
 		app: {
 			getVersion: async () => "0.0.0-test",
