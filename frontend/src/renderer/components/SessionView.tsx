@@ -526,8 +526,16 @@ export function SessionView({ sessionId, cloudOrgId, projectId, hostId }: Sessio
 	const workspaceResizeTimerRef = useRef<number | null>(null);
 	const [inspectorSettledClosed, setInspectorSettledClosed] = useState(!isInspectorOpen);
 	const inspectorPanelVisible = isInspectorOpen || !inspectorSettledClosed;
-	const [terminalTarget, setTerminalTarget] = useState<TerminalTarget>({ kind: "worker" });
-	const [reviewerChatId, setReviewerChatId] = useState<string | null>(null);
+	// The centre-pane tab starts from what this session last showed (see
+	// setTerminalTab). Targets are re-validated on restore: the reconciliation
+	// effects below fall back to the session's own pane when the remembered
+	// reviewer or shell has since disappeared.
+	const [terminalTarget, setTerminalTarget] = useState<TerminalTarget>(
+		() => useUiStore.getState().terminalTabBySession[uiSessionId]?.terminalTarget ?? { kind: "worker" },
+	);
+	const [reviewerChatId, setReviewerChatId] = useState<string | null>(
+		() => useUiStore.getState().terminalTabBySession[uiSessionId]?.reviewerChatId ?? null,
+	);
 	const [browserPopOutState, setBrowserPopOutState] = useState<BrowserPopOutState>({
 		sessionId,
 		phase: "docked",
@@ -612,8 +620,18 @@ export function SessionView({ sessionId, cloudOrgId, projectId, hostId }: Sessio
 	const [stateSessionId, setStateSessionId] = useState(sessionId);
 	if (stateSessionId !== sessionId) {
 		setStateSessionId(sessionId);
-		setTerminalTarget({ kind: "worker" });
-		setReviewerChatId(null);
+		// Restore this session's own remembered tab (worker / reviewer / reviewer
+		// chat / shell) instead of always resetting to the worker. A remembered
+		// target that has since disappeared falls back to the session pane
+		// through the reconciliation effects below.
+		const rememberedTab = useUiStore.getState().terminalTabBySession[uiSessionId];
+		if (rememberedTab) {
+			setTerminalTarget(rememberedTab.terminalTarget);
+			setReviewerChatId(rememberedTab.reviewerChatId);
+		} else {
+			setTerminalTarget({ kind: "worker" });
+			setReviewerChatId(null);
+		}
 		setBrowserPopOutState({ sessionId, phase: "docked" });
 		setFilesPoppedOut(false);
 		setHandoffDialogOpen(false);
@@ -622,6 +640,11 @@ export function SessionView({ sessionId, cloudOrgId, projectId, hostId }: Sessio
 		handoffDialogContainerRef.current = node;
 		setHandoffDialogContainer(node);
 	}, []);
+	// Keep the session's remembered tab in step with the user's selection, so
+	// returning to it (from another session or a remount) restores the choice.
+	useEffect(() => {
+		useUiStore.getState().setTerminalTab(uiSessionId, { terminalTarget, reviewerChatId });
+	}, [reviewerChatId, terminalTarget, uiSessionId]);
 	const stopTerminalLiveResize = useCallback(() => {
 		if (terminalLiveResizeTimerRef.current !== null) {
 			window.clearTimeout(terminalLiveResizeTimerRef.current);

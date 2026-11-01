@@ -957,6 +957,7 @@ describe("SessionView", () => {
 			},
 			isSidebarOpen: true,
 			visibleTerminalKindBySession: {},
+			terminalTabBySession: {},
 		});
 		useTerminalResetStore.setState({ baselineEpoch: {}, nonces: {}, reconnecting: {} });
 		browserDestroy.mockReset();
@@ -4408,6 +4409,76 @@ describe("SessionView", () => {
 
 		await waitFor(() => expect(screen.getByTestId("terminal-target")).toHaveTextContent("worker"));
 		expect(screen.queryByRole("button", { name: "select reviewer tab" })).not.toBeInTheDocument();
+	});
+
+	it("restores the selected reviewer tab when returning to the session from the orchestrator", async () => {
+		const view = render(<SessionView sessionId="sess-1" />);
+		act(() => view.client.setQueryData(["session-reviews", "sess-1"], {
+			reviewerHandleId: "review-1", reviewerHarness: "codex", reviews: [], runs: [],
+		}));
+		fireEvent.click(await screen.findByRole("button", { name: "select reviewer tab" }));
+		expect(screen.getByTestId("terminal-target")).toHaveTextContent("reviewer");
+
+		// Neither the orchestrator nor another worker shows the previous session's tab.
+		view.rerender(<SessionView sessionId="sess-orch" />);
+		expect(screen.getByTestId("terminal-target")).toHaveTextContent("worker");
+		view.rerender(<SessionView sessionId="sess-2" />);
+		expect(screen.getByTestId("terminal-target")).toHaveTextContent("worker");
+
+		view.rerender(<SessionView sessionId="sess-1" />);
+		await waitFor(() => expect(screen.getByTestId("terminal-target")).toHaveTextContent("reviewer"));
+
+		// The remembered tab also survives a remount (session -> board -> session).
+		view.unmount();
+		render(<SessionView sessionId="sess-1" />);
+		expect(screen.getByTestId("terminal-target")).toHaveTextContent("reviewer");
+	});
+
+	it("falls back to the worker tab when the remembered reviewer finished while away", async () => {
+		const view = render(<SessionView sessionId="sess-1" />);
+		act(() => view.client.setQueryData(["session-reviews", "sess-1"], {
+			reviewerHandleId: "review-1", reviewerHarness: "codex", reviews: [], runs: [],
+		}));
+		fireEvent.click(await screen.findByRole("button", { name: "select reviewer tab" }));
+		expect(screen.getByTestId("terminal-target")).toHaveTextContent("reviewer");
+
+		view.rerender(<SessionView sessionId="sess-orch" />);
+		act(() => view.client.setQueryData(["session-reviews", "sess-1"], { reviewerHandleId: "", reviews: [], runs: [] }));
+
+		view.rerender(<SessionView sessionId="sess-1" />);
+		await waitFor(() => expect(screen.getByTestId("terminal-target")).toHaveTextContent("worker"));
+	});
+
+	it("restores the selected reviewer chat when returning to the session", async () => {
+		const view = render(<SessionView sessionId="sess-1" />);
+		act(() => view.client.setQueryData(["session-reviews", "sess-1"], {
+			reviewerHandleId: "review-chat:review-1",
+			reviewerSurface: { mode: "chat", reviewId: "review-1", harness: "codex" }, reviews: [], runs: [],
+		}));
+		fireEvent.click(screen.getByRole("button", { name: "open reviewer chat" }));
+		expect(screen.getByTestId("reviewer-chat-surface")).toHaveTextContent("review-1");
+
+		view.rerender(<SessionView sessionId="sess-orch" />);
+		expect(screen.queryByTestId("reviewer-chat-surface")).not.toBeInTheDocument();
+
+		view.rerender(<SessionView sessionId="sess-1" />);
+		expect(screen.getByTestId("reviewer-chat-surface")).toHaveTextContent("review-1");
+	});
+
+	it("restores the selected shell tab when returning to the session, and falls back when it is gone", () => {
+		shellTerminalsState.data = [{ handleId: "sh-a", sessionId: "sess-1", title: "sess-1-shell", workingDir: "/p", createdAt: "2026-07-24T00:00:00Z" }];
+		const view = render(<SessionView sessionId="sess-1" />);
+		fireEvent.click(screen.getByRole("button", { name: "select sess-1-shell" }));
+		expect(screen.getByTestId("terminal-target")).toHaveTextContent("sh-a");
+
+		view.rerender(<SessionView sessionId="sess-orch" />);
+		view.rerender(<SessionView sessionId="sess-1" />);
+		expect(screen.getByTestId("terminal-target")).toHaveTextContent("sh-a");
+
+		shellTerminalsState.data = [];
+		view.rerender(<SessionView sessionId="sess-orch" />);
+		view.rerender(<SessionView sessionId="sess-1" />);
+		expect(screen.getByTestId("terminal-target")).toHaveTextContent("worker");
 	});
 
 	it.each(["tui", "chat"] as const)(
