@@ -2842,6 +2842,55 @@ func TestPoll_CommitCheckETagChange_PromotesIndependentOfListing(t *testing.T) {
 	}
 }
 
+// TestPoll_StaleFailingDoesNotSurviveGreenObservation (issue #230): a stored
+// ci_state=failing + mergeability=blocked must be replaced by the next green
+// observation — CI becomes passing and mergeability is recomputed instead of
+// staying blocked on ci_failing that no longer exists.
+func TestPoll_StaleFailingDoesNotSurviveGreenObservation(t *testing.T) {
+	store := testStoreWithSession()
+	local := knownPR(1)
+	local.CI = domain.CIFailing
+	local.Mergeability = domain.MergeBlocked
+	local.MetadataHash = "durable-meta"
+	local.CIHash = "durable-ci"
+	local.ReviewHash = "durable-review"
+	store.prs["p-1"] = []domain.PullRequest{local}
+
+	// Green provider observation (zero failure-class checks, mergeable).
+	updated := testObs(1)
+	provider := &fakeProvider{
+		repoGuards:   map[string]ports.SCMGuardResult{prKey(testRepo, 0): {ETag: "repo1", NotModified: true}},
+		checkGuards:  map[string]ports.SCMGuardResult{commitKey(testRepo, "sha1"): {ETag: "ci2"}},
+		observations: map[string]ports.SCMObservation{prKey(testRepo, 1): updated},
+	}
+	lc := &fakeLifecycle{}
+	now := time.Unix(1100, 0).UTC()
+	obs := newTestObserver(store, provider, lc, now)
+	obs.Cache.RepoPRListETag[prKey(testRepo, 0)] = "repo1"
+	obs.Cache.CommitChecksETag[commitKey(testRepo, "sha1")] = "ci1"
+	obs.Cache.LastSyncCursor[prKey(testRepo, 0)] = now.Add(-time.Hour)
+
+	if err := obs.Poll(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	var final domain.PullRequest
+	for _, w := range store.writes {
+		if w.pr.Number == 1 {
+			final, found = w.pr, true
+		}
+	}
+	if !found {
+		t.Fatalf("green observation not persisted; writes=%#v", store.writes)
+	}
+	if final.CI != domain.CIPassing {
+		t.Fatalf("ci_state = %q, want passing — failing must not survive a zero-failure observation", final.CI)
+	}
+	if final.Mergeability != domain.MergeMergeable {
+		t.Fatalf("mergeability = %q, want mergeable — must not stay blocked on stale ci_failing", final.Mergeability)
+	}
+}
+
 // TestPoll_GitHubTerminalReconciliation_StillOpenNoOp (Item 2) verifies that a
 // tracked open GitHub PR not in the current listing triggers a terminal-
 // reconciliation detail fetch, and that a "still open" result is a no-op

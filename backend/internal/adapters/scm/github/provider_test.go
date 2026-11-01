@@ -1271,6 +1271,81 @@ func TestSCMObservationUsesRollupStateWhenContextsPaginated(t *testing.T) {
 	}
 }
 
+// Issue #230 (BeamCraft#407): GitHub's aggregate statusCheckRollup state can
+// stay FAILURE after a cancelled/superseded check is re-run green, while the
+// complete per-context list — the same rows GitHub UI renders as "All checks
+// have passed" — already carries zero failure-class entries. A complete,
+// failure-free context set is ground truth: the verdict must follow it, or
+// ci_state=failing contradicts the stored checks and the provider forever,
+// and mergeability stays blocked on a ci_failing phantom.
+func TestSCMObservationZeroFailureContextsOverrideStaleRollupState(t *testing.T) {
+	fx := basePRFixture()
+	var pr map[string]any
+	fx.prData(func(m map[string]any) {
+		pr = m
+		roll := m["commits"].(map[string]any)["nodes"].([]any)[0].(map[string]any)["commit"].(map[string]any)["statusCheckRollup"].(map[string]any)
+		roll["state"] = "FAILURE"
+		ctxs := roll["contexts"].(map[string]any)
+		ctxs["nodes"] = []any{
+			map[string]any{"__typename": "CheckRun", "name": "build", "status": "COMPLETED", "conclusion": "SUCCESS"},
+			map[string]any{"__typename": "CheckRun", "name": "rerun-green", "status": "COMPLETED", "conclusion": "SUCCESS"},
+			map[string]any{"__typename": "CheckRun", "name": "docs", "status": "COMPLETED", "conclusion": "SKIPPED"},
+		}
+		ctxs["pageInfo"] = map[string]any{"hasNextPage": false}
+	})
+	obs := scmObservationFromGraphQL(ports.SCMPRRef{Repo: ports.SCMRepo{Provider: "github", Host: "github.com", Owner: "octocat", Name: "hello", Repo: "octocat/hello"}, Number: 42}, pr)
+	if obs.CI.Summary != string(domain.CIPassing) {
+		t.Fatalf("CI summary = %q, want passing from complete zero-failure contexts", obs.CI.Summary)
+	}
+	if obs.Mergeability.State != string(domain.MergeMergeable) {
+		t.Fatalf("mergeability = %q, want mergeable — must not stay blocked on stale ci_failing", obs.Mergeability.State)
+	}
+	for _, b := range obs.Mergeability.Blockers {
+		if b == "ci_failing" {
+			t.Fatalf("mergeability blockers contain ci_failing with zero failing checks: %+v", obs.Mergeability.Blockers)
+		}
+	}
+}
+
+// Issue #230 acceptance: a cancelled (or startup-failed) check counts as
+// failing while it is the current attempt, but once the same check re-runs
+// green (GitHub updates the conclusion in place) the repeat observation must
+// flip to passing with mergeability recomputed — even when the aggregate
+// rollup state stays FAILURE.
+func TestSCMObservationCancelledCheckRerunToSuccessClearsFailing(t *testing.T) {
+	ref := ports.SCMPRRef{Repo: ports.SCMRepo{Provider: "github", Host: "github.com", Owner: "octocat", Name: "hello", Repo: "octocat/hello"}, Number: 42}
+	fixture := func(conclusion string) map[string]any {
+		var pr map[string]any
+		basePRFixture().prData(func(m map[string]any) {
+			pr = m
+			roll := m["commits"].(map[string]any)["nodes"].([]any)[0].(map[string]any)["commit"].(map[string]any)["statusCheckRollup"].(map[string]any)
+			roll["state"] = "FAILURE"
+			ctxs := roll["contexts"].(map[string]any)
+			ctxs["nodes"] = []any{
+				map[string]any{"__typename": "CheckRun", "name": "ci", "status": "COMPLETED", "conclusion": conclusion},
+				map[string]any{"__typename": "CheckRun", "name": "build", "status": "COMPLETED", "conclusion": "SUCCESS"},
+			}
+			ctxs["pageInfo"] = map[string]any{"hasNextPage": false}
+		})
+		return pr
+	}
+
+	// Attempt 1: the check's current attempt is cancelled — failing is correct.
+	obs := scmObservationFromGraphQL(ref, fixture("CANCELLED"))
+	if obs.CI.Summary != string(domain.CIFailing) {
+		t.Fatalf("cancelled current attempt: CI summary = %q, want failing", obs.CI.Summary)
+	}
+
+	// Attempt 2: the check re-runs green; repeat observation must recover.
+	obs = scmObservationFromGraphQL(ref, fixture("SUCCESS"))
+	if obs.CI.Summary != string(domain.CIPassing) {
+		t.Fatalf("rerun green: CI summary = %q, want passing (failing must not survive a zero-failure observation)", obs.CI.Summary)
+	}
+	if obs.Mergeability.State != string(domain.MergeMergeable) {
+		t.Fatalf("rerun green: mergeability = %q, want mergeable", obs.Mergeability.State)
+	}
+}
+
 func TestSCMBatchQueryRequestsStablePullRequestID(t *testing.T) {
 	query, _ := buildSCMBatchQuery([]ports.SCMPRRef{{
 		Repo:   ports.SCMRepo{Provider: "github", Host: "github.com", Owner: "octocat", Name: "hello"},
