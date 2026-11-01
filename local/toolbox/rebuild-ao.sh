@@ -5,8 +5,8 @@
 # ao-local-build-update-procedure).
 #
 # Что делает: npm run package → staging в /Applications → codesign → атомарный
-# rm+mv живого бандла → сборка CLI в ~/.local/bin/ao → прямой запуск бинаря
-# (обход provenance/Gatekeeper) → poll ao status → готово.
+# rm+mv живого бандла → сборка CLI в ~/.local/bin/ao → запуск GUI через
+# launchd (open -a, со стрипом агентского env) → poll ao status → готово.
 #
 # Предполагает: запуск из корня репо agent-orchestrator, на нужной ветке.
 # Старые AO-процессы убивает сам (pkill). Данные durable в ~/.ao/data переживают.
@@ -179,13 +179,27 @@ else
   go -C "$REPO_ROOT/backend" build -o "$AO_BIN" ./cmd/ao
 fi
 
-# 5. Прямой запуск бинаря — 100% обход provenance/Gatekeeper/LaunchServices.
-#    env -i: чистое окружение без proxy-переменных агента (https_proxy и т.п.).
-#    Демон наследует env GUI; с агентским https_proxy его стартовые сетевые
-#    вызовы уходят в локальный прокси и вешают старт до открытия порта
-#    (наблюдалось 2026-10-14: демон жив, 3001 не слушает, ESTABLISHED к :8118).
-echo "==> запуск GUI (прямой exec бинаря, env -i, обход блок-листов)..."
-env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin "$APP_DST/Contents/MacOS/agent-orchestrator" >/dev/null 2>&1 &
+# 5. Запуск GUI через launchd (open -a), а не прямым exec бинаря: прямой exec
+#    обходил LaunchServices, поэтому launchctl setenv-инжекции (например
+#    AO_RIGHT_PANEL=expanded) до аппа не доезжали — правая панель переставала
+#    открываться после каждой пересборки. Компромисс: env аппа теперь задаёт
+#    launchd, а не env -i. Это же закрывает старую проблему агента структурно:
+#    https_proxy и прочее окружение claude-сессии не наследуется GUI в принципе
+#    (демон наследует env GUI; с агентским https_proxy его стартовые сетевые
+#    вызовы уходили в локальный прокси и вешали старт до открытия порта —
+#    2026-10-14). env -u ниже — страховка: стрип известных AO/claude-переменных
+#    воркера на случай путей, где env всё же протекает (проверено живьём
+#    2026-10-31: AO_RIGHT_PANEL доезжает, CHILD_SESSION не протекает).
+#    Gatekeeper/provenance больше не обходится — бандл переподписан в staging
+#    выше, карантин-атрибут на локальной сборке не ставится.
+echo "==> запуск GUI через launchd (open -a, стрип агентского env)..."
+env -u AO_OWNER -u AO_APP_RUN_ID -u AO_WAKE_HELPER -u AO_ACP_RUNTIME_DIR \
+    -u AO_TMUX_BINARY -u AO_TMUX_SOCKET_NAME -u AO_BROWSER_RUNTIME_ADDRESS \
+    -u AO_SESSION_ID -u AO_PERMISSION_MODE -u AO_PROJECT_ID \
+    -u AO_BROWSER_RUNTIME_TOKEN_STDIN -u AO_DATA_DIR -u AO_RUN_FILE \
+    -u AO_BROWSER_CAPABILITY -u AO_BROWSER_RUNTIME_TOKEN \
+    -u AO_SUPERVISED_PROCESS -u AO_ISSUE_ID -u AO_RUNTIME_LAUNCH_ID \
+    -u CHILD_SESSION open -a "$APP_DST"
 
 # 6. Post-check: ждём демон ready +全套 проверок (PID сменился, порт тот же, healthz).
 echo "==> жду демон ready (до 30с)..."
