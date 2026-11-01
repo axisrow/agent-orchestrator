@@ -335,10 +335,20 @@ func ciSummaryFromGraphQL(pr map[string]any) domain.CIState {
 		// rather than returning CIUnknown for an otherwise-decided PR.
 		return mapRollupState(str(roll["state"]))
 	}
+	state := ciStateFromContextNodes(rawNodes)
+	if state != domain.CIFailing && pageInfoHasMore(contexts) {
+		return domain.CIUnknown
+	}
+	return state
+}
+
+// ciStateFromContextNodes classifies a visible rollup context set:
+// failure-class entries win, then pending; a set with neither is passing
+// (or unknown when no context carries a decidable state).
+func ciStateFromContextNodes(rawNodes []map[string]any) domain.CIState {
 	pending, passing := false, false
 	for _, n := range rawNodes {
-		st := checkStatusFromGraphQL(n)
-		switch st {
+		switch checkStatusFromGraphQL(n) {
 		case domain.PRCheckFailed, domain.PRCheckCancelled:
 			return domain.CIFailing
 		case domain.PRCheckQueued, domain.PRCheckInProgress:
@@ -346,9 +356,6 @@ func ciSummaryFromGraphQL(pr map[string]any) domain.CIState {
 		case domain.PRCheckPassed:
 			passing = true
 		}
-	}
-	if pageInfoHasMore(contexts) {
-		return domain.CIUnknown
 	}
 	switch {
 	case pending:
