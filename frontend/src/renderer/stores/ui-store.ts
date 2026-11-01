@@ -118,6 +118,12 @@ export type WorkspaceFileOpenRequest = {
 	nonce: number;
 };
 
+/** The centre-pane tab a session last showed (its own pane, the reviewer, the reviewer chat, or a shell), restored when the user returns to it. */
+export type SessionTerminalTabMemory = {
+	terminalTarget: TerminalTarget;
+	reviewerChatId: string | null;
+};
+
 // Selection (which project/session is open) now lives in the URL — the router
 // is the single source of truth, read via route params. This store holds only
 // ephemeral UI: theme, sidebar collapse, command palette, per-session inspector
@@ -187,6 +193,10 @@ export type UiState = {
 	// session. Surfaces outside the session subtree (the notification runtime)
 	// need that distinction, and SessionView's own target is local state.
 	visibleTerminalKindBySession: Record<string, TerminalTarget["kind"]>;
+	// The centre-pane tab each session last showed, restored on return. A stored
+	// target that has since disappeared falls back to the session's own pane;
+	// SessionView's reconciliation effects re-check validity on restore.
+	terminalTabBySession: Record<string, SessionTerminalTabMemory>;
 	setWorkbenchTab: (tab: WorkbenchTab) => void;
 	setThemePreference: (theme: ThemePreference) => void;
 	setThemeStyle: (style: ThemeStyle) => void;
@@ -235,6 +245,7 @@ export type UiState = {
 	setActiveShellTerminal: (handleId: string | null) => void;
 	setVisibleTerminalKind: (sessionId: string, kind: TerminalTarget["kind"]) => void;
 	clearVisibleTerminalKind: (sessionId: string) => void;
+	setTerminalTab: (sessionId: string, tab: SessionTerminalTabMemory) => void;
 };
 
 export type OrchestratorReplacementFailure = {
@@ -346,6 +357,7 @@ export const useUiStore = create<UiState>((set, get) => ({
 	newShellTerminalNonce: 0,
 	activeShellTerminalHandleId: null,
 	visibleTerminalKindBySession: {},
+	terminalTabBySession: {},
 	setWorkbenchTab: (workbenchTab) => set({ workbenchTab }),
 	setThemePreference: (themePreference) => {
 		if (get().themePreference === themePreference) return;
@@ -660,6 +672,8 @@ export const useUiStore = create<UiState>((set, get) => ({
 			delete visibleTerminalKindBySession[sessionId];
 			return { visibleTerminalKindBySession };
 		}),
+	setTerminalTab: (sessionId, tab) =>
+		set((state) => ({ terminalTabBySession: { ...state.terminalTabBySession, [sessionId]: tab } })),
 }));
 
 export function useResolvedTheme(): Theme {
