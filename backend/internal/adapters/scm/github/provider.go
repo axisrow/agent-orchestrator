@@ -319,12 +319,14 @@ func (p *Provider) fetchJobLogTail(ctx context.Context, owner, repo string, jobI
 // ciStateFromContextNodes): a complete, failure-free latest-run set is
 // ground truth even when GitHub's aggregate state says FAILURE — the
 // aggregate keeps counting superseded runs that GitHub's own check UI does
-// not render (issue #230). When the rollup is paginated
-// (pageInfo.hasNextPage=true) the verdict is conservative: a known failure
-// is still safe — failures don't get un-failed by more pages — but
-// passing/pending/unknown verdicts could hide a failing context on the next
-// page, so we degrade them all to CIUnknown rather than risk reporting a
-// broken PR as ready.
+// not render (issue #230). While any latest run is still queued or in
+// progress the verdict is pending: an in-flight run can still flip an
+// earlier failure, so "running" must not be reported as failing
+// (issue #227). When the rollup is paginated (pageInfo.hasNextPage=true)
+// the verdict is conservative: a known failure is still safe — failures
+// don't get un-failed by more pages — but passing/pending/unknown verdicts
+// could hide a failing context on the next page, so we degrade them to
+// CIUnknown rather than risk reporting a broken PR as ready.
 func ciSummaryFromGraphQL(pr map[string]any) domain.CIState {
 	roll := statusRollup(pr)
 	if roll == nil {
@@ -354,19 +356,22 @@ func ciSummaryFromGraphQL(pr map[string]any) domain.CIState {
 }
 
 // ciStateFromContextNodes classifies a rollup context set by the LATEST run
-// per check name (the rows GitHub's check UI renders): failure-class entries
-// win, then pending; a set with neither is passing (or unknown when no
-// context carries a decidable state). Re-running a failed workflow creates a
-// new CheckRun while the superseded red run stays in statusCheckRollup.
-// contexts (issue #230, BeamCraft#407: 42 contexts for 32 checks; the
-// aggregate counted the superseded runs and stayed FAILURE over an all-green
-// latest set), so raw nodes must be collapsed before classification.
+// per check name (the rows GitHub's check UI renders): while any latest run
+// is queued or in progress the verdict is pending — an in-flight run can
+// still flip an earlier failure, so running must not read as failing
+// (issue #227). With nothing running, failure-class entries win; a set with
+// neither is passing (unknown when no context carries a decidable state).
+// Re-running a failed workflow creates a new CheckRun while the superseded
+// red run stays in statusCheckRollup.contexts (issue #230, BeamCraft#407:
+// 42 contexts for 32 checks; the aggregate counted the superseded runs and
+// stayed FAILURE over an all-green latest set), so raw nodes must be
+// collapsed before classification.
 func ciStateFromContextNodes(rawNodes []map[string]any) domain.CIState {
-	pending, passing := false, false
+	pending, failing, passing := false, false, false
 	for _, n := range latestRunNodesByName(rawNodes) {
 		switch checkStatusFromGraphQL(n) {
 		case domain.PRCheckFailed, domain.PRCheckCancelled:
-			return domain.CIFailing
+			failing = true
 		case domain.PRCheckQueued, domain.PRCheckInProgress:
 			pending = true
 		case domain.PRCheckPassed:
@@ -376,6 +381,8 @@ func ciStateFromContextNodes(rawNodes []map[string]any) domain.CIState {
 	switch {
 	case pending:
 		return domain.CIPending
+	case failing:
+		return domain.CIFailing
 	case passing:
 		return domain.CIPassing
 	default:

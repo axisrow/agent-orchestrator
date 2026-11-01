@@ -1,4 +1,4 @@
-export type PRDisplayTone = "neutral" | "passive" | "success" | "review" | "warning" | "error";
+export type PRDisplayTone = "neutral" | "passive" | "success" | "validating" | "review" | "warning" | "error";
 
 export type PRSummaryPartKey = "ci" | "review" | "merge";
 export type PRNoun = "check" | "comment" | "file" | "line" | "reason" | "reviewer";

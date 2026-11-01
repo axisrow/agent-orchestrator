@@ -393,6 +393,34 @@ describe("prCardPresentation", () => {
 		expect(presentation.supporting).toEqual([]);
 	});
 
+	it("maps the three CI states to distinct tones: validating (with spinner flag), error, success", () => {
+		const pending = prCardPresentation(
+			summary({ ci: { autoInjectCI: true, state: "pending", failingChecks: [] } }),
+		);
+		const failing = prCardPresentation(
+			summary({
+				ci: {
+					autoInjectCI: true,
+					state: "failing",
+					failingChecks: [{ name: "unit", status: "failed", conclusion: "failure", url: "https://ci/unit" }],
+				},
+			}),
+		);
+		const passing = prCardPresentation(
+			summary({ ci: { autoInjectCI: true, state: "passing", failingChecks: [] } }),
+		);
+
+		// pending must render neither as failing nor as the old neutral: it is
+		// the amber validating tone and carries the breathe flag that renders
+		// the spinner glyph.
+		expect(pending.primary).toMatchObject({ key: "ci", tone: "validating", breathe: true });
+		expect(pending.statusRows?.find((row) => row.key === "ci")).toMatchObject({ tone: "validating", breathe: true });
+		expect(failing.primary).toMatchObject({ key: "ci", tone: "error" });
+		expect(failing.primary.breathe).toBeFalsy();
+		expect(passing.primary).toMatchObject({ key: "merge", tone: "success" });
+		expect(passing.statusRows?.find((row) => row.key === "ci")).toMatchObject({ tone: "success" });
+	});
+
 	it("uses customer-facing copy for an unexplained merge blocker", () => {
 		const presentation = prCardPresentation(
 			summary({
