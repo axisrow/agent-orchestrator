@@ -1,3 +1,4 @@
+import { isMacPlatform } from "../../lib/platform";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -127,7 +128,7 @@ vi.mock("../TerminalPane", () => ({
 }));
 
 vi.mock("../../lib/platform", () => ({
-	isMacPlatform: () => true,
+	isMacPlatform: vi.fn(() => true),
 	isLinuxPlatform: () => false,
 	isWindowsPlatform: () => false,
 }));
@@ -1335,6 +1336,7 @@ describe("ChatWorkspace timeline", () => {
 		selection.removeAllRanges();
 		selection.addRange(range);
 		vi.spyOn(Range.prototype, "getClientRects").mockReturnValue([new DOMRect(40, 150, 100, 20)] as unknown as DOMRectList);
+		vi.spyOn(Range.prototype, "getBoundingClientRect").mockReturnValue(new DOMRect(40, 150, 100, 20));
 		vi.spyOn(log, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 600, 500));
 		fireEvent.mouseUp(log);
 		const button = screen.getByRole("button", { name: "Add to chat" });
@@ -1347,6 +1349,62 @@ describe("ChatWorkspace timeline", () => {
 		fireEvent.click(screen.getByRole("button", { name: "1 annotation" }));
 		expect(screen.getByRole("button", { name: selectedText })).toBeInTheDocument();
 		selection.removeAllRanges();
+	});
+
+	it.each(["Win32", "Linux x86_64", "MacIntel"])("adds selected chat text with the platform shortcut on %s", (platform) => {
+		vi.mocked(isMacPlatform).mockReturnValue(platform === "MacIntel");
+		const count = () => readChatSessionDraft(chatFixtureSettled.sessionId).composer.excerpts?.length ?? 0;
+		render(<ChatWorkspace snapshot={chatFixtureSettled} excerptsEnabled />);
+		const log = screen.getByRole("log", { name: "Conversation" });
+		const source = log.querySelector("[data-chat-message-id] [data-chat-message-body]")!;
+		const range = document.createRange(); range.selectNodeContents(source);
+		window.getSelection()!.removeAllRanges(); window.getSelection()!.addRange(range);
+		vi.spyOn(Range.prototype, "getClientRects").mockReturnValue([new DOMRect(40,150,100,20)] as unknown as DOMRectList);
+		vi.spyOn(Range.prototype, "getBoundingClientRect").mockReturnValue(new DOMRect(40,150,100,20));
+		vi.spyOn(log, "getBoundingClientRect").mockReturnValue(new DOMRect(0,0,600,500));
+		fireEvent.mouseUp(log);
+		const chord = { key: "l", ctrlKey: platform !== "MacIntel", metaKey: platform === "MacIntel" };
+		expect(fireEvent.keyDown(log,{...chord, ctrlKey:!chord.ctrlKey,metaKey:!chord.metaKey})).toBe(true);
+		expect(count()).toBe(0);
+		const browserControl = document.createElement("button"); document.body.append(browserControl);
+		expect(fireEvent.keyDown(browserControl,chord)).toBe(true);
+		expect(count()).toBe(0); browserControl.remove();
+		const menu = document.createElement("div"); menu.setAttribute("role","menu"); menu.setAttribute("data-state","open"); document.body.append(menu);
+		expect(fireEvent.keyDown(log,chord)).toBe(true); expect(count()).toBe(0);
+		menu.remove();
+		const input = document.createElement("input"); document.body.append(input);
+		expect(fireEvent.keyDown(input,chord)).toBe(true); expect(count()).toBe(0); input.remove();
+		expect(fireEvent.keyDown(log,{...chord,repeat:true})).toBe(false); expect(count()).toBe(0);
+		menu.setAttribute("data-state", "closed"); document.body.append(menu);
+		expect(fireEvent.keyDown(log,chord)).toBe(false);
+		menu.remove();
+		fireEvent.keyDown(log,chord);
+		expect(count()).toBe(1);
+		expect(fireEvent.keyDown(log,chord)).toBe(true);
+		window.getSelection()!.removeAllRanges();
+	});
+	it("scrolls to and highlights a navigated message even when its text does not match the rendered body", async () => {
+		const { rerender } = render(<ChatWorkspace snapshot={chatFixtureSettled} />);
+		const log = screen.getByRole("log", { name: "Conversation" });
+		const source = log.querySelector<HTMLElement>("[data-chat-message-id]")!;
+		const bounds = HTMLElement.prototype.getBoundingClientRect;
+		const geometry = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+			if (this === log) return new DOMRect(0, 0, 600, 500);
+			if (this === source) return new DOMRect(0, 900, 600, 80);
+			return bounds.call(this);
+		});
+		const scrollIntoView = vi.fn();
+		source.scrollIntoView = scrollIntoView;
+		rerender(<ChatWorkspace
+			snapshot={chatFixtureSettled}
+			annotationNavigationRequest={{ id: "palette:1", text: "- **raw** `markdown` line", messageId: source.dataset.chatMessageId }}
+		/>);
+		try {
+			await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "auto", block: "center" }));
+			expect(source.querySelector("[data-chat-message-body]")).toHaveClass("chat-annotation-target");
+		} finally {
+			geometry.mockRestore();
+		}
 	});
 
 	it("hides Add to chat on surfaces whose send does not forward excerpts", () => {
