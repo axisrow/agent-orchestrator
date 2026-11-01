@@ -260,7 +260,7 @@ func (s *Store) MarkReportBatchEmitted(ctx context.Context, projectID domain.Pro
 // message queue, so the delivery must not return to pending and re-append the
 // same content on every retry. Rows are fenced by the claim token like the
 // ack path; a zero count means the claim was lost.
-func (s *Store) FailReportBatchQueued(ctx context.Context, projectID domain.ProjectID, token string, lastError string) (int, error) {
+func (s *Store) FailReportBatchQueued(ctx context.Context, projectID domain.ProjectID, token, lastError string) (int, error) {
 	if projectID == "" || token == "" || lastError == "" {
 		return 0, domain.ErrInvalidReport
 	}
