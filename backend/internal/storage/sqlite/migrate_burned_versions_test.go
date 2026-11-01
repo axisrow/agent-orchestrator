@@ -224,6 +224,7 @@ var shippedMigrations = map[int64]string{
 	20261022172135182: "20261022172135182_report_emitted_at.sql",
 	20261022172135183: "20261022172135183_review_run_current_head_lookup.sql",
 	20261027143000000: "20261027143000000_delivery_ledger.sql",
+	20261028124744442: "20261028124744442_review_run_github_review_state.sql",
 	9001:              "9001_add_user_config.sql",
 	9006:              "9006_session_provider_stamp.sql",
 	9011:              "9011_gateway_entries.sql",
@@ -231,7 +232,6 @@ var shippedMigrations = map[int64]string{
 	9013:              "9013_app_settings_process_inventory.sql",
 	9014:              "9014_orphan_workers_notification.sql",
 	9015:              "9015_app_settings_scm_proxy_url.sql",
-	9016:              "9016_review_run_github_review_state.sql",
 }
 
 // burnedVersion reports version numbers that must never be (re)used: they

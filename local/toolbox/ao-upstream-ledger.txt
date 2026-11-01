@@ -294,3 +294,22 @@ d891b1da58e97adc6eeb024310743bf03516c30d taken fix(desktop): align macOS titleba
 4aec433d9077c7e1ef97605d920e7c44620a1eec skipped feat(mobile): treat AO Cloud's fixed addresses as stable tunnels (#7411)
 02d9c356fdb7e10c2140ec36223f82589d44bf5a skipped feat(mobile): start Connect Mobile from the sidebar, a switch to turn it off, and no note while remote access starts (#7507)
 c0b351a31eccaf1ac55f8e5015fd21ab414545ca skipped feat(remote): sign the machine's own AO Cloud requests with a host key (#7496)
+62a2de7f92c1ee8cf988b556dc128594341e3ed1 skipped Turn on Electron Sentry and telemetry for consented users (#7437)
+79ea8bde0cc97d1d744f41603b2c02a3b3d48073 skipped feat(i18n): add Russian as a UI language (#7484)
+ea9182a9939f3604c1a763202d577e594f2a9fac skipped fix(chat): dedupe spawn activity and show worker state (#7475) — builds on skipped #7096 (WorkerUpdates rows)
+1ead72090666b982a3d587f32643a4f0cb92ec88 taken fix(desktop): respawn the daemon after an unexpected exit (#6171) (#6197)
+17eb96011b3e4099a8098f49dea28e8b7a717d4a taken fix(report): never press Ctrl-C in terminal orchestrators for stuck reports (#7435) — union: сохранены settle #184, quiet-window, fail-loud #179; submit-отказ = retryLater; тесты Busy/Refused/Retries не портированы (стек #5713 скипнут, у форка send_acceptance)
+e060567a86cf2b067c67a427139fc3859c370229 taken fix(session): return CHAT_CONTROLLER_NOT_READY from send without a live controller (#7476)
+3671d4f7f83a2c48262cf62a408d643e5e96aa86 taken fix(workspace): preserve quoted Windows project script commands (#7246)
+96276e7d0ccdf954c07ed28c3f1d144a8d0ca0bd skipped fix(i18n): add missing Russian mobile strings (#7527) — builds on skipped #7484 (i18n ru), у форка ru.json удалён
+3f514ac26f1942e4b6af0e5a21dd9b5583742128 taken fix(remote): stop a reset remote tunnel from crashing the main process (#7515)
+b7091d814990db04ac6cb7f2a5c2f050d751b97e skipped feat(remote): link a headless machine to an AO account by signing in from another device (#7532)
+b66bb3ecbaa777350981bb53e11b5235a5e16845 skipped feat(mobile): browse, comment on and restore a session's artifacts (#7355)
+b097c11b1ac5fdd0377d2cac304c145223972e62 skipped perf(cloud): usable Chat sooner when a paused session wakes (#7525)
+962baa39df4a49dc41cc86f7de3388225f749d97 taken fix: preserve literal tabs in command cues (#6353)
+26ea26f84ae730b7a5896501668623d0e2151f02 taken fix: exclude unvisited bookmarks from Firefox history import (#6380)
+7fb506e6adcc95b688e9ec553abbc60143401498 skipped fix(cli): send PR URL and reviewed head when merging (#7243) — параллельная реализация: форк-CLI сам резолвит prUrl/expectedHeadSha из GET prs/{n} и уже шлёт их в POST /merge (+тест); ручные флаги --url/--expected-head-sha сломали бы автоматизацию конвейера
+0b85db444487af419d603945109d62d10c1f3c2d taken fix(billing): say Free includes every supported agent locally (#6963) — 7 живых локалей взяты, ru.json форк-удаление сохранено
+818a2ba863ec9e7796debb1caa63da7c28f9f32d taken fix(billing): say Free connects from anywhere via Tailscale or the tunnel (#6964) — 7 живых локалей взяты, ru.json форк-удаление сохранено
+4255167840b8c9024abb1b51f97ecb7619598fc6 taken fix(workspace): move orphaned worktree folders aside before add (#7483)
+9041e10a6c1dd0acb3e254063265d03ee95268d1 taken fix: preserve newer files when removing cancelled downloads (#6377) — живые файлы взяты, ru.json форк-удаление сохранено
