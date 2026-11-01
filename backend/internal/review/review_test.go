@@ -524,7 +524,7 @@ func (f *fakeLauncher) Alive(_ context.Context, _, _ string) (bool, error) {
 	f.aliveChecked = true
 	return f.alive || f.spawned || f.restored, f.aliveErr
 }
-func (f *fakeLauncher) Message(_ context.Context, handleID string, message string) error {
+func (f *fakeLauncher) Message(_ context.Context, handleID, message string) error {
 	f.messagedHandle = handleID
 	f.messages = append(f.messages, message)
 	return f.messageErr

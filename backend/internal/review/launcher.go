@@ -54,7 +54,7 @@ type Launcher interface {
 	// Message writes free-form text into an already-running reviewer pane,
 	// submitted — the same surface as typing in the desktop reviewer tab. It
 	// carries no review-task semantics: it is a person's continuation request.
-	Message(ctx context.Context, handleID string, message string) error
+	Message(ctx context.Context, handleID, message string) error
 	// Alive reports whether the exact reviewer process is still running.
 	Alive(ctx context.Context, handleID, launchID string) (bool, error)
 	// Reusable reports whether the harness accepts another review task in its
@@ -801,7 +801,7 @@ func (l *agentLauncher) Notify(ctx context.Context, handleID string, spec Launch
 
 // Message types a free-form message into a terminal reviewer pane, submitted.
 // Only terminal reviewers have a pane; chat reviewers are refused upstream.
-func (l *agentLauncher) Message(ctx context.Context, handleID string, message string) error {
+func (l *agentLauncher) Message(ctx context.Context, handleID, message string) error {
 	if strings.TrimSpace(handleID) == "" {
 		return fmt.Errorf("reviewer handle is required")
 	}
