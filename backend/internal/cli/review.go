@@ -875,8 +875,15 @@ func (c *commandContext) stopReview(cmd *cobra.Command, args []string, opts revi
 
 func writeReviewList(cmd *cobra.Command, session string, res listReviewsResponse) error {
 	out := cmd.OutOrStdout()
+	handle := strings.TrimSpace(res.ReviewerHandleID)
 	if len(res.Reviews) == 0 {
-		_, err := fmt.Fprintf(out, "No reviews found for %s.\n", session)
+		if handle == "" {
+			_, err := fmt.Fprintf(out, "No reviews found for %s.\n", session)
+			return err
+		}
+		// A restored reviewer pane can be live with no pass on record yet; the
+		// handle is then the only useful fact this command can report.
+		_, err := fmt.Fprintf(out, "No review passes for %s, but a reviewer pane is live: %s.\nSend it a message: `ao send --session %s --message \"...\"`\n", session, handle, handle)
 		return err
 	}
 
@@ -893,7 +900,16 @@ func writeReviewList(cmd *cobra.Command, session string, res listReviewsResponse
 			return err
 		}
 	}
-	return tw.Flush()
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	// The pane handle is the address `ao send` needs for this reviewer; without
+	// it here, `--json` was the only place it was discoverable.
+	if handle != "" {
+		_, err := fmt.Fprintf(out, "\nReviewer pane %s accepts messages: `ao send --session %s --message \"...\"`\n", handle, handle)
+		return err
+	}
+	return nil
 }
 
 // reviewersOnHead summarizes the distinct reviewers with a live or completed

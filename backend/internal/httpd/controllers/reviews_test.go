@@ -49,6 +49,9 @@ type fakeReviewService struct {
 	resolveCommentURL string
 	resolveErr        error
 	triggeredPRURL    string
+	sentRef           string
+	sentMessage       string
+	messageErr        error
 }
 
 func (*fakeReviewService) RecoverChatReviewers(context.Context) error { return nil }
@@ -166,6 +169,12 @@ func (f *fakeReviewService) SubmitMany(_ context.Context, _ domain.SessionID, re
 
 func (f *fakeReviewService) List(context.Context, domain.SessionID) (reviewcore.SessionReviews, error) {
 	return f.list, nil
+}
+
+func (f *fakeReviewService) SendMessageToReviewer(_ context.Context, ref, message string) error {
+	f.sentRef = ref
+	f.sentMessage = message
+	return f.messageErr
 }
 
 func newReviewTestServer(t *testing.T, svc reviewsvc.Manager) *httptest.Server {

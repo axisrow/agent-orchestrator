@@ -743,6 +743,13 @@ func TestReviewListGetsReviews(t *testing.T) {
 			t.Fatalf("stdout = %q, want %q", out, want)
 		}
 	}
+	// The pane handle is the `ao send` address for this reviewer; the table
+	// output must surface it, not just --json.
+	for _, want := range []string{"handle-1", `ao send --session handle-1 --message`} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("stdout = %q, want %q", out, want)
+		}
+	}
 }
 
 func TestReviewListJSONPreservesResponse(t *testing.T) {
@@ -791,6 +798,27 @@ func TestReviewListEmpty(t *testing.T) {
 	}
 	if !strings.Contains(out, "No reviews found for mer-1.") {
 		t.Fatalf("stdout = %q", out)
+	}
+}
+
+// A restored reviewer pane can be live with no pass on record; the handle is
+// then the only useful fact, so it is reported with its `ao send` address.
+func TestReviewListLivePaneWithoutPassesShowsHandle(t *testing.T) {
+	cfg := setReviewEnv(t)
+	srv, _ := reviewServer(t, http.StatusOK, `{"reviewerHandleId":"ptyhost-v1:review-mer-1","reviews":[]}`)
+	writeRunFileFor(t, cfg, srv)
+
+	out, errOut, err := executeCLI(t, aliveDeps(), "review", "list", "mer-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v\nstderr=%s", err, errOut)
+	}
+	for _, want := range []string{"ptyhost-v1:review-mer-1", `ao send --session ptyhost-v1:review-mer-1 --message`} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("stdout = %q, want %q", out, want)
+		}
+	}
+	if strings.Contains(out, "No reviews found") {
+		t.Fatalf("stdout = %q, want the live-pane hint", out)
 	}
 }
 

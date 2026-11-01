@@ -70,6 +70,7 @@ type Store interface {
 	SettleReviewChatWork(ctx stdctx.Context, reviewID string, now time.Time) error
 	SetSessionReviewerConfig(ctx stdctx.Context, id domain.SessionID, harness domain.ReviewerHarness, config domain.AgentConfig, updatedAt time.Time) (bool, error)
 	GetReviewBySession(ctx stdctx.Context, id domain.SessionID) (domain.Review, bool, error)
+	ListLiveReviewerHandles(ctx stdctx.Context) ([]domain.ReviewerHandle, error)
 	ClearReviewerHandle(ctx stdctx.Context, id domain.SessionID) error
 	GetReviewBySessionAndHarness(ctx stdctx.Context, id domain.SessionID, harness domain.ReviewerHarness) (domain.Review, bool, error)
 	ListReviewsBySession(ctx stdctx.Context, id domain.SessionID) ([]domain.Review, error)
@@ -2030,6 +2031,80 @@ func (e *Engine) terminateReviewer(ctx stdctx.Context, workerID domain.SessionID
 		cancelled = append(cancelled, run)
 	}
 	return TerminateResult{ReviewerHandleID: destroyedHandle, CancelledRuns: cancelled}, nil
+}
+
+// SendMessageToReviewerHandle types a free-form message into the terminal
+// reviewer pane named by ref — the reviewerHandleId `ao review ls --json`
+// reports (`review-<worker>`, with or without its runtime host prefix). It is
+// the CLI continuation path for a reviewer that stopped mid-pass: reviewers
+// have no session row of their own, so an ordinary `ao send` cannot resolve
+// them. Chat reviewers have no pane and are refused with their own error.
+func (e *Engine) SendMessageToReviewerHandle(ctx stdctx.Context, ref, message string) error {
+	name, ok := ReviewerHandleRefName(ref)
+	if !ok {
+		return fmt.Errorf("%w: %q does not name a reviewer pane; use the reviewerHandleId from `ao review ls --json`", ErrInvalid, ref)
+	}
+	if strings.TrimSpace(message) == "" {
+		return fmt.Errorf("%w: message is required", ErrInvalid)
+	}
+	if err := e.waitForChatRecovery(ctx); err != nil {
+		return err
+	}
+	handles, err := e.store.ListLiveReviewerHandles(ctx)
+	if err != nil {
+		return err
+	}
+	// One worker can hold several review rows naming the same handle: the
+	// handle is derived from the worker id, and a harness switch with a pass
+	// still running leaves the old harness row holding it while Spawn recreates
+	// the pane under the new row with a fresh launch id. The scan has no order,
+	// so a match is only a candidate: reload and vet each one and deliver to
+	// the first viable row instead of trusting the first match.
+	want := "review-" + name
+	matched, deadRow, archived := false, (*domain.Review)(nil), false
+	for _, h := range handles {
+		if normalizeStoredReviewerHandle(h.HandleID) != want {
+			continue
+		}
+		matched = true
+		// The handle scan returns only identity columns; reload the row for the
+		// interface mode, launch id, and archive state the delivery checks need.
+		review, ok, err := e.store.GetReviewBySessionAndHarness(ctx, h.SessionID, h.Harness)
+		if err != nil {
+			return err
+		}
+		if !ok || review.ID != h.ReviewID {
+			continue
+		}
+		if review.IsArchived {
+			archived = true
+			continue
+		}
+		if review.InterfaceMode == domain.ReviewerInterfaceChat {
+			continue
+		}
+		// A dead pane is skipped in favor of a later candidate, not fatal: a
+		// probe is per-launch, so the stale row of a harness switch probes dead
+		// while the replacement pane is alive. A failed probe is unknown, not
+		// dead (same policy as reconcileExitedReviewer), so the delivery itself
+		// then reports what actually happened.
+		if alive, err := e.launcher.Alive(ctx, review.ReviewerHandleID, review.ReviewerLaunchID); err == nil && !alive {
+			row := review
+			deadRow = &row
+			continue
+		}
+		return e.launcher.Message(ctx, review.ReviewerHandleID, message)
+	}
+	if deadRow != nil {
+		return fmt.Errorf("%w: reviewer pane %q for session %q is not running; restore it from the reviewer tab in the desktop app, or start a new pass with `ao review trigger %s --rerun`", ErrNotFound, deadRow.ReviewerHandleID, deadRow.SessionID, deadRow.SessionID)
+	}
+	if archived {
+		return fmt.Errorf("%w: reviewer pane %q is archived; start a new pass with `ao review trigger`", ErrNotFound, want)
+	}
+	if !matched {
+		return fmt.Errorf("%w: no live reviewer pane %q; check `ao review ls --json` for the current reviewerHandleId", ErrNotFound, want)
+	}
+	return fmt.Errorf("%w: reviewer pane %q is not deliverable", ErrNotFound, want)
 }
 
 // reviewerSelection resolves which reviewer reviews the worker's PR: a

@@ -83,6 +83,10 @@ type Manager interface {
 	Submit(ctx context.Context, workerID domain.SessionID, runID string, verdict domain.ReviewVerdict, body string, findings []domain.ReviewFinding) (domain.ReviewRun, error)
 	SubmitMany(ctx context.Context, workerID domain.SessionID, reviews []SubmittedReview) ([]domain.ReviewRun, error)
 	List(ctx context.Context, workerID domain.SessionID) (reviewcore.SessionReviews, error)
+	// SendMessageToReviewer types a free-form message into the terminal reviewer
+	// pane named by ref (the reviewerHandleId from `ao review ls --json`). It is
+	// the delivery path behind `ao send --session <reviewer-handle>`.
+	SendMessageToReviewer(ctx context.Context, ref, message string) error
 }
 
 // Reducer is the lifecycle reaction boundary used after a review result has
@@ -1404,6 +1408,14 @@ func (s *Service) currentHeadsByPR(ctx context.Context, workerID domain.SessionI
 // List returns a worker's review state.
 func (s *Service) List(ctx context.Context, workerID domain.SessionID) (reviewcore.SessionReviews, error) {
 	return s.engine.List(ctx, workerID)
+}
+
+// SendMessageToReviewer types a free-form message into the terminal reviewer
+// pane named by ref (the reviewerHandleId from `ao review ls --json`). It backs
+// `ao send --session <reviewer-handle>`: reviewer panes have no session row, so
+// the ordinary session send cannot resolve them.
+func (s *Service) SendMessageToReviewer(ctx context.Context, ref, message string) error {
+	return s.engine.SendMessageToReviewerHandle(ctx, ref, message)
 }
 
 // ArchiveReviewer retires the reviewer surface while preserving its history.
