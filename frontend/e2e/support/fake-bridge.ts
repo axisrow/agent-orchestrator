@@ -60,6 +60,7 @@ export async function installFakeBridge(page: Page, opts: FakeBridgeOptions = {}
 			const ao = {
 					launch: {
 						rightPanelExpanded: false,
+						linksExternal: false,
 					},
 					app: {
 						getVersion: async () => version,
@@ -905,6 +906,7 @@ export async function installFakeAgent(page: Page, opts: FakeAgentOptions = {}):
 			const ao = {
 					launch: {
 						rightPanelExpanded: false,
+						linksExternal: false,
 					},
 					app: {
 						getVersion: async () => version,
