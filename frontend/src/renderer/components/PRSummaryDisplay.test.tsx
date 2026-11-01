@@ -134,6 +134,24 @@ describe("PRSummaryParts", () => {
 		expect(screen.queryByRole("link", { name: "renderer-smoke" })).not.toBeInTheDocument();
 	});
 
+	it("states each blocking fact once and keeps the merge verdict to one line (#160)", () => {
+		render(
+			<PRCardStatusSummary
+				pr={summary({
+					mergeability: { state: "conflicting", reasons: [], prUrl: "https://github.com/acme/repo/pull/7" },
+				})}
+			/>,
+		);
+
+		expect(screen.getAllByText("Merge conflict")).toHaveLength(1);
+		expect(screen.getByText("Checks passing")).toBeInTheDocument();
+		expect(screen.getByText("Review status")).toBeInTheDocument();
+		expect(screen.getByText("Not mergeable yet")).toBeInTheDocument();
+		expect(
+			screen.queryByText("One approval is sufficient, but the merge conflict still blocks this PR."),
+		).not.toBeInTheDocument();
+	});
+
 	it("localizes changed-file plurals instead of rebuilding English nouns", async () => {
 		await appI18n.changeLanguage("zh-CN");
 		useLocaleStore.setState({ locale: "zh-CN" });

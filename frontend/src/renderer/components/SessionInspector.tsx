@@ -69,7 +69,7 @@ import { sessionWorkspaceFilesQueryKey, sessionWorkspaceHistoryQueryOptions, use
 import { useCloudCp } from "../hooks/useCloudCp";
 import { useSessionBrowserLink } from "../hooks/useSessionBrowserLink";
 import { clearTerminateSessionState, useTerminateSession } from "../hooks/useTerminateSession";
-import { prBrowserUrl, prCanMerge, prCardPresentation, prNounKeys, prRepositoryFromUrl, prsSpanRepositories, sessionPRDisplaySummaries } from "../lib/pr-display";
+import { prBrowserUrl, prCanMerge, prCardPresentation, prNounKeys, prRepositoryFromUrl, sessionPRDisplaySummaries } from "../lib/pr-display";
 import type { SessionArtifact, WorkspaceSession, WorkspaceSummary } from "../types/workspace";
 import {
 	openPRs,
@@ -453,7 +453,6 @@ const SummaryView = memo(function SummaryView({
 						<PRSummaryCard
 							canOpenReviews={canOpenReviews}
 							key={pr.url || pr.htmlUrl || pr.number}
-							showRepository={prsSpanRepositories(prSummaries)}
 							onOpenReviews={onOpenReviews}
 							pr={pr}
 							aoReview={aoReviewFor(pr)}
@@ -877,7 +876,6 @@ function PRSummaryCard({
 	pr,
 	aoReview,
 	sessionId,
-	showRepository = false,
 }: {
 	canOpenReviews: boolean;
 	hostId?: string;
@@ -887,8 +885,6 @@ function PRSummaryCard({
 	/** AO reviewer verdict for this PR, from the shared reviews query. */
 	aoReview?: PRReviewState;
 	sessionId: string;
-	/** Label the card with its repository: the session has PRs on several. */
-	showRepository?: boolean;
 }) {
 	const { t } = useTranslation();
 	const queryClient = useQueryClient();
@@ -939,7 +935,7 @@ function PRSummaryCard({
 		card: presentation,
 		href: prBrowserUrl(pr),
 		stateLabel: t(prStateLabelKeys[pr.state]),
-		repositoryLabel: showRepository ? pr.repo || prRepositoryFromUrl(pr.htmlUrl || pr.url) : undefined,
+		repositoryLabel: pr.repo || prRepositoryFromUrl(pr.htmlUrl || pr.url),
 		reviewDetailsAction: canOpenReviews && pr.review.decision !== "none" ? (
 			<button className="whitespace-nowrap text-settings-muted underline-offset-2 hover:underline" onClick={onOpenReviews} type="button">
 				<span className="text-xs">{t("pr.review.viewDetails")} ↗</span>
