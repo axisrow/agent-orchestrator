@@ -150,11 +150,34 @@ func interactiveTerminalEnv(base []string, configured map[string]string, assignm
 		}
 		env = append(env, entry)
 	}
-
+	// Explicit configuration replaces inherited entries with the same key. The
+	// merged slice reaches exec verbatim, so a key carried by both would land in
+	// the child twice and the winning value would depend on whichever lookup
+	// order the child's runtime happens to pick — the stamped HOME (#248) must
+	// deterministically beat the base env the launching process inherited.
+	replaced := make(map[string]struct{}, len(configured)+len(assignments))
+	assigned := make(map[string]struct{}, len(assignments))
+	for _, entry := range assignments {
+		if key, _, ok := strings.Cut(entry, "="); ok {
+			replaced[key] = struct{}{}
+			assigned[key] = struct{}{}
+		}
+	}
+	for key := range configured {
+		replaced[key] = struct{}{}
+	}
 	for _, entry := range base {
+		if key, _, ok := strings.Cut(entry, "="); ok {
+			if _, drop := replaced[key]; drop {
+				continue
+			}
+		}
 		appendEntry(entry, false)
 	}
 	for key, value := range configured {
+		if _, later := assigned[key]; later {
+			continue
+		}
 		appendEntry(key+"="+value, true)
 	}
 	for _, entry := range assignments {

@@ -26,6 +26,7 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/runtime/conpty/ptyregistry"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/workspace/gitworktree"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/workspace/scratch"
+	"github.com/aoagents/agent-orchestrator/backend/internal/agentlaunch"
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 	"github.com/aoagents/agent-orchestrator/backend/internal/lifecycle"
 	"github.com/aoagents/agent-orchestrator/backend/internal/orphanreap"
@@ -8278,6 +8279,73 @@ func TestSpawn_ProjectPATHIsPinBase(t *testing.T) {
 	want := filepath.Dir(daemonExe) + string(os.PathListSeparator) + "/proj/bin"
 	if got := rt.lastCfg.Env["PATH"]; got != want {
 		t.Fatalf("runtime env PATH = %q, want %q", got, want)
+	}
+}
+
+// TestSpawnAndRestore_SessionHomeIsTheAccountHome pins the issue #248
+// invariant on every launch path: a session's HOME is the OS account's real
+// home, never a sandbox value inherited from a foreign daemon environment.
+// The daemon process's own HOME cannot be the carrier either way — the stamp
+// resolves the account home without consulting the environment — but a spawn
+// that produced no HOME at all would fall back to the tmux server's or pty
+// host's inherited value, which is exactly how issue #248 leaked.
+func TestSpawnAndRestore_SessionHomeIsTheAccountHome(t *testing.T) {
+	want := agentlaunch.RealUserHome()
+	if want == "" {
+		t.Skip("platform cannot resolve the account home (pure-Go user database)")
+	}
+	if want == "/private/tmp/ao228-home" {
+		t.Skip("this machine's account home is the sandbox path itself")
+	}
+	daemonExe := filepath.Join(t.TempDir(), "ao")
+	cases := []struct {
+		name   string
+		launch func(m *Manager, st *fakeStore) error
+	}{
+		{
+			name: "spawn",
+			launch: func(m *Manager, st *fakeStore) error {
+				_, _, _, err := m.Spawn(ctx, ports.SpawnConfig{ProjectID: "mer", Kind: domain.KindWorker})
+				return err
+			},
+		},
+		{
+			name: "restore",
+			launch: func(m *Manager, st *fakeStore) error {
+				seedTerminal(st, "mer-1", domain.SessionMetadata{WorkspacePath: "/ws/mer-1", Branch: "b", AgentSessionID: "agent-x"})
+				_, err := m.RestoreWithMode(ctx, "mer-1")
+				return err
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m, st, rt, _ := pathPinManager(func() (string, error) { return daemonExe, nil })
+			m.dataDir = t.TempDir()
+			if err := tc.launch(m, st); err != nil {
+				t.Fatal(err)
+			}
+			if got := rt.lastCfg.Env["HOME"]; got != want {
+				t.Fatalf("runtime env HOME = %q, want the account home %q (a foreign HOME must not reach a session, issue #248)", got, want)
+			}
+		})
+	}
+}
+
+// An explicit project HOME is configuration, not leakage: the stamp must keep
+// it rather than pinning the account home over it.
+func TestSpawn_ProjectHomeOverrideWins(t *testing.T) {
+	daemonExe := filepath.Join(t.TempDir(), "ao")
+	m, st, rt, _ := pathPinManager(func() (string, error) { return daemonExe, nil })
+	st.projects["mer"] = domain.ProjectRecord{ID: "mer", Config: domain.ProjectConfig{
+		Env:    map[string]string{"HOME": "/proj/home"},
+		Worker: domain.RoleOverride{Harness: domain.HarnessClaudeCode},
+	}}
+	if _, _, _, err := m.Spawn(ctx, ports.SpawnConfig{ProjectID: "mer", Kind: domain.KindWorker}); err != nil {
+		t.Fatal(err)
+	}
+	if got := rt.lastCfg.Env["HOME"]; got != "/proj/home" {
+		t.Fatalf("runtime env HOME = %q, want the explicit project value", got)
 	}
 }
 
