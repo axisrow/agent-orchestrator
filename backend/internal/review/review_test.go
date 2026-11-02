@@ -3423,6 +3423,28 @@ func TestTriggerAfterUserStopStartsNewRunningRun(t *testing.T) {
 	if store.runs[1].Status != domain.ReviewRunRunning {
 		t.Fatalf("new run = %+v, want running", store.runs[1])
 	}
+	// The creating trigger resets the row to active before inserting the run
+	// (TriggerWithOptions upserts ActivityActive ahead of InsertReviewRun), so
+	// the exited report of the stopped generation must not fail the fresh one
+	// on the first List before the new generation's first activity hook.
+	got, err := eng.List(context.Background(), "mer-1")
+	if err != nil {
+		t.Fatalf("List after retrigger: %v", err)
+	}
+	if got.ReviewerActivityState != domain.ActivityActive {
+		t.Fatalf("activity after retrigger = %q, want active", got.ReviewerActivityState)
+	}
+	if len(got.Runs) != 2 {
+		t.Fatalf("runs after retrigger = %+v, want both passes", got.Runs)
+	}
+	for _, run := range got.Runs {
+		if run.ID == "run-1" {
+			continue
+		}
+		if run.Status != domain.ReviewRunRunning {
+			t.Fatalf("fresh run after retrigger = %+v, want still running", run)
+		}
+	}
 }
 
 func TestListDoesNotTreatReviewerProbeFailureAsExit(t *testing.T) {
