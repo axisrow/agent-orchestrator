@@ -1709,11 +1709,24 @@ func reviewerRowActive(review domain.Review, runs []domain.ReviewRun) bool {
 
 const reviewerExitedBeforeSubmission = "reviewer process exited before submitting a result"
 
-// reconcileExitedReviewer converts a definitively dead active reviewer into
-// durable failed-run facts. Probe errors are intentionally ignored: an unknown
-// runtime state is not proof that the reviewer exited.
+// reviewerStoppedByUser is the failed-run reason when the reviewer's own
+// supervisor reported the process exit mid-pass, which is how a user-stopped
+// reviewer pane reaches AO.
+const reviewerStoppedByUser = "stopped by user"
+
+// reconcileExitedReviewer converts a definitively dead reviewer into durable
+// failed-run facts. Probe errors are intentionally ignored: an unknown runtime
+// state is not proof that the reviewer exited.
 func (e *Engine) reconcileExitedReviewer(ctx stdctx.Context, review *domain.Review, runs []domain.ReviewRun) (bool, error) {
-	if review.ID == "" || review.ReviewerHandleID == "" || review.ReviewerActivityState != domain.ActivityActive {
+	if review.ID == "" || review.ReviewerHandleID == "" {
+		return false, nil
+	}
+	// The reviewer's supervisor reports the process exit as a launch-fenced
+	// activity signal, so an exited row still holding a running pass is a pane
+	// the user stopped mid-review: the pass cannot finish and needs no probe.
+	// Without this, a user-stopped reviewer left its pass running forever.
+	hookExited := review.ReviewerActivityState == domain.ActivityExited
+	if !hookExited && review.ReviewerActivityState != domain.ActivityActive {
 		return false, nil
 	}
 	hasRunning := false
@@ -1726,21 +1739,31 @@ func (e *Engine) reconcileExitedReviewer(ctx stdctx.Context, review *domain.Revi
 	if !hasRunning {
 		return false, nil
 	}
-	alive, err := e.launcher.Alive(ctx, review.ReviewerHandleID, review.ReviewerLaunchID)
-	if err != nil {
-		// An unavailable probe is unknown, not evidence that the reviewer died.
-		alive = true
+	if !hookExited {
+		alive, err := e.launcher.Alive(ctx, review.ReviewerHandleID, review.ReviewerLaunchID)
+		if err != nil {
+			// An unavailable probe is unknown, not evidence that the reviewer died.
+			alive = true
+		}
+		if alive {
+			return false, nil
+		}
 	}
-	if alive {
-		return false, nil
+	body := reviewerExitedBeforeSubmission
+	if hookExited {
+		body = reviewerStoppedByUser
 	}
 	for _, run := range runs {
 		if run.ReviewID != review.ID || run.Status != domain.ReviewRunRunning {
 			continue
 		}
-		if _, err := e.store.UpdateReviewRunResult(ctx, run.ID, domain.ReviewRunFailed, domain.VerdictNone, reviewerExitedBeforeSubmission, "", "", run.AutoInjectReview); err != nil {
+		if _, err := e.store.UpdateReviewRunResult(ctx, run.ID, domain.ReviewRunFailed, domain.VerdictNone, body, "", "", run.AutoInjectReview); err != nil {
 			return false, err
 		}
+	}
+	if hookExited {
+		// The row already carries the exited report; only the runs changed.
+		return true, nil
 	}
 	review.ReviewerActivityState = domain.ActivityExited
 	review.UpdatedAt = e.clock()
