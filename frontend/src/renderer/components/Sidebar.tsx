@@ -118,6 +118,7 @@ import { BuildInfoTooltip } from "./BuildInfoTooltip";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { OrchestratorIcon } from "./icons";
 import { Badge } from "./ui/badge";
+import { CopyButton } from "./chat/CopyButton";
 import { cn } from "../lib/utils";
 import { recordManualWorkerOpen } from "../lib/session-management-telemetry";
 import { SettingsSaveStatus, useSettingsPage } from "./SettingsDialog";
@@ -1380,10 +1381,16 @@ const ProjectItem = memo(function ProjectItem({
 	const requestNewTask = useUiStore((state) => state.requestNewTask);
 	const showGlobalToast = useUiStore((state) => state.showGlobalToast);
 	// Copy the bare project name (not the host-decorated display variant).
+	// Menus have no in-place place to confirm, so they toast; the row action
+	// confirms in place via CopyButton instead.
 	const copyProjectName = () => {
 		void aoBridge.clipboard.writeText(workspace.name).then(
-			() => showGlobalToast(t("shell.projectNameCopied")),
-			() => showGlobalToast(t("shell.projectNameCopyFailed"), undefined, "error"),
+			() => showGlobalToast(t("shell.projectNameCopied"), undefined, { dedupeKey: "sidebar-copy-project-name" }),
+			() =>
+				showGlobalToast(t("shell.projectNameCopyFailed"), undefined, {
+					dedupeKey: "sidebar-copy-project-name",
+					tone: "error",
+				}),
 		);
 	};
 	const projectIsDragging = isDragged;
@@ -1632,7 +1639,7 @@ const ProjectItem = memo(function ProjectItem({
 										// Projects header so icons and labels share one left edge.
 										SIDEBAR_ROW_CLASS,
 										!workspace.hostId && "cursor-grab active:cursor-grabbing",
-										"pr-sidebar-project-actions",
+										"pr-sidebar-project-row-actions",
 										"transition-none",
 										projectIsDragging && "!cursor-grabbing",
 										projectDragInProgress && "hover:text-muted-foreground active:text-muted-foreground",
@@ -1756,23 +1763,15 @@ const ProjectItem = memo(function ProjectItem({
 													: t("shell.spawnOrchestratorLower")}
 									</TooltipContent>
 								</Tooltip>
-								<Tooltip>
-									<TooltipTrigger asChild>
-										<span className="inline-flex">
-											<button
-												aria-label={t("shell.copyProjectNameFor", {
-													name: nameWithHost,
-												})}
-												className={HOVER_ACTION_CLASS}
-												type="button"
-												onClick={copyProjectName}
-											>
-												<Copy aria-hidden="true" />
-											</button>
-										</span>
-									</TooltipTrigger>
-									<TooltipContent>{t("shell.copyProjectName")}</TooltipContent>
-								</Tooltip>
+								<CopyButton
+									compact
+									className={HOVER_ACTION_CLASS}
+									copiedLabel={t("shell.projectNameCopied")}
+									label={t("shell.copyProjectNameFor", {
+										name: nameWithHost,
+									})}
+									text={workspace.name}
+								/>
 								<DropdownMenu>
 									<DropdownMenuTrigger asChild>
 										<button

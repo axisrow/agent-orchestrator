@@ -414,6 +414,9 @@
 	--size-textarea-min: 112px;
 	/* Two 24px actions + one 6px gap + 4px right inset + 4px label clearance. */
 	--size-sidebar-project-actions: 58px;
+	/* Project rows keep a third always-visible action (copy name), so they
+	   reserve more label room than the two-button session rows above. */
+	--size-sidebar-project-row-actions: 84px;
 
 	/* Shared inset-panel geometry (welcome board + settings page) */
 	--size-center-panel-inset: 24px;

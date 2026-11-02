@@ -986,9 +986,13 @@ describe("Sidebar", () => {
 		const user = userEvent.setup();
 		const writeText = vi.fn().mockResolvedValue(undefined);
 		window.ao!.clipboard.writeText = writeText;
+		useUiStore.getState().clearGlobalToast();
 		renderSidebar();
 		await user.click(screen.getByRole("button", { name: "Copy project name for Project One" }));
 		await waitFor(() => expect(writeText).toHaveBeenCalledWith("Project One"));
+		// Confirms in place (Copy -> Check swap); this path never toasts.
+		expect(await screen.findByRole("button", { name: "Project name copied" })).toBeInTheDocument();
+		expect(useUiStore.getState().globalToast).toBeNull();
 		expect(navigateMock).not.toHaveBeenCalled();
 	});
 
@@ -2288,7 +2292,7 @@ describe("Sidebar", () => {
 		const actionCluster = screen.getByLabelText("Project actions for Project One").parentElement;
 
 		if (!projectRow) throw new Error("Project row button not found");
-		expect(projectRow).toHaveClass("pr-sidebar-project-actions");
+		expect(projectRow).toHaveClass("pr-sidebar-project-row-actions");
 		expect(actionCluster).toHaveAttribute("data-project-actions");
 		expect(actionCluster).toHaveClass("right-1", "gap-0.5");
 		expect(within(actionCluster as HTMLElement).getAllByRole("button")).toHaveLength(3);
