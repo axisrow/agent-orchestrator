@@ -268,6 +268,49 @@ describe("portable inspector presentations", () => {
     expect(screen.getByRole("button", { name: "Merge" })).toBeInTheDocument();
   });
 
+  it("keeps the PR number visible and truncates only the repository name", () => {
+    render(
+      <InspectorPullRequestCardView
+        countNounLabel={(count, noun) => `${count} ${noun}s`}
+        externalLink={ExternalLink}
+        openLabel="Open PR #234"
+        pr={{
+          additions: 0,
+          author: "ada",
+          card: {
+            primary: {
+              key: "merge",
+              label: "Ready to merge",
+              links: [],
+              tone: "success",
+            },
+            supporting: [],
+          },
+          changedFiles: 1,
+          deletions: 0,
+          href: "https://github.com/axisrow/agent-orchestrator/pull/234",
+          number: 234,
+          provider: "github",
+          repositoryLabel: "axisrow/agent-orchestrator",
+          sourceBranch: "feature",
+          state: "open",
+          stateLabel: "open",
+          targetBranch: "main",
+        }}
+      />,
+    );
+
+    const number = screen.getByText("PR #234");
+    const repo = screen.getByText("axisrow/agent-orchestrator");
+    expect(number).toHaveClass("shrink-0");
+    expect(number).not.toHaveClass("truncate");
+    expect(repo).toHaveClass("truncate");
+    expect(repo).toHaveAttribute("title", "axisrow/agent-orchestrator");
+    expect(
+      number.compareDocumentPosition(repo) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it("renders timeline events with current-state marker treatment", () => {
     render(
       <InspectorActivityTimelineView
