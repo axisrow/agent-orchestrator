@@ -13,7 +13,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -55,15 +54,10 @@ const (
 	TargetAider       Target = "aider"
 	TargetCopilot     Target = "copilot"
 	TargetGrok        Target = "grok"
-	TargetKimi        Target = "kimi"
 	TargetPi          Target = "pi"
-	TargetAmp         Target = "amp"
 	TargetAuggie      Target = "auggie"
-	TargetDroid       Target = "droid"
 	TargetCrush       Target = "crush"
 	TargetCline       Target = "cline"
-	TargetGoose       Target = "goose"
-	TargetQwen        Target = "qwen"
 	TargetGemini      Target = "gemini"
 	TargetContinue    Target = "continue"
 	TargetDevin       Target = "devin"
@@ -71,19 +65,15 @@ const (
 	TargetKilocode    Target = "kilocode"
 	TargetVibe        Target = "vibe"
 	TargetMuse        Target = "muse"
-	TargetAgy         Target = "agy"
-	TargetAutohand    Target = "autohand"
 	TargetKimchi      Target = "kimchi"
 	TargetPrimeAgent  Target = "prime-agent"
 	TargetOMP         Target = "omp"
-	TargetFX          Target = "fx"
 	TargetUnreal      Target = "unreal-agent"
 	TargetCodewhale   Target = "codewhale"
 	TargetMiMoCode    Target = "mimo-code"
 	TargetDeepSeek    Target = "deepseek-harness"
 	TargetOpenHands   Target = "openhands"
 	TargetCommandCode Target = "command-code"
-	TargetMemcode     Target = "memcode"
 	// TargetCloudflared is the optional connector that makes a paired phone
 	// reachable from outside the local network.
 	TargetCloudflared Target = "cloudflared"
@@ -92,12 +82,12 @@ const (
 // agentTargets is the stable settings-page order.
 var agentTargets = []Target{
 	TargetClaudeCode, TargetCodex, TargetCursor, TargetOpencode, TargetOpencodeV2, TargetAider,
-	TargetCopilot, TargetGrok, TargetKimi, TargetPi, TargetAmp, TargetAuggie,
-	TargetDroid, TargetCrush, TargetCline, TargetGoose, TargetQwen, TargetGemini,
+	TargetCopilot, TargetGrok, TargetPi, TargetAuggie,
+	TargetCrush, TargetCline, TargetGemini,
 	TargetContinue, TargetDevin, TargetKiro, TargetKilocode, TargetVibe,
-	TargetMuse, TargetAgy, TargetAutohand, TargetKimchi, TargetPrimeAgent,
-	TargetOMP, TargetFX, TargetUnreal, TargetCodewhale, TargetMiMoCode, TargetDeepSeek, TargetOpenHands,
-	TargetCommandCode, TargetMemcode,
+	TargetMuse, TargetKimchi, TargetPrimeAgent,
+	TargetOMP, TargetUnreal, TargetCodewhale, TargetMiMoCode, TargetDeepSeek, TargetOpenHands,
+	TargetCommandCode,
 }
 
 var agentTargetSet = func() map[Target]bool {
@@ -326,7 +316,7 @@ var devinInstalledLine = regexp.MustCompile(`Installed devin v\S+ to [^\r\n]+/de
 
 // Job is the tracked state of one harness operation for a Target.
 type Job struct {
-	Target              Target `json:"target" enum:"tmux,gh,claude,claude-code,codex,cursor,opencode,opencode-v2,aider,copilot,grok,kimi,pi,amp,auggie,droid,crush,cline,goose,qwen,gemini,continue,devin,kiro,kilocode,vibe,muse,agy,autohand,kimchi,prime-agent,omp,fx,unreal-agent,codewhale,mimo-code,deepseek-harness,openhands,command-code,memcode,cloudflared" description:"Fixed install target this job ran (or is running) for."`
+	Target              Target `json:"target" enum:"tmux,gh,claude,claude-code,codex,cursor,opencode,opencode-v2,aider,copilot,grok,pi,auggie,crush,cline,gemini,continue,devin,kiro,kilocode,vibe,muse,kimchi,prime-agent,omp,unreal-agent,codewhale,mimo-code,deepseek-harness,openhands,command-code,cloudflared" description:"Fixed install target this job ran (or is running) for."`
 	Status              Status `json:"status" enum:"idle,running,waiting_for_idle,installing,verifying,succeeded,failed,unsupported,interrupted" description:"Current lifecycle state of the job. waiting_for_idle: the update runs once every session using the harness is idle (Windows)."`
 	Method              string `json:"method,omitempty" description:"Server-owned installation method selected for this harness job."`
 	Command             string `json:"command,omitempty" description:"Human-readable install command, e.g. \"brew install tmux\", for display even before/without output."`
@@ -741,7 +731,7 @@ func (s *Service) StartAgentOperation(ctx context.Context, target Target, method
 		return Job{}, fmt.Errorf("systeminstall: unknown harness target %q", target)
 	}
 	var releaseHarness func()
-	requiresHarnessGate := target == TargetDroid || target == TargetFX || operation == AgentOperationReinstall || operation == AgentOperationUpdate
+	requiresHarnessGate := operation == AgentOperationReinstall || operation == AgentOperationUpdate
 	if requiresHarnessGate {
 		s.mu.Lock()
 		if current, ok := s.jobs[target]; ok && activeStatus(current.Status) {
@@ -803,14 +793,6 @@ func (s *Service) StartAgentOperation(ctx context.Context, target Target, method
 			plannedPrefix := plan.PackagePrefix
 			if baseline != nil && baseline.path != "" {
 				plan = targetInstalledCopy(s.goos, plan, target, baseline.path)
-			}
-			if target == TargetKimi {
-				binaryPath := ""
-				if baseline != nil {
-					binaryPath = baseline.path
-				}
-				home, _ := os.UserHomeDir()
-				plan = bindKimiInstallerUpdate(s.goos, plan, binaryPath, home, os.Getenv("PATH"))
 			}
 			plan = s.validateNPMUpdateTarget(ctx, plan, plannedPrefix)
 		}
@@ -1330,9 +1312,6 @@ func (s *Service) runAgentOperation(parent context.Context, plan Plan, operation
 			}
 		}
 	} else {
-		if plan.Method == "official-installer" {
-			env = append(env, vendorUpdateEnv[plan.Target]...)
-		}
 		runCommand := func(ctx context.Context, argv []string) error {
 			if s.installCommands != nil {
 				return s.installCommands.RunInstall(ctx, ports.InstallCommand{Argv: argv, Env: env}, out, out)
@@ -1371,23 +1350,8 @@ func (s *Service) runAgentOperation(parent context.Context, plan Plan, operation
 		return
 	}
 	installConfirmed := runErr != nil && devinOutput != nil && devinOutput.Confirmed()
-	// Autohand's Windows installer can finish replacing the CLI, then fail
-	// while installing its separate Computer control component. Verify the
-	// actual CLI version before deciding whether the requested update worked.
-	autohandCLIInstalled := runErr != nil && s.goos == "windows" && plan.Target == TargetAutohand &&
-		plan.Method == "official-installer" && plan.Script != nil &&
-		strings.Contains(out.String(), "Installed to ") &&
-		strings.Contains(out.String(), "Computer control could not be installed.")
-	if autohandCLIInstalled {
-		_, _ = io.WriteString(out, "\nAutohand CLI install will be verified. Computer control needs a separate repair: autohand computer install\n")
-	}
-	if runErr != nil && !installConfirmed && !autohandCLIInstalled {
+	if runErr != nil && !installConfirmed {
 		message := failureSummary(runErr, out)
-		if plan.Target == TargetAutohand && plan.Method == "official-installer" &&
-			strings.Contains(out.String(), "Downloaded Autohand CLI failed to start") &&
-			strings.Contains(out.String(), "The existing installation was not changed.") {
-			message = fmt.Sprintf("Autohand could not start the downloaded CLI; the existing installation was not changed. Its startup check can time out on a busy machine. Let other updates finish, then retry. (%v)", runErr)
-		}
 		s.finishAgentJob(job, StatusFailed, out.String(), message, "")
 		return
 	}
@@ -1902,9 +1866,9 @@ func (p requestPlanner) planNPM(target Target, pkg string) Plan {
 
 func minimumNodeVersionForTarget(target Target) [3]int {
 	switch target {
-	case TargetAuggie, TargetDroid, TargetGemini:
+	case TargetAuggie, TargetGemini:
 		return [3]int{20, 0, 0}
-	case TargetClaudeCode, TargetQwen, TargetAutohand:
+	case TargetClaudeCode:
 		return [3]int{22, 0, 0}
 	case TargetPi:
 		return [3]int{22, 19, 0}

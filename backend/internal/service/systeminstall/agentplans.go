@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -13,7 +12,6 @@ import (
 )
 
 var agentDocumentationURLs = map[Target]string{
-	TargetMemcode:     "https://github.com/memcode-ai/memcode/releases",
 	TargetClaudeCode:  "https://code.claude.com/docs/en/installation",
 	TargetCodex:       "https://github.com/openai/codex",
 	TargetCursor:      "https://docs.cursor.com/en/cli/installation",
@@ -22,15 +20,10 @@ var agentDocumentationURLs = map[Target]string{
 	TargetAider:       "https://aider.chat/docs/install.html",
 	TargetCopilot:     "https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/install-copilot-cli",
 	TargetGrok:        "https://docs.x.ai/build/overview",
-	TargetKimi:        "https://moonshotai.github.io/kimi-code/en/",
 	TargetPi:          "https://github.com/earendil-works/pi",
-	TargetAmp:         "https://ampcode.com/manual",
 	TargetAuggie:      "https://docs.augmentcode.com/cli/overview",
-	TargetDroid:       "https://docs.factory.ai/droid-cli/cli-reference",
 	TargetCrush:       "https://github.com/charmbracelet/crush",
 	TargetCline:       "https://github.com/cline/cline",
-	TargetGoose:       "https://goose-docs.ai/docs/getting-started/installation/",
-	TargetQwen:        "https://qwenlm.github.io/qwen-code-docs/en/users/quickstart/",
 	TargetGemini:      "https://geminicli.com/docs/get-started/installation/",
 	TargetContinue:    "https://docs.continue.dev/cli/quickstart",
 	TargetDevin:       "https://docs.devin.ai/get-started/devin-intro",
@@ -38,13 +31,10 @@ var agentDocumentationURLs = map[Target]string{
 	TargetKilocode:    "https://kilo.ai/docs/code-with-ai/platforms/cli",
 	TargetVibe:        "https://github.com/mistralai/mistral-vibe",
 	TargetMuse:        "https://ai.meta.com/llama/",
-	TargetAgy:         "https://github.com/google-antigravity/antigravity-cli",
-	TargetAutohand:    "https://docs.autohand.ai/working-with-autohand-code/cli",
 	TargetKimchi:      "https://docs.kimchi.dev/docs/coding-getting-started",
 	TargetPrimeAgent:  "https://github.com/PrimeIntellect-ai/prime-agent/blob/main/packages/coding-agent/docs/quickstart.md",
 	TargetOMP:         "https://github.com/can1357/oh-my-pi",
 	TargetCodewhale:   "https://github.com/Hmbown/Codewhale",
-	TargetFX:          "https://fx.sh/docs",
 	TargetUnreal:      "https://github.com/unreallabsai/unreal-agent",
 	TargetMiMoCode:    "https://github.com/XiaomiMiMo/MiMo-Code",
 	TargetDeepSeek:    "https://github.com/deepseek-ai/deepseek-harness",
@@ -106,33 +96,10 @@ func (s requestPlanner) agentMethodPlans(target Target, operation AgentOperation
 		plans = []Plan{s.officialByOS(target, "https://aider.chat/install.sh", "sh", "https://aider.chat/install.ps1", agentDocumentationURLs[target]), s.planUV(target, "aider-chat")}
 	case TargetGrok:
 		plans = []Plan{s.officialByOS(target, "https://x.ai/cli/install.sh", "bash", "https://x.ai/cli/install.ps1", agentDocumentationURLs[target])}
-	case TargetKimi:
-		official := s.officialByOS(target, "https://code.kimi.com/kimi-code/install.sh", "bash", "https://code.kimi.com/kimi-code/install.ps1", agentDocumentationURLs[target])
-		if s.goos == "darwin" {
-			// Homebrew core ships Kimi as the kimi-code formula; listing it lets AO
-			// recognise and update brew-installed copies.
-			plans = []Plan{official, s.planBrew(target, "kimi-code")}
-		} else {
-			plans = []Plan{official}
-		}
 	case TargetPi:
 		plans = []Plan{s.planNPM(target, "@earendil-works/pi-coding-agent")}
 		if s.goos == "darwin" || s.goos == "linux" {
 			plans = append(plans, s.planPiOfficialInstaller())
-		}
-	case TargetAmp:
-		official := s.officialByOS(target, "https://ampcode.com/install.sh", "bash", "https://ampcode.com/install.ps1", agentDocumentationURLs[target])
-		if s.goos == "darwin" {
-			plans = []Plan{s.planBrew(target, "ampcode/tap/ampcode"), s.planNPM(target, "@ampcode/cli"), official}
-		} else {
-			plans = []Plan{s.planNPM(target, "@ampcode/cli"), official}
-		}
-	case TargetDroid:
-		official := s.officialByOS(target, "https://app.factory.ai/cli", "sh", "https://app.factory.ai/cli/windows", agentDocumentationURLs[target])
-		if s.goos == "darwin" {
-			plans = []Plan{s.planBrewCask(target, "droid"), s.planNPM(target, "droid"), official}
-		} else {
-			plans = []Plan{s.planNPM(target, "droid"), official}
 		}
 	case TargetAuggie:
 		plans = []Plan{s.planNPM(target, "@augmentcode/auggie")}
@@ -144,33 +111,8 @@ func (s requestPlanner) agentMethodPlans(target Target, operation AgentOperation
 		}
 	case TargetCline:
 		plans = []Plan{s.planNPM(target, "cline@latest")}
-	case TargetGoose:
-		switch s.goos {
-		case "windows":
-			plan := s.officialByOS(
-				target,
-				"https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh", "bash",
-				"https://raw.githubusercontent.com/aaif-goose/goose/main/download_cli.ps1",
-				agentDocumentationURLs[target],
-			)
-			if plan.Script != nil {
-				plan.Script.Env = []string{"CONFIGURE=false"}
-			}
-			plans = []Plan{plan}
-		case "darwin", "linux":
-			plans = []Plan{s.planShellInstaller(target, "https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh", "bash")}
-		default:
-			plans = []Plan{manualPlan(target, "Goose publishes this installer for macOS and Linux only.", agentDocumentationURLs[target])}
-		}
 	case TargetGemini:
 		plans = []Plan{s.planNPM(target, "@google/gemini-cli@latest")}
-	case TargetQwen:
-		official := s.officialByOS(target, "https://qwen-code-assets.oss-cn-hangzhou.aliyuncs.com/installation/install-qwen-standalone.sh", "bash", "https://qwen-code-assets.oss-cn-hangzhou.aliyuncs.com/installation/install-qwen-standalone.ps1", agentDocumentationURLs[target])
-		if s.goos == "darwin" {
-			plans = []Plan{s.planBrew(target, "qwen-code"), s.planNPM(target, "@qwen-code/qwen-code@latest"), official}
-		} else {
-			plans = []Plan{s.planNPM(target, "@qwen-code/qwen-code@latest"), official}
-		}
 	case TargetContinue:
 		plans = []Plan{s.planNPM(target, "@continuedev/cli")}
 	case TargetDevin:
@@ -181,13 +123,6 @@ func (s requestPlanner) agentMethodPlans(target Target, operation AgentOperation
 			plans = []Plan{s.planShellInstaller(target, "https://cli.devin.ai/install.sh", "bash")}
 		default:
 			plans = []Plan{manualPlan(target, "Devin for Terminal publishes this installer for macOS and Linux only.", agentDocumentationURLs[target])}
-		}
-	case TargetAutohand:
-		official := s.officialByOS(target, "https://autohand.ai/install.sh", "sh", "https://autohand.ai/install.ps1", agentDocumentationURLs[target])
-		if s.goos == "darwin" {
-			plans = []Plan{s.planBrew(target, "autohandai/code/autohand-code"), s.planNPM(target, "autohand-cli"), official}
-		} else {
-			plans = []Plan{s.planNPM(target, "autohand-cli"), official}
 		}
 	case TargetKimchi:
 		official := s.officialByOS(target,
@@ -214,8 +149,6 @@ func (s requestPlanner) agentMethodPlans(target Target, operation AgentOperation
 		default:
 			plans = []Plan{manualPlan(target, "Muse Code publishes this installer for macOS and Linux only.", agentDocumentationURLs[target])}
 		}
-	case TargetAgy:
-		plans = []Plan{s.officialByOS(target, "https://antigravity.google/cli/install.sh", "bash", "https://antigravity.google/cli/install.ps1", agentDocumentationURLs[target])}
 	case TargetPrimeAgent:
 		switch s.goos {
 		case "windows":
@@ -224,17 +157,6 @@ func (s requestPlanner) agentMethodPlans(target Target, operation AgentOperation
 			plans = []Plan{s.planShellInstaller(target, "https://app.primeintellect.ai/prime-agent/install.sh", "sh")}
 		default:
 			plans = []Plan{manualPlan(target, "Prime Agent publishes this installer for macOS and Linux only.", agentDocumentationURLs[target])}
-		}
-	case TargetFX:
-		switch s.goos {
-		case "darwin", "linux":
-			plan := s.planShellInstaller(target, "https://fx.sh/setup.sh", "bash")
-			plan.ExpectedDestination = "~/.local/bin/fx"
-			plans = []Plan{plan}
-		case "windows":
-			plans = []Plan{manualPlan(target, "fx publishes macOS and Linux installers; use WSL on Windows.", agentDocumentationURLs[target])}
-		default:
-			plans = []Plan{manualPlan(target, "fx publishes this installer for macOS and Linux only.", agentDocumentationURLs[target])}
 		}
 	case TargetOMP:
 		official := s.officialByOS(target, "https://omp.sh/install", "sh", "https://omp.sh/install.ps1", agentDocumentationURLs[target])
@@ -267,12 +189,6 @@ func (s requestPlanner) agentMethodPlans(target Target, operation AgentOperation
 		plans = []Plan{s.planUV(target, "openhands")}
 		if s.goos == "darwin" || s.goos == "linux" {
 			plans = append(plans, s.planShellInstaller(target, "https://install.openhands.dev/install.sh", "sh"))
-		}
-	case TargetMemcode:
-		if s.goos == "darwin" || s.goos == "linux" {
-			plans = []Plan{s.planShellInstaller(target, "https://memcode.ai/install.sh", "sh")}
-		} else {
-			plans = []Plan{{Target: target, Method: "manual", Unsupported: true, Reason: "Install the official native memcode release binary", DocsURL: agentDocumentationURLs[target]}}
 		}
 	case TargetCommandCode:
 		plans = []Plan{s.planNPM(target, "command-code")}
@@ -443,12 +359,10 @@ func (s requestPlanner) planForOperation(plan Plan, operation AgentOperation) Pl
 				plan.Script = script
 				break
 			}
-			// These self-updaters do not reliably replace the installed binary
-			// headlessly: installerUpdateTargets on every platform, and these
-			// Windows ones. Re-run the vendor's installer instead; ownership and
-			// post-update version checks still guard the operation.
-			if installScript != nil && (installerUpdateTargets[plan.Target] || s.goos == "windows" &&
-				(plan.Target == TargetAutohand || plan.Target == TargetGrok)) {
+			// These Windows self-updaters do not reliably replace the installed
+			// binary headlessly. Re-run the vendor's installer instead; ownership
+			// and post-update version checks still guard the operation.
+			if installScript != nil && s.goos == "windows" && plan.Target == TargetGrok {
 				plan.Command = nil
 				plan.Script = installScript
 				break
@@ -485,44 +399,18 @@ func (s requestPlanner) planForOperation(plan Plan, operation AgentOperation) Pl
 // when the vendor installer, not a package manager, owns the running binary.
 // Each updates the stable channel without a terminal: Kimchi's "self" leaves
 // its extensions alone and --force skips its confirmation prompt, and
-// OpenCode is told the install method AO already proved. Amp's --porcelain
-// prints a one-line result instead of interactive progress, and Pi updates
+// OpenCode is told the install method AO already proved. Pi updates
 // only itself without trusting project-local files.
 var vendorUpdateCommands = map[Target][]string{
 	TargetClaudeCode: {"claude", "update"},
 	TargetCodex:      {"codex", "update"},
 	TargetOpencode:   {"opencode", "upgrade", "--method", "curl"},
-	TargetGoose:      {"goose", "update"},
 	TargetKimchi:     {"kimchi", "update", "self", "--force"},
 	TargetOMP:        {"omp", "update"},
-	TargetAutohand:   {"autohand", "update"},
 	TargetCursor:     {"cursor-agent", "update"},
-	TargetAmp:        {"amp", "update", "--porcelain"},
 	TargetGrok:       {"grok", "update"},
-	TargetDroid:      {"droid", "update"},
-	TargetQwen:       {"qwen", "update"},
-	TargetFX:         {"fx", "upgrade"},
 	TargetPi:         {"pi", "update", "self", "--no-approve"},
 	TargetPrimeAgent: {"prime-agent", "update"},
-}
-
-// vendorUpdateEnv turns a vendor's own auto-update switch back on for an
-// update the user asked for. `droid update` exits 0 without updating, and
-// prints "Auto-update is not available for npm installations", whenever
-// FACTORY_DROID_AUTO_UPDATE_ENABLED is false or its build (npm's) turns
-// auto-update off, even for the copy at the official installer's location.
-var vendorUpdateEnv = map[Target][]string{
-	TargetDroid: {"FACTORY_DROID_AUTO_UPDATE_ENABLED=true"},
-}
-
-// installerUpdateTargets update by re-running the vendor installer, pinned to
-// the approved release and bound to the confirmed install directory. Kimi's
-// `kimi upgrade` exits 0 without replacing the binary: it reports "already up
-// to date" from its own staged-rollout channel, prints a manual command for
-// installs it does not manage, and on native installs only stages the new
-// binary for a later launch to swap in.
-var installerUpdateTargets = map[Target]bool{
-	TargetKimi: true,
 }
 
 func packageWithoutLatest(pkg string) string {
@@ -607,15 +495,11 @@ func manualPlan(target Target, reason, docsURL string) Plan {
 	return Plan{Target: target, Unsupported: true, Method: "manual", Reason: reason, DocsURL: docsURL}
 }
 
-// pinVendorUpdate asks OpenCode and Kimi's installer for the exact release
+// pinVendorUpdate asks OpenCode's installer for the exact release
 // the update advisory reported, so the version installed is the one the
 // update badge announced.
 func pinVendorUpdate(plan Plan, latest string) Plan {
 	if plan.Method != "official-installer" || latest == "" {
-		return plan
-	}
-	if plan.Target == TargetKimi && plan.Script != nil {
-		plan.Script = withInstallerEnv(plan.Script, "KIMI_VERSION="+latest)
 		return plan
 	}
 	if plan.Target != TargetOpencode || len(plan.Command) < 2 {
@@ -709,78 +593,6 @@ func withInstallerEnv(script *ports.InstallScriptCommand, entries ...string) *po
 	}
 	next.Env = append(next.Env, entries...)
 	return &next
-}
-
-// bindKimiInstallerUpdate binds a Kimi installer update to the Kimi Code
-// native install sessions run. Only the installer's own default root,
-// ~/.kimi-code, is accepted: a kimi in ~/.local, ~/.cargo or /usr/local may
-// belong to another tool (the legacy Python kimi-cli, a cargo build), and the
-// installer would replace it with the native binary. KIMI_NO_MODIFY_PATH and
-// a PATH without <root>/bin keep the installer from editing shell rc files
-// and from its legacy-shim migration, which renames or deletes other kimi
-// commands on PATH; the update only replaces <root>/bin/kimi.
-func bindKimiInstallerUpdate(goos string, plan Plan, binaryPath, home, pathList string) Plan {
-	if plan.Target != TargetKimi || plan.Method != "official-installer" || plan.Script == nil {
-		return plan
-	}
-	root, ok := kimiInstallRoot(goos, binaryPath, home)
-	if !ok {
-		plan.Unsupported = true
-		plan.Reason = fmt.Sprintf("AO updates Kimi Code only in its default ~/.kimi-code installation; %q is managed elsewhere, so update it manually.", binaryPath)
-		return plan
-	}
-	env := []string{"KIMI_INSTALL_DIR=" + root, "KIMI_NO_MODIFY_PATH=1"}
-	if pathList != "" {
-		env = append(env, "PATH="+pathWithoutDir(goos, pathList, root+kimiPathSeparator(goos)+"bin"))
-	}
-	plan.Script = withInstallerEnv(plan.Script, env...)
-	plan.ExpectedDestination = binaryPath
-	return plan
-}
-
-// kimiInstallRoot is the KIMI_INSTALL_DIR whose bin/kimi is binaryPath, when
-// that is Kimi Code's default root under home. Windows paths compare
-// case-insensitively with either separator; other platforms compare exactly.
-func kimiInstallRoot(goos, binaryPath, home string) (string, bool) {
-	if home == "" {
-		return "", false
-	}
-	if goos != "windows" {
-		root, found := strings.CutSuffix(binaryPath, "/bin/kimi")
-		return root, found && path.Clean(root) == path.Clean(home+"/.kimi-code")
-	}
-	slashed := strings.ToLower(strings.ReplaceAll(binaryPath, `\`, "/"))
-	if !strings.HasSuffix(slashed, "/bin/kimi.exe") {
-		return "", false
-	}
-	root := binaryPath[:len(binaryPath)-len("/bin/kimi.exe")]
-	want := strings.ToLower(strings.ReplaceAll(home, `\`, "/")) + "/.kimi-code"
-	return root, path.Clean(slashed[:len(root)]) == path.Clean(want)
-}
-
-func kimiPathSeparator(goos string) string {
-	if goos == "windows" {
-		return `\`
-	}
-	return "/"
-}
-
-// pathWithoutDir removes dir from a PATH list, comparing as the platform does.
-func pathWithoutDir(goos, pathList, dir string) string {
-	separator, clean := ":", path.Clean
-	if goos == "windows" {
-		separator = ";"
-		clean = func(entry string) string {
-			return path.Clean(strings.ToLower(strings.ReplaceAll(entry, `\`, "/")))
-		}
-	}
-	var kept []string
-	for _, entry := range strings.Split(pathList, separator) {
-		if entry == "" || clean(entry) != clean(dir) {
-			kept = append(kept, entry)
-		}
-	}
-	return strings.Join(kept, separator)
 }
 
 // targetInstalledCopy points an update at the copy sessions run. A

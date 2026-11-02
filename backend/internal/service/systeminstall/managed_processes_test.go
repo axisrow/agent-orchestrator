@@ -55,15 +55,15 @@ func TestManagedCleanupRetainsDetachedNativeProcessRelease(t *testing.T) {
 func TestBrewCleanupRetainsDetachedProviderHub(t *testing.T) {
 	s, ran := updateWhileRunningService(t, nil)
 	s.SetHarnessUpdateObserver(&updateObserverStub{})
-	s.deferredCleanups = map[Target]string{TargetKimi: "kimi-code"}
+	s.deferredCleanups = map[Target]string{TargetKimchi: "kimchi"}
 	alive := true
 	s.commands = commandRunnerFunc(func(_ context.Context, argv []string, out, _ io.Writer) error {
 		text := "1 /usr/local/bin/ao\n"
 		if argv[0] == "ps" && alive {
-			text = "/opt/homebrew/Cellar/kimi-code/1.2.0/bin/kimi --provider-hub\n"
+			text = "/opt/homebrew/Cellar/kimchi/1.2.0/bin/kimchi --provider-hub\n"
 		}
 		if len(argv) > 1 && argv[1] == "--cellar" {
-			text = "/opt/homebrew/Cellar/kimi-code\n"
+			text = "/opt/homebrew/Cellar/kimchi\n"
 		}
 		if len(argv) > 0 && argv[0] == "ps" && !strings.HasPrefix(text, "1 ") {
 			text = "123 " + text
@@ -215,14 +215,14 @@ func TestManagedCleanupRetainsRealDetachedProcess(t *testing.T) {
 func TestBrewCleanupRetainsMutableScriptLauncher(t *testing.T) {
 	s, ran := updateWhileRunningService(t, nil)
 	s.SetHarnessUpdateObserver(&updateObserverStub{})
-	s.deferredCleanups = map[Target]string{TargetKimi: "kimi-code"}
+	s.deferredCleanups = map[Target]string{TargetKimchi: "kimchi"}
 	s.verifier = harnessVerifierFunc(func(context.Context, Target) (VerifyResult, error) {
-		return VerifyResult{ResolvedPath: "/opt/homebrew/bin/kimi"}, nil
+		return VerifyResult{ResolvedPath: "/opt/homebrew/bin/kimchi"}, nil
 	})
 	s.commands = commandRunnerFunc(func(_ context.Context, argv []string, out, _ io.Writer) error {
-		text := "node /opt/homebrew/bin/kimi\n"
+		text := "node /opt/homebrew/bin/kimchi\n"
 		if len(argv) > 1 && argv[1] == "--cellar" {
-			text = "/opt/homebrew/Cellar/kimi-code\n"
+			text = "/opt/homebrew/Cellar/kimchi\n"
 		}
 		if len(argv) > 0 && argv[0] == "ps" && !strings.HasPrefix(text, "1 ") {
 			text = "123 " + text

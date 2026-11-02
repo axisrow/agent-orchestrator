@@ -37,17 +37,17 @@ func (o *updateObserverStub) CountStaleBinarySessions(context.Context) (map[doma
 }
 
 func TestSuccessfulUpdateMarksSessionsWhileHoldingTheHarness(t *testing.T) {
-	s, _ := updateWhileRunningService(t, []domain.SessionRecord{{ID: "kimi-1", Harness: domain.AgentHarness(TargetKimi)}})
+	s, _ := updateWhileRunningService(t, []domain.SessionRecord{{ID: "kimchi-1", Harness: domain.AgentHarness(TargetKimchi)}})
 	observer := &updateObserverStub{}
-	observer.gateHeld = func() bool { return harnessHeld(s, domain.AgentHarness(TargetKimi)) }
+	observer.gateHeld = func() bool { return harnessHeld(s, domain.AgentHarness(TargetKimchi)) }
 	s.SetHarnessUpdateObserver(observer)
-	if _, err := s.StartAgentOperation(context.Background(), TargetKimi, "homebrew", AgentOperationUpdate, ""); err != nil {
+	if _, err := s.StartAgentOperation(context.Background(), TargetKimchi, "homebrew", AgentOperationUpdate, ""); err != nil {
 		t.Fatal(err)
 	}
 	s.workers.Wait()
-	waitForStatus(t, s, TargetKimi, StatusSucceeded)
-	if len(observer.marked) != 1 || observer.marked[0] != "kimi@1.3.0" {
-		t.Fatalf("marked = %v, want kimi@1.3.0", observer.marked)
+	waitForStatus(t, s, TargetKimchi, StatusSucceeded)
+	if len(observer.marked) != 1 || observer.marked[0] != "kimchi@1.3.0" {
+		t.Fatalf("marked = %v, want kimchi@1.3.0", observer.marked)
 	}
 	if !observer.heldMark {
 		t.Fatal("sessions were marked after launches could start on the new release")
@@ -64,29 +64,29 @@ func TestFailedUpdateMarksNothing(t *testing.T) {
 		}
 		return nil
 	})
-	if _, err := s.StartAgentOperation(context.Background(), TargetKimi, "homebrew", AgentOperationUpdate, ""); err != nil {
+	if _, err := s.StartAgentOperation(context.Background(), TargetKimchi, "homebrew", AgentOperationUpdate, ""); err != nil {
 		t.Fatal(err)
 	}
 	s.workers.Wait()
-	waitForStatus(t, s, TargetKimi, StatusFailed)
+	waitForStatus(t, s, TargetKimchi, StatusFailed)
 	if len(observer.marked) != 0 {
 		t.Fatalf("marked = %v after a failed update", observer.marked)
 	}
 }
 
 func TestKeptKegIsCleanedUpOnceSessionsMove(t *testing.T) {
-	s, ran := updateWhileRunningService(t, []domain.SessionRecord{{ID: "kimi-1", Harness: domain.AgentHarness(TargetKimi)}})
-	observer := &updateObserverStub{stale: map[domain.AgentHarness]int64{domain.AgentHarness(TargetKimi): 1}}
+	s, ran := updateWhileRunningService(t, []domain.SessionRecord{{ID: "kimchi-1", Harness: domain.AgentHarness(TargetKimchi)}})
+	observer := &updateObserverStub{stale: map[domain.AgentHarness]int64{domain.AgentHarness(TargetKimchi): 1}}
 	s.SetHarnessUpdateObserver(observer)
-	if _, err := s.StartAgentOperation(context.Background(), TargetKimi, "homebrew", AgentOperationUpdate, ""); err != nil {
+	if _, err := s.StartAgentOperation(context.Background(), TargetKimchi, "homebrew", AgentOperationUpdate, ""); err != nil {
 		t.Fatal(err)
 	}
 	s.workers.Wait()
-	waitForStatus(t, s, TargetKimi, StatusSucceeded)
+	waitForStatus(t, s, TargetKimchi, StatusSucceeded)
 	cleanups := func() int {
 		count := 0
 		for _, command := range *ran {
-			if len(command.Argv) == 3 && command.Argv[1] == "cleanup" && command.Argv[2] == "kimi-code" {
+			if len(command.Argv) == 3 && command.Argv[1] == "cleanup" && command.Argv[2] == "getkimchi/tap/kimchi" {
 				count++
 			}
 		}
@@ -110,11 +110,11 @@ func TestKeptKegIsCleanedUpOnceSessionsMove(t *testing.T) {
 func TestUpdateWithoutSessionsDefersNoCleanup(t *testing.T) {
 	s, ran := updateWhileRunningService(t, nil)
 	s.SetHarnessUpdateObserver(&updateObserverStub{})
-	if _, err := s.StartAgentOperation(context.Background(), TargetKimi, "homebrew", AgentOperationUpdate, ""); err != nil {
+	if _, err := s.StartAgentOperation(context.Background(), TargetKimchi, "homebrew", AgentOperationUpdate, ""); err != nil {
 		t.Fatal(err)
 	}
 	s.workers.Wait()
-	waitForStatus(t, s, TargetKimi, StatusSucceeded)
+	waitForStatus(t, s, TargetKimchi, StatusSucceeded)
 	before := len(*ran)
 	s.RunDeferredCleanups(context.Background())
 	if len(*ran) != before {
@@ -131,21 +131,21 @@ type gatedObserverStub struct {
 
 func (o *gatedObserverStub) CountStaleBinarySessions(context.Context) (map[domain.AgentHarness]int64, error) {
 	if o.held() {
-		return map[domain.AgentHarness]int64{domain.AgentHarness(TargetKimi): 1}, nil
+		return map[domain.AgentHarness]int64{domain.AgentHarness(TargetKimchi): 1}, nil
 	}
 	return nil, nil
 }
 
 func TestKeptKegCleanupCountsSessionsUnderTheHarnessGate(t *testing.T) {
-	s, ran := updateWhileRunningService(t, []domain.SessionRecord{{ID: "kimi-1", Harness: domain.AgentHarness(TargetKimi)}})
-	s.SetHarnessUpdateObserver(&updateObserverStub{stale: map[domain.AgentHarness]int64{domain.AgentHarness(TargetKimi): 1}})
-	if _, err := s.StartAgentOperation(context.Background(), TargetKimi, "homebrew", AgentOperationUpdate, ""); err != nil {
+	s, ran := updateWhileRunningService(t, []domain.SessionRecord{{ID: "kimchi-1", Harness: domain.AgentHarness(TargetKimchi)}})
+	s.SetHarnessUpdateObserver(&updateObserverStub{stale: map[domain.AgentHarness]int64{domain.AgentHarness(TargetKimchi): 1}})
+	if _, err := s.StartAgentOperation(context.Background(), TargetKimchi, "homebrew", AgentOperationUpdate, ""); err != nil {
 		t.Fatal(err)
 	}
 	s.workers.Wait()
-	waitForStatus(t, s, TargetKimi, StatusSucceeded)
+	waitForStatus(t, s, TargetKimchi, StatusSucceeded)
 
-	s.SetHarnessUpdateObserver(&gatedObserverStub{held: func() bool { return harnessHeld(s, domain.AgentHarness(TargetKimi)) }})
+	s.SetHarnessUpdateObserver(&gatedObserverStub{held: func() bool { return harnessHeld(s, domain.AgentHarness(TargetKimchi)) }})
 	s.RunDeferredCleanups(context.Background())
 	for _, command := range *ran {
 		if len(command.Argv) == 3 && command.Argv[1] == "cleanup" {

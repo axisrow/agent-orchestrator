@@ -35,27 +35,12 @@ func TestOfficialManagedRecipesInstallInsideTheRelease(t *testing.T) {
 		args []string
 	}{
 		TargetOpencode: {env: map[string]string{"VERSION": "1.19.3"}, args: []string{"--no-modify-path"}},
-		TargetKimi:     {env: map[string]string{"KIMI_INSTALL_DIR": dir, "KIMI_CODE_HOME": dir + "/.install-home/.kimi-code", "KIMI_VERSION": "1.19.3", "KIMI_NO_MODIFY_PATH": "1"}},
-		TargetGoose:    {env: map[string]string{"GOOSE_BIN_DIR": dir + "/bin", "GOOSE_VERSION": "v1.19.3", "CONFIGURE": "false"}},
-		TargetMemcode:  {env: map[string]string{"MEMCODE_INSTALL_DIR": dir + "/bin", "MEMCODE_VERSION": "v1.19.3"}},
-		TargetFX:       {env: map[string]string{"FX_INSTALL_DIR": dir + "/bin"}, args: []string{"v1.19.3"}},
 		TargetOMP:      {env: map[string]string{"PI_INSTALL_DIR": dir + "/bin"}, args: []string{"--binary", "--ref", "v1.19.3"}},
-		TargetQwen: {env: map[string]string{
-			"QWEN_INSTALL_LIB_DIR": dir + "/lib", "QWEN_INSTALL_BIN_DIR": dir + "/bin",
-			"QWEN_INSTALL_VERSION": "1.19.3", "QWEN_INSTALL_METHOD": "standalone", "QWEN_NO_MODIFY_PATH": "1",
-		}},
 		TargetCodex: {env: map[string]string{
 			"CODEX_HOME": dir + "/codex-home", "CODEX_INSTALL_DIR": dir + "/bin",
 			"CODEX_RELEASE": "1.19.3", "CODEX_NON_INTERACTIVE": "1",
 		}},
 		TargetOpencodeV2: {env: map[string]string{"VERSION": "1.19.3"}, args: []string{"--no-modify-path"}},
-		TargetAmp:        {env: map[string]string{"AMP_HOME": dir, "AMP_VERSION": "1.19.3"}},
-		TargetAutohand: {env: map[string]string{
-			"AUTOHAND_INSTALL_DIR": dir + "/bin", "AUTOHAND_VERSION": "1.19.3",
-			"AUTOHAND_SKIP_ZIT_INSTALL": "1", "AUTOHAND_SKIP_COMPUTER_CONTROL_INSTALL": "1", "AUTOHAND_INSTALL_FIRST_RUN": "no",
-		}},
-		TargetAgy:   {args: []string{"--dir", dir + "/bin"}},
-		TargetDroid: {},
 	} {
 		t.Run(string(target), func(t *testing.T) {
 			recipe, ok := officialManagedRecipes[target]
@@ -171,28 +156,6 @@ func assertResolvesInto(t *testing.T, launcher, release string) {
 	}
 	if err != nil || !strings.HasPrefix(target, release+string(filepath.Separator)) {
 		t.Fatalf("launcher resolves to %q (%v), want inside the new release %s", target, err, release)
-	}
-}
-
-// Droid's own script kills every running droid, so AO downloads the pinned
-// release and its checksum from where the script gets them.
-func TestDroidDownloadsThePinnedReleaseWithoutItsScript(t *testing.T) {
-	argv, err := droidDownloadCommand("/rel/v2", "0.244.0", "darwin", "arm64")
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := "https://downloads.factory.ai/factory-cli/releases/0.244.0/darwin/arm64/droid"
-	if len(argv) != 7 || argv[0] != "/bin/sh" || argv[4] != want || argv[5] != want+".sha256" || argv[6] != "/rel/v2/bin/droid" {
-		t.Fatalf("argv = %q", argv)
-	}
-	if strings.Contains(argv[2], "kill") {
-		t.Fatal("the download must never stop running droids")
-	}
-	if argv, _ := droidDownloadCommand("/rel/v2", "0.244.0", "linux", "amd64"); !strings.Contains(argv[4], "/linux/x64-baseline/") {
-		t.Fatalf("Intel download = %q, want the baseline build", argv[4])
-	}
-	if _, err := droidDownloadCommand("/rel/v2", "", "darwin", "arm64"); err == nil {
-		t.Fatal("an unpinned download must fail instead of guessing a release")
 	}
 }
 
@@ -349,39 +312,40 @@ func (f *managedOfficialFixture) setLatest(latest string) {
 	f.latest = latest
 }
 
-// After AO updates Kimi into a release of its own, sessions run AO's
-// launcher, which is not where Kimi's installer puts kimi. The next advisory
-// must still name the official installer, or AO stays on that release.
+// After AO updates a harness into a release of its own, sessions run AO's
+// launcher, which is not where the vendor's installer puts the binary. The
+// next advisory must still name the official installer, or AO stays on that
+// release.
 func TestManagedOfficialReleaseStaysUpdatable(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("managed launchers are symlinks on Unix")
 	}
-	f := newManagedOfficialFixture(t, TargetKimi, "/Users/me/.kimi-code/bin/kimi", "kimi, version 1.19.2", "1.19.3",
-		func(env []string) string { return "kimi, version " + envValue(env, "KIMI_VERSION") })
+	f := newManagedOfficialFixture(t, TargetOpencode, "/Users/me/.opencode/bin/opencode", "opencode, version 1.19.2", "1.19.3",
+		func(env []string) string { return "opencode, version " + envValue(env, "VERSION") })
 	ctx := context.Background()
 	for i, latest := range []string{"1.19.3", "1.19.4"} {
 		f.setLatest(latest)
-		advisory, err := f.s.UpdateAdvisory(ctx, TargetKimi, true)
+		advisory, err := f.s.UpdateAdvisory(ctx, TargetOpencode, true)
 		if err != nil || advisory.Status != UpdateStatusBehindLatest || advisory.MaintenanceMethod != "official-installer" || advisory.LatestVersion != latest {
 			t.Fatalf("update %d: advisory = %+v, %v; want official-installer behind %s", i+1, advisory, err, latest)
 		}
-		if _, err := f.s.StartAgentOperation(ctx, TargetKimi, "", AgentOperationUpdate, ""); err != nil {
+		if _, err := f.s.StartAgentOperation(ctx, TargetOpencode, "", AgentOperationUpdate, ""); err != nil {
 			t.Fatalf("update %d: %v", i+1, err)
 		}
 		f.s.workers.Wait()
-		if job, _ := f.s.Status(ctx, TargetKimi); job.Status != StatusSucceeded {
+		if job, _ := f.s.Status(ctx, TargetOpencode); job.Status != StatusSucceeded {
 			t.Fatalf("update %d: job = %+v", i+1, job)
 		}
 	}
 	var pins []string
 	for _, script := range f.scripts {
-		pins = append(pins, envValue(script.Env, "KIMI_VERSION"))
+		pins = append(pins, envValue(script.Env, "VERSION"))
 	}
 	if !slices.Equal(pins, []string{"1.19.3", "1.19.4"}) {
 		t.Fatalf("installer pins = %q, want one per update", pins)
 	}
-	assertResolvesInto(t, f.launcher, filepath.Join(f.root, string(TargetKimi), "versions", "v2"))
-	if advisory, err := f.s.UpdateAdvisory(ctx, TargetKimi, true); err != nil || advisory.Status != UpdateStatusCurrent || advisory.MaintenanceMethod != "official-installer" {
+	assertResolvesInto(t, f.launcher, filepath.Join(f.root, string(TargetOpencode), "versions", "v2"))
+	if advisory, err := f.s.UpdateAdvisory(ctx, TargetOpencode, true); err != nil || advisory.Status != UpdateStatusCurrent || advisory.MaintenanceMethod != "official-installer" {
 		t.Fatalf("advisory after the second update = %+v, %v", advisory, err)
 	}
 }
@@ -398,10 +362,7 @@ func TestOfficialInstallsOfferTheirManagedRecipe(t *testing.T) {
 		target   Target
 		userCopy string
 	}{
-		{TargetMemcode, "/Users/me/.local/bin/memcode"},
 		{TargetOpencodeV2, "/Users/me/.opencode/bin/opencode-v2"},
-		{TargetQwen, "/Users/me/.local/bin/qwen"},
-		{TargetAgy, "/Users/me/.local/bin/agy"},
 	} {
 		t.Run(string(tt.target), func(t *testing.T) {
 			f := newManagedOfficialFixture(t, tt.target, tt.userCopy, "0.4.0", "0.5.0", func([]string) string { return "0.5.0" })

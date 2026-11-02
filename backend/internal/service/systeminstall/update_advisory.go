@@ -288,7 +288,7 @@ func (s *Service) computeUpdateAdvisory(ctx context.Context, target Target) (Upd
 		// The update installs a release of AO's own, so it needs neither the
 		// harness's own update command nor the user's copy in a known place.
 		advisory.MaintenanceMethod = "official-installer"
-	} else if home, _ := os.UserHomeDir(); vendorMaintainable(s.goos, target, verified.ResolvedPath, home) {
+	} else if vendorMaintainable(target, verified.ResolvedPath) {
 		advisory.MaintenanceMethod = "official-installer"
 	}
 	var latest string
@@ -349,19 +349,13 @@ func (s *Service) computeUpdateAdvisory(ctx context.Context, target Target) (Upd
 }
 
 // vendorMaintainable reports whether the harness can update the binary
-// sessions run through its own self-update command or a re-run of its
-// installer. A release lookup is not installation ownership: binaries inside a
-// package manager or version manager belong to that tool, and harnesses
-// without either path have no vendor maintenance path. The command runs from
-// the resolved binary itself, and the installer is bound to its directory, so
-// either updates that copy however the user placed it. Kimi's installer is
-// bound only to its default install (bindKimiInstallerUpdate), so a kimi
-// elsewhere gets manual-update guidance instead of an Update that is refused.
-func vendorMaintainable(goos string, target Target, resolvedPath, home string) bool {
+// sessions run through its own self-update command. A release lookup is not
+// installation ownership: binaries inside a package manager or version
+// manager belong to that tool, and harnesses without an update path have no
+// vendor maintenance path. The command runs from the resolved binary itself,
+// so it updates that copy however the user placed it.
+func vendorMaintainable(target Target, resolvedPath string) bool {
 	_, ok := vendorUpdateCommands[target]
-	if installerUpdateTargets[target] {
-		_, ok = kimiInstallRoot(goos, resolvedPath, home)
-	}
 	return ok && resolvedPath != "" && vendorLayout(target, packageLayout(resolvedPath))
 }
 

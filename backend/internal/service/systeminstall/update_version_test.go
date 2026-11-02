@@ -97,7 +97,6 @@ func TestBuildSuffixSchemeReadsVendorBuildsAsBuilds(t *testing.T) {
 		wantBuild string
 	}{
 		{target: TargetCursor, output: "2026.10.01-e373342\n", wantCore: [4]uint64{2026, 10, 1}, wantBuild: "e373342"},
-		{target: TargetAmp, output: "0.0.1791033893-g28ae98 (released 2026-10-03T13:24:53.000Z, 4d ago)\n", wantCore: [4]uint64{0, 0, 1791033893}, wantBuild: "g28ae98"},
 		{target: TargetMuse, output: "Muse Code 1.4.3 (1.4.3-R5018.1)\n", wantCore: [4]uint64{1, 4, 3}, wantBuild: "R5018.1"},
 	} {
 		t.Run(string(tt.target), func(t *testing.T) {
@@ -149,7 +148,7 @@ func TestBuildSuffixSchemeOrdersByCoreOnly(t *testing.T) {
 }
 
 func TestBuildSuffixSchemeAcceptsHashedRegistryRelease(t *testing.T) {
-	result, ok := managedResult("0.0.1791388870-g4d32fb", versionSchemeFor(TargetAmp))
+	result, ok := managedResult("0.0.1791388870-g4d32fb", versionSchemeFor(TargetCursor))
 	if !ok || result != "0.0.1791388870-g4d32fb" {
 		t.Fatalf("result = %+v, %t", result, ok)
 	}

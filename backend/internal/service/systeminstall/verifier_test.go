@@ -128,17 +128,17 @@ func TestVerifierReportsIdentityResolutionTimeout(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		runner := &recordingCommandRunner{}
 		verifier := NewVerifier(verifierResolver{
-			domain.HarnessGoose: verifierAgent{resolve: func(ctx context.Context) (string, error) {
+			domain.HarnessCodex: verifierAgent{resolve: func(ctx context.Context) (string, error) {
 				<-ctx.Done()
 				return "", ctx.Err()
 			}},
 		}, runner)
 		verifier.timeout = 20 * time.Millisecond
-		_, err := verifier.Verify(t.Context(), TargetGoose)
+		_, err := verifier.Verify(t.Context(), TargetCodex)
 		if !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("Verify error = %v, want deadline exceeded", err)
 		}
-		for _, want := range []string{"goose binary identity check", "timed out after 20ms", "Verify again"} {
+		for _, want := range []string{"codex binary identity check", "timed out after 20ms", "Verify again"} {
 			if !strings.Contains(err.Error(), want) {
 				t.Fatalf("Verify error = %q, want %q", err, want)
 			}

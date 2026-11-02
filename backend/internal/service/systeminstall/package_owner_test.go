@@ -56,20 +56,20 @@ func TestDeriveOwnerFromPathReadsEachManagersLayout(t *testing.T) {
 }
 
 func TestUpdateAdvisoryMaintainsConfirmedOwnerMissingFromHarnessMethods(t *testing.T) {
-	binary := writeFileAt(t, filepath.Join(t.TempDir(), "homebrew", "Cellar", "block-goose-cli", "1.48.0", "bin", "goose"), "")
+	binary := writeFileAt(t, filepath.Join(t.TempDir(), "homebrew", "Cellar", "grok-cli", "1.48.0", "bin", "grok"), "")
 	s := newTestService("darwin", "brew", "bash")
 	s.verifier = harnessVerifierFunc(func(context.Context, Target) (VerifyResult, error) {
 		return VerifyResult{ResolvedPath: binary, Output: "1.48.0"}, nil
 	})
 	s.ownsInstallation = func(_ context.Context, _ string, method, pkg string, cask bool) (bool, error) {
-		return method == "homebrew" && pkg == "block-goose-cli" && !cask, nil
+		return method == "homebrew" && pkg == "grok-cli" && !cask, nil
 	}
 	s.managedVersion = fixedManagedVersion("1.53.0", nil)
 	s.officialVersion = func(context.Context, Target) (string, error) {
 		t.Fatal("a package-owned binary was compared with the vendor channel")
 		return "", nil
 	}
-	advisory, err := s.UpdateAdvisory(context.Background(), TargetGoose, false)
+	advisory, err := s.UpdateAdvisory(context.Background(), TargetGrok, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,24 +81,24 @@ func TestUpdateAdvisoryMaintainsConfirmedOwnerMissingFromHarnessMethods(t *testi
 		t.Fatal(err)
 	}
 	for _, plan := range plans {
-		if plan.AgentID != string(TargetGoose) {
+		if plan.AgentID != string(TargetGrok) {
 			continue
 		}
 		for _, method := range plan.Methods {
 			if method.ID == "homebrew" {
-				if !method.UpdateAvailable || method.UpdateCommand != "brew update; brew upgrade block-goose-cli" {
-					t.Fatalf("Goose homebrew method = %+v", method)
+				if !method.UpdateAvailable || method.UpdateCommand != "brew update; brew upgrade grok-cli" {
+					t.Fatalf("Grok homebrew method = %+v", method)
 				}
 				return
 			}
 		}
-		t.Fatalf("Goose methods %+v do not list the confirmed Homebrew owner", plan.Methods)
+		t.Fatalf("Grok methods %+v do not list the confirmed Homebrew owner", plan.Methods)
 	}
-	t.Fatal("Goose plan missing")
+	t.Fatal("Grok plan missing")
 }
 
 func TestUpdateAdvisoryIgnoresDerivedOwnerTheManagerDoesNotConfirm(t *testing.T) {
-	binary := writeFileAt(t, filepath.Join(t.TempDir(), "homebrew", "Cellar", "block-goose-cli", "1.48.0", "bin", "goose"), "")
+	binary := writeFileAt(t, filepath.Join(t.TempDir(), "homebrew", "Cellar", "grok-cli", "1.48.0", "bin", "grok"), "")
 	s := newTestService("darwin", "brew", "bash")
 	s.verifier = harnessVerifierFunc(func(context.Context, Target) (VerifyResult, error) {
 		return VerifyResult{ResolvedPath: binary, Output: "1.48.0"}, nil
@@ -106,14 +106,14 @@ func TestUpdateAdvisoryIgnoresDerivedOwnerTheManagerDoesNotConfirm(t *testing.T)
 	s.ownsInstallation = func(context.Context, string, string, string, bool) (bool, error) { return false, nil }
 	s.managedVersion = fixedManagedVersion("1.53.0", nil)
 	s.officialVersion = func(context.Context, Target) (string, error) { return "1.53.0", nil }
-	advisory, err := s.UpdateAdvisory(context.Background(), TargetGoose, false)
+	advisory, err := s.UpdateAdvisory(context.Background(), TargetGrok, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if advisory.MaintenanceMethod != "" || advisory.Source == "homebrew" {
 		t.Fatalf("unconfirmed path claim became a maintenance method: %+v", advisory)
 	}
-	if _, ok := s.derivedOwnerFor(TargetGoose); ok {
+	if _, ok := s.derivedOwnerFor(TargetGrok); ok {
 		t.Fatal("unconfirmed owner was kept")
 	}
 }

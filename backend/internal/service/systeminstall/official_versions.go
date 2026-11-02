@@ -55,9 +55,6 @@ var cursorDownloadVersion = regexp.MustCompile(`downloads\.cursor\.com/lab/(\d[0
 // opencode.ai/install installs: it exits for any 2.x.
 var opencodeV1Release = regexp.MustCompile(`^1\.`)
 
-// stableRelease matches a plain release, without a prerelease or build suffix.
-var stableRelease = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
-
 func officialSourceFor(target Target, goos, goarch string) (officialSource, bool) {
 	switch target {
 	case TargetClaudeCode:
@@ -66,25 +63,14 @@ func officialSourceFor(target Target, goos, goarch string) (officialSource, bool
 		return officialSource{kind: officialJSON, ref: "https://releases.openai.com/codex/channels/latest", field: "tag_name"}, true
 	case TargetGrok:
 		return officialSource{kind: officialText, ref: "https://x.ai/cli/stable"}, true
-	case TargetKimi:
-		return officialSource{kind: officialText, ref: "https://code.kimi.com/kimi-code/latest"}, true
-	case TargetFX:
-		return officialSource{kind: officialText, ref: "https://releases.fx.sh/latest.txt"}, true
 	case TargetPrimeAgent:
 		return officialSource{kind: officialText, ref: "https://pub-728493de92a943e2a9b2d17b4719f318.r2.dev/stable"}, true
-	case TargetAmp:
-		return officialSource{kind: officialText, ref: "https://static.ampcode.com/cli/cli-version.txt"}, true
 	case TargetDevin:
 		return officialSource{kind: officialJSON, ref: "https://static.devin.ai/cli/current/manifest.json", field: "version"}, true
 	case TargetMuse:
 		return officialSource{kind: officialJSON, ref: "https://api.meta.ai/muse-code/channels/muse-stable", field: "version"}, true
 	case TargetKiro:
 		return officialSource{kind: officialJSON, ref: "https://prod.download.cli.kiro.dev/stable/latest/manifest.json", field: "version"}, true
-	case TargetAgy:
-		if (goos != "darwin" && goos != "linux") || (goarch != "amd64" && goarch != "arm64") {
-			return officialSource{}, false
-		}
-		return officialSource{kind: officialJSON, ref: "https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests/" + goos + "_" + goarch + ".json", field: "version"}, true
 	case TargetCursor:
 		return officialSource{kind: officialPage, ref: "https://cursor.com/install", match: cursorDownloadVersion}, true
 	case TargetOpencode:
@@ -94,23 +80,8 @@ func officialSourceFor(target Target, goos, goarch string) (officialSource, bool
 	case TargetOpencodeV2:
 		// opencode.ai/v2/install reads the same release document.
 		return officialSource{kind: officialJSON, ref: "https://opencode.ai/update/api/latest/cli/npm", field: "version"}, true
-	case TargetMemcode:
-		// memcode.ai/install.sh downloads through memcode.ai/dl, which
-		// redirects to this repository's latest release.
-		return officialSource{kind: officialGitHub, ref: "memcode-ai/memcode"}, true
-	case TargetQwen:
-		// The standalone installer installs the CLI's vN tags. GitHub's Latest
-		// release of the repository can be another product's (an SDK, the
-		// desktop app), and the Aliyun VERSION pointer the installer reads is
-		// unreachable from some networks. The CLI's npm package is published
-		// minutes after each release's standalone assets, at the same version.
-		return officialSource{kind: officialNPM, ref: "@qwen-code/qwen-code", match: stableRelease}, true
-	case TargetGoose:
-		return officialSource{kind: officialGitHub, ref: "aaif-goose/goose"}, true
 	case TargetKimchi:
 		return officialSource{kind: officialGitHub, ref: "getkimchi/kimchi"}, true
-	case TargetAutohand:
-		return officialSource{kind: officialGitHub, ref: "autohandai/code-cli"}, true
 	case TargetOMP:
 		return officialSource{kind: officialGitHub, ref: "can1357/oh-my-pi"}, true
 	case TargetAider:
@@ -118,9 +89,6 @@ func officialSourceFor(target Target, goos, goarch string) (officialSource, bool
 		return officialSource{kind: officialPyPI, ref: "aider-chat"}, true
 	case TargetVibe:
 		return officialSource{kind: officialPyPI, ref: "mistral-vibe"}, true
-	case TargetDroid:
-		// Factory publishes the native CLI and the npm package at one version.
-		return officialSource{kind: officialNPM, ref: "droid"}, true
 	case TargetPi:
 		// Pi's installer is an npm install into a managed prefix.
 		return officialSource{kind: officialNPM, ref: "@earendil-works/pi-coding-agent"}, true

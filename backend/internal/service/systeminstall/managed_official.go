@@ -2,7 +2,6 @@ package systeminstall
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -39,9 +38,7 @@ const managedInstallerPath = "/usr/bin:/bin:/usr/sbin:/sbin"
 // officialInstallerEnv is the environment every recipe shares: a private HOME
 // inside the release, so any profile or config an installer writes lands
 // there instead of in the user's files, a PATH of system tools, and a plain
-// sh as SHELL. Installers pick the profile they append PATH to from SHELL;
-// fx, for one, writes $HOME/.config/fish/config.fish for fish users without
-// creating its folder, and fails under set -e.
+// sh as SHELL. Installers pick the profile they append PATH to from SHELL.
 func officialInstallerEnv(dir string, extra ...string) []string {
 	return append([]string{"HOME=" + filepath.Join(dir, ".install-home"), "PATH=" + managedInstallerPath, "SHELL=/bin/sh"}, extra...)
 }
@@ -65,49 +62,6 @@ var officialManagedRecipes = map[Target]officialManagedRecipe{
 		},
 		args: func(string, string) []string { return []string{"--no-modify-path"} },
 	},
-	// Kimi installs to $KIMI_INSTALL_DIR/bin, migrates other kimi executables
-	// it finds on PATH, and writes a region marker to $KIMI_CODE_HOME.
-	TargetKimi: {
-		binRel: filepath.Join("bin", "kimi"),
-		env: func(dir, pin string) []string {
-			return officialInstallerEnv(dir, "KIMI_INSTALL_DIR="+dir, "KIMI_CODE_HOME="+filepath.Join(dir, ".install-home", ".kimi-code"),
-				"KIMI_VERSION="+strings.TrimPrefix(pin, "v"), "KIMI_NO_MODIFY_PATH=1")
-		},
-		args: noArgs,
-	},
-	TargetGoose: {
-		binRel: filepath.Join("bin", "goose"),
-		env: func(dir, pin string) []string {
-			return officialInstallerEnv(dir, "GOOSE_BIN_DIR="+filepath.Join(dir, "bin"), "GOOSE_VERSION="+withV(pin), "CONFIGURE=false")
-		},
-		args: noArgs,
-	},
-	// Memcode takes a release tag, and only uses sudo or a terminal when it
-	// has one, which the daemon does not.
-	TargetMemcode: {
-		binRel: filepath.Join("bin", "memcode"),
-		env: func(dir, pin string) []string {
-			version := withV(pin)
-			if version == "" {
-				version = "latest"
-			}
-			return officialInstallerEnv(dir, "MEMCODE_INSTALL_DIR="+filepath.Join(dir, "bin"), "MEMCODE_VERSION="+version)
-		},
-		args: noArgs,
-	},
-	// fx takes its release tag as the first argument.
-	TargetFX: {
-		binRel: filepath.Join("bin", "fx"),
-		env: func(dir, _ string) []string {
-			return officialInstallerEnv(dir, "FX_INSTALL_DIR="+filepath.Join(dir, "bin"))
-		},
-		args: func(_, pin string) []string {
-			if pin == "" {
-				return nil
-			}
-			return []string{withV(pin)}
-		},
-	},
 	// OMP builds from source with bun unless told to install its binary.
 	TargetOMP: {
 		binRel: filepath.Join("bin", "omp"),
@@ -120,25 +74,6 @@ var officialManagedRecipes = map[Target]officialManagedRecipe{
 			}
 			return []string{"--binary", "--ref", withV(pin)}
 		},
-	},
-	// Qwen's standalone install swaps and deletes its whole library folder
-	// in place, so a running session's later imports would load the new
-	// release; a release of its own keeps them on the old one.
-	TargetQwen: {
-		binRel: filepath.Join("bin", "qwen"),
-		env: func(dir, pin string) []string {
-			version := strings.TrimPrefix(pin, "v")
-			if version == "" {
-				version = "latest"
-			}
-			return officialInstallerEnv(dir,
-				"QWEN_INSTALL_LIB_DIR="+filepath.Join(dir, "lib"),
-				"QWEN_INSTALL_BIN_DIR="+filepath.Join(dir, "bin"),
-				"QWEN_INSTALL_VERSION="+version,
-				"QWEN_INSTALL_METHOD=standalone",
-				"QWEN_NO_MODIFY_PATH=1")
-		},
-		args: noArgs,
 	},
 	// Codex keeps each release in its own folder under $CODEX_HOME; a
 	// private CODEX_HOME keeps the user's config, auth and their own
@@ -166,51 +101,6 @@ var officialManagedRecipes = map[Target]officialManagedRecipe{
 			return officialInstallerEnv(dir, "VERSION="+strings.TrimPrefix(pin, "v"))
 		},
 		args: func(string, string) []string { return []string{"--no-modify-path"} },
-	},
-	// Amp installs to $AMP_HOME/bin and always links itself into the HOME's
-	// ~/.local/bin, which the private HOME keeps away from the user's.
-	TargetAmp: {
-		binRel: filepath.Join("bin", "amp"),
-		env: func(dir, pin string) []string {
-			return officialInstallerEnv(dir, "AMP_HOME="+dir, "AMP_VERSION="+strings.TrimPrefix(pin, "v"))
-		},
-		args: noArgs,
-	},
-	// Autohand also installs zit, a computer-control component and a first
-	// run, and replaces any agent command it can write on PATH.
-	TargetAutohand: {
-		binRel: filepath.Join("bin", "autohand"),
-		env: func(dir, pin string) []string {
-			version := strings.TrimPrefix(pin, "v")
-			if version == "" {
-				version = "latest"
-			}
-			return officialInstallerEnv(dir,
-				"AUTOHAND_INSTALL_DIR="+filepath.Join(dir, "bin"),
-				"AUTOHAND_VERSION="+version,
-				"AUTOHAND_SKIP_ZIT_INSTALL=1",
-				"AUTOHAND_SKIP_COMPUTER_CONTROL_INSTALL=1",
-				"AUTOHAND_INSTALL_FIRST_RUN=no",
-				"AUTOHAND_INSTALL_LOCAL_AI=0")
-		},
-		args: noArgs,
-	},
-	// Agy installs its latest release only; the installed version is still
-	// checked against the release the update picked.
-	TargetAgy: {
-		binRel: filepath.Join("bin", "agy"),
-		env:    func(dir, _ string) []string { return officialInstallerEnv(dir) },
-		args: func(dir, _ string) []string {
-			return []string{"--dir", filepath.Join(dir, "bin")}
-		},
-	},
-	// Droid's script kills every running droid before it installs, so AO
-	// downloads the release and its checksum from the same place itself.
-	TargetDroid: {
-		binRel:  filepath.Join("bin", "droid"),
-		env:     func(dir, _ string) []string { return officialInstallerEnv(dir) },
-		args:    noArgs,
-		command: droidDownloadCommand,
 	},
 }
 
@@ -294,7 +184,7 @@ func (s *Service) officialManagedUpdate(plans []Plan) bool {
 // runOfficialManagedInstall installs one release into dir: the vendor's
 // installer script, or the recipe's own download.
 func (s *Service) runOfficialManagedInstall(ctx context.Context, plan Plan, recipe officialManagedRecipe, pin, dir string, env []string, out io.Writer) error {
-	// The private HOME must exist: installers such as Codex's and fx's append
+	// The private HOME must exist: installers such as Codex's append
 	// their PATH line to a profile in it under set -e, and fail without it.
 	if err := os.MkdirAll(filepath.Join(dir, ".install-home"), 0o700); err != nil {
 		return fmt.Errorf("create installer home: %w", err)
@@ -323,48 +213,4 @@ func (s *Service) runOfficialManagedInstall(ctx context.Context, plan Plan, reci
 		_, _ = fmt.Fprintf(out, "\nsource: %s\nsha256: %s\n", command.URL, result.SHA256)
 	}
 	return err
-}
-
-// droidDownloadScript fetches one Droid release and its published checksum,
-// verifies it, and moves it into place: what Droid's installer does, without
-// killing the droids that are running.
-const droidDownloadScript = `set -eu
-url="$1"; sum_url="$2"; dest="$3"
-mkdir -p "$(dirname "$dest")"
-tmp="$dest.download"
-curl -fsSL -o "$tmp" "$url"
-want="$(curl -fsSL "$sum_url" | awk '{print $1}')"
-if command -v shasum >/dev/null 2>&1; then
-  got="$(shasum -a 256 "$tmp" | awk '{print $1}')"
-else
-  got="$(sha256sum "$tmp" | awk '{print $1}')"
-fi
-if [ -z "$want" ] || [ "$want" != "$got" ]; then
-  rm -f "$tmp"
-  echo "checksum mismatch for $url" >&2
-  exit 1
-fi
-chmod 755 "$tmp"
-mv "$tmp" "$dest"
-`
-
-// droidDownloadCommand downloads Droid's release from downloads.factory.ai,
-// where its installer gets it. Intel Macs and PCs get the baseline build,
-// which runs whether or not the CPU has AVX2.
-func droidDownloadCommand(dir, pin, goos, goarch string) ([]string, error) {
-	version := strings.TrimPrefix(pin, "v")
-	if version == "" {
-		return nil, errors.New("AO needs the release to install, but no newer Droid release is known")
-	}
-	var arch string
-	switch goarch {
-	case "arm64":
-		arch = "arm64"
-	case "amd64":
-		arch = "x64-baseline"
-	default:
-		return nil, fmt.Errorf("no Droid build is published for %s", goarch)
-	}
-	base := fmt.Sprintf("https://downloads.factory.ai/factory-cli/releases/%s/%s/%s/droid", version, goos, arch)
-	return []string{"/bin/sh", "-c", droidDownloadScript, "droid-install", base, base + ".sha256", filepath.Join(dir, "bin", "droid")}, nil
 }

@@ -106,7 +106,6 @@ func updateWhileRunningLevel(goos string, target Target, method string, cask boo
 var singleBinaryCasks = map[Target]string{
 	TargetClaudeCode: "claude-code",
 	TargetCopilot:    "copilot-cli",
-	TargetDroid:      "droid",
 }
 
 // versionedVendorInstalls keep every release in its own file or directory and

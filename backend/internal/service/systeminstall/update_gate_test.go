@@ -90,16 +90,14 @@ func TestUpdateWhileRunningLevelMatrix(t *testing.T) {
 		{"darwin", TargetGrok, "official-installer", false, "", UpdateWhileRunningSafe},
 		{"darwin", TargetCodex, "official-installer", false, "", UpdateWhileRunningWarn},
 		{"linux", TargetOpencode, "official-installer", false, "", UpdateWhileRunningWarn},
-		{"darwin", TargetKimi, "homebrew", false, "kimi-cli", UpdateWhileRunningSafe},
+		{"darwin", TargetKimchi, "homebrew", false, "kimchi", UpdateWhileRunningSafe},
 		{"darwin", TargetOMP, "homebrew", false, "oh-my-pi", UpdateWhileRunningSafe},
 		{"darwin", TargetCodex, "homebrew", true, "codex", UpdateWhileRunningWarn},
 		{"darwin", TargetClaudeCode, "homebrew", true, "claude-code", UpdateWhileRunningSafe},
 		{"darwin", TargetCopilot, "homebrew", true, "copilot-cli", UpdateWhileRunningSafe},
-		{"darwin", TargetDroid, "homebrew", true, "droid", UpdateWhileRunningSafe},
 		// Only the audited cask is known to ship a single binary.
 		{"darwin", TargetClaudeCode, "homebrew", true, "claude-code@latest", UpdateWhileRunningWarn},
 		{"darwin", TargetCopilot, "homebrew", true, "someone/tap/copilot-cli", UpdateWhileRunningWarn},
-		{"darwin", TargetDroid, "homebrew", true, "", UpdateWhileRunningWarn},
 		{"darwin", TargetAuggie, "npm", false, "", UpdateWhileRunningWarn},
 		{"darwin", TargetOMP, "bun", false, "", UpdateWhileRunningWarn},
 		{"linux", TargetAider, "uv", false, "", UpdateWhileRunningWarn},
@@ -135,7 +133,7 @@ func TestUpdatePlansCarryTheirLevel(t *testing.T) {
 	}
 }
 
-// updateWhileRunningService returns a darwin service whose Kimi Homebrew
+// updateWhileRunningService returns a darwin service whose Kimchi Homebrew
 // formula update succeeds, with live sessions given by sessions.
 func updateWhileRunningService(t *testing.T, sessions []domain.SessionRecord) (*Service, *[]ports.InstallCommand) {
 	t.Helper()
@@ -155,7 +153,7 @@ func updateWhileRunningService(t *testing.T, sessions []domain.SessionRecord) (*
 	s.sessions = sessionListerStub{sessions: sessions}
 	version := "1.2.0"
 	s.verifier = harnessVerifierFunc(func(context.Context, Target) (VerifyResult, error) {
-		return VerifyResult{ResolvedPath: "/opt/homebrew/Cellar/kimi-code/1.2.0/bin/kimi", Output: version}, nil
+		return VerifyResult{ResolvedPath: "/opt/homebrew/Cellar/kimchi/1.2.0/bin/kimchi", Output: version}, nil
 	})
 	s.ownsInstallation = func(context.Context, string, string, string, bool) (bool, error) { return true, nil }
 	var mu sync.Mutex
@@ -173,7 +171,7 @@ func updateWhileRunningService(t *testing.T, sessions []domain.SessionRecord) (*
 }
 
 func TestUpdateWhileRunningDecisionTable(t *testing.T) {
-	live := []domain.SessionRecord{{ID: "kimi-1", Harness: domain.AgentHarness(TargetKimi), Activity: domain.Activity{State: domain.ActivityIdle}}}
+	live := []domain.SessionRecord{{ID: "kimchi-1", Harness: domain.AgentHarness(TargetKimchi), Activity: domain.Activity{State: domain.ActivityIdle}}}
 	for _, tt := range []struct {
 		name         string
 		sessions     []domain.SessionRecord
@@ -194,17 +192,17 @@ func TestUpdateWhileRunningDecisionTable(t *testing.T) {
 			s, _ := updateWhileRunningService(t, tt.sessions)
 			s.updateWhileRunningDisabled = tt.disabled
 			if tt.method == "npm" {
-				// Kimi has no npm method; Auggie's npm update is the blocked case.
+				// Kimchi has no npm method; Auggie's npm update is the blocked case.
 				s.sessions = sessionListerStub{sessions: []domain.SessionRecord{{ID: "auggie-1", Harness: domain.AgentHarness(TargetAuggie)}}}
 			}
 			if tt.starting {
-				release, ok := s.TryBeginHarnessUse(domain.AgentHarness(TargetKimi))
+				release, ok := s.TryBeginHarnessUse(domain.AgentHarness(TargetKimchi))
 				if !ok {
 					t.Fatal("launch lease rejected")
 				}
 				defer release()
 			}
-			target := TargetKimi
+			target := TargetKimchi
 			if tt.method == "npm" {
 				target = TargetAuggie
 			}
@@ -233,21 +231,21 @@ func TestUpdateWhileRunningDecisionTable(t *testing.T) {
 func TestSleepingSessionsDoNotBlockUpdates(t *testing.T) {
 	now := time.Now()
 	s, _ := updateWhileRunningService(t, []domain.SessionRecord{
-		{ID: "hibernated", Harness: domain.AgentHarness(TargetKimi), HibernatedAt: &now},
-		{ID: "exited", Harness: domain.AgentHarness(TargetKimi), Activity: domain.Activity{State: domain.ActivityExited}},
+		{ID: "hibernated", Harness: domain.AgentHarness(TargetKimchi), HibernatedAt: &now},
+		{ID: "exited", Harness: domain.AgentHarness(TargetKimchi), Activity: domain.Activity{State: domain.ActivityExited}},
 	})
 	// Even with the switch off, sessions without a process never block.
 	s.updateWhileRunningDisabled = true
-	if _, err := s.StartAgentOperation(context.Background(), TargetKimi, "homebrew", AgentOperationUpdate, ""); err != nil {
+	if _, err := s.StartAgentOperation(context.Background(), TargetKimchi, "homebrew", AgentOperationUpdate, ""); err != nil {
 		t.Fatalf("update with only sleeping sessions = %v", err)
 	}
 	s.workers.Wait()
-	waitForStatus(t, s, TargetKimi, StatusSucceeded)
+	waitForStatus(t, s, TargetKimchi, StatusSucceeded)
 }
 
 func TestReinstallNeverRunsAlongsideSessions(t *testing.T) {
-	s, _ := updateWhileRunningService(t, []domain.SessionRecord{{ID: "kimi-1", Harness: domain.AgentHarness(TargetKimi)}})
-	_, err := s.StartAgentOperation(context.Background(), TargetKimi, "homebrew", AgentOperationReinstall, "")
+	s, _ := updateWhileRunningService(t, []domain.SessionRecord{{ID: "kimchi-1", Harness: domain.AgentHarness(TargetKimchi)}})
+	_, err := s.StartAgentOperation(context.Background(), TargetKimchi, "homebrew", AgentOperationReinstall, "")
 	var active *HarnessActiveError
 	if !errors.As(err, &active) || active.Level != UpdateWhileRunningBlocked {
 		t.Fatalf("reinstall alongside sessions = %v, want blocked", err)
@@ -260,16 +258,16 @@ func TestHomebrewCleanupDeferredOnlyWithLiveSessions(t *testing.T) {
 		sessions []domain.SessionRecord
 		want     bool
 	}{
-		{name: "live sessions", sessions: []domain.SessionRecord{{ID: "kimi-1", Harness: domain.AgentHarness(TargetKimi)}}, want: true},
+		{name: "live sessions", sessions: []domain.SessionRecord{{ID: "kimchi-1", Harness: domain.AgentHarness(TargetKimchi)}}, want: true},
 		{name: "no sessions", sessions: nil, want: false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			s, ran := updateWhileRunningService(t, tt.sessions)
-			if _, err := s.StartAgentOperation(context.Background(), TargetKimi, "homebrew", AgentOperationUpdate, ""); err != nil {
+			if _, err := s.StartAgentOperation(context.Background(), TargetKimchi, "homebrew", AgentOperationUpdate, ""); err != nil {
 				t.Fatal(err)
 			}
 			s.workers.Wait()
-			waitForStatus(t, s, TargetKimi, StatusSucceeded)
+			waitForStatus(t, s, TargetKimchi, StatusSucceeded)
 			for _, command := range *ran {
 				if got := slices.Contains(command.Env, "HOMEBREW_NO_INSTALL_CLEANUP=1"); got != tt.want {
 					t.Fatalf("%v env has cleanup deferral = %t, want %t", command.Argv, got, tt.want)
@@ -399,7 +397,7 @@ func TestLaunchDropsAdvisoryForBinaryReplacedOutsideAO(t *testing.T) {
 }
 
 func TestLaunchesWaitForAnUpdateInsteadOfFailing(t *testing.T) {
-	s, _ := updateWhileRunningService(t, []domain.SessionRecord{{ID: "kimi-1", Harness: domain.AgentHarness(TargetKimi)}})
+	s, _ := updateWhileRunningService(t, []domain.SessionRecord{{ID: "kimchi-1", Harness: domain.AgentHarness(TargetKimchi)}})
 	started := make(chan struct{})
 	finish := make(chan struct{})
 	s.installCommands = installCommandRunnerFunc(func(ctx context.Context, command ports.InstallCommand, _, _ io.Writer) error {
@@ -413,16 +411,16 @@ func TestLaunchesWaitForAnUpdateInsteadOfFailing(t *testing.T) {
 		}
 		return nil
 	})
-	if _, err := s.StartAgentOperation(context.Background(), TargetKimi, "homebrew", AgentOperationUpdate, ""); err != nil {
+	if _, err := s.StartAgentOperation(context.Background(), TargetKimchi, "homebrew", AgentOperationUpdate, ""); err != nil {
 		t.Fatal(err)
 	}
 	<-started
-	if !harnessHeld(s, domain.AgentHarness(TargetKimi)) {
+	if !harnessHeld(s, domain.AgentHarness(TargetKimchi)) {
 		t.Fatal("a launch could start on a binary being replaced")
 	}
 	launched := make(chan bool, 1)
 	go func() {
-		release, ok := s.TryBeginHarnessUse(domain.AgentHarness(TargetKimi))
+		release, ok := s.TryBeginHarnessUse(domain.AgentHarness(TargetKimchi))
 		if ok {
 			release()
 		}

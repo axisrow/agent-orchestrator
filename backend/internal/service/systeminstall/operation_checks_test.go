@@ -176,14 +176,14 @@ func TestUpdateOutcomeRejectsUnverifiedOrPartialUpdates(t *testing.T) {
 }
 
 func TestUpdateOutcomeReadsBuildSuffixedVersions(t *testing.T) {
-	baseline := &installedBaseline{path: "/Users/test/.amp/bin/amp", version: "0.0.1791033893-g28ae98", latest: "0.0.1791388870-g4d32fb", scheme: versionSchemeFor(TargetAmp)}
-	failure, note := updateOutcome(baseline, VerifyResult{ResolvedPath: baseline.path, Output: "0.0.1791388870-g4d32fb (released 2026-10-07T10:00:00.000Z, 0d ago)"})
-	if failure != "" || !strings.Contains(note, "Updated 0.0.1791033893-g28ae98 to 0.0.1791388870-g4d32fb") {
+	baseline := &installedBaseline{path: "/Users/test/.muse/bin/muse", version: "1.4.2-R5017.1", latest: "1.4.3-R5018.1", scheme: versionSchemeFor(TargetMuse)}
+	failure, note := updateOutcome(baseline, VerifyResult{ResolvedPath: baseline.path, Output: "1.4.3-R5018.1 (released 2026-10-07T10:00:00.000Z, 0d ago)"})
+	if failure != "" || !strings.Contains(note, "Updated 1.4.2-R5017.1 to 1.4.3-R5018.1") {
 		t.Fatalf("failure=%q note=%q", failure, note)
 	}
-	failure, _ = updateOutcome(baseline, VerifyResult{ResolvedPath: baseline.path, Output: "0.0.1791033893-g28ae98"})
+	failure, _ = updateOutcome(baseline, VerifyResult{ResolvedPath: baseline.path, Output: "1.4.2-R5017.1"})
 	if failure == "" {
-		t.Fatal("an Amp update that left the old build running did not fail")
+		t.Fatal("a Muse update that left the old build running did not fail")
 	}
 }
 

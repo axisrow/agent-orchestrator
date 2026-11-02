@@ -26,15 +26,15 @@ const (
 	// versionSemver reads a hyphen suffix as a semver prerelease.
 	versionSemver versionScheme = iota
 	// versionBuildSuffix reads a hyphen suffix as a build identifier, such as
-	// Cursor's 2026.10.01-e373342, Amp's 0.0.1791388870-g4d32fb, or Muse's
-	// 1.4.3-R5018.1. These vendors publish no prereleases on the channel AO
-	// checks and order releases by the numeric core alone.
+	// Cursor's 2026.10.01-e373342 or Muse's 1.4.3-R5018.1. These vendors
+	// publish no prereleases on the channel AO checks and order releases by
+	// the numeric core alone.
 	versionBuildSuffix
 )
 
 func versionSchemeFor(target Target) versionScheme {
 	switch target {
-	case TargetAmp, TargetCursor, TargetMuse:
+	case TargetCursor, TargetMuse:
 		return versionBuildSuffix
 	default:
 		return versionSemver
