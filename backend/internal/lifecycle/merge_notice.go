@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
+	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 )
 
@@ -26,6 +28,16 @@ import (
 // "<prefix>:<prURL>", so reactionKeyTargetsPR keeps it grouped with the PR
 // row whose last_nudge_signature persists it across restarts.
 const mergeNoticeReactionPrefix = "merge-notice"
+
+// mergeNoticeSendTimeout bounds the detached delivery: comfortably longer
+// than SendSemantic's acceptance wait, short enough that a wedged recipient
+// cannot accumulate goroutines.
+const mergeNoticeSendTimeout = 30 * time.Second
+
+// mergeNoticeSendFunc performs one orchestrator delivery. Production uses the
+// wired orchestratorNotifier; tests inject synchronous or recording variants
+// so detached sends stay deterministic.
+type mergeNoticeSendFunc func(ctx context.Context, projectID domain.ProjectID, message, idempotencyKey string) error
 
 // mergeNoticeSignature is the merge identity the dedup keys on: the merge
 // commit when the provider reported one, else the PR's head SHA, else a
@@ -77,17 +89,35 @@ func (m *Manager) notifyPRMerged(ctx context.Context, intent *ports.Notification
 	if persistErr != nil {
 		slog.Default().Warn("lifecycle: merge notice dedup persist failed", "pr", prURL, "err", persistErr)
 	}
-	notif := m.orchestratorNotifier()
-	if notif == nil {
-		return
+	send := m.mergeNoticeSend
+	if send == nil {
+		send = m.defaultMergeNoticeSend
 	}
 	message := renderPRMergedNotice(ctx, o)
 	idempotencyKey := mergeNoticeDeliveryID(prURL, sig)
-	if err := notif.NotifyOrchestrator(ctx, intent.ProjectID, message, idempotencyKey); err != nil {
-		slog.Default().Warn("lifecycle: PR merge notice delivery failed", "pr", prURL, "project", intent.ProjectID, "err", err)
-		return
+	// Detach the send from this context: an API merge must not block its HTTP
+	// response on the orchestrator's acceptance, and a client disconnect must
+	// not cancel a legitimate attempt. The stamp above already bounds this to
+	// one attempt per merge, so the detachment cannot multiply notices.
+	sendCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), mergeNoticeSendTimeout)
+	go func() {
+		defer cancel()
+		if err := send(sendCtx, intent.ProjectID, message, idempotencyKey); err != nil {
+			slog.Default().Warn("lifecycle: PR merge notice delivery failed", "pr", prURL, "project", intent.ProjectID, "err", err)
+			return
+		}
+		slog.Default().Info("lifecycle: PR merge notice delivered to orchestrator", "pr", prURL, "project", intent.ProjectID)
+	}()
+}
+
+// defaultMergeNoticeSend delivers through the late-bound orchestratorNotifier,
+// read at send time so a notifier wired after the merge is still used.
+func (m *Manager) defaultMergeNoticeSend(ctx context.Context, projectID domain.ProjectID, message, idempotencyKey string) error {
+	notif := m.orchestratorNotifier()
+	if notif == nil {
+		return nil
 	}
-	slog.Default().Info("lifecycle: PR merge notice delivered to orchestrator", "pr", prURL, "project", intent.ProjectID)
+	return notif.NotifyOrchestrator(ctx, projectID, message, idempotencyKey)
 }
 
 // renderPRMergedNotice formats the system notice the orchestrator receives:

@@ -190,6 +190,14 @@ func WithNotificationSink(sink notificationSink) Option {
 	return func(m *Manager) { m.notifications = sink }
 }
 
+// WithMergeNoticeSend replaces the PR merge notice delivery function (fork
+// issue #243). The detached send already synchronizes through the dedup
+// stamp; this seam only exists so tests can drive the goroutine
+// deterministically.
+func WithMergeNoticeSend(send mergeNoticeSendFunc) Option {
+	return func(m *Manager) { m.mergeNoticeSend = send }
+}
+
 // WithTelemetry wires lifecycle activity transitions to the shared telemetry sink.
 func WithTelemetry(sink ports.EventSink) Option {
 	return func(m *Manager) { m.telemetry = sink }
@@ -260,6 +268,9 @@ type Manager struct {
 	// nudges become no-ops but the reducer still runs.
 	guard         *sessionguard.Guard
 	notifications notificationSink
+	// mergeNoticeSend overrides the PR merge notice delivery (fork issue #243)
+	// for tests. Immutable after construction; nil uses defaultMergeNoticeSend.
+	mergeNoticeSend mergeNoticeSendFunc
 	// completionTerminator is late-bound because Session Manager itself depends
 	// on this lifecycle reducer. It is required before the SCM observer starts.
 	completionTerminator sessionTerminator
