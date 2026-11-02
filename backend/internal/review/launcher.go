@@ -692,6 +692,11 @@ func outputContainsAny(output string, patterns []string) bool {
 
 func (l *agentLauncher) runtimeEnv(ctx context.Context, spec LaunchSpec, argv []string, base map[string]string) map[string]string {
 	env := agentlaunch.MergeEnv(spec.ProjectEnv, base)
+	// Reviewer panes get the same HOME invariant as session spawns: the pane
+	// exports only what this map carries, so a foreign daemon HOME must not
+	// survive into it (issue #248). An explicit agent-config value still wins,
+	// so the stamp runs before the per-role provider pin overlay.
+	agentlaunch.StampSessionHome(env)
 	// The reviewer's resolved agent config may carry a per-role provider pin
 	// (issue #6156): explicit env wins over settings files, same transport as
 	// the session launch path. The overlay is last so a pin cannot be undone.

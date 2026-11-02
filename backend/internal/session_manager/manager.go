@@ -6575,6 +6575,13 @@ func (m *Manager) runtimeEnvChecked(id domain.SessionID, project domain.ProjectI
 		env[EnvAgentBrowserURL] = m.agentBrowserURL
 		env[EnvAgentBrowserToken] = m.agentBrowserToken
 	}
+	// A session's HOME must describe this account, never a value inherited from
+	// whatever launched the daemon: a restarted daemon that inherited another
+	// session's sandbox HOME handed it to every spawn (issue #248). The tmux
+	// server keeps the HOME of the daemon that started it and panes only export
+	// what this map carries, so the stamp applies on every launch, not just the
+	// first after boot. An explicit project or account value still wins.
+	agentlaunch.StampSessionHome(env)
 	accountErr := m.applyAgentAccountEnv(id, accountID, env, caseInsensitive)
 	path, err := hookPATHForOS(m.executable, os.Getenv, projectEnv, m.dataDir, caseInsensitive)
 	if err != nil {

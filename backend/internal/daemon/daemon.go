@@ -205,6 +205,14 @@ func Run() error {
 	ignoreBrokenPipeSignal()
 
 	log := newLogger()
+	// A daemon restarted from a shell carrying another session's sandbox HOME
+	// would hand that HOME to every child it spawns: pty hosts and the tmux
+	// server inherit os.Environ(), and their panes inherit the server's env
+	// (issue #248). Repair the process env before any child can start.
+	if leaked, repaired := agentlaunch.RepairForeignHome(); repaired {
+		log.Warn("daemon environment carried a foreign HOME; reset to the account home",
+			"previous", leaked, "home", agentlaunch.RealUserHome())
+	}
 	var browserRuntimeToken string
 	if os.Getenv(browserruntime.RuntimeTokenStdinEnv) == "1" {
 		browserRuntimeToken, err = browserruntime.ReadRuntimeToken(os.Stdin)

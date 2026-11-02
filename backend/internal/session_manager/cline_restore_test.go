@@ -66,6 +66,12 @@ func TestClineRestoreProbesRecoveredConversation(t *testing.T) {
 				rt := &fakeRuntime{}
 				m, st, ws := newExitedResumeManager(t, rt, cline.New())
 				ws.path = workspace
+				// The history probe reads HOME from the launch env, which now
+				// deterministically carries the account home (issue #248). The
+				// fixture home rides the sanctioned explicit channel instead.
+				project := st.projects["mer"]
+				project.Config.Env = map[string]string{"HOME": home}
+				st.projects["mer"] = project
 				rec := st.sessions["mer-1"]
 				rec.Harness = domain.HarnessCline
 				rec.IsTerminated = operation == "restore"

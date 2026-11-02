@@ -400,6 +400,42 @@ func TestInteractiveTerminalEnvPreservesExplicitGitIdentity(t *testing.T) {
 	}
 }
 
+// The leak shape from issue #248, at the pty-host merge: the launching process
+// inherited another session's sandbox HOME, and the session env pins the
+// account home. The merged slice reaches exec verbatim, so it must carry
+// exactly one entry per explicit key — the child cannot be left to resolve a
+// duplicated key in whatever order its runtime picks.
+func TestInteractiveTerminalEnvReplacesInheritedKeys(t *testing.T) {
+	merged := interactiveTerminalEnv(
+		[]string{"HOME=/private/tmp/ao228-home", "PATH=/usr/bin", "AO_SESSION_ID=stale"},
+		map[string]string{"HOME": "/Users/axisrow", "PATH": "/pinned"},
+		[]string{"HOME=/private/tmp/ao228-home-argv"},
+	)
+
+	count := func(prefix string) int {
+		n := 0
+		for _, entry := range merged {
+			if len(entry) > len(prefix) && entry[:len(prefix)] == prefix {
+				n++
+			}
+		}
+		return n
+	}
+	if got := count("HOME="); got != 1 {
+		t.Fatalf("merged slice carries %d HOME entries: %#v", got, merged)
+	}
+	if !slices.Contains(merged, "HOME=/private/tmp/ao228-home-argv") {
+		t.Fatalf("argv assignment lost to the runtime config: %#v", merged)
+	}
+	if got := count("PATH="); got != 1 || !slices.Contains(merged, "PATH=/pinned") {
+		t.Fatalf("pinned PATH did not deterministically replace the inherited one: %#v", merged)
+	}
+	// Base-only keys survive untouched.
+	if !slices.Contains(merged, "AO_SESSION_ID=stale") {
+		t.Fatalf("base-only key dropped: %#v", merged)
+	}
+}
+
 func TestCreatePassesHostOptionsToSpawner(t *testing.T) {
 	isolateRegistry(t)
 	spawnErr := errors.New("stop after capturing the options")
