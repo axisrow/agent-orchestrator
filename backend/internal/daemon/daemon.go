@@ -1290,6 +1290,12 @@ func Run() error {
 				log.Warn("reviewer chat recovery deferred", "err", reconcileErr)
 			}
 			close(reviewerChatsRecovered)
+			// Runs orphaned by the previous daemon's death cannot wait for a
+			// per-session List: convert the ones whose carrier provably died
+			// before any restore can re-point a review row at a fresh pane.
+			if sweepErr := reviewSvc.SweepDaemonRestartOrphans(ctx); sweepErr != nil {
+				log.Warn("review orphan sweep incomplete", "err", sweepErr)
+			}
 			if reconcileErr := sessMgr.ReconcileBackground(ctx); reconcileErr != nil {
 				log.Error("background session reconciliation on boot failed", "err", reconcileErr)
 			}

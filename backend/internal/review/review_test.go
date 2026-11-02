@@ -347,6 +347,18 @@ func (f *fakeStore) ListRunningReviewRunsBySession(_ context.Context, sessionID 
 	return out, nil
 }
 
+func (f *fakeStore) ListSessionsWithRunningReviewRuns(context.Context) ([]domain.SessionID, error) {
+	seen := map[domain.SessionID]bool{}
+	var out []domain.SessionID
+	for _, run := range f.runs {
+		if run.Status == domain.ReviewRunRunning && !seen[run.SessionID] {
+			seen[run.SessionID] = true
+			out = append(out, run.SessionID)
+		}
+	}
+	return out, nil
+}
+
 func (f *fakeStore) ListRecoverableChatReviews(context.Context) ([]domain.Review, error) {
 	return f.recoverableReviews, f.recoverableReviewsErr
 }
@@ -626,7 +638,7 @@ func TestRecoverChatReviewersRequiresStoreRecoveryQuery(t *testing.T) {
 }
 
 func TestReviewerOperationsWaitForStartupRecovery(t *testing.T) {
-	for _, operation := range []string{"list", "auto_trigger"} {
+	for _, operation := range []string{"list", "auto_trigger", "sweep"} {
 		t.Run(operation, func(t *testing.T) {
 			review := domain.Review{ID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerClaudeCode,
 				InterfaceMode: domain.ReviewerInterfaceChat, ReviewerHandleID: "chat-review:rev-1", ReviewerActivityState: domain.ActivityActive}
@@ -642,6 +654,9 @@ func TestReviewerOperationsWaitForStartupRecovery(t *testing.T) {
 				if operation == "list" {
 					_, err := eng.List(ctx, review.SessionID)
 					return err
+				}
+				if operation == "sweep" {
+					return eng.SweepDaemonRestartOrphans(ctx)
 				}
 				_, err := eng.TriggerWithOptions(ctx, review.SessionID, TriggerOptions{Source: domain.ReviewTriggerAuto})
 				return err
@@ -3384,6 +3399,157 @@ func TestListDoesNotTreatReviewerProbeFailureAsExit(t *testing.T) {
 	}
 	if got.ReviewerActivityState != domain.ActivityActive || len(got.Runs) != 1 || got.Runs[0].Status != domain.ReviewRunRunning {
 		t.Fatalf("list = %+v, want unchanged active review", got)
+	}
+}
+
+func TestSweepDaemonRestartOrphansFailsDeadCarrierRuns(t *testing.T) {
+	store := orphanSweepStore()
+	launcher := &fakeLauncher{alive: false}
+	eng := newEngineForTest(store, fakeSessions{rec: liveWorker(), ok: true}, prAt("sha1"), fakeProjects{}, launcher)
+
+	if err := eng.SweepDaemonRestartOrphans(context.Background()); err != nil {
+		t.Fatalf("SweepDaemonRestartOrphans: %v", err)
+	}
+	if !launcher.aliveChecked {
+		t.Fatal("expected reviewer liveness probe")
+	}
+	if store.runs[0].Status != domain.ReviewRunFailed || store.runs[0].Body != reviewerExitedBeforeSubmission {
+		t.Fatalf("run = %+v, want failed with reviewer-exit reason", store.runs[0])
+	}
+	if store.review == nil || store.review.ReviewerActivityState != domain.ActivityExited {
+		t.Fatalf("review = %+v, want exited activity state", store.review)
+	}
+}
+
+func TestSweepDaemonRestartOrphansLeavesLiveCarrierRuns(t *testing.T) {
+	store := orphanSweepStore()
+	launcher := &fakeLauncher{alive: true}
+	eng := newEngineForTest(store, fakeSessions{rec: liveWorker(), ok: true}, prAt("sha1"), fakeProjects{}, launcher)
+
+	if err := eng.SweepDaemonRestartOrphans(context.Background()); err != nil {
+		t.Fatalf("SweepDaemonRestartOrphans: %v", err)
+	}
+	if store.runs[0].Status != domain.ReviewRunRunning || store.review.ReviewerActivityState != domain.ActivityActive {
+		t.Fatalf("run = %+v activity = %q, want untouched running pass", store.runs[0], store.review.ReviewerActivityState)
+	}
+}
+
+func TestSweepDaemonRestartOrphansTreatsProbeFailureAsUnknown(t *testing.T) {
+	store := orphanSweepStore()
+	launcher := &fakeLauncher{aliveErr: errors.New("runtime probe unavailable")}
+	eng := newEngineForTest(store, fakeSessions{rec: liveWorker(), ok: true}, prAt("sha1"), fakeProjects{}, launcher)
+
+	if err := eng.SweepDaemonRestartOrphans(context.Background()); err != nil {
+		t.Fatalf("SweepDaemonRestartOrphans: %v", err)
+	}
+	if store.runs[0].Status != domain.ReviewRunRunning || store.review.ReviewerActivityState != domain.ActivityActive {
+		t.Fatalf("run = %+v activity = %q, want untouched pass on inconclusive probe", store.runs[0], store.review.ReviewerActivityState)
+	}
+}
+
+func TestTriggerAfterOrphanSweepStartsNewRun(t *testing.T) {
+	store := orphanSweepStore()
+	launcher := &fakeLauncher{alive: false, handle: "review-mer-1"}
+	eng := newEngineForTest(store, fakeSessions{rec: liveWorker(), ok: true}, prAt("sha1"), fakeProjects{}, launcher)
+
+	if err := eng.SweepDaemonRestartOrphans(context.Background()); err != nil {
+		t.Fatalf("SweepDaemonRestartOrphans: %v", err)
+	}
+	res, err := trigger(context.Background(), eng, "mer-1", "", domain.AgentConfig{})
+	if err != nil {
+		t.Fatalf("Trigger after sweep: %v", err)
+	}
+	if !res.Created || res.Run.Status != domain.ReviewRunRunning {
+		t.Fatalf("result = %+v, want a new running run", res)
+	}
+}
+
+// orphanSweepStore seeds the daemon-crash shape: a review row that was active
+// with a live-looking handle when the daemon died, and a run still saying
+// running with nobody behind it.
+func orphanSweepStore() *fakeStore {
+	return &fakeStore{
+		review: &domain.Review{ID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerAider, ReviewerHandleID: "review-mer-1", ReviewerActivityState: domain.ActivityActive},
+		runs: []domain.ReviewRun{{
+			ID: "run-1", ReviewID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerAider,
+			PRURL: "https://github.com/o/r/pull/1", TargetSHA: "sha1", Status: domain.ReviewRunRunning,
+		}},
+	}
+}
+
+// TestSweepDaemonRestartOrphansEndToEnd exercises the sweep against the real
+// SQLite store, including the running-run candidate query.
+func TestSweepDaemonRestartOrphansEndToEnd(t *testing.T) {
+	ctx := context.Background()
+	store := newSQLiteReviewStore(t)
+	worker := liveWorker()
+	worker.ReviewerHarness = domain.ReviewerCodex
+	seedReviewWorker(t, store, worker)
+	now := time.Now().UTC()
+	review := domain.Review{ID: "rev-e2e", SessionID: worker.ID, ProjectID: worker.ProjectID, Harness: domain.ReviewerCodex,
+		InterfaceMode: domain.ReviewerInterfaceTUI, ReviewerHandleID: "review-mer-1", ReviewerLaunchID: "launch-1",
+		ReviewerActivityState: domain.ActivityActive, CreatedAt: now, UpdatedAt: now}
+	if err := store.UpsertReview(ctx, review); err != nil {
+		t.Fatal(err)
+	}
+	run := domain.ReviewRun{ID: "run-e2e", ReviewID: review.ID, SessionID: worker.ID, Harness: review.Harness,
+		PRURL: "https://github.com/o/r/pull/1", TargetSHA: "sha1", Status: domain.ReviewRunRunning, CreatedAt: now}
+	if err := store.InsertReviewRun(ctx, run); err != nil {
+		t.Fatal(err)
+	}
+	launcher := &fakeLauncher{alive: false}
+	eng := newEngineForTest(store, fakeSessions{rec: worker, ok: true}, prAt("sha1"), fakeProjects{}, launcher)
+
+	if err := eng.SweepDaemonRestartOrphans(ctx); err != nil {
+		t.Fatalf("SweepDaemonRestartOrphans: %v", err)
+	}
+	saved, _, err := store.GetReviewRun(ctx, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.Status != domain.ReviewRunFailed || saved.Body != reviewerExitedBeforeSubmission {
+		t.Fatalf("run = %+v, want failed with reviewer-exit reason", saved)
+	}
+}
+
+// TestRestoreReviewerFailsDeadLaunchRunningRuns pins the restore-side hole:
+// relaunching a reviewer whose previous launch was confirmed dead must fail
+// the dead launch's unfinished passes instead of leaving them running against
+// a fresh idle pane.
+func TestRestoreReviewerFailsDeadLaunchRunningRuns(t *testing.T) {
+	ctx := context.Background()
+	store := newSQLiteReviewStore(t)
+	worker := liveWorker()
+	worker.ReviewerHarness = domain.ReviewerCodex
+	seedReviewWorker(t, store, worker)
+	now := time.Now().UTC()
+	review := domain.Review{ID: "rev-restore", SessionID: worker.ID, ProjectID: worker.ProjectID, Harness: domain.ReviewerCodex,
+		InterfaceMode: domain.ReviewerInterfaceTUI, ReviewerHandleID: "old-pane", ReviewerLaunchID: "old-launch",
+		ReviewerActivityState: domain.ActivityActive, CreatedAt: now, UpdatedAt: now}
+	if err := store.UpsertReview(ctx, review); err != nil {
+		t.Fatal(err)
+	}
+	run := domain.ReviewRun{ID: "run-restore", ReviewID: review.ID, SessionID: worker.ID, Harness: review.Harness,
+		PRURL: "https://github.com/o/r/pull/1", TargetSHA: "sha1", Status: domain.ReviewRunRunning, CreatedAt: now}
+	if err := store.InsertReviewRun(ctx, run); err != nil {
+		t.Fatal(err)
+	}
+	launcher := &fakeLauncher{handle: "new-pane"}
+	eng := newEngineForTest(store, fakeSessions{rec: worker, ok: true}, prAt("sha1"), fakeProjects{}, launcher)
+
+	res, err := eng.RestoreReviewer(ctx, worker.ID)
+	if err != nil {
+		t.Fatalf("RestoreReviewer: %v", err)
+	}
+	if !res.Restored || res.ReviewerHandleID != "new-pane" {
+		t.Fatalf("result = %+v, want restored new-pane reviewer", res)
+	}
+	saved, _, err := store.GetReviewRun(ctx, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.Status != domain.ReviewRunFailed || saved.Body != reviewerExitedBeforeSubmission {
+		t.Fatalf("run = %+v, want failed with reviewer-exit reason", saved)
 	}
 }
 

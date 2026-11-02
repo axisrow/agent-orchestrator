@@ -130,6 +130,11 @@ FROM review_run WHERE session_id = ? ORDER BY created_at DESC;
 SELECT id, review_id, session_id, harness, pr_url, target_sha, status, verdict, body, created_at, github_review_id, delivered_at, batch_id, auto_inject_review, trigger_source, github_review_state, findings, publish_state, publish_error
 FROM review_run WHERE session_id = ? AND status = 'running' AND verdict = '' ORDER BY created_at DESC;
 
+-- name: ListSessionsWithRunningReviewRuns :many
+-- Candidate set for the daemon-startup orphan sweep: sessions whose review
+-- runs still say running and need their carrier's liveness reconciled.
+SELECT DISTINCT session_id FROM review_run WHERE status = 'running';
+
 -- name: ListReviewRunsByBatch :many
 SELECT id, review_id, session_id, harness, pr_url, target_sha, status, verdict, body, created_at, github_review_id, delivered_at, batch_id, auto_inject_review, trigger_source, github_review_state, findings, publish_state, publish_error
 FROM review_run WHERE session_id = ? AND batch_id = ? ORDER BY created_at ASC, id ASC;
