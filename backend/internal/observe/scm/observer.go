@@ -91,6 +91,7 @@ type Store interface {
 	ListChecks(ctx context.Context, prURL string) ([]domain.PullRequestCheck, error)
 	TouchPRSeen(ctx context.Context, prURL string, at time.Time) error
 	WriteSCMObservation(ctx context.Context, pr domain.PullRequest, checks []domain.PullRequestCheck, reviews []domain.PullRequestReview, threads []domain.PullRequestReviewThread, comments []domain.PullRequestComment, reviewMode ports.ReviewWriteMode) error
+	RecordRepositoryRename(ctx context.Context, r domain.RepositoryRename) error
 }
 
 // Lifecycle is the provider-neutral lifecycle notification sink.
@@ -255,6 +256,17 @@ type Observer struct {
 	rateLimitUntil map[string]time.Time
 	// Cache holds bounded in-memory provider ETags and review poll timestamps.
 	Cache ObserverCache
+	// renames holds the repository renames already recorded, keyed
+	// host/old name. One entry per renamed scan repository.
+	renames map[string]string
+	// forceMu guards forcedReviews.
+	forceMu sync.Mutex
+	// forcedReviews holds PR URLs whose metadata and review threads the next
+	// poll fetches regardless of guards and review cadence. Each request is
+	// consumed by exactly one poll, whatever its outcome.
+	forcedReviews map[string]bool
+	// trigger wakes the poll loop for a forced refresh.
+	trigger chan struct{}
 	// lifecycleTimeout bounds each lifecycle notification.
 	lifecycleTimeout time.Duration
 }
@@ -262,7 +274,7 @@ type Observer struct {
 // New constructs an Observer with default cadence/cache settings for zero
 // values in cfg.
 func New(provider Provider, store Store, lifecycle Lifecycle, cfg Config) *Observer {
-	o := &Observer{provider: provider, store: store, lifecycle: lifecycle, tick: cfg.Tick, reviewInterval: cfg.ReviewInterval, clock: cfg.Clock, logger: cfg.Logger, scopedIdentityResolver: cfg.ScopedIdentityResolver, Cache: newCache(cfg.CacheMax), rateLimitUntil: map[string]time.Time{}, lifecycleTimeout: DefaultLifecycleTimeout}
+	o := &Observer{provider: provider, store: store, lifecycle: lifecycle, tick: cfg.Tick, reviewInterval: cfg.ReviewInterval, clock: cfg.Clock, logger: cfg.Logger, scopedIdentityResolver: cfg.ScopedIdentityResolver, Cache: newCache(cfg.CacheMax), rateLimitUntil: map[string]time.Time{}, lifecycleTimeout: DefaultLifecycleTimeout, forcedReviews: map[string]bool{}, trigger: make(chan struct{}, 1)}
 	if o.tick <= 0 {
 		o.tick = DefaultTickInterval
 	}
@@ -1101,6 +1113,7 @@ func (o *Observer) discoverNewPRs(ctx context.Context, sessionRepos []sessionRep
 			continue
 		}
 		pullsByRepo[repoKey] = pulls
+		o.recordRename(ctx, repo, pulls)
 		// Record the listed PR numbers so selectRefreshCandidates can
 		// restrict refresh to only updated MRs rather than every tracked MR.
 		// Subjects are identity-keyed, so when a listed PR's provider id
@@ -1190,7 +1203,6 @@ func (o *Observer) discoverNewPRs(ctx context.Context, sessionRepos []sessionRep
 				Host:         repo.Host,
 				Repo:         repoFullName(repo),
 				ProviderID:   pr.ProviderID,
-				URLAlias:     listedRepoAlias(firstNonEmpty(pr.URL, pr.HTMLURL), repo),
 				UpdatedAt:    now,
 			}
 			// Persist the discovered PR as an open baseline row immediately, before
@@ -2196,21 +2208,30 @@ func repoFullName(repo ports.SCMRepo) string {
 	return repo.Owner + "/" + repo.Name
 }
 
-// listedRepoAlias returns prURL rewritten to the repository name it was listed
-// under when the provider answered with another name (a renamed or transferred
-// repository), so links built from the old name resolve to the same PR. The
-// alias is normalized like ParseChangeRequestURL so any spelling of it matches.
-func listedRepoAlias(prURL string, repo ports.SCMRepo) string {
-	ref, err := domain.ParseChangeRequestURL(prURL)
-	listed := repoFullName(repo)
-	if err != nil || strings.EqualFold(ref.Repository, listed) {
-		return ""
+// recordRename stores the provider's current name for repo when its PR
+// listing answers under another name, as a renamed or transferred
+// repository's old name does. Each rename is written once per process.
+func (o *Observer) recordRename(ctx context.Context, repo ports.SCMRepo, pulls []ports.SCMPRObservation) {
+	if len(pulls) == 0 || pulls[0].BaseRepo == "" {
+		return
 	}
-	alias, err := domain.ParseChangeRequestURL(strings.Replace(ref.URL, "/"+ref.Repository+"/", "/"+listed+"/", 1))
-	if err != nil {
-		return ""
+	r := domain.RepositoryRename{
+		Host:    strings.ToLower(repo.Host),
+		OldName: strings.ToLower(repoFullName(repo)),
+		Name:    strings.ToLower(pulls[0].BaseRepo),
 	}
-	return alias.URL
+	key := r.Host + "/" + r.OldName
+	if r.Name == r.OldName || o.renames[key] == r.Name {
+		return
+	}
+	if err := o.store.RecordRepositoryRename(ctx, r); err != nil {
+		o.logger.Warn("scm observer: record repository rename failed", "repo", key, "err", err)
+		return
+	}
+	if o.renames == nil {
+		o.renames = map[string]string{}
+	}
+	o.renames[key] = r.Name
 }
 
 func ownerOf(full string) string {
