@@ -755,6 +755,16 @@ func Run() error {
 		Log:      log,
 	})
 	chatSvc.SetReportCoordinator(reportCoordinator)
+	// PR merge notices (fork issue #243): lifecycle one-shot project facts ride
+	// the same semantic path as report batches, addressed by the same
+	// active-orchestrator rule. Late-bound here because the sender needs the
+	// coordinator that was just constructed. Opt-in: the notice is unwired
+	// unless AO_ENABLE_PR_MERGE_NOTICES=1 — the bell row records merges
+	// either way, only the orchestrator-conversation notice is gated.
+	if prMergeNoticesEnabled(os.Getenv) {
+		log.Info("PR merge notices enabled", "env", prMergeNoticesEnabledEnv)
+		lcStack.LCM.SetOrchestratorNotifier(orchestratorNoticeSender{reports: reportCoordinator, sessions: reportSessions})
+	}
 	reportDeliveryDone := reportCoordinator.Start(ctx)
 	defer func() {
 		stop()
@@ -1431,6 +1441,31 @@ func Run() error {
 type reportSemanticSession interface {
 	SendSemantic(context.Context, domain.SessionID, string, string) error
 	InterruptTUI(context.Context, domain.SessionID) error
+}
+
+// orchestratorNoticeSender delivers lifecycle one-shot project facts (the
+// fork issue #243 PR merge notice) to the project's active orchestrator over
+// the same semantic send report batches use. No active orchestrator means the
+// notice ends after the bell row recorded the fact: an orchestrator started
+// later sees the merged PR through its own tooling, and a nonexistent
+// recipient is not a delivery failure to retry.
+type orchestratorNoticeSender struct {
+	reports  *reportsvc.Coordinator
+	sessions reportSemanticSession
+}
+
+func (s orchestratorNoticeSender) NotifyOrchestrator(ctx context.Context, projectID domain.ProjectID, message, idempotencyKey string) error {
+	if s.reports == nil || s.sessions == nil {
+		return nil
+	}
+	target, ok, err := s.reports.ActiveOrchestrator(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return nil
+	}
+	return s.sessions.SendSemantic(ctx, target.ID, message, idempotencyKey)
 }
 
 type reportSemanticDelivery struct {

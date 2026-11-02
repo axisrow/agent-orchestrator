@@ -541,6 +541,13 @@ func (m *Manager) ApplySCMObservation(ctx context.Context, id domain.SessionID, 
 		return err
 	}
 	m.emitNotification(ctx, intent)
+	if o.PR.Merged {
+		// The orchestrator must hear the merge even when no worker survives to
+		// report it (fork issue #243). Fires after the bell emit, so a notice
+		// failure never touches the recorded fact, and independently of the
+		// worker termination ApplyPRObservation already applied.
+		m.notifyPRMerged(ctx, intent, o)
+	}
 	m.resolveNotifications(ctx, readyToMergeResolutions(id, o, ready, m.clock())...)
 	return nil
 }
@@ -593,6 +600,10 @@ func (m *Manager) notificationIntentForSCM(rec domain.SessionRecord, o ports.SCM
 	}
 	if o.PR.Merged {
 		base.Type = domain.NotificationPRMerged
+		// Merge-scoped dedup for the bell row too (fork issue #243): the
+		// source_key unique index makes one merge exactly one row even when
+		// the API merge's synthetic observation and the observer's poll race.
+		base.SourceKey = "pr-merged:" + prURL + ":" + mergeNoticeSignature(o)
 		return &base
 	}
 	if o.PR.Closed {

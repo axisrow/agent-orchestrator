@@ -132,6 +132,15 @@ type notificationSink interface {
 	Resolve(ctx context.Context, res ports.NotificationResolution) error
 }
 
+// orchestratorNotifier is the optional lifecycle-to-orchestrator boundary for
+// one-shot project facts no worker survives to report — the PR merge notice
+// (fork issue #243). Implementations route the message to the project's
+// active orchestrator; unwired means the notice is skipped and only the bell
+// row records the fact.
+type orchestratorNotifier interface {
+	NotifyOrchestrator(ctx context.Context, projectID domain.ProjectID, message, idempotencyKey string) error
+}
+
 // projectConfigLoader resolves a project's config so MarkTerminated can check
 // the ContainerReap opt-out before reaping. A load failure must not fall
 // through to reaping - see ports.ContainerReaper below.
@@ -179,6 +188,14 @@ type Option func(*Manager)
 // WithNotificationSink wires lifecycle notification intents to a write-side producer.
 func WithNotificationSink(sink notificationSink) Option {
 	return func(m *Manager) { m.notifications = sink }
+}
+
+// WithMergeNoticeSend replaces the PR merge notice delivery function (fork
+// issue #243). The detached send already synchronizes through the dedup
+// stamp; this seam only exists so tests can drive the goroutine
+// deterministically.
+func WithMergeNoticeSend(send mergeNoticeSendFunc) Option {
+	return func(m *Manager) { m.mergeNoticeSend = send }
 }
 
 // WithTelemetry wires lifecycle activity transitions to the shared telemetry sink.
@@ -251,6 +268,9 @@ type Manager struct {
 	// nudges become no-ops but the reducer still runs.
 	guard         *sessionguard.Guard
 	notifications notificationSink
+	// mergeNoticeSend overrides the PR merge notice delivery (fork issue #243)
+	// for tests. Immutable after construction; nil uses defaultMergeNoticeSend.
+	mergeNoticeSend mergeNoticeSendFunc
 	// completionTerminator is late-bound because Session Manager itself depends
 	// on this lifecycle reducer. It is required before the SCM observer starts.
 	completionTerminator sessionTerminator
@@ -266,6 +286,11 @@ type Manager struct {
 	projects         projectConfigLoader
 	operationGateMu  sync.RWMutex
 	operationGate    sessionOperationGate
+	// orchestratorNotices is late-bound like completionTerminator: the notice
+	// sender depends on report wiring that itself depends on this reducer.
+	// Nil means unwired; merge notices then only reach the bell.
+	orchestratorNoticeMu sync.RWMutex
+	orchestratorNotices  orchestratorNotifier
 	// dataDir backs ReconcileSessionOutputType's artifact-dir fallback for
 	// sessions rows created before session_output_type/artifact_dir existed.
 	dataDir string
@@ -363,6 +388,22 @@ func (m *Manager) SetSessionOperationGate(gate sessionOperationGate) {
 	m.operationGateMu.Lock()
 	m.operationGate = gate
 	m.operationGateMu.Unlock()
+}
+
+// SetOrchestratorNotifier wires the one-shot project-fact sender (the fork
+// issue #243 PR merge notice). Best effort by design: a nil or failing
+// notifier never blocks the lifecycle write — the bell row already recorded
+// the fact before the notice fires.
+func (m *Manager) SetOrchestratorNotifier(n orchestratorNotifier) {
+	m.orchestratorNoticeMu.Lock()
+	defer m.orchestratorNoticeMu.Unlock()
+	m.orchestratorNotices = n
+}
+
+func (m *Manager) orchestratorNotifier() orchestratorNotifier {
+	m.orchestratorNoticeMu.RLock()
+	defer m.orchestratorNoticeMu.RUnlock()
+	return m.orchestratorNotices
 }
 
 func (m *Manager) sessionMutationInProgress(id domain.SessionID) bool {
