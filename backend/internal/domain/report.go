@@ -114,6 +114,12 @@ const (
 	ReportStale ReportDeliveryState = "stale"
 )
 
+// ReportSupersededReason is the durable retirement reason recorded on a
+// worker's undelivered reports when a new prompt reaches the session: the
+// reports describe the previous task, and delivering them after a fresh
+// instruction would present stale work as current status (fork issue #240).
+const ReportSupersededReason = "superseded by a newer prompt to this session"
+
 // ReportRecord is the durable report and outbox persistence shape. State and
 // outputs are independent, and neither changes authoritative session state.
 type ReportRecord struct {

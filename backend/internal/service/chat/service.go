@@ -1378,6 +1378,21 @@ func (s *Service) Send(
 			return domain.ConversationTurn{}, fmt.Errorf("acknowledge worker reports: %w", err)
 		}
 	}
+	// An accepted prompt retires a chat worker's undelivered reports (fork
+	// issue #240), mirroring session_manager's pane hook: the reports describe
+	// the previous task, and delivering them after a fresh instruction would
+	// present stale work as current status. Automation deliveries are not a
+	// task change, and orchestrator conversations hold no worker reports.
+	// Best-effort: a failure never fails the accepted prompt.
+	if turn.ID != "" && record.Kind == domain.KindWorker && msg.Origin != domain.MessageOriginAutomation {
+		if superseder, ok := s.sessions.(interface {
+			SupersedePendingReports(context.Context, domain.SessionID, string) (int, error)
+		}); ok {
+			if _, err := superseder.SupersedePendingReports(context.WithoutCancel(ctx), id, domain.ReportSupersededReason); err != nil {
+				s.log.Warn("chat send: supersede pending worker reports failed", "session", id, "error", err)
+			}
+		}
+	}
 	return turn, nil
 }
 

@@ -73,6 +73,10 @@ type fakeStore struct {
 	// agentSwitchStore is wired only by agent-switch tests so fakeLCM can model
 	// Lifecycle Manager's atomic ownership-boundary commands.
 	agentSwitchStore any
+	// supersedeCalls records SupersedePendingReports invocations with the
+	// reason each arrived with (fork issue #240 coverage).
+	supersedeCalls []supersedeCall
+	supersedeErr   error
 	// worktrees maps session ID to its saved worktree rows (shutdown-saved marker).
 	worktrees map[domain.SessionID][]domain.SessionWorktreeRecord
 	// sharedLog, when non-nil, receives an ordered call entry for each
@@ -82,6 +86,11 @@ type fakeStore struct {
 	// once-per-project regression test asserts on them.
 	listSessionsCalls    atomic.Int64
 	listAllSessionsCalls atomic.Int64
+}
+
+type supersedeCall struct {
+	session domain.SessionID
+	reason  string
 }
 
 func newFakeStore() *fakeStore {
@@ -103,6 +112,13 @@ func (f *fakeStore) GetProject(_ context.Context, id string) (domain.ProjectReco
 }
 func (f *fakeStore) ListWorkspaceRepos(_ context.Context, projectID string) ([]domain.WorkspaceRepoRecord, error) {
 	return f.workspaceRepo[projectID], nil
+}
+func (f *fakeStore) SupersedePendingReports(_ context.Context, session domain.SessionID, reason string) (int, error) {
+	if f.supersedeErr != nil {
+		return 0, f.supersedeErr
+	}
+	f.supersedeCalls = append(f.supersedeCalls, supersedeCall{session: session, reason: reason})
+	return 1, nil
 }
 func (f *fakeStore) CreateSession(_ context.Context, rec domain.SessionRecord) (domain.SessionRecord, error) {
 	f.num++
@@ -11278,6 +11294,73 @@ func TestSend_SkipsConfirmForHooklessHarness(t *testing.T) {
 	if dt := time.Since(start); dt > 250*time.Millisecond {
 		t.Fatalf("Send took %s for a hookless harness; confirmActive should have been skipped", dt)
 	}
+}
+
+// TestSendSupersedesPendingWorkerReportsOnAuthoredPrompt pins fork issue #240:
+// a prompt that reached a worker session retires that session's undelivered
+// reports — authored pane sends and session-relayed directions both count, an
+// AO-internal send does not, a chat worker's relay counts, and a supersede
+// failure never fails the delivered prompt.
+func TestSendSupersedesPendingWorkerReportsOnAuthoredPrompt(t *testing.T) {
+	newChatManager := func(t *testing.T, st *fakeStore) *Manager {
+		t.Helper()
+		m := newSendTestManager(t, fakeAgent{}, &fakeMessenger{}, st)
+		m.chat = &recordingLauncher{}
+		return m
+	}
+	t.Run("authored pane prompt supersedes", func(t *testing.T) {
+		st := newFakeStore()
+		st.sessions["s1"] = pastStartupGate(domain.SessionRecord{ID: "s1", Harness: "claude-code"})
+		m := newSendTestManager(t, fakeAgent{}, &fakeMessenger{}, st)
+		if err := m.SendWithOptions(context.Background(), "s1", "new task", nil, ports.MessageDeliveryOptions{AuthoredByUser: true}); err != nil {
+			t.Fatalf("send: %v", err)
+		}
+		if len(st.supersedeCalls) != 1 || st.supersedeCalls[0].session != "s1" || st.supersedeCalls[0].reason != domain.ReportSupersededReason {
+			t.Fatalf("supersede calls = %+v, want one for s1 with the supersession reason", st.supersedeCalls)
+		}
+	})
+	t.Run("internal pane send keeps reports", func(t *testing.T) {
+		st := newFakeStore()
+		st.sessions["s1"] = pastStartupGate(domain.SessionRecord{ID: "s1", Harness: "claude-code"})
+		m := newSendTestManager(t, fakeAgent{}, &fakeMessenger{}, st)
+		if err := m.Send(context.Background(), "s1", "coordination", nil); err != nil {
+			t.Fatalf("send: %v", err)
+		}
+		if len(st.supersedeCalls) != 0 {
+			t.Fatalf("supersede calls = %+v, want none for an internal send", st.supersedeCalls)
+		}
+	})
+	t.Run("session-relayed direction supersedes", func(t *testing.T) {
+		st := newFakeStore()
+		st.sessions["s1"] = pastStartupGate(domain.SessionRecord{ID: "s1", Harness: "claude-code"})
+		m := newSendTestManager(t, fakeAgent{}, &fakeMessenger{}, st)
+		if err := m.SendWithOptions(context.Background(), "s1", "redirect", nil, ports.MessageDeliveryOptions{SenderSessionID: "orch"}); err != nil {
+			t.Fatalf("send: %v", err)
+		}
+		if len(st.supersedeCalls) != 1 {
+			t.Fatalf("supersede calls = %+v, want one for a session-authored direction", st.supersedeCalls)
+		}
+	})
+	t.Run("chat worker prompt supersedes through the relay", func(t *testing.T) {
+		st := newFakeStore()
+		st.sessions["s1"] = pastStartupGate(domain.SessionRecord{ID: "s1", Harness: "claude-code", Mode: domain.SessionModeChat})
+		m := newChatManager(t, st)
+		if err := m.SendWithOptions(context.Background(), "s1", "new task", nil, ports.MessageDeliveryOptions{AuthoredByUser: true}); err != nil {
+			t.Fatalf("send: %v", err)
+		}
+		if len(st.supersedeCalls) != 1 {
+			t.Fatalf("supersede calls = %+v, want one on the chat relay path", st.supersedeCalls)
+		}
+	})
+	t.Run("supersede failure never fails the send", func(t *testing.T) {
+		st := newFakeStore()
+		st.sessions["s1"] = pastStartupGate(domain.SessionRecord{ID: "s1", Harness: "claude-code"})
+		st.supersedeErr = context.DeadlineExceeded
+		m := newSendTestManager(t, fakeAgent{}, &fakeMessenger{}, st)
+		if err := m.SendWithOptions(context.Background(), "s1", "new task", nil, ports.MessageDeliveryOptions{AuthoredByUser: true}); err != nil {
+			t.Fatalf("send must survive a supersede failure: %v", err)
+		}
+	})
 }
 
 func TestSendSemanticTUIRequiresCorrelatedPromptAcceptance(t *testing.T) {

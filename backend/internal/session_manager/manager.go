@@ -5299,8 +5299,12 @@ func (m *Manager) send(ctx context.Context, id domain.SessionID, message, client
 	// refused as "missing runtime handles" — true of the handles, wrong about the
 	// session, and it left `ao send` and orchestrator-to-worker relay unable to
 	// reach a chat worker.
-	if handled, err := m.sendChat(ctx, id, message, clientMessageID, options); handled {
-		return err
+	handled, chatErr := m.sendChat(ctx, id, message, clientMessageID, options)
+	if handled {
+		if chatErr == nil {
+			m.supersedePendingReports(ctx, id, options)
+		}
+		return chatErr
 	}
 
 	deliveryID := ""
@@ -5363,6 +5367,7 @@ func (m *Manager) send(ctx context.Context, id domain.SessionID, message, client
 			m.logger.Warn("send: settle emitted worker reports failed", "sessionID", id, "error", err)
 		}
 	}
+	m.supersedePendingReports(ctx, id, options)
 	// Chat and transition queues persist interaction in their acceptance transaction.
 	// Only direct terminal sends need this separate fact; outbox replay already has it.
 	if options.SenderSessionID != "" && clientMessageID == "" {
@@ -5405,6 +5410,39 @@ func (m *Manager) send(ctx context.Context, id domain.SessionID, message, client
 		}
 	}
 	return nil
+}
+
+// pendingReportSuperseder is the optional report-store capability that retires
+// a worker session's undelivered reports (fork issue #240).
+type pendingReportSuperseder interface {
+	SupersedePendingReports(ctx context.Context, session domain.SessionID, reason string) (int, error)
+}
+
+// supersedePendingReports retires a worker session's undelivered reports once
+// a new prompt reached it (fork issue #240): the pending reports describe the
+// previous task, and delivering them after a fresh instruction would present
+// stale work as current status. Only authored prompts count — a human send or
+// a session-relayed direction; AO-internal coordination sends are not a task
+// change. Reports created after this prompt are untouched, so the worker's
+// next task reports normally. Non-worker sessions hold no report rows, so the
+// store update itself is the kind gate. Best-effort: a failure never fails the
+// delivered prompt.
+func (m *Manager) supersedePendingReports(ctx context.Context, id domain.SessionID, options ports.MessageDeliveryOptions) {
+	if !options.AuthoredByUser && options.SenderSessionID == "" {
+		return
+	}
+	superseder, ok := m.store.(pendingReportSuperseder)
+	if !ok {
+		return
+	}
+	n, err := superseder.SupersedePendingReports(context.WithoutCancel(ctx), id, domain.ReportSupersededReason)
+	if err != nil {
+		m.logger.Warn("send: supersede pending worker reports failed", "sessionID", id, "error", err)
+		return
+	}
+	if n > 0 {
+		m.logger.Info("send: pending worker reports superseded by a new prompt", "sessionID", id, "reports", n)
+	}
 }
 
 func (m *Manager) prepareOutboundMessage(ctx context.Context, id domain.SessionID, message string) (string, error) {

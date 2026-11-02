@@ -41,10 +41,10 @@ export function PRStatusGlyph({ breathe, dotClassName }: { breathe?: boolean; do
 }
 
 /**
- * Live elapsed label for an in-flight status ("· 4m"). Recomputed on a 30s
- * tick — the value only changes once a minute after the first, and it is
- * passive metadata, not a stopwatch. A sibling of the status link, never
- * inside it: the link's accessible name must stay the bare label.
+ * Live elapsed label for an in-flight status ("· 4m"). Ticks every second so
+ * the seconds visibly count up — a coarser tick reads as frozen-then-jumping.
+ * A sibling of the status link, never inside it: the link's accessible name
+ * must stay the bare label.
  */
 function PRCardStatusElapsed({ status }: { status: PRCardStatus }) {
 	const label = useElapsedLabel(status.breathe ? status.since : undefined);
@@ -63,7 +63,7 @@ function useElapsedLabel(since: string | undefined): string | undefined {
 		}
 		const tick = () => setLabel(formatElapsed(Math.max(0, Date.now() - start)));
 		tick();
-		const timer = window.setInterval(tick, 30_000);
+		const timer = window.setInterval(tick, 1_000);
 		return () => window.clearInterval(timer);
 	}, [start]);
 	return label;
