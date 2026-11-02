@@ -15,6 +15,7 @@ const functions = new Set([
 	"startDaemon", "startDaemonInner", "killDaemon", "readRunFileState", "cancelDaemonAutoRestart",
 	"scheduleDaemonAutoRestart", "daemonAutoRestartMarkerMatches", "stopDaemon", "reportDaemonRestartFailure", "startDaemonForRestart", "restartDaemon",
 	"refreshDaemonStatus", "handleBrowserRuntimeRejection",
+	"gracefullyReplaceDaemonForBrowser", "waitForDaemonExit",
 ]);
 const controllerSource = source.statements.filter((node) => {
 	if (ts.isFunctionDeclaration(node)) return functions.has(node.name?.text ?? "");
@@ -56,7 +57,9 @@ function setup() {
 	const ipc = new Map<string, () => Promise<unknown> | unknown>();
 	const app = new EventEmitter();
 	Object.assign(app, { isPackaged: false, getAppPath: () => "/owned/lab" });
-	const replace = vi.fn(async () => undefined);
+	const fetchMock = vi.fn(async (): Promise<unknown> => ({ ok: true, status: 202 }));
+	const probe = vi.fn(async (): Promise<unknown> => null);
+	const kill = vi.fn();
 	const inspect = vi.fn(async (): Promise<unknown> => null);
 	const direct = vi.fn(async (): Promise<unknown> => null);
 	const stage = vi.fn(async (): Promise<void> => undefined);
@@ -67,7 +70,7 @@ function setup() {
 	const context = vm.createContext({
 		console, Date, setTimeout, clearTimeout, setInterval, clearInterval, Buffer, path,
 		openSync: vi.fn(() => 73), closeSync: vi.fn(),
-		process: { env, platform: "linux", resourcesPath: "/owned/lab", kill: vi.fn() },
+		process: { env, platform: "linux", resourcesPath: "/owned/lab", kill },
 		os: { homedir: () => "/owned/home" }, app, ipcMain: { handle: (name: string, handler: () => unknown) => ipc.set(name, handler) },
 		browserQuitRequested: false, daemonOutput: "", supervisorLink: { dispose: supervisorDisposed }, appRunId: "test-app",
 		browserRuntimeRecoveryDecision, browserRuntimeRecoveryAttempted: false,
@@ -75,14 +78,15 @@ function setup() {
 		repairDevAcpRuntime: async () => undefined, ensureShellEnv: async () => undefined,
 		resolveDaemonLaunch: () => ({ command: "/owned/ao", args: [], cwd: "/owned/data", source: "override", shell: false }),
 		daemonLaunchEnv: () => ({}), inspectExistingDaemon: inspect, browserDaemonOwnershipDecision,
-		shouldReplaceDaemonForStartup, keepAliveForReplacement, gracefullyReplaceDaemonForBrowser: replace,
+		shouldReplaceDaemonForStartup, keepAliveForReplacement, fetch: fetchMock,
 		shouldLinkOnAttach: () => false, establishSupervisorLink, resolveDaemonFromPort: direct,
-		resolvedDaemonPort: () => 3001, readDaemonProbe: async () => null, daemonIdentityError: () => null,
+		resolvedDaemonPort: () => 3001, readDaemonProbe: probe, daemonIdentityError: () => null,
 		runFilePath: () => "/owned/running.json", parseRunFile, readFile: read, rm: unlink,
 		portHolderPidToReplace, readProcessStartMs: async () => null, processAlive: () => false,
 		existsSync: () => true, ensureBundledTmuxStaged: stage, keepDaemonAlive,
 		spawn, daemonEnv, browserRuntimeToken: "test-only", createListenPortScanner,
 		RUN_FILE_FRESHNESS_SKEW_MS: 1000, RUN_FILE_POLL_MS: 100, PORT_DISCOVERY_TIMEOUT_MS: 5000,
+		DAEMON_REPLACE_SHUTDOWN_WINDOW_MS: 8000, DAEMON_REPLACE_TOTAL_BUDGET_MS: 60000, DAEMON_REPLACE_KILL_WINDOW_MS: 2000, DAEMON_REPLACE_POLL_MS: 100,
 		DAEMON_RESTART_STOP_TIMEOUT_MS: 5000, appendDaemonOutput: vi.fn(), slowDaemonStartupStatus: () => ({ state: "starting" }),
 		openDaemonLog: vi.fn(), writeDaemonLog: vi.fn(), closeDaemonLog: vi.fn(), daemonLogPath: () => "/owned/daemon.log",
 		planDaemonAutoRestart, daemonExitWasUngraceful, disposeBrowserRuntimeLink: vi.fn(), captureSideChatState: async () => undefined,
@@ -91,7 +95,7 @@ function setup() {
 	});
 	vm.runInContext(`${controller}\nfunction setDaemonStatus(status) { daemonStatus = status; }`, context);
 	return {
-		read, unlink, spawn, children, replace, inspect, direct, stage, supervisorDisposed, establishSupervisorLink, daemonEnv, env,
+		read, unlink, spawn, children, fetch: fetchMock, probe, kill, inspect, direct, stage, supervisorDisposed, establishSupervisorLink, daemonEnv, env,
 		setMarker(value: string | Error) { marker = value; },
 		start: () => ipc.get("daemon:start")!(), stop: () => ipc.get("daemon:stop")!(), restart: () => ipc.get("daemon:restart")!(),
 		status: () => vm.runInContext("daemonStatus", context),
@@ -176,7 +180,7 @@ describe("main.ts daemon lifecycle wiring with controlled I/O", () => {
 		await vi.advanceTimersByTimeAsync(2000);
 		expect(h.spawn).toHaveBeenCalledTimes(1);
 		expect(h.unlink).not.toHaveBeenCalled();
-		expect(h.replace).not.toHaveBeenCalled();
+		expect(h.fetch).not.toHaveBeenCalled();
 	});
 
 	it("does not treat an unreadable or malformed initial marker as missing on signal", async () => {
@@ -218,7 +222,7 @@ describe("main.ts daemon lifecycle wiring with controlled I/O", () => {
 		h.crash();
 		await vi.advanceTimersByTimeAsync(2000);
 		expect(h.spawn).toHaveBeenCalledTimes(1);
-		expect(h.replace).not.toHaveBeenCalled();
+		expect(h.fetch).not.toHaveBeenCalled();
 	});
 
 	it("manual Start supersedes an automatic startup awaiting I/O", async () => {
@@ -260,7 +264,7 @@ describe("main.ts daemon lifecycle wiring with controlled I/O", () => {
 		h.crash();
 		await vi.advanceTimersByTimeAsync(1000);
 		expect(h.spawn).toHaveBeenCalledTimes(1);
-		expect(h.replace).not.toHaveBeenCalled();
+		expect(h.fetch).not.toHaveBeenCalled();
 	});
 
 	it("revalidates the marker after asynchronous startup preparation", async () => {
@@ -315,7 +319,7 @@ describe("main.ts daemon lifecycle wiring with controlled I/O", () => {
 		await h.refresh();
 		await vi.advanceTimersByTimeAsync(2000);
 		expect(h.spawn).toHaveBeenCalledTimes(1);
-		expect(h.replace).not.toHaveBeenCalled();
+		expect(h.fetch).not.toHaveBeenCalled();
 		expect(h.status()).toEqual({ state: "ready", port: 3001, pid: 99 });
 	});
 
@@ -328,14 +332,14 @@ describe("main.ts daemon lifecycle wiring with controlled I/O", () => {
 		h.rejectRuntime();
 		await vi.advanceTimersByTimeAsync(2000);
 		expect(h.spawn).toHaveBeenCalledTimes(1);
-		expect(h.replace).not.toHaveBeenCalled();
+		expect(h.fetch).not.toHaveBeenCalled();
 	});
 
 	it("preserves normal startup takeover before any owned child has crashed", async () => {
 		const h = setup();
 		h.inspect.mockResolvedValue({ status: { state: "ready", port: 3001, pid: 99 }, owner: "app", appRunId: "previous-launch" });
 		await h.refresh();
-		expect(h.replace).toHaveBeenCalledTimes(1);
+		expect(h.fetch).toHaveBeenCalledTimes(1);
 		expect(h.spawn).toHaveBeenCalledTimes(1);
 	});
 
@@ -378,5 +382,73 @@ describe("main.ts daemon lifecycle wiring with controlled I/O", () => {
 		}
 		for (const child of h.children) expect(child.unref).toHaveBeenCalledTimes(keep ? 1 : 0);
 		expect(h.establishSupervisorLink).toHaveBeenCalledTimes(keep ? 0 : 2);
+	});
+});
+
+// Regression tests for fork issue #246: a takeover that already accepted
+// POST /shutdown must end with exactly one daemon serving, even when the old
+// daemon dies slower than the fast shutdown window (the 2026-11-02 outage:
+// a stale-session teardown tail stretched the death to 20s and the failed
+// replace left zero daemons behind).
+describe("ownership replace survives a slow-shutdown daemon", () => {
+	const oldDaemonProbe = { status: "ok", service: "agent-orchestrator-daemon", pid: 99 };
+	function replaceHarness() {
+		const h = setup();
+		h.inspect.mockResolvedValue({ status: { state: "ready", port: 3001, pid: 99 }, owner: "app", appRunId: "previous-launch" });
+		return h;
+	}
+
+	it.each([
+		{ name: "dies within the fast window", downAfterMs: 4_000 },
+		{ name: "dies past the fast window (2026-11-02 outage timing)", downAfterMs: 20_000 },
+	])("spawns the replacement when the old daemon $name", async ({ downAfterMs }) => {
+		const h = replaceHarness();
+		const t0 = Date.now();
+		h.probe.mockImplementation(async () => (Date.now() < t0 + downAfterMs ? oldDaemonProbe : null));
+		const started = h.refresh();
+		// While the doomed daemon still serves, nothing is spawned and the status
+		// is no terminal error; daemon:getStatus awaits the memoized startup, so
+		// there is no daemon_unreachable window either.
+		await vi.advanceTimersByTimeAsync(Math.min(9_000, downAfterMs - 100));
+		expect(h.spawn).not.toHaveBeenCalled();
+		expect((h.status() as { state?: string }).state).not.toBe("error");
+		// The daemon dies; the replace keeps waiting and then spawns exactly once.
+		await vi.advanceTimersByTimeAsync(downAfterMs);
+		await started;
+		expect(h.fetch).toHaveBeenCalledTimes(1);
+		expect(h.kill).not.toHaveBeenCalled();
+		expect(h.spawn).toHaveBeenCalledTimes(1);
+		// The same launch settles to ready through the run-file handshake.
+		h.setMarker(JSON.stringify({ pid: 42, port: 3001, startedAt: new Date().toISOString() }));
+		await vi.advanceTimersByTimeAsync(400);
+		expect(h.status()).toEqual({ state: "ready", port: 3001, pid: 42 });
+	});
+
+	it("escalates to SIGKILL when the daemon still serves after the total budget", async () => {
+		const h = replaceHarness();
+		const t0 = Date.now();
+		// Wedged teardown: serves until shortly after the 8s window + 60s budget,
+		// dies only after the kill.
+		h.probe.mockImplementation(async () => (Date.now() < t0 + 68_500 ? oldDaemonProbe : null));
+		const started = h.refresh();
+		await vi.advanceTimersByTimeAsync(68_200);
+		expect(h.kill).toHaveBeenCalledWith(-99, "SIGKILL");
+		await vi.advanceTimersByTimeAsync(2_000);
+		await started;
+		expect(h.kill).toHaveBeenCalledTimes(1);
+		expect(h.spawn).toHaveBeenCalledTimes(1);
+	});
+
+	it("surfaces an error only when the daemon outlives even SIGKILL", async () => {
+		const h = replaceHarness();
+		h.probe.mockResolvedValue(oldDaemonProbe);
+		const started = h.refresh();
+		await vi.advanceTimersByTimeAsync(71_000);
+		await started;
+		expect(h.kill).toHaveBeenCalledWith(-99, "SIGKILL");
+		expect(h.spawn).not.toHaveBeenCalled();
+		const status = h.status() as { state?: string; code?: string; message?: string };
+		expect(status).toMatchObject({ state: "error", code: "not_ready" });
+		expect(status.message).toContain("did not stop");
 	});
 });

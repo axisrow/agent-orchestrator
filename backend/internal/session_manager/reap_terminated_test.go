@@ -4,6 +4,8 @@ import (
 	"context"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -276,4 +278,123 @@ func sameInts(got, want []int) bool {
 		}
 	}
 	return true
+}
+
+// reapProbeHarness builds a manager whose store holds three terminated rows,
+// each carrying a runtime handle, so ReapTerminated probes every one of them.
+func reapProbeHarness(t *testing.T, workers int, rt runtimeController) (*Manager, *fakeStore) {
+	t.Helper()
+	st := newFakeStore()
+	st.projects["mer"] = domain.ProjectRecord{ID: "mer", Config: testRoleAgents()}
+	for _, id := range []string{"dead-1", "dead-2", "dead-3"} {
+		st.sessions[domain.SessionID(id)] = domain.SessionRecord{
+			ID: domain.SessionID(id), ProjectID: "mer", Kind: domain.KindWorker, IsTerminated: true,
+			Metadata: domain.SessionMetadata{RuntimeHandleID: "h-" + id},
+		}
+	}
+	m := New(Deps{
+		Runtime: rt, Agents: fakeAgents{}, Workspace: &fakeWorkspace{}, Store: st,
+		Messenger: &fakeMessenger{}, Lifecycle: &fakeLCM{store: st},
+		LookPath:   func(string) (string, error) { return "/bin/true", nil },
+		DataDir:    t.TempDir(),
+		Executable: func() (string, error) { return "/tmp/fake-bin/ao", nil },
+
+		ReconcileWorkers: workers,
+	})
+	return m, st
+}
+
+type probeCountingRuntime struct {
+	fakeRuntime
+	probes atomic.Int32
+}
+
+func (r *probeCountingRuntime) IsAlive(ctx context.Context, handle ports.RuntimeHandle) (bool, error) {
+	r.probes.Add(1)
+	return r.fakeRuntime.IsAlive(ctx, handle)
+}
+
+// TestReapTerminatedCancelledContextProbesNothing pins the shutdown half of
+// fork issue #246's teardown acceptance: once the caller's context is
+// cancelled (the daemon is exiting), the pass must not keep tmux-probing the
+// remaining terminated rows; leaked runtimes are the next boot's business.
+func TestReapTerminatedCancelledContextProbesNothing(t *testing.T) {
+	rt := &probeCountingRuntime{fakeRuntime: fakeRuntime{aliveByHandle: map[string]bool{}}}
+	m, _ := reapProbeHarness(t, 2, rt)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := m.ReapTerminated(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if probes := rt.probes.Load(); probes != 0 {
+		t.Fatalf("cancelled pass probed %d runtimes, want none", probes)
+	}
+}
+
+// parallelProbeRuntime makes a serialized pass fail: IsAlive only returns
+// once peak probe concurrency reached `want` (or a watchdog fired, so a
+// regression surfaces as an assertion failure instead of a hang).
+type parallelProbeRuntime struct {
+	fakeRuntime
+	want     int
+	inFlight atomic.Int32
+	peak     atomic.Int32
+	release  chan struct{}
+	once     sync.Once
+}
+
+func (r *parallelProbeRuntime) IsAlive(ctx context.Context, handle ports.RuntimeHandle) (bool, error) {
+	n := r.inFlight.Add(1)
+	for {
+		p := r.peak.Load()
+		if n <= p || r.peak.CompareAndSwap(p, n) {
+			break
+		}
+	}
+	if r.peak.Load() >= int32(r.want) {
+		r.once.Do(func() { close(r.release) })
+	}
+	select {
+	case <-r.release:
+	case <-time.After(2 * time.Second):
+		r.once.Do(func() { close(r.release) })
+	}
+	r.inFlight.Add(-1)
+	return r.fakeRuntime.IsAlive(ctx, handle)
+}
+
+// TestReapTerminatedProbesOverlap pins the other half: terminated rows must
+// not probe one after another — each is a tmux round-trip, and hundreds of
+// stale rows once serialized daemon exit past the app's replace deadline
+// (fork issue #246). Three probes must overlap through the shared worker pool.
+func TestReapTerminatedProbesOverlap(t *testing.T) {
+	rt := &parallelProbeRuntime{
+		fakeRuntime: fakeRuntime{aliveByHandle: map[string]bool{}},
+		want:        3,
+		release:     make(chan struct{}),
+	}
+	m, _ := reapProbeHarness(t, 4, rt)
+	if err := m.ReapTerminated(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if peak := rt.peak.Load(); peak < 3 {
+		t.Fatalf("peak probe concurrency = %d, want 3 overlapping probes", peak)
+	}
+}
+
+// TestReapTerminatedDestroysLeakedHandles keeps the pass's contract pinned
+// through the pool refactor: a terminated row whose stored handle still
+// probes alive is destroyed; gone handles are left alone.
+func TestReapTerminatedDestroysLeakedHandles(t *testing.T) {
+	rt := &probeCountingRuntime{fakeRuntime: fakeRuntime{aliveByHandle: map[string]bool{"h-dead-1": true}}}
+	m, _ := reapProbeHarness(t, 2, rt)
+	if err := m.ReapTerminated(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if probes := rt.probes.Load(); probes != 3 {
+		t.Fatalf("probed %d runtimes, want one per terminated row", probes)
+	}
+	if len(rt.destroyedIDs) != 1 || rt.destroyedIDs[0] != "h-dead-1" {
+		t.Fatalf("destroyed = %v, want exactly [h-dead-1]", rt.destroyedIDs)
+	}
 }

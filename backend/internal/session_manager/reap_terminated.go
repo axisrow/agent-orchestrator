@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	aoprocess "github.com/aoagents/agent-orchestrator/backend/internal/process"
@@ -35,19 +36,57 @@ func orphanReapDisabled() bool {
 // graceful shutdown run it. The orphaned-process decision is NOT here: those
 // are only ever killed after the user allows it (ReapOrphanWorkers); the boot
 // reports them instead (NotifyOrphanWorkers).
+//
+// The probes share the reconcile worker pool instead of running one after
+// another: each terminated row costs a tmux round-trip, and hundreds of stale
+// rows serialized into a shutdown tail long enough to outlive the app's
+// replace deadline (fork issue #246, the 2026-11-02 outage). A cancelled
+// context stops the pass; leaked runtimes are reaped on the next boot.
 func (m *Manager) ReapTerminated(ctx context.Context) error {
 	recs, err := m.store.ListAllSessions(ctx)
 	if err != nil {
 		return fmt.Errorf("reap terminated: list sessions: %w", err)
 	}
+	terminated := make([]domain.SessionRecord, 0, len(recs))
 	for _, rec := range recs {
-		if !rec.IsTerminated {
-			continue
-		}
-		if err := m.reconcileReap(ctx, rec); err != nil {
-			m.logger.Error("reap: runtime destroy failed, skipping", "sessionID", rec.ID, "error", err)
+		if rec.IsTerminated {
+			terminated = append(terminated, rec)
 		}
 	}
+	workers := m.reconcileWorkers
+	if workers < 1 {
+		workers = 1
+	}
+	if workers > len(terminated) {
+		workers = len(terminated)
+	}
+	if workers == 0 {
+		return nil
+	}
+	jobs := make(chan domain.SessionRecord)
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for range workers {
+		go func() {
+			defer wg.Done()
+			for rec := range jobs {
+				if ctx.Err() != nil {
+					continue // cancelled pass: drain the queue without probing
+				}
+				if err := m.reconcileReap(ctx, rec); err != nil {
+					m.logger.Error("reap: runtime destroy failed, skipping", "sessionID", rec.ID, "error", err)
+				}
+			}
+		}()
+	}
+	for _, rec := range terminated {
+		if ctx.Err() != nil {
+			break // cancelled pass: never feed hundreds of rows for fast-failing probes
+		}
+		jobs <- rec
+	}
+	close(jobs)
+	wg.Wait()
 	return nil
 }
 
