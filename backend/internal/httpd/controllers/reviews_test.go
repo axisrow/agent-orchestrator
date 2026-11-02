@@ -56,6 +56,8 @@ type fakeReviewService struct {
 
 func (*fakeReviewService) RecoverChatReviewers(context.Context) error { return nil }
 
+func (*fakeReviewService) SweepDaemonRestartOrphans(context.Context) error { return nil }
+
 func (f *fakeReviewService) runTrigger(
 	_ context.Context,
 	_ domain.SessionID,

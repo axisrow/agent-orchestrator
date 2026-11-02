@@ -178,6 +178,16 @@ func (s *Store) ListRecoverableChatReviews(ctx context.Context) ([]domain.Review
 	return out, nil
 }
 
+// ListSessionsWithRunningReviewRuns lists sessions whose review runs still say
+// running: the daemon-startup orphan sweep's candidate set.
+func (s *Store) ListSessionsWithRunningReviewRuns(ctx context.Context) ([]domain.SessionID, error) {
+	rows, err := s.qr.ListSessionsWithRunningReviewRuns(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list sessions with running review runs: %w", err)
+	}
+	return rows, nil
+}
+
 // ClearReviewerHandle removes all persisted terminal handles for a worker
 // after a hard reviewer pane teardown.
 func (s *Store) ClearReviewerHandle(ctx context.Context, id domain.SessionID) error {

@@ -941,6 +941,35 @@ func (q *Queries) ListRunningReviewRunsBySession(ctx context.Context, sessionID 
 	return items, nil
 }
 
+const listSessionsWithRunningReviewRuns = `-- name: ListSessionsWithRunningReviewRuns :many
+SELECT DISTINCT session_id FROM review_run WHERE status = 'running'
+`
+
+// Candidate set for the daemon-startup orphan sweep: sessions whose review
+// runs still say running and need their carrier's liveness reconciled.
+func (q *Queries) ListSessionsWithRunningReviewRuns(ctx context.Context) ([]domain.SessionID, error) {
+	rows, err := q.db.QueryContext(ctx, listSessionsWithRunningReviewRuns)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []domain.SessionID{}
+	for rows.Next() {
+		var session_id domain.SessionID
+		if err := rows.Scan(&session_id); err != nil {
+			return nil, err
+		}
+		items = append(items, session_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markReviewRunDelivered = `-- name: MarkReviewRunDelivered :execrows
 UPDATE review_run SET status = 'delivered', delivered_at = ? WHERE id = ? AND status = 'complete' AND delivered_at IS NULL
 `

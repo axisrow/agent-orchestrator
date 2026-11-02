@@ -69,6 +69,7 @@ func reviewErrorKind(err error) string {
 // Manager is the reviews surface the HTTP controller depends on.
 type Manager interface {
 	RecoverChatReviewers(ctx context.Context) error
+	SweepDaemonRestartOrphans(ctx context.Context) error
 	TriggerRequested(ctx context.Context, workerID domain.SessionID, req TriggerRequest) (TriggerOutcome, error)
 	RequestRereview(ctx context.Context, workerID domain.SessionID, prURL, reviewer string) error
 	ResolveReviewComment(ctx context.Context, workerID domain.SessionID, prURL, commentURL string) error
@@ -129,6 +130,13 @@ var _ Manager = (*Service)(nil)
 // startup wiring cannot silently omit it.
 func (s *Service) RecoverChatReviewers(ctx context.Context) error {
 	return s.engine.RecoverChatReviewers(ctx)
+}
+
+// SweepDaemonRestartOrphans fails running review runs whose reviewer carrier
+// died while no daemon was watching. Like RecoverChatReviewers, it is part of
+// the required manager contract so startup wiring cannot silently omit it.
+func (s *Service) SweepDaemonRestartOrphans(ctx context.Context) error {
+	return s.engine.SweepDaemonRestartOrphans(ctx)
 }
 
 // Store is the review_run persistence surface owned by the service submit path.
