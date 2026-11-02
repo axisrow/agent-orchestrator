@@ -184,8 +184,10 @@ func processRunning(pid, procStart string) bool {
 }
 
 // processStart is pid's start time from /proc/<pid>/stat (field 22), or ""
-// where /proc does not report it.
-func processStart(pid string) string {
+// where /proc does not report it. A variable for the same reason as
+// claudeProcessRunning: tests stub it so their records never depend on
+// unrelated processes that happen to carry the tested pid on the host.
+var processStart = func(pid string) string {
 	payload, err := os.ReadFile(filepath.Join("/proc", pid, "stat"))
 	if err != nil {
 		return ""
