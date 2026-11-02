@@ -3382,6 +3382,86 @@ func TestListMarksRunningReviewFailedWhenReviewerExited(t *testing.T) {
 	}
 }
 
+func TestListMarksRunningReviewFailedWhenReviewerReportedExited(t *testing.T) {
+	// A user physically stopping the reviewer pane makes its supervisor report
+	// state=exited. That report is launch-fenced proof of death: the pass must
+	// go terminal without a liveness probe, or the PR card spins forever.
+	store := &fakeStore{
+		review: &domain.Review{ID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerAider, ReviewerHandleID: "review-mer-1", ReviewerActivityState: domain.ActivityExited},
+		runs: []domain.ReviewRun{{
+			ID: "run-1", ReviewID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerAider,
+			PRURL: "https://github.com/o/r/pull/1", TargetSHA: "sha1", Status: domain.ReviewRunRunning,
+		}},
+	}
+	launcher := &fakeLauncher{alive: true}
+	eng := newEngineForTest(store, fakeSessions{rec: liveWorker(), ok: true}, prAt("sha1"), fakeProjects{}, launcher)
+
+	got, err := eng.List(context.Background(), "mer-1")
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if launcher.aliveChecked {
+		t.Fatal("exit report is proof of death; liveness probe must not run")
+	}
+	if got.ReviewerActivityState != domain.ActivityExited {
+		t.Fatalf("activity = %q, want exited", got.ReviewerActivityState)
+	}
+	if len(got.Runs) != 1 || got.Runs[0].Status != domain.ReviewRunFailed || got.Runs[0].Body != reviewerStoppedByUser {
+		t.Fatalf("runs = %+v, want failed %q result", got.Runs, reviewerStoppedByUser)
+	}
+}
+
+func TestTriggerAfterUserStopStartsNewRunningRun(t *testing.T) {
+	store := &fakeStore{
+		review: &domain.Review{ID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerAider, ReviewerHandleID: "review-mer-1", ReviewerActivityState: domain.ActivityExited},
+		runs: []domain.ReviewRun{{
+			ID: "run-1", ReviewID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerAider,
+			PRURL: "https://github.com/o/r/pull/1", TargetSHA: "sha1", Status: domain.ReviewRunRunning,
+		}},
+	}
+	launcher := &fakeLauncher{handle: "review-mer-1"}
+	eng := newEngineForTest(store, fakeSessions{rec: liveWorker(), ok: true}, prAt("sha1"), fakeProjects{}, launcher)
+
+	if _, err := eng.List(context.Background(), "mer-1"); err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if store.runs[0].Status != domain.ReviewRunFailed || store.runs[0].Body != reviewerStoppedByUser {
+		t.Fatalf("stopped run = %+v, want failed before retrigger", store.runs[0])
+	}
+	res, err := trigger(context.Background(), eng, "mer-1", "", domain.AgentConfig{})
+	if err != nil {
+		t.Fatalf("Trigger: %v", err)
+	}
+	if !res.Created || len(store.runs) != 2 {
+		t.Fatalf("trigger = %+v, want a new pass; runs = %+v", res, store.runs)
+	}
+	if store.runs[1].Status != domain.ReviewRunRunning {
+		t.Fatalf("new run = %+v, want running", store.runs[1])
+	}
+	// The creating trigger resets the row to active before inserting the run
+	// (TriggerWithOptions upserts ActivityActive ahead of InsertReviewRun), so
+	// the exited report of the stopped generation must not fail the fresh one
+	// on the first List before the new generation's first activity hook.
+	got, err := eng.List(context.Background(), "mer-1")
+	if err != nil {
+		t.Fatalf("List after retrigger: %v", err)
+	}
+	if got.ReviewerActivityState != domain.ActivityActive {
+		t.Fatalf("activity after retrigger = %q, want active", got.ReviewerActivityState)
+	}
+	if len(got.Runs) != 2 {
+		t.Fatalf("runs after retrigger = %+v, want both passes", got.Runs)
+	}
+	for _, run := range got.Runs {
+		if run.ID == "run-1" {
+			continue
+		}
+		if run.Status != domain.ReviewRunRunning {
+			t.Fatalf("fresh run after retrigger = %+v, want still running", run)
+		}
+	}
+}
+
 func TestListDoesNotTreatReviewerProbeFailureAsExit(t *testing.T) {
 	store := &fakeStore{
 		review: &domain.Review{ID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerAider, ReviewerHandleID: "review-mer-1", ReviewerActivityState: domain.ActivityActive},
