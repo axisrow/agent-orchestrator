@@ -1110,3 +1110,50 @@ func (q *Queries) RequeueClaimedReports(ctx context.Context) (int64, error) {
 	}
 	return result.RowsAffected()
 }
+
+const supersedeSessionReports = `-- name: SupersedeSessionReports :many
+UPDATE deliveries
+SET delivery_state = 'stale', claim_token = '', claimed_at = NULL,
+    last_error = ?1
+WHERE session_id = ?2
+  AND kind = 'report'
+  AND delivery_state IN ('pending', 'claimed')
+RETURNING id
+`
+
+type SupersedeSessionReportsParams struct {
+	Reason    string
+	SessionID string
+}
+
+// Retires a worker's undelivered reports terminally when a new prompt reaches
+// the session (fork issue #240): the reports describe the previous task, and
+// delivering them after a fresh instruction would present stale work as
+// current status. Stale is the ledger's terminal state, so the rows leave the
+// delivery schedule with the reason in last_error. Claimed rows retire too:
+// a claim released by a failed cycle or a restart requeue would otherwise
+// return to pending and deliver after the new prompt. The in-flight attempt's
+// token-fenced ack and defer become no-ops, which the coordinator reports as
+// a lost claim instead of passing as success.
+func (q *Queries) SupersedeSessionReports(ctx context.Context, arg SupersedeSessionReportsParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, supersedeSessionReports, arg.Reason, arg.SessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
