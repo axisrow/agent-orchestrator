@@ -36,6 +36,31 @@ type SCMMergeResult struct {
 	MergeCommitSHA string
 }
 
+// MergeInitiator classifies who drove an observed PR merge, for the merge
+// notice the orchestrator receives (fork issue #243). Only AO's own merge API
+// marks its context; every other path — the SCM observer seeing a merge made
+// in the GitHub UI, via gh CLI, or by auto-merge — reads as outside.
+type MergeInitiator string
+
+// MergeInitiatorAO marks a merge initiated through AO's merge API by the user.
+const MergeInitiatorAO MergeInitiator = "ao"
+
+type mergeInitiatorKey struct{}
+
+// WithMergeInitiator annotates a service-call context with the merge
+// initiator, so lifecycle can attribute the merge notice without widening the
+// SCM observation DTO for a fact the provider does not report.
+func WithMergeInitiator(ctx context.Context, initiator MergeInitiator) context.Context {
+	return context.WithValue(ctx, mergeInitiatorKey{}, initiator)
+}
+
+// MergeInitiatorFromContext reads the merge initiator back. The zero value
+// means the merge did not originate from AO's API.
+func MergeInitiatorFromContext(ctx context.Context) MergeInitiator {
+	initiator, _ := ctx.Value(mergeInitiatorKey{}).(MergeInitiator)
+	return initiator
+}
+
 // SCMMerger mutates pull requests through an SCM provider.
 type SCMMerger interface {
 	MergePullRequest(ctx context.Context, request SCMMergeRequest) (SCMMergeResult, error)

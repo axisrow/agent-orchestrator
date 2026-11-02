@@ -11,6 +11,7 @@ import (
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/httpd/apispec"
 	"github.com/aoagents/agent-orchestrator/backend/internal/httpd/envelope"
+	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 	prsvc "github.com/aoagents/agent-orchestrator/backend/internal/service/pr"
 )
 
@@ -65,7 +66,10 @@ func (c *PRsController) merge(w http.ResponseWriter, r *http.Request) {
 		envelope.WriteAPIError(w, r, http.StatusBadRequest, "bad_request", "INVALID_PR", "PR URL and expected head SHA are required", nil)
 		return
 	}
-	res, err := c.Svc.Merge(r.Context(), prsvc.MergeRequest{PRID: prID, PRURL: in.PRURL, ExpectedHeadSHA: in.ExpectedHeadSHA})
+	// Mark the caller so the merge notice the orchestrator receives attributes
+	// this merge to the user's in-app action rather than an outside merge
+	// (fork issue #243). The SCM observer's background contexts carry no mark.
+	res, err := c.Svc.Merge(ports.WithMergeInitiator(r.Context(), ports.MergeInitiatorAO), prsvc.MergeRequest{PRID: prID, PRURL: in.PRURL, ExpectedHeadSHA: in.ExpectedHeadSHA})
 	if err != nil {
 		writePRError(w, r, err)
 		return

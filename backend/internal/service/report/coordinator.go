@@ -371,6 +371,13 @@ func (c *Coordinator) activeOrchestrator(ctx context.Context, projectID domain.P
 	return selected, selected.ID != "", nil
 }
 
+// ActiveOrchestrator returns the project's current delivery target: its newest
+// live orchestrator session. Merge notices (fork issue #243) reuse the same
+// selection rule as report dispatch so both machines address one recipient.
+func (c *Coordinator) ActiveOrchestrator(ctx context.Context, projectID domain.ProjectID) (domain.SessionRecord, bool, error) {
+	return c.activeOrchestrator(ctx, projectID)
+}
+
 // PreparedBatch is a token-fenced durable batch awaiting acceptance.
 type PreparedBatch struct {
 	ProjectID domain.ProjectID
