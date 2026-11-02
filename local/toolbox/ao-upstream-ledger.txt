@@ -314,7 +314,7 @@ b097c11b1ac5fdd0377d2cac304c145223972e62 skipped perf(cloud): usable Chat sooner
 4255167840b8c9024abb1b51f97ecb7619598fc6 taken fix(workspace): move orphaned worktree folders aside before add (#7483)
 9041e10a6c1dd0acb3e254063265d03ee95268d1 taken fix: preserve newer files when removing cancelled downloads (#6377) — живые файлы взяты, ru.json форк-удаление сохранено
 aa432f3d4cebecbdd9c05de7c2da93adaefc251f skipped fix(mobile): Android sign-in Unmatched Route and production WorkOS client (#7542) — mobile: владелец не пользуется
-ecf8a4cd1cb42870efc7ce612ef0ff83afb7119a taken fix: restore Cline sessions with resumable IDs (#2904)
+ecf8a4cd1cb42870efc7ce612ef0ff83afb7119a taken fix: restore Cline sessions with resumable IDs (#2904) — cherry-pick (750d312a0c) потерял поле Harness в cli setActivityAPIRequest и его заполнение (тест влит, структуры нет → build internal/cli красный); восстановлено из апстрима в форке a56102861e (PR #233)
 b691ffc74b6a1f03e16b5395bac4e3661190903d skipped feat(telemetry): extend #7304's usage counts and add session outcomes (telemetry v2) (#7420)
 609c4c7278eefec234a4486f4010af5214b082f1 taken fix: clarify the linked CLI description (#7099)
 10393e25aad345c54308104b415f82f8e44ffdea skipped feat(chat): open the session when its link hover card is clicked (#7508)
@@ -330,6 +330,6 @@ a7d8bcfcaaf6898a232ebfeaab2c208923e20e37 skipped fix(updater): show one sentence
 a40c241331f71d22f95dbbc6f2ec0bface8223e0 taken fix: keep AO's ao first after login-shell startup files (#7429)
 9785047f8172156aee186c22b9fda177f6807824 skipped feat(desktop): ask Local or Cloud before listing project sources (#7554)
 17d060345a9a885f8f998ddc402d4df79a666bc5 taken fix(chat): support Codex structured user input (#7186)
-6e37fc410cd54ae4be9ebe7491327c309b3a93a2 taken fix: follow chat selections and add Ctrl/Cmd+L attachment (#7489)
+6e37fc410cd54ae4be9ebe7491327c309b3a93a2 taken fix: follow chat selections and add Ctrl/Cmd+L attachment (#7489) — cherry-pick (b670c4e025) потерял else-ветку annotation-навигации (скролл к сообщению, когда текст не совпадает с телом; добавленный этим же коммитом тест влит красным); восстановлено из апстрима в форке db72fc8da1 (PR #233)
 021072c453889aca29fa6a62a879b1bd4f0cbb55 skipped fix(desktop): block shell reload and devtools in packaged builds (#7558) — конфликт с fork-дельтой main-процесса (desktop-quit vs quitConfirm, свой devtools-хендлер); порт не верифицируем без пересборки .app
 b303d2fe60beaf2712bc8b8071d8c08a6389bee4 skipped fix: consolidate AO side-chat commands to /btw (#7501) — side chats выпилены из форка целиком
