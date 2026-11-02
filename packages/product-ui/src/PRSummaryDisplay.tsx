@@ -1,6 +1,6 @@
 import { Fragment, type ReactNode } from "react";
 import type { ExternalLinkComponent } from "./external-link";
-import { ArrowUpRightIcon } from "./icons";
+import { ArrowUpRightIcon, LoaderCircleIcon } from "./icons";
 import { UserAvatar } from "./UserAvatar";
 import { scmUserAvatarUrl } from "./scm-avatar";
 import type {
@@ -19,12 +19,25 @@ const toneClass: Record<PRDisplayTone, string> = {
 	neutral: "text-muted-foreground",
 	passive: "text-passive",
 	success: "text-success",
+	validating: "text-status-validating",
 	review: "text-status-in-review",
 	warning: "text-warning",
 	error: "text-error",
 };
 
 export type CountNounLabel = (count: number, noun: PRNoun) => string;
+
+/**
+ * One status slot per row. `breathe` marks in-flight work (CI running, checks
+ * loading); per the design system's status-glyph rules live progress is shown
+ * as a spinner rather than a pulsing dot.
+ */
+export function PRStatusGlyph({ breathe, dotClassName }: { breathe?: boolean; dotClassName?: string }) {
+	if (breathe) {
+		return <LoaderCircleIcon aria-hidden="true" className="size-icon-xs shrink-0 animate-spin" />;
+	}
+	return <span aria-hidden="true" className={cn("size-dot-sm shrink-0 rounded-full bg-current", dotClassName)} />;
+}
 
 const defaultCountNounLabel: CountNounLabel = (count, noun) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 
@@ -189,7 +202,7 @@ export function PRCardStatusSummary({
 					{rows.map((status) => (
 						<div className="min-w-0" key={status.key}>
 							<div className={cn("flex min-w-0 items-center gap-2 text-xs font-medium leading-4", toneClass[status.tone])}>
-								<span aria-hidden="true" className={cn("size-dot-sm shrink-0 rounded-full bg-current", status.breathe && "animate-status-pulse")} />
+								<PRStatusGlyph breathe={status.breathe} />
 								<PRCardStatusLink externalLink={externalLink} status={status} />
 							</div>
 							{status.detail || (status.key === "review" && reviewDetailsAction) ? (
@@ -223,14 +236,9 @@ export function PRCardStatusSummary({
 			<div className="flex min-w-0 items-center gap-3">
 				<div className="flex min-w-0 flex-1 flex-col gap-1.5">
 					<div className="flex min-w-0 items-start gap-2">
-						<span
-							aria-hidden="true"
-							className={cn(
-								"mt-1 size-dot-sm shrink-0 rounded-full bg-current",
-								toneClass[presentation.primary.tone],
-								presentation.primary.breathe && "animate-status-pulse",
-							)}
-						/>
+						<span className={cn("mt-1 shrink-0", toneClass[presentation.primary.tone])}>
+							<PRStatusGlyph breathe={presentation.primary.breathe} />
+						</span>
 						<div className="min-w-0 flex-1">
 							<div
 								className={cn(
@@ -268,13 +276,7 @@ export function PRCardStatusSummary({
 										className={cn("inline-flex items-center gap-1", toneClass[status.tone])}
 										key={status.key}
 									>
-										<span
-											aria-hidden="true"
-											className={cn(
-												"size-1 rounded-full bg-current",
-												status.breathe && "animate-status-pulse",
-											)}
-										/>
+										<PRStatusGlyph breathe={status.breathe} dotClassName="size-1" />
 										<PRCardStatusLink externalLink={externalLink} status={status} />
 									</span>
 								))}

@@ -597,13 +597,16 @@ func scmObservationFromGraphQL(ref ports.SCMPRRef, pr map[string]any) ports.SCMO
 // GitHub's aggregate state can stay FAILURE while re-run superseded red
 // checks already show green (issue #230), and trusting it froze
 // ci_state=failing over zero failing checks with mergeability blocked on
-// ci_failing. A paginated view still defaults to the conservative aggregate
-// verdict (a failure could hide on the unseen page) — except when the
-// visible nodes themselves prove the aggregate's failure signal benign: a
-// superseded failure-class run whose name's latest run is green. An empty
-// view falls back to the aggregate, but a FAILURE verdict is dropped when
-// the provider reports mergeStateStatus CLEAN (the same stale-aggregate
-// pattern; UNSTABLE/BLOCKED keep it).
+// ci_failing. The shared classifier also keeps any latest run that is
+// queued or in progress at pending: an in-flight run can still flip an
+// earlier failure, so running must not read as failing (issue #227). A
+// paginated view still defaults to the conservative aggregate verdict (a
+// failure could hide on the unseen page) — except when the visible nodes
+// themselves prove the aggregate's failure signal benign: a superseded
+// failure-class run whose name's latest run is green. An empty view falls
+// back to the aggregate, but a FAILURE verdict is dropped when the provider
+// reports mergeStateStatus CLEAN (the same stale-aggregate pattern;
+// UNSTABLE/BLOCKED keep it).
 func ciSummaryFromRollupState(pr map[string]any) domain.CIState {
 	roll := statusRollup(pr)
 	if roll == nil {

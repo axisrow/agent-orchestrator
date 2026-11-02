@@ -190,7 +190,7 @@ export function prCardPresentation(pr: SessionPRSummary, aoReview?: PRReviewStat
 	} else if (pr.review.decision === "review_required") {
 		primary = cardStatus("review", "pr.card.reviewRequired", "review", appI18n.t("pr.card.reviewRequiredDetail"));
 	} else if (pr.ci.state === "pending") {
-		primary = cardStatus("ci", "pr.card.checksPending", "neutral", undefined, [], prChecksUrl(pr), true);
+		primary = cardStatus("ci", "pr.card.checksPending", "validating", undefined, [], prChecksUrl(pr), true);
 	} else if (pr.ci.state === "unknown") {
 		primary = cardStatus("ci", "pr.card.checksLoading", "passive", undefined, [], prChecksUrl(pr), true);
 	} else if (pr.mergeability.state === "blocked" || pr.mergeability.state === "unstable") {
@@ -216,7 +216,7 @@ export function prCardPresentation(pr: SessionPRSummary, aoReview?: PRReviewStat
 		if (pr.ci.state === "passing") {
 			supporting.push(cardStatus("ci", "pr.card.checksPassing", "success", undefined, [], prChecksUrl(pr)));
 		} else if (pr.ci.state === "pending") {
-			supporting.push(cardStatus("ci", "pr.card.checksPending", "neutral", undefined, [], prChecksUrl(pr), true));
+			supporting.push(cardStatus("ci", "pr.card.checksPending", "validating", undefined, [], prChecksUrl(pr), true));
 		} else if (pr.ci.state === "unknown") {
 			supporting.push(cardStatus("ci", "pr.card.checksLoading", "passive", undefined, [], prChecksUrl(pr), true));
 		}
@@ -233,7 +233,7 @@ export function prCardPresentation(pr: SessionPRSummary, aoReview?: PRReviewStat
 		} else if (mergeReasons(pr).includes("github_checks_unavailable")) {
 			statusRows.push(cardStatus("ci", "pr.card.checksUnavailable", "warning", undefined, [], prChecksUrl(pr)));
 		} else if (pr.ci.state === "pending" || pr.ci.state === "unknown") {
-			statusRows.push(cardStatus("ci", pr.ci.state === "pending" ? "pr.card.checksPending" : "pr.card.checksLoading", "neutral", undefined, [], prChecksUrl(pr), true));
+			statusRows.push(cardStatus("ci", pr.ci.state === "pending" ? "pr.card.checksPending" : "pr.card.checksLoading", pr.ci.state === "pending" ? "validating" : "passive", undefined, [], prChecksUrl(pr), true));
 		}
 		statusRows.push(cardStatus("review", "pr.card.reviewStatus", reviewTone(pr.review.decision, pr.review.hasUnresolvedHumanComments), reviewStatusDetail(pr)));
 		// Independent of the review status above: the GitHub requirement and the
@@ -602,7 +602,7 @@ function ciTone(state: SessionPRSummary["ci"]["state"]): PRDisplayTone {
 		case "failing":
 			return "error";
 		case "pending":
-			return "neutral";
+			return "validating";
 		case "unknown":
 			return "passive";
 	}

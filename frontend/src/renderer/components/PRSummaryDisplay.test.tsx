@@ -72,7 +72,7 @@ describe("PRSummaryParts", () => {
 		expect(screen.queryByText(/ao-by-untrivial/)).not.toBeInTheDocument();
 	});
 
-	it("keeps running checks visible and pulsing beneath a higher-priority review blocker", () => {
+	it("keeps running checks visible beneath a higher-priority review blocker, spinning in the validating tone", () => {
 		const { container } = render(
 			<PRCardStatusSummary
 				pr={summary({
@@ -93,7 +93,9 @@ describe("PRSummaryParts", () => {
 			"href",
 			"https://github.com/acme/repo/pull/7/checks",
 		);
-		expect(container.querySelector(".animate-status-pulse")).toBeInTheDocument();
+		expect(container.querySelector(".animate-spin")).toBeInTheDocument();
+		expect(container.querySelector(".text-status-validating")).toBeInTheDocument();
+		expect(container.querySelector(".text-error")).not.toBeInTheDocument();
 	});
 
 	it("optically centers the primary status marker with its text line", () => {
