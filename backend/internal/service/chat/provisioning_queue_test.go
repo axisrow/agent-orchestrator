@@ -266,6 +266,48 @@ func TestProvisioningSendSuppressesPiggybackInsideEmitTTL(t *testing.T) {
 	}
 }
 
+// TestWorkerChatSendSupersedesPendingReports pins fork issue #240 on the chat
+// path: an accepted human prompt retires the chat worker's undelivered
+// reports so a previous task's report never arrives as fresh status, while an
+// automation delivery is not a task change and keeps them deliverable.
+func TestWorkerChatSendSupersedesPendingReports(t *testing.T) {
+	st, workerID := openProvisioningStore(t, domain.SessionProvisionProvisioning)
+	svc := provisioningService(t, st)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	createReport := func(id string) {
+		t.Helper()
+		if _, err := st.CreateReport(ctx, domain.ReportRecord{
+			ID: id, SessionID: workerID, ProjectID: testProject,
+			State: domain.ReportCheckpoint, Note: id,
+			CreatedAt: now, AvailableAt: now.Add(time.Hour),
+			DeliveryState: domain.ReportPending, RepeatCount: 1,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	createReport("old-task-report")
+	if _, err := svc.Send(ctx, workerID, ports.ChatUserMessage{
+		Text: "new task", Origin: domain.MessageOriginHuman,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	retired, found, err := st.GetReport(ctx, "old-task-report")
+	if err != nil || !found || retired.DeliveryState != domain.ReportStale || retired.LastError != domain.ReportSupersededReason {
+		t.Fatalf("retired report = %+v, found = %v, err = %v", retired, found, err)
+	}
+	createReport("stays-pending")
+	if _, err := svc.Send(ctx, workerID, ports.ChatUserMessage{
+		Text: "automation step", Origin: domain.MessageOriginAutomation,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	kept, found, err := st.GetReport(ctx, "stays-pending")
+	if err != nil || !found || kept.DeliveryState != domain.ReportPending {
+		t.Fatalf("automation send retired a report: %+v, found = %v, err = %v", kept, found, err)
+	}
+}
+
 // The queue is for sessions that are starting. A session with no controller for
 // any other reason has a real reason, and accepting a message it will never
 // dispatch would be worse than refusing it.

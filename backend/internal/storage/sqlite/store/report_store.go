@@ -255,6 +255,29 @@ func (s *Store) MarkReportBatchEmitted(ctx context.Context, projectID domain.Pro
 	return int(n), nil
 }
 
+// SupersedePendingReports retires a worker's undelivered reports terminally
+// when a new prompt reaches the session (fork issue #240): the reports
+// describe the previous task, and delivering them after a fresh instruction
+// would present stale work as current status. Pending and claimed rows both
+// retire as stale — the ledger's terminal state — with the reason in
+// last_error; a claim released by a failed cycle or restart requeue must not
+// come back as a post-prompt delivery. The in-flight attempt's token-fenced
+// ack and defer become no-ops, which the coordinator reports as a lost claim.
+func (s *Store) SupersedePendingReports(ctx context.Context, sessionID domain.SessionID, reason string) (int, error) {
+	if sessionID == "" || reason == "" {
+		return 0, domain.ErrInvalidReport
+	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	rows, err := s.qw.SupersedeSessionReports(ctx, gen.SupersedeSessionReportsParams{
+		SessionID: string(sessionID), Reason: reason,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("supersede pending reports for %s: %w", sessionID, err)
+	}
+	return len(rows), nil
+}
+
 // FailReportBatchTerminally retires the claimed batch holding token as stale
 // with the given reason — the delivery has no future attempt: the target held
 // the batch text in its message queue (fork issue #205), so retrying would

@@ -85,6 +85,69 @@ func TestReportStoreRejectsInvalidRecord(t *testing.T) {
 	}
 }
 
+// TestReportStoreSupersedesUndeliveredOnNewPrompt pins fork issue #240: a new
+// prompt on a worker session retires that session's undelivered reports
+// terminally, so the delivery schedule can never present a previous task's
+// report as fresh status. Claimed rows retire with the pending ones — a claim
+// released by a failed cycle or a restart requeue would otherwise come back
+// as a post-prompt delivery — and another session's pending report stays
+// untouched. Retired rows keep valid durable shape.
+func TestReportStoreSupersedesUndeliveredOnNewPrompt(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	seedProject(t, s, "ao")
+	sess, err := s.CreateSession(ctx, sampleRecord("ao"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := s.CreateSession(ctx, sampleRecord("ao"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	old := domain.ReportRecord{ID: "rpt_old", SessionID: sess.ID, ProjectID: sess.ProjectID, Message: "phase-1 assessment done", CreatedAt: now, DeliveryState: domain.ReportPending, AvailableAt: now.Add(domain.ReportBatchFallback), RepeatCount: 1}
+	if _, err = s.CreateReport(ctx, old); err != nil {
+		t.Fatal(err)
+	}
+	held := domain.ReportRecord{ID: "rpt_held", SessionID: sess.ID, ProjectID: sess.ProjectID, Message: "in flight", CreatedAt: now, DeliveryState: domain.ReportPending, AvailableAt: now, RepeatCount: 1}
+	if _, err = s.CreateReport(ctx, held); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = s.ClaimReport(ctx, held.ID, "flight-token", now); err != nil {
+		t.Fatal(err)
+	}
+	elsewhere := domain.ReportRecord{ID: "rpt_other", SessionID: other.ID, ProjectID: sess.ProjectID, Message: "another worker", CreatedAt: now, DeliveryState: domain.ReportPending, AvailableAt: now, RepeatCount: 1}
+	if _, err = s.CreateReport(ctx, elsewhere); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.SupersedePendingReports(ctx, sess.ID, ""); err == nil {
+		t.Fatal("expected the empty reason to be refused")
+	}
+	n, err := s.SupersedePendingReports(ctx, sess.ID, domain.ReportSupersededReason)
+	if err != nil || n != 2 {
+		t.Fatalf("retired=%d err=%v, want both of the session's undelivered reports", n, err)
+	}
+	for _, id := range []string{old.ID, held.ID} {
+		got, ok, err := s.GetReport(ctx, id)
+		if err != nil || !ok {
+			t.Fatalf("%s ok=%v err=%v", id, ok, err)
+		}
+		if got.DeliveryState != domain.ReportStale || got.ClaimToken != "" || !got.ClaimedAt.IsZero() || got.LastError != domain.ReportSupersededReason {
+			t.Fatalf("%s = %+v, want stale with the supersession reason and no claim", id, got)
+		}
+		if err = got.Validate(); err != nil {
+			t.Fatalf("%s violates durable invariants: %v", id, err)
+		}
+	}
+	if got, _, err := s.GetReport(ctx, elsewhere.ID); err != nil || got.DeliveryState != domain.ReportPending {
+		t.Fatalf("other session row = %+v err=%v, want pending", got, err)
+	}
+	schedule, err := s.ListPendingReportSchedule(ctx, 10)
+	if err != nil || len(schedule) != 1 || schedule[0].ID != elsewhere.ID {
+		t.Fatalf("schedule=%+v err=%v, want only the other session's report", schedule, err)
+	}
+}
+
 func TestReportStoreClaimAcknowledgeAndTokenFence(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

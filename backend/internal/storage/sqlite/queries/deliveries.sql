@@ -124,6 +124,24 @@ SET delivery_state = 'stale'
 WHERE kind = 'report' AND delivery_state = 'pending'
   AND created_at < sqlc.arg(cutoff);
 
+-- name: SupersedeSessionReports :many
+-- Retires a worker's undelivered reports terminally when a new prompt reaches
+-- the session (fork issue #240): the reports describe the previous task, and
+-- delivering them after a fresh instruction would present stale work as
+-- current status. Stale is the ledger's terminal state, so the rows leave the
+-- delivery schedule with the reason in last_error. Claimed rows retire too:
+-- a claim released by a failed cycle or a restart requeue would otherwise
+-- return to pending and deliver after the new prompt. The in-flight attempt's
+-- token-fenced ack and defer become no-ops, which the coordinator reports as
+-- a lost claim instead of passing as success.
+UPDATE deliveries
+SET delivery_state = 'stale', claim_token = '', claimed_at = NULL,
+    last_error = sqlc.arg(reason)
+WHERE session_id = sqlc.arg(session_id)
+  AND kind = 'report'
+  AND delivery_state IN ('pending', 'claimed')
+RETURNING id;
+
 -- name: GetReportInterrupt :one
 SELECT last_interrupted_at FROM report_worker_interrupts WHERE session_id = ?;
 
