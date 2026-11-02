@@ -169,7 +169,11 @@ describe("portable leaf components", () => {
 		// The timer is a sibling of the link, so the accessible name stays bare.
 		expect(screen.getByRole("link", { name: "Checks running" })).not.toContainElement(elapsed);
 
-		act(() => vi.advanceTimersByTime(61_000));
+		// The seconds count up every second — a coarser tick reads as frozen.
+		act(() => vi.advanceTimersByTime(1_000));
+		expect(screen.getByText("· 6s")).toBeInTheDocument();
+
+		act(() => vi.advanceTimersByTime(60_000));
 		expect(screen.getByText("· 1m")).toBeInTheDocument();
 		vi.useRealTimers();
 	});
