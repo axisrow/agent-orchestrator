@@ -1505,6 +1505,132 @@ func TestSCMObservationPaginatedCancelledRerunGreenOverridesFailureAggregate(t *
 	}
 }
 
+// beamCraft415RollupNodes is the shape observed live on BeamCraft#415 head
+// 18db6e2d6f80 (issue #230 re-reopened, 2026-11-03): 70 rollup contexts over
+// mergeable_state=clean, where cancelled matrix-workflow placeholders carry
+// the raw expression template in the name ("quality (${{ matrix.os }})") and
+// GitHub's check UI never renders them — 26 success + 3 skipped. A template
+// name has no real sibling run under the same name, so the latest-run
+// projection kept the cancelled placeholder as the check's current state and
+// the verdict read failing over an all-green real set. Real databaseIds; the
+// "CI verdict" FAILURE→SUCCESS pair guards that the verdict still follows
+// the latest run for a name GitHub does render.
+func beamCraft415RollupNodes() []any {
+	return []any{
+		map[string]any{"__typename": "CheckRun", "name": "quality (${{ matrix.os }})", "status": "COMPLETED", "conclusion": "CANCELLED", "databaseId": float64(125360918785)},
+		map[string]any{"__typename": "CheckRun", "name": "quality (ubuntu-latest)", "status": "COMPLETED", "conclusion": "SUCCESS", "databaseId": float64(125372302319)},
+		map[string]any{"__typename": "CheckRun", "name": "quality (windows-latest)", "status": "COMPLETED", "conclusion": "SUCCESS", "databaseId": float64(125372302447)},
+		map[string]any{"__typename": "CheckRun", "name": "test (ubuntu-latest, shard ${{ matrix.shard }}/4)", "status": "COMPLETED", "conclusion": "CANCELLED", "databaseId": float64(125360919067)},
+		map[string]any{"__typename": "CheckRun", "name": "test (ubuntu-latest, shard 1/4)", "status": "COMPLETED", "conclusion": "SUCCESS", "databaseId": float64(125373915666)},
+		map[string]any{"__typename": "CheckRun", "name": "test (ubuntu-latest, shard 2/4)", "status": "COMPLETED", "conclusion": "SUCCESS", "databaseId": float64(125373915727)},
+		map[string]any{"__typename": "CheckRun", "name": "test (windows-latest, shard ${{ matrix.shard }}/12)", "status": "COMPLETED", "conclusion": "CANCELLED", "databaseId": float64(125360919492)},
+		map[string]any{"__typename": "CheckRun", "name": "test (windows-latest, shard 1/12)", "status": "COMPLETED", "conclusion": "SUCCESS", "databaseId": float64(125375939268)},
+		map[string]any{"__typename": "CheckRun", "name": "cold release (${{ matrix.target }})", "status": "COMPLETED", "conclusion": "CANCELLED", "databaseId": float64(125360918663)},
+		map[string]any{"__typename": "CheckRun", "name": "cold release (${{ matrix.target }})", "status": "COMPLETED", "conclusion": "SKIPPED", "databaseId": float64(125372304707)},
+		map[string]any{"__typename": "CheckRun", "name": "CI verdict", "status": "COMPLETED", "conclusion": "FAILURE", "databaseId": float64(125360918192)},
+		map[string]any{"__typename": "CheckRun", "name": "CI verdict", "status": "COMPLETED", "conclusion": "SUCCESS", "databaseId": float64(125366668494)},
+		map[string]any{"__typename": "CheckRun", "name": "build", "status": "COMPLETED", "conclusion": "SUCCESS", "databaseId": float64(125360758709)},
+	}
+}
+
+// The template-name drop only covers CheckRuns: StatusContext names are set
+// verbatim by the commit-status API caller, so a "(${{ ... }})" commit
+// status is a real status and keeps its old semantics (a FAILURE context
+// still reads failing — issue #230 re-reopened, review follow-up).
+func TestSCMObservationTemplateDropSkipsStatusContexts(t *testing.T) {
+	fx := basePRFixture()
+	var pr map[string]any
+	fx.prData(func(m map[string]any) {
+		pr = m
+		roll := m["commits"].(map[string]any)["nodes"].([]any)[0].(map[string]any)["commit"].(map[string]any)["statusCheckRollup"].(map[string]any)
+		roll["state"] = "FAILURE"
+		ctxs := roll["contexts"].(map[string]any)
+		ctxs["nodes"] = []any{
+			map[string]any{"__typename": "StatusContext", "context": "legacy ci (${{ matrix }})", "state": "FAILURE"},
+			map[string]any{"__typename": "CheckRun", "name": "build", "status": "COMPLETED", "conclusion": "SUCCESS"},
+		}
+		ctxs["pageInfo"] = map[string]any{"hasNextPage": false}
+	})
+	ref := ports.SCMPRRef{Repo: ports.SCMRepo{Provider: "github", Host: "github.com", Owner: "octocat", Name: "hello", Repo: "octocat/hello"}, Number: 415}
+	obs := scmObservationFromGraphQL(ref, pr)
+	if obs.CI.Summary != string(domain.CIFailing) {
+		t.Fatalf("CI summary = %q, want failing: a FAILURE StatusContext is caller-set, not a matrix placeholder", obs.CI.Summary)
+	}
+}
+
+// Issue #230 (re-reopened on BeamCraft#415): cancelled matrix placeholders
+// with unrendered `${{ ... }}` names are not check runs — GitHub's check UI
+// never shows them — so they must not key a check row, carry the verdict, or
+// keep ci_state=failing recorded over an all-green real set.
+func TestSCMObservationTemplatePlaceholderRunsAreNotChecks(t *testing.T) {
+	fx := basePRFixture()
+	var pr map[string]any
+	fx.prData(func(m map[string]any) {
+		pr = m
+		roll := m["commits"].(map[string]any)["nodes"].([]any)[0].(map[string]any)["commit"].(map[string]any)["statusCheckRollup"].(map[string]any)
+		roll["state"] = "FAILURE"
+		ctxs := roll["contexts"].(map[string]any)
+		ctxs["nodes"] = beamCraft415RollupNodes()
+		ctxs["pageInfo"] = map[string]any{"hasNextPage": false}
+	})
+	ref := ports.SCMPRRef{Repo: ports.SCMRepo{Provider: "github", Host: "github.com", Owner: "octocat", Name: "hello", Repo: "octocat/hello"}, Number: 415}
+	obs := scmObservationFromGraphQL(ref, pr)
+	if obs.CI.Summary != string(domain.CIPassing) {
+		t.Fatalf("CI summary = %q, want passing: every rendered check's latest run is green; cancelled template placeholders must not decide the verdict", obs.CI.Summary)
+	}
+	if len(obs.CI.FailedChecks) != 0 {
+		t.Fatalf("FailedChecks = %+v, want empty — placeholders are not failures", obs.CI.FailedChecks)
+	}
+	want := map[string]bool{
+		"quality (ubuntu-latest)":           true,
+		"quality (windows-latest)":          true,
+		"test (ubuntu-latest, shard 1/4)":   true,
+		"test (ubuntu-latest, shard 2/4)":   true,
+		"test (windows-latest, shard 1/12)": true,
+		"CI verdict":                        true,
+		"build":                             true,
+	}
+	got := map[string]bool{}
+	for _, ch := range obs.CI.Checks {
+		if strings.Contains(ch.Name, "${{") {
+			t.Fatalf("check %q leaked into the rendered set — template placeholders are not checks", ch.Name)
+		}
+		got[ch.Name] = true
+	}
+	for name := range want {
+		if !got[name] {
+			t.Fatalf("check %q missing from the rendered set (%v)", name, got)
+		}
+	}
+	if len(got) != len(want) {
+		t.Fatalf("checks = %v, want exactly the rendered GitHub names %v", got, want)
+	}
+	if obs.Mergeability.State != string(domain.MergeMergeable) {
+		t.Fatalf("mergeability = %q, want mergeable — must not stay blocked on placeholder runs", obs.Mergeability.State)
+	}
+}
+
+// Same live shape under pagination: the placeholders are not on any page
+// GitHub renders, so their cancelled conclusions alone explain the FAILURE
+// aggregate and must not resurrect failing from it.
+func TestSCMObservationPaginatedTemplatePlaceholdersExplainFailureAggregate(t *testing.T) {
+	fx := basePRFixture()
+	var pr map[string]any
+	fx.prData(func(m map[string]any) {
+		pr = m
+		roll := m["commits"].(map[string]any)["nodes"].([]any)[0].(map[string]any)["commit"].(map[string]any)["statusCheckRollup"].(map[string]any)
+		roll["state"] = "FAILURE"
+		ctxs := roll["contexts"].(map[string]any)
+		ctxs["nodes"] = beamCraft415RollupNodes()
+		ctxs["pageInfo"] = map[string]any{"hasNextPage": true}
+	})
+	ref := ports.SCMPRRef{Repo: ports.SCMRepo{Provider: "github", Host: "github.com", Owner: "octocat", Name: "hello", Repo: "octocat/hello"}, Number: 415}
+	obs := scmObservationFromGraphQL(ref, pr)
+	if obs.CI.Summary != string(domain.CIPassing) {
+		t.Fatalf("CI summary = %q, want passing: hidden cancelled placeholders alone explain the FAILURE aggregate", obs.CI.Summary)
+	}
+}
+
 // Issue #230 acceptance: a cached/empty context view must not resurrect
 // failing from the aggregate when the provider itself reports the merge
 // state CLEAN — CLEAN means GitHub considers every required check green, so

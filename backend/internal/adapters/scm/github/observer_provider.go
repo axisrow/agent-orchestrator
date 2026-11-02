@@ -639,6 +639,10 @@ func ciSummaryFromRollupState(pr map[string]any) domain.CIState {
 // replacement is not failure-class — i.e. the visible set contains a
 // superseded red run (cancelled/failed) that GitHub's check UI does not
 // render, which explains a FAILURE aggregate without any current failure.
+// Template-placeholder rows (issue #230, BeamCraft#415) are hidden by
+// construction — the UI never renders a "(${{ matrix.os }})" name — so a
+// cancelled placeholder itself explains the aggregate with no replacement
+// needed.
 func nodesHideSupersededFailures(rawNodes []map[string]any) bool {
 	latest := make(map[string]int, len(rawNodes))
 	for i, n := range rawNodes {
@@ -655,6 +659,9 @@ func nodesHideSupersededFailures(rawNodes []map[string]any) bool {
 		st := checkStatusFromGraphQL(n)
 		if st != domain.PRCheckFailed && st != domain.PRCheckCancelled {
 			continue
+		}
+		if str(n["__typename"]) == "CheckRun" && templatePlaceholderName(checkNodeName(n)) {
+			return true
 		}
 		keptIdx, ok := latest[checkNodeName(n)]
 		if !ok || keptIdx == i {
