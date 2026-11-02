@@ -1,5 +1,6 @@
-import { Fragment, type ReactNode } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import type { ExternalLinkComponent } from "./external-link";
+import { formatElapsed } from "./formatting";
 import { ArrowUpRightIcon, LoaderCircleIcon } from "./icons";
 import { UserAvatar } from "./UserAvatar";
 import { scmUserAvatarUrl } from "./scm-avatar";
@@ -37,6 +38,35 @@ export function PRStatusGlyph({ breathe, dotClassName }: { breathe?: boolean; do
 		return <LoaderCircleIcon aria-hidden="true" className="size-icon-xs shrink-0 animate-spin" />;
 	}
 	return <span aria-hidden="true" className={cn("size-dot-sm shrink-0 rounded-full bg-current", dotClassName)} />;
+}
+
+/**
+ * Live elapsed label for an in-flight status ("· 4m"). Recomputed on a 30s
+ * tick — the value only changes once a minute after the first, and it is
+ * passive metadata, not a stopwatch. A sibling of the status link, never
+ * inside it: the link's accessible name must stay the bare label.
+ */
+function PRCardStatusElapsed({ status }: { status: PRCardStatus }) {
+	const label = useElapsedLabel(status.breathe ? status.since : undefined);
+	if (!label) {
+		return null;
+	}
+	return <span className="font-mono text-passive">· {label}</span>;
+}
+
+function useElapsedLabel(since: string | undefined): string | undefined {
+	const start = since ? Date.parse(since) : Number.NaN;
+	const [label, setLabel] = useState(() => Number.isFinite(start) ? formatElapsed(Date.now() - start) : undefined);
+	useEffect(() => {
+		if (!Number.isFinite(start)) {
+			return;
+		}
+		const tick = () => setLabel(formatElapsed(Math.max(0, Date.now() - start)));
+		tick();
+		const timer = window.setInterval(tick, 30_000);
+		return () => window.clearInterval(timer);
+	}, [start]);
+	return label;
 }
 
 const defaultCountNounLabel: CountNounLabel = (count, noun) => `${count} ${noun}${count === 1 ? "" : "s"}`;
@@ -204,6 +234,7 @@ export function PRCardStatusSummary({
 							<div className={cn("flex min-w-0 items-center gap-2 text-xs font-medium leading-4", toneClass[status.tone])}>
 								<PRStatusGlyph breathe={status.breathe} />
 								<PRCardStatusLink externalLink={externalLink} status={status} />
+								<PRCardStatusElapsed status={status} />
 							</div>
 							{status.detail || (status.key === "review" && reviewDetailsAction) ? (
 								<div className="mt-0.5 flex min-w-0 items-baseline gap-2 pl-4 text-xs leading-4">
@@ -247,6 +278,7 @@ export function PRCardStatusSummary({
 								)}
 							>
 								<PRCardStatusLink externalLink={externalLink} status={presentation.primary} />
+								<PRCardStatusElapsed status={presentation.primary} />
 							</div>
 							{presentation.primary.detail ? (
 								<div className="mt-0.5 min-w-0 break-words text-xs leading-4 text-muted-foreground">
@@ -278,6 +310,7 @@ export function PRCardStatusSummary({
 									>
 										<PRStatusGlyph breathe={status.breathe} dotClassName="size-1" />
 										<PRCardStatusLink externalLink={externalLink} status={status} />
+										<PRCardStatusElapsed status={status} />
 									</span>
 								))}
 							</div>
