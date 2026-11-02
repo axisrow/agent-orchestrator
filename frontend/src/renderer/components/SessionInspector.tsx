@@ -594,7 +594,11 @@ function LinkedPRCard({ external, pr }: { external: boolean; pr: SessionPRRefere
 			<div className="flex min-w-0 items-center justify-between gap-2">
 				<ProductExternalLink className="inline-flex min-w-0 items-center gap-1 font-mono text-xs font-medium text-settings-label underline-offset-2 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60" href={pr.url}>
 					<GitPullRequest className="size-icon-sm shrink-0" aria-hidden="true" />
-					<span className="truncate">{pr.host}/{pr.repo} {pr.provider === "gitlab" ? "MR" : "PR"} #{pr.number}</span>
+					<span className="shrink-0">{pr.provider === "gitlab" ? "MR" : "PR"} #{pr.number}</span>
+					{" "}
+					<span aria-hidden="true" className="shrink-0 text-passive">·</span>
+					{" "}
+					<span className="truncate" title={`${pr.host}/${pr.repo}`}>{pr.host}/{pr.repo}</span>
 					<ArrowUpRight aria-hidden="true" className="size-icon-2xs shrink-0" />
 				</ProductExternalLink>
 				<CopyButton compact label={t("link.copy")} text={pr.url} />

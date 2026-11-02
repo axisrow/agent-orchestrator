@@ -379,7 +379,13 @@ export function InspectorPullRequestCardView({
 					href={pr.href}
 				>
 					{pullRequestIcon ?? <GitPullRequestIcon className="size-icon-sm shrink-0" />}
-					<span className="truncate">{pr.repositoryLabel ? `${pr.repositoryLabel} ` : ""}PR #{pr.number}</span>
+					<span className="shrink-0">PR #{pr.number}</span>
+					{pr.repositoryLabel ? (
+						<>
+							<span aria-hidden="true" className="shrink-0 text-passive">·</span>
+							<span className="truncate" title={pr.repositoryLabel}>{pr.repositoryLabel}</span>
+						</>
+					) : null}
 					{externalIcon ?? <ArrowUpRightIcon className="size-icon-2xs shrink-0" />}
 				</ExternalLink>
 				<span

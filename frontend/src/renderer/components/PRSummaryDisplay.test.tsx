@@ -26,7 +26,7 @@ const summary = (overrides: Partial<SessionPRSummary> = {}): SessionPRSummary =>
 	mergeability: { state: "mergeable", reasons: [], prUrl: "https://github.com/acme/repo/pull/7" },
 	updatedAt: "2026-06-15T00:00:00Z",
 	observedAt: "2026-06-15T00:00:00Z",
-	ciObservedAt: "2026-06-15T00:00:00Z",
+	ciObservedAt: new Date().toISOString(),
 	reviewObservedAt: "2026-06-15T00:00:00Z",
 	...overrides,
 });

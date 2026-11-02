@@ -59,6 +59,29 @@ export function formatTimeCompact(
 	return translate("time.daysAgo", { n: Math.floor(diffHours / 24) });
 }
 
+/**
+ * Elapsed run time for an in-flight status: `38s`, `4m`, `2h 5m`, `1d 12h`
+ * (zero sub-units omitted). A mono value by convention — the surrounding
+ * sentence is what localizes, not the duration.
+ */
+export function formatElapsed(ms: number): string {
+	const total = Math.max(0, Math.trunc(ms));
+	const seconds = Math.floor(total / 1000);
+	if (seconds < 60) {
+		return `${seconds}s`;
+	}
+	const minutes = Math.floor(seconds / 60);
+	if (minutes < 60) {
+		return `${minutes}m`;
+	}
+	const hours = Math.floor(minutes / 60);
+	if (hours < 24) {
+		return minutes % 60 === 0 ? `${hours}h` : `${hours}h ${minutes % 60}m`;
+	}
+	const days = Math.floor(hours / 24);
+	return hours % 24 === 0 ? `${days}d` : `${days}d ${hours % 24}h`;
+}
+
 export function formatTokenCount(totalTokens: number, locale = "en-US"): string {
 	const tokens = Math.max(0, Math.trunc(totalTokens));
 	if (tokens < 1_000) {

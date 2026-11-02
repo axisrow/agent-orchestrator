@@ -369,6 +369,7 @@ describe("prCardPresentation", () => {
 			label: "Checks running",
 			href: "https://github.com/acme/repo/pull/7/checks",
 			breathe: true,
+			since: expect.any(String),
 		});
 	});
 
@@ -395,7 +396,7 @@ describe("prCardPresentation", () => {
 
 	it("maps the three CI states to distinct tones: validating (with spinner flag), error, success", () => {
 		const pending = prCardPresentation(
-			summary({ ci: { autoInjectCI: true, state: "pending", failingChecks: [] } }),
+			summary({ ci: { autoInjectCI: true, state: "pending", failingChecks: [] }, ciObservedAt: "2026-10-01T00:00:00Z" }),
 		);
 		const failing = prCardPresentation(
 			summary({
@@ -404,21 +405,32 @@ describe("prCardPresentation", () => {
 					state: "failing",
 					failingChecks: [{ name: "unit", status: "failed", conclusion: "failure", url: "https://ci/unit" }],
 				},
+				ciObservedAt: "2026-10-01T00:00:00Z",
 			}),
 		);
 		const passing = prCardPresentation(
-			summary({ ci: { autoInjectCI: true, state: "passing", failingChecks: [] } }),
+			summary({ ci: { autoInjectCI: true, state: "passing", failingChecks: [] }, ciObservedAt: "2026-10-01T00:00:00Z" }),
+		);
+		const loading = prCardPresentation(
+			summary({ ci: { autoInjectCI: true, state: "unknown", failingChecks: [] }, ciObservedAt: "2026-10-01T00:00:00Z" }),
 		);
 
 		// pending must render neither as failing nor as the old neutral: it is
-		// the amber validating tone and carries the breathe flag that renders
-		// the spinner glyph.
-		expect(pending.primary).toMatchObject({ key: "ci", tone: "validating", breathe: true });
-		expect(pending.statusRows?.find((row) => row.key === "ci")).toMatchObject({ tone: "validating", breathe: true });
+		// the amber validating tone, carries the breathe flag that renders the
+		// spinner glyph, and passes the observation time the elapsed label
+		// ticks from. Settled and still-loading states carry no timer.
+		expect(pending.primary).toMatchObject({ key: "ci", tone: "validating", breathe: true, since: "2026-10-01T00:00:00Z" });
+		expect(pending.statusRows?.find((row) => row.key === "ci")).toMatchObject({ tone: "validating", breathe: true, since: "2026-10-01T00:00:00Z" });
 		expect(failing.primary).toMatchObject({ key: "ci", tone: "error" });
 		expect(failing.primary.breathe).toBeFalsy();
+		expect(failing.primary.since).toBeUndefined();
 		expect(passing.primary).toMatchObject({ key: "merge", tone: "success" });
 		expect(passing.statusRows?.find((row) => row.key === "ci")).toMatchObject({ tone: "success" });
+		expect(passing.statusRows?.find((row) => row.key === "ci")?.since).toBeUndefined();
+		// "Checking merge readiness" breathes but is not a running check run.
+		expect(loading.primary.breathe).toBe(true);
+		expect(loading.primary.since).toBeUndefined();
+		expect(loading.statusRows?.find((row) => row.key === "ci")?.since).toBeUndefined();
 	});
 
 	it("uses customer-facing copy for an unexplained merge blocker", () => {
