@@ -6344,11 +6344,12 @@ func TestDeleteArtifactsAcceptsTheCanonicalArtifactDir(t *testing.T) {
 func TestResumeAgentMapsRelaunchFailureToConflict(t *testing.T) {
 	var sentryErrs []error
 	var sentryTags []map[string]string
+	originalCapture := captureRelaunchError
 	captureRelaunchError = func(_ context.Context, err error, tags map[string]string, _ string) {
 		sentryErrs = append(sentryErrs, err)
 		sentryTags = append(sentryTags, tags)
 	}
-	t.Cleanup(func() { captureRelaunchError = sentryobs.CaptureHTTPError })
+	t.Cleanup(func() { captureRelaunchError = originalCapture })
 	cause := sessionmanager.RelaunchError{Step: "runtime", Err: errors.New("tmux: secret-token failed")}
 	fc := &fakeCommander{restoreErr: fmt.Errorf("resume agent mer-1: %w", &cause)}
 	sink := &fakeTelemetrySink{}

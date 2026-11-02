@@ -222,7 +222,7 @@ func (c *ConversationsController) reviewSnapshot(w http.ResponseWriter, r *http.
 	}
 	snapshot, err := svc.SnapshotPageForReview(r.Context(), chi.URLParam(r, "reviewId"), before, limit)
 	if err != nil {
-		writeConversationError(w, r, err)
+		writeConversationErrorWithCode(w, r, err, "CONVERSATION_READ_FAILED", "Conversation read failed")
 		return
 	}
 	envelope.WriteJSON(w, http.StatusOK, conversationSnapshotResponse(snapshot))
@@ -252,7 +252,7 @@ func (c *ConversationsController) reviewSend(w http.ResponseWriter, r *http.Requ
 	}
 	turn, err := svc.SendForOwner(r.Context(), domain.ReviewConversationOwner(chi.URLParam(r, "reviewId")), ports.ChatUserMessage{Text: text, Content: content, ClientMessageID: req.ClientMessageID, Origin: domain.MessageOriginHuman})
 	if err != nil {
-		writeConversationError(w, r, err)
+		writeConversationErrorWithCode(w, r, err, "CHAT_DELIVERY_FAILED", "Chat delivery failed")
 		return
 	}
 	envelope.WriteJSON(w, http.StatusAccepted, SendConversationMessageResponse{TurnID: turn.ID, ProviderTurnID: turn.ProviderTurnID, State: turn.State, Duplicate: turn.ID == ""})
@@ -766,7 +766,7 @@ func (c *ConversationsController) snapshot(w http.ResponseWriter, r *http.Reques
 		snapshot, err = c.Svc.Snapshot(r.Context(), session)
 	}
 	if err != nil {
-		writeConversationError(w, r, err)
+		writeConversationErrorWithCode(w, r, err, "CONVERSATION_READ_FAILED", "Conversation read failed")
 		return
 	}
 	response := conversationSnapshotResponse(snapshot)
@@ -834,7 +834,7 @@ func (c *ConversationsController) send(w http.ResponseWriter, r *http.Request) {
 		Continuation:    req.Continuation,
 	})
 	if err != nil {
-		writeConversationError(w, r, err)
+		writeConversationErrorWithCode(w, r, err, "CHAT_DELIVERY_FAILED", "Chat delivery failed")
 		return
 	}
 
@@ -1001,6 +1001,10 @@ func decodeConversationBodyLimit(w http.ResponseWriter, r *http.Request, into an
 // writeConversationError maps the Chat service's typed failures onto stable
 // codes, so a client can tell a permanent answer from a retryable one.
 func writeConversationError(w http.ResponseWriter, r *http.Request, err error) {
+	writeConversationErrorWithCode(w, r, err, "", "")
+}
+
+func writeConversationErrorWithCode(w http.ResponseWriter, r *http.Request, err error, fallbackCode, fallbackMessage string) {
 	switch {
 	case errors.Is(err, ports.ErrSessionNotFound):
 		envelope.WriteAPIError(w, r, http.StatusNotFound, "not_found",
@@ -1157,7 +1161,11 @@ func writeConversationError(w http.ResponseWriter, r *http.Request, err error) {
 			"the stored provider conversation could not be resumed", nil)
 
 	default:
-		envelope.WriteError(w, r, err)
+		if fallbackCode != "" {
+			envelope.WriteErrorWithCode(w, r, err, fallbackCode, fallbackMessage)
+		} else {
+			envelope.WriteError(w, r, err)
+		}
 	}
 }
 

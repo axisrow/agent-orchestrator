@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -304,6 +305,11 @@ func Run() error {
 	if destinationErr != nil && cfg.Telemetry.SentryDSN != "" {
 		log.Warn("agent switch failure sender disabled", "error", destinationErr)
 	}
+	// The coordinator's consent mirror gates Sentry capture: fail-closed (false
+	// until the first policy state lands), consulted before every capture.
+	var agentSwitchReporting atomic.Bool
+	sentryobs.SetPolicyCheck(func(context.Context) bool { return agentSwitchReporting.Load() })
+	defer sentryobs.SetPolicyCheck(nil)
 	policyCoordinator := agentswitchobs.NewPolicyCoordinator(store, agentswitchobs.PolicyOptions{
 		AuthorityReader:         policyauthority.New(filepath.Join(cfg.DataDir, agentswitchobs.PolicyFileName)),
 		TelemetryEvents:         cfg.Telemetry.Events,
@@ -311,7 +317,7 @@ func Run() error {
 		DestinationFingerprint:  destination.Fingerprint,
 		StreamKillSwitched:      agentSwitchFailureStreamDisabled(cfg.Telemetry.DisabledEvents),
 		Metadata:                agentSwitchEventMetadata(cfg),
-		OnEventsChanged:         sentryobs.SetPolicyEnabled,
+		OnEventsChanged:         agentSwitchReporting.Store,
 		ProviderDrain:           sentryobs.Drain,
 	})
 	if err := policyCoordinator.ForceDisabled(context.Background()); err != nil {

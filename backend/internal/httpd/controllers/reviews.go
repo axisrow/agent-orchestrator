@@ -477,6 +477,7 @@ func writeReviewError(w http.ResponseWriter, r *http.Request, err error) {
 		// The trigger error text is already persisted in review_run.body; repeating
 		// it here keeps the UI toast diagnosable without a DB query (issue #6099
 		// shipped as an opaque "Review operation failed" for exactly this reason).
+		envelope.CaptureError(r, err)
 		envelope.WriteAPIError(w, r, http.StatusInternalServerError, "internal", "REVIEW_OPERATION_FAILED", "Review operation failed", map[string]any{"detail": err.Error()})
 	}
 }

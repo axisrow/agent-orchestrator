@@ -600,8 +600,11 @@ func (s *Service) emitSpawnFailed(ctx context.Context, cfg ports.SpawnConfig, er
 	})
 }
 
-// captureRelaunchError sends a relaunch failure's raw error to Sentry.
-var captureRelaunchError = sentryobs.CaptureHTTPError
+// captureRelaunchError sends a relaunch failure through the daemon's gated,
+// privacy-safe Sentry boundary.
+var captureRelaunchError = func(ctx context.Context, err error, tags map[string]string, fingerprint string) {
+	sentryobs.CaptureError(ctx, err, tags, fingerprint, telemetrymeta.RoutePattern(nil), telemetrymeta.FailureSite{})
+}
 
 // emitRelaunchFailed records a failed agent relaunch. These answer 409
 // AGENT_RESUME_FAILED rather than 500, so neither ao.http.5xx nor the request
