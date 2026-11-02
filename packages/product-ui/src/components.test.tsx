@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { AgentAvatar } from "./AgentAvatar";
 import { GithubAvatar } from "./GithubAvatar";
 import { scmUserAvatarUrl } from "./scm-avatar";
@@ -148,6 +148,49 @@ describe("portable leaf components", () => {
 		expect(container.querySelector(".animate-spin")).toBeInTheDocument();
 		expect(container.querySelector(".animate-status-pulse")).not.toBeInTheDocument();
 		expect(container.querySelector(".text-status-validating")).toBeInTheDocument();
+	});
+
+	it("ticks an elapsed label next to a running status, never inside its link", () => {
+		vi.useFakeTimers();
+		// Build `since` under fake timers so the initial label is deterministic.
+		const since = new Date(Date.now() - 5_000).toISOString();
+		render(
+			<PRCardStatusSummary
+				externalLink={ExternalLink}
+				presentation={{
+					primary: { key: "ci", label: "Checks running", tone: "validating", breathe: true, since, href: "https://example.com/checks", links: [] },
+					supporting: [],
+				}}
+			/>,
+		);
+
+		const elapsed = screen.getByText("· 5s");
+		expect(elapsed).toHaveClass("text-passive");
+		// The timer is a sibling of the link, so the accessible name stays bare.
+		expect(screen.getByRole("link", { name: "Checks running" })).not.toContainElement(elapsed);
+
+		act(() => vi.advanceTimersByTime(61_000));
+		expect(screen.getByText("· 1m")).toBeInTheDocument();
+		vi.useRealTimers();
+	});
+
+	it("renders no elapsed label without a since timestamp, a breathe flag, or a valid date", () => {
+		for (const status of [
+			{ breathe: true },
+			{ breathe: true, since: "garbage" },
+			{ breathe: false, since: new Date().toISOString() },
+		]) {
+			const { container } = render(
+				<PRCardStatusSummary
+					externalLink={ExternalLink}
+					presentation={{
+						primary: { key: "ci", label: "Checks running", tone: "validating", links: [], ...status },
+						supporting: [],
+					}}
+				/>,
+			);
+			expect(container.textContent).not.toMatch(/· \d/);
+		}
 	});
 
 	it("renders the three CI states distinctly: pass, fail, running with spinner", () => {
