@@ -148,6 +148,7 @@ func TestBuildProjectConfigWorkerStrictMCPAlone(t *testing.T) {
 		t.Fatalf("worker MCP = %#v, want strict isolation with empty configs", mcp)
 	}
 }
+
 // TestProjectConfigMirrorsDomainJSONKeys fails when the CLI's hand-written
 // projectConfig drifts from domain.ProjectConfig. A key the CLI does not model
 // is silently dropped by every set-config round trip.
