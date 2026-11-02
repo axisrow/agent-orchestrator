@@ -216,6 +216,7 @@ var shippedMigrations = map[int64]string{
 	20261022054735000: "20261022054735000_device_model_catalogs.sql",
 	20261022144835405: "20261022144835405_provider_events_turn_completed_index.sql",
 	20261022172135175: "20261022172135175_session_branch_naming.sql",
+	20261026083409462: "20261026083409462_deepseek_chat_failure_code.sql",
 	20261028124744441: "20261028124744441_telemetry_incremental_vacuum.sql",
 	// Fork-local migrations live in the reserved 9000+ range so a sync rebase
 	// can never renumber them onto a number upstream will claim. See
@@ -223,7 +224,6 @@ var shippedMigrations = map[int64]string{
 	20261020173311321: "20261020173311321_preview_poll_sessions.sql",
 	20261022172135182: "20261022172135182_report_emitted_at.sql",
 	20261022172135183: "20261022172135183_review_run_current_head_lookup.sql",
-	20261026083409462: "20261026083409462_deepseek_chat_failure_code.sql",
 	20261027143000000: "20261027143000000_delivery_ledger.sql",
 	20261028124744442: "20261028124744442_review_run_github_review_state.sql",
 	20261028124744444: "20261028124744444_session_review_only.sql",
