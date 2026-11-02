@@ -15,6 +15,13 @@ func TestRecordClaudeConversation(t *testing.T) {
 	previous := claudeProcessRunning
 	claudeProcessRunning = func(string, string) bool { return true }
 	defer func() { claudeProcessRunning = previous }()
+	// The pid under test ("100") can belong to an unrelated live process on
+	// the host (a Linux CI runner had one), which made /proc report a start
+	// time the want literals below do not carry. Stub the probe so the record
+	// never depends on the host's process table.
+	previousStart := processStart
+	processStart = func(string) string { return "" }
+	defer func() { processStart = previousStart }()
 	dataDir := t.TempDir()
 	start := time.Unix(1_800_000_000, 0)
 	if err := RecordClaudeConversation(dataDir, "100", "a", start); err != nil {
