@@ -255,7 +255,7 @@ func (m *Manager) admitAgentSwitch(ctx context.Context, id domain.SessionID, cfg
 		return domain.AgentSwitch{}, nil, fmt.Errorf("switch agent %s: %w", id, ErrIncompleteHandle)
 	}
 	if !switchHarnessSupported(rec.Harness) || !switchHarnessSupported(cfg.TargetHarness) {
-		return domain.AgentSwitch{}, nil, fmt.Errorf("switch agent %s: %w: supported harnesses are claude-code, codex, and fx", id, ErrUnsupportedSwitchHarness)
+		return domain.AgentSwitch{}, nil, fmt.Errorf("switch agent %s: %w: supported harnesses are claude-code and codex", id, ErrUnsupportedSwitchHarness)
 	}
 	if rec.Harness == cfg.TargetHarness {
 		return domain.AgentSwitch{}, nil, fmt.Errorf("switch agent %s: %w: %s", id, ErrAlreadyUsingHarness, cfg.TargetHarness)
@@ -1272,7 +1272,7 @@ func (m *Manager) resolveTargetActivationOutcome(
 
 func switchHarnessSupported(h domain.AgentHarness) bool {
 	switch h {
-	case domain.HarnessClaudeCode, domain.HarnessCodex, domain.HarnessFX:
+	case domain.HarnessClaudeCode, domain.HarnessCodex:
 		return true
 	default:
 		return false

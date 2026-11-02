@@ -23,17 +23,9 @@ func TestPlansMatchAuthenticationMatrix(t *testing.T) {
 		{"codex", "Log in to Codex", "codex", "Choose ChatGPT, device code, API key, or access token", "https://github.com/openai/codex", "", ActionLogin, []string{"codex", "login"}},
 		{"opencode", "Log in to OpenCode", "opencode", "Native provider chooser", "https://github.com/anomalyco/opencode", "", ActionLogin, []string{"opencode", "auth", "login"}},
 		{"opencode-v2", "Log in to OpenCode 2", "opencode", "Native provider chooser", "https://opencode.ai/v2/docs", "", ActionLogin, []string{"opencode", "auth", "login"}},
-		{"memcode", "Set up memcode", "", "Configure a native endpoint and provider credentials before launching AO", "https://github.com/memcode-ai/memcode", "", ActionSetup, nil},
-		{"kimi", "Log in to Kimi", "kimi", "Kimi opens its login picker automatically", "https://moonshotai.github.io/kimi-code/en/", "", ActionLogin, []string{"kimi"}},
 		{"pi", "Log in to Pi", "pi", "Pi opens its login picker automatically", "https://github.com/earendil-works/pi", "", ActionLogin, []string{"pi"}},
-		{"amp", "Log in to Amp", "amp", "Native browser flow", "https://ampcode.com/manual", "", ActionLogin, []string{"amp", "login"}},
-		{"droid", "Log in to Droid", "droid", "Select Open login after Droid finishes starting", "https://docs.factory.ai/droid-cli/cli-reference", "/login\r", ActionLogin, []string{"droid"}},
-		{"goose", "Set up Goose", "goose", "Native provider configuration; AO forwards terminal input without persisting or logging the raw input, while Goose controls credential storage", "https://block.github.io/goose/index.html", "", ActionSetup, []string{"goose", "configure"}},
-		{"qwen", "Set up Qwen", "qwen", "Select Open setup after Qwen finishes starting to configure a model provider", "https://qwenlm.github.io/qwen-code-docs/en/users/configuration/auth/", "i\x7f/auth\r", ActionSetup, []string{"qwen"}},
 		{"agy", "Log in to Agy", "agy", "Native first-run browser sign-in", "https://github.com/google-antigravity/antigravity-cli", "", ActionLogin, []string{"agy"}},
-		{"autohand", "Log in to Autohand", "autohand", "Native Autohand account sign-in", "https://docs.autohand.ai/working-with-autohand-code/cli-reference", "", ActionLogin, []string{"autohand", "login"}},
 		{"omp", "Log in to OMP", "omp", "Sign in to a provider in OMP's setup wizard, then finish or skip the remaining setup steps", "https://github.com/can1357/oh-my-pi", "", ActionLogin, []string{"omp", "setup"}},
-		{"fx", "Log in to fx", "fx", "Select Vercel, Codex, or Grok in fx's native login flow", "https://fx.sh/docs", "", ActionLogin, []string{"fx", "login"}},
 	}
 
 	svc := New(foundExecutables(cases), nil)
@@ -45,11 +37,6 @@ func TestPlansMatchAuthenticationMatrix(t *testing.T) {
 	for i, want := range cases {
 		got := plans[i]
 		wantLaunchMode := LaunchTerminal
-		if want.id == "memcode" {
-			// Memcode configures providers through files and environment, with no
-			// command to drive.
-			wantLaunchMode = LaunchDocumentation
-		}
 		if seen[got.AgentID] {
 			t.Fatalf("Plans() returned duplicate id %q", got.AgentID)
 		}

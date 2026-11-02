@@ -1,5 +1,5 @@
 // Package hooksjson implements the matcher-group hooks file that several agents
-// (claude-code, goose, qwen, agy, droid, kimchi) share byte-for-byte in shape.
+// (claude-code, agy) share byte-for-byte in shape.
 // Each file is a JSON object with a "hooks" sub-map keyed by native event name,
 // whose values are matcher groups ({matcher?, hooks:[{type,command,timeout}]}). The
 // adapters differed only in the file path, the AO command prefix, the per-hook
@@ -167,10 +167,10 @@ type HookSpec struct {
 type Manager struct {
 	// Flat selects native event arrays of command entries without matcher groups.
 	Flat bool
-	// Label prefixes error messages, e.g. "claude-code" or "goose", so the
+	// Label prefixes error messages, e.g. "claude-code", so the
 	// wrapped error reads "<label>.GetAgentHooks: ...".
 	Label string
-	// CommandPrefix identifies AO-owned hook commands, e.g. "ao hooks goose ".
+	// CommandPrefix identifies AO-owned hook commands, e.g. "ao hooks claude-code ".
 	// Install skips commands already present and uninstall/detect match on it.
 	CommandPrefix string
 	// LegacyCommandPrefixes identifies AO-owned command prefixes from an older

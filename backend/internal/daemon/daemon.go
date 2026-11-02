@@ -1567,7 +1567,6 @@ func usagePipelineWatchRoots(roots usagesvc.SourceRoots) []string {
 		roots.ClaudeProjects,
 		roots.CodexSessions,
 		roots.CodexArchived,
-		roots.KimiHome,
 	}
 }
 

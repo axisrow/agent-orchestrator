@@ -229,8 +229,8 @@ describe("defaultAuthorizedAgentForRole", () => {
 
 	it("skips unavailable historical winners and falls back to Claude Code", () => {
 		const sessions = [
-			session("goose", "worker", hoursAgo(3)),
-			session("goose", "worker", hoursAgo(2)),
+			session("pi", "worker", hoursAgo(3)),
+			session("pi", "worker", hoursAgo(2)),
 			session("codex", "worker", hoursAgo(1)),
 		];
 

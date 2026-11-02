@@ -17,12 +17,12 @@ describe("createProjectConfig", () => {
 	it("preserves tracker intake alongside selected agent defaults", () => {
 		expect(
 			createProjectConfig({
-				workerAgent: "qwen",
+				workerAgent: "omp",
 				orchestratorAgent: "opencode",
 				trackerIntake: { enabled: true, provider: "github", assignee: "octocat" },
 			}),
 		).toEqual({
-			worker: { agent: "qwen" },
+			worker: { agent: "omp" },
 			orchestrator: { agent: "opencode" },
 			trackerIntake: { enabled: true, provider: "github", assignee: "octocat" },
 		});

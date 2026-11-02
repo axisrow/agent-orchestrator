@@ -250,7 +250,7 @@ func TestHarnessSignalsCapabilityGate(t *testing.T) {
 	if !s.harnessSignals(domain.HarnessCodex) {
 		t.Fatal("harnessSignals(codex) = false with codex-capable predicate")
 	}
-	if s.harnessSignals(domain.HarnessAmp) {
+	if s.harnessSignals(domain.AgentHarness("amp")) {
 		t.Fatal("harnessSignals(amp) = true with codex-only predicate")
 	}
 }

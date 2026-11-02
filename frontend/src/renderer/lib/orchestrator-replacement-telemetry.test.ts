@@ -12,7 +12,7 @@ import { captureOrchestratorReplacementFailure } from "./orchestrator-replacemen
 
 describe("captureOrchestratorReplacementFailure", () => {
 	it("records the shell restart-failure telemetry payload", () => {
-		const error = new Error("missing goose binary");
+		const error = new Error("missing codex binary");
 
 		captureOrchestratorReplacementFailure(error, "proj-1");
 

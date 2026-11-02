@@ -318,13 +318,17 @@ func TestBuild_OMPIsPubliclySpawnable(t *testing.T) {
 	}
 }
 
-func TestBuild_FXPublicHarnessContracts(t *testing.T) {
+// Cut harnesses must leave the public spawn/delegate vocabularies entirely.
+func TestBuild_CutHarnessesAreNotPubliclySpawnable(t *testing.T) {
 	doc := buildSchemas(t)
 	for schema, field := range map[string]string{
 		"SpawnSessionRequest": "harness", "DelegateTaskRequest": "agent",
 	} {
-		if values := doc.Components.Schemas[schema].Properties[field].Enum; !slices.Contains(values, "fx") {
-			t.Errorf("%s.%s enum = %v, want fx", schema, field, values)
+		values := doc.Components.Schemas[schema].Properties[field].Enum
+		for _, cut := range []string{"kimi", "goose", "memcode", "fx", "qwen", "amp", "autohand", "droid"} {
+			if slices.Contains(values, cut) {
+				t.Errorf("%s.%s enum still contains cut harness %q", schema, field, cut)
+			}
 		}
 	}
 }

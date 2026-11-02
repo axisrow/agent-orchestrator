@@ -224,7 +224,7 @@ func TestGuard_TUIWithoutStartupCapabilityAllowsDelivery(t *testing.T) {
 	msgr := &fakeMessenger{}
 	rec := domain.SessionRecord{
 		ID:       "s1",
-		Harness:  domain.HarnessGoose,
+		Harness:  domain.HarnessOMP,
 		Mode:     domain.SessionModeTUI,
 		Activity: domain.Activity{State: domain.ActivityIdle},
 	}
@@ -441,14 +441,14 @@ func TestGuard_DeliverUnderMutationBypassesInputGateButKeepsSafetyChecks(t *test
 func TestGuard_DeliverUnderMutationCheckedRunsGenerationProofBeforePaneWrite(t *testing.T) {
 	messenger := &fakeMessenger{}
 	rec := record(domain.ActivityWaitingInput, false)
-	rec.Harness = domain.HarnessFX
+	rec.Harness = domain.HarnessPi
 	g := New(&fakeStore{rec: rec, ok: true}, messenger, nil)
 	g.SetInputLease(fixedInputLease(false))
 	staleGeneration := errors.New("target generation changed")
 
 	got, err := g.DeliverUnderMutationChecked(context.Background(), "s1", "continuation", func(_ context.Context, current domain.SessionRecord) error {
-		if current.Harness != domain.HarnessFX {
-			t.Fatalf("pre-write harness = %q, want fx", current.Harness)
+		if current.Harness != domain.HarnessPi {
+			t.Fatalf("pre-write harness = %q, want pi", current.Harness)
 		}
 		return staleGeneration
 	})
@@ -515,7 +515,7 @@ func TestGuard_CoordinationUnderMutationRechecksActivityAndBypassesInputGate(t *
 
 func TestGuard_CoordinationUnderMutationCheckedRejectsBeforeRuntimeWrite(t *testing.T) {
 	rec := record(domain.ActivityIdle, false)
-	rec.Harness = domain.HarnessKimi
+	rec.Harness = domain.HarnessOMP
 	messenger := &fakeMessenger{}
 	g := New(&fakeStore{rec: rec, ok: true}, messenger, nil)
 	g.SetInputLease(fixedInputLease(false))

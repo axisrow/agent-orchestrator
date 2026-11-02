@@ -12,8 +12,8 @@ import (
 //
 // Registration is the whole capability gate — a harness with no driver here cannot
 // run chat mode — so the shipped set is a release decision, not an implementation
-// detail. Codex uses its native app-server; Claude, OpenCode v2, Droid, Kimi, Pi,
-// OMP, Qwen, and Agy (through Google's Antigravity ACP server) use the reusable
+// detail. Codex uses its native app-server; Claude, OpenCode v2, Pi,
+// OMP, and Agy (through Google's Antigravity ACP server) use the reusable
 // ACP transport. Every remaining harness is deliberately TUI-only.
 func TestShippedChatDrivers(t *testing.T) {
 	r := Build(nil, nil)
@@ -22,11 +22,8 @@ func TestShippedChatDrivers(t *testing.T) {
 		domain.HarnessCodex,
 		domain.HarnessClaudeCode,
 		domain.HarnessOpenCodeV2,
-		domain.HarnessDroid,
-		domain.HarnessKimi,
 		domain.HarnessPi,
 		domain.HarnessOMP,
-		domain.HarnessQwen,
 		domain.HarnessAgy,
 	} {
 		if !r.SupportsChat(harness) {
@@ -38,13 +35,13 @@ func TestShippedChatDrivers(t *testing.T) {
 	}
 
 	// Every other harness stays TUI-only, and asking for chat must be refused with a
-	// typed answer rather than quietly producing a terminal session.
+	// typed answer rather than quietly producing a terminal session. Cut ids belong
+	// here too: they must not regain a driver through a stale registration.
 	for _, harness := range []domain.AgentHarness{
-		domain.HarnessFX,
-		domain.HarnessMemcode,
+		"kimi", "goose", "memcode", "fx", "qwen", "amp", "autohand", "droid",
 		"definitely-not-an-agent",
 	} {
-		if _, err := r.Driver(harness); err == nil {
+		if _, err := r.Driver(domain.AgentHarness(harness)); err == nil {
 			t.Errorf("%s resolved a chat driver", harness)
 		} else if !errors.Is(err, ports.ErrChatUnsupported) {
 			t.Errorf("%s refused with %v, want ErrChatUnsupported so callers can branch", harness, err)

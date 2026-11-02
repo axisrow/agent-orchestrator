@@ -11,19 +11,13 @@ func TestOpenCodeV2HarnessIsKnown(t *testing.T) {
 	}
 }
 
-func TestFXHarnessIsKnown(t *testing.T) {
-	if HarnessFX != AgentHarness("fx") {
-		t.Fatalf("HarnessFX = %q, want fx", HarnessFX)
-	}
-	if !HarnessFX.IsKnown() {
-		t.Fatal("HarnessFX.IsKnown() = false, want true")
-	}
-	for _, harness := range AllHarnesses {
-		if harness == HarnessFX {
-			return
+// A cut harness is no longer known, so user-supplied names fail validation.
+func TestCutHarnessIsUnknown(t *testing.T) {
+	for _, cut := range []AgentHarness{"kimi", "goose", "memcode", "fx", "qwen", "amp", "autohand", "droid"} {
+		if AgentHarness(cut).IsKnown() {
+			t.Fatalf("harness %q IsKnown() = true, want false after the cut", cut)
 		}
 	}
-	t.Fatal("AllHarnesses does not contain HarnessFX")
 }
 
 func TestAgyHarnessIsKnown(t *testing.T) {

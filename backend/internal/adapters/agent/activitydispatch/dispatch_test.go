@@ -22,14 +22,18 @@ func TestDeriverTokensAreKnownHarnesses(t *testing.T) {
 }
 
 func TestSupportsHarness(t *testing.T) {
-	for _, h := range []domain.AgentHarness{domain.HarnessCodex, domain.HarnessClaudeCode, domain.HarnessOpenCodeV2, domain.HarnessKimi, domain.HarnessAmp, domain.HarnessPi, domain.HarnessOMP, domain.HarnessAgy, domain.HarnessDroid, domain.HarnessMemcode} {
+	for _, h := range []domain.AgentHarness{domain.HarnessCodex, domain.HarnessClaudeCode, domain.HarnessOpenCodeV2, domain.HarnessPi, domain.HarnessOMP, domain.HarnessAgy} {
 		if !SupportsHarness(h) {
 			t.Errorf("SupportsHarness(%q) = false, want true", h)
 		}
 	}
-	// Harnesses with no callback pipeline must read as unsupported.
-	for _, h := range []domain.AgentHarness{domain.HarnessFX, domain.AgentHarness("")} {
-		if SupportsHarness(h) {
+	// Harnesses with no callback pipeline — including every cut id — must read
+	// as unsupported.
+	for _, h := range []domain.AgentHarness{
+		"kimi", "goose", "memcode", "fx", "qwen", "amp", "autohand", "droid",
+		domain.AgentHarness(""),
+	} {
+		if SupportsHarness(domain.AgentHarness(h)) {
 			t.Errorf("SupportsHarness(%q) = true, want false", h)
 		}
 	}
@@ -49,24 +53,10 @@ func TestOMPDispatchesManagedExtensionActivity(t *testing.T) {
 	}
 }
 
-func TestAmpAndPiDispatchActivity(t *testing.T) {
-	tests := []struct {
-		agent   string
-		event   string
-		payload string
-		want    domain.ActivityState
-	}{
-		{agent: "amp", event: "thread-state", payload: `{"state":"awaiting-approval"}`, want: domain.ActivityWaitingInput},
-		{agent: "pi", event: "user-prompt-submit", payload: `{}`, want: domain.ActivityActive},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.agent, func(t *testing.T) {
-			got, ok := Derive(tt.agent, tt.event, []byte(tt.payload))
-			if !ok || got != tt.want {
-				t.Fatalf("Derive(%q, %q) = (%q, %v), want (%q, true)", tt.agent, tt.event, got, ok, tt.want)
-			}
-		})
+func TestPiDispatchesActivity(t *testing.T) {
+	got, ok := Derive("pi", "user-prompt-submit", []byte(`{}`))
+	if !ok || got != domain.ActivityActive {
+		t.Fatalf("Derive(pi, user-prompt-submit) = (%q, %v), want (%q, true)", got, ok, domain.ActivityActive)
 	}
 }
 
@@ -76,8 +66,7 @@ func TestSignalCoverageForHarness(t *testing.T) {
 		want    SignalCoverage
 	}{
 		{domain.HarnessClaudeCode, SignalCoverageComplete},
-		{domain.HarnessMemcode, SignalCoveragePartial},
-		{domain.HarnessFX, SignalCoverageNone},
+		{"fx", SignalCoverageNone},
 	}
 
 	for _, tt := range tests {
@@ -93,7 +82,7 @@ func TestFullySupportsHarnessRequiresCompleteCoverage(t *testing.T) {
 	if !FullySupportsHarness(domain.HarnessClaudeCode) {
 		t.Fatal("FullySupportsHarness(claude-code) = false, want true")
 	}
-	if FullySupportsHarness(domain.HarnessMemcode) {
-		t.Fatal("FullySupportsHarness(memcode) = true, want false for partial signals")
+	if FullySupportsHarness(domain.AgentHarness("memcode")) {
+		t.Fatal("FullySupportsHarness(memcode) = true, want false for a cut harness")
 	}
 }

@@ -214,16 +214,9 @@ func TestWiring_AgentResolverResolvesRealAdapters(t *testing.T) {
 		{domain.HarnessClaudeCode, "claude-code"},
 		{domain.HarnessCodex, "codex"},
 		{domain.HarnessOpenCodeV2, "opencode-v2"},
-		{domain.HarnessQwen, "qwen"},
-		{domain.HarnessKimi, "kimi"},
-		{domain.HarnessDroid, "droid"},
-		{domain.HarnessAmp, "amp"},
 		{domain.HarnessAgy, "agy"},
-		{domain.HarnessGoose, "goose"},
 		{domain.HarnessPi, "pi"},
-		{domain.HarnessAutohand, "autohand"},
-		{domain.HarnessFX, "fx"},
-		{domain.HarnessMemcode, "memcode"},
+		{domain.HarnessOMP, "omp"},
 	} {
 		agent, ok := resolver.Agent(tc.harness)
 		if !ok {
@@ -239,6 +232,12 @@ func TestWiring_AgentResolverResolvesRealAdapters(t *testing.T) {
 	}
 	if _, ok := resolver.Agent("definitely-not-an-agent"); ok {
 		t.Fatal("unknown harness resolved to an agent; want a miss")
+	}
+	// Cut harnesses must not resolve either.
+	for _, cut := range []string{"kimi", "goose", "memcode", "fx", "qwen", "amp", "autohand", "droid"} {
+		if _, ok := resolver.Agent(domain.AgentHarness(cut)); ok {
+			t.Fatalf("cut harness %q resolved to an agent; want a miss", cut)
+		}
 	}
 	if _, ok := resolver.Agent(""); ok {
 		t.Fatal("empty harness resolved to an agent; want a miss")
@@ -262,7 +261,7 @@ func TestWiring_ActiveTurnSteeringComesFromAdapters(t *testing.T) {
 	if !steers(domain.HarnessCodex) {
 		t.Error("codex declares SteersActiveTurn; want true from the adapter-backed policy")
 	}
-	for _, harness := range []domain.AgentHarness{domain.HarnessClaudeCode, domain.HarnessGoose, "definitely-not-an-agent", ""} {
+	for _, harness := range []domain.AgentHarness{domain.HarnessClaudeCode, "definitely-not-an-agent", ""} {
 		if steers(harness) {
 			t.Errorf("harness %q must not be steerable mid-turn", harness)
 		}
@@ -296,9 +295,8 @@ func TestWiring_StartupSignalGateComesFromAdapters(t *testing.T) {
 // nudge is fail-closed at a waiting_input prompt: it is only safe on a harness
 // that reports a permission dialog AS blocked (ports.BlockedActivitySignaler),
 // so a waiting_input prompt there is a genuine idle composer rather than a
-// masked permission decision. Codex, Droid, and the shared-hook harnesses all
-// fold permission prompts into waiting_input and must stay suppressed; only
-// blocked-signalling adapters (claude-code, kimchi) open the boundary.
+// masked permission decision. Only blocked-signalling adapters (claude-code)
+// open the boundary.
 func TestWiring_UrgentNudgeGateComesFromAdapters(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	agents, err := buildAgentResolver(config.DefaultAgent, log)
@@ -310,13 +308,11 @@ func TestWiring_UrgentNudgeGateComesFromAdapters(t *testing.T) {
 	if !safe(domain.HarnessClaudeCode) {
 		t.Error("claude-code reports permission dialogs as blocked; urgent nudge must be allowed at waiting_input")
 	}
-	// Codex maps permission-request to waiting_input; Droid folds both permission
-	// decisions and idle notifications into waiting_input; Agy hooks expose no
-	// permission-wait event; Goose rides the shared name-only
-	// StandardDeriveActivityState with no blocked signal. All must keep urgent
-	// delivery suppressed at a waiting_input prompt.
+	// Codex maps permission-request to waiting_input; Agy hooks expose no
+	// permission-wait event. All must keep urgent delivery suppressed at a
+	// waiting_input prompt.
 	for _, harness := range []domain.AgentHarness{
-		domain.HarnessCodex, domain.HarnessDroid, domain.HarnessGoose, domain.HarnessAgy,
+		domain.HarnessCodex, domain.HarnessAgy,
 		"definitely-not-an-agent", "",
 	} {
 		if safe(harness) {

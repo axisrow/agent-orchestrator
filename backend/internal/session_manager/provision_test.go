@@ -262,8 +262,8 @@ func TestEffectiveHarnessAndAgentConfig(t *testing.T) {
 	}
 
 	// Explicit harness always wins.
-	if h := effectiveHarness(domain.HarnessGoose, domain.KindWorker, cfg); h != domain.HarnessGoose {
-		t.Fatalf("explicit harness = %q, want aider", h)
+	if h := effectiveHarness(domain.HarnessOMP, domain.KindWorker, cfg); h != domain.HarnessOMP {
+		t.Fatalf("explicit harness = %q, want omp", h)
 	}
 	// Empty harness falls back to the role override per kind.
 	if h := effectiveHarness("", domain.KindWorker, cfg); h != domain.HarnessCodex {
@@ -285,7 +285,7 @@ func TestEffectiveHarnessAndAgentConfig(t *testing.T) {
 	// A launch harness that differs from the role's configured harness drops the
 	// role's model/mode — they were tuned for the other agent — but keeps the
 	// harness-neutral permissions.
-	if got := effectiveAgentConfig(domain.HarnessGoose, domain.KindWorker, cfg); got.Model != "base" || got.Mode != "low" || got.Permissions != domain.PermissionModeAuto {
+	if got := effectiveAgentConfig(domain.HarnessOMP, domain.KindWorker, cfg); got.Model != "base" || got.Mode != "low" || got.Permissions != domain.PermissionModeAuto {
 		t.Fatalf("mismatched-harness worker config = %#v, want model=base mode=low permissions=auto", got)
 	}
 	// A role override with no harness pinned is deliberately treated as
@@ -297,7 +297,7 @@ func TestEffectiveHarnessAndAgentConfig(t *testing.T) {
 		AgentConfig: domain.AgentConfig{Model: "base", Mode: "low"},
 		Worker:      domain.RoleOverride{AgentConfig: domain.AgentConfig{Model: "worker", Mode: "high"}},
 	}
-	for _, harness := range []domain.AgentHarness{domain.HarnessGoose, domain.HarnessCodex} {
+	for _, harness := range []domain.AgentHarness{domain.HarnessOMP, domain.HarnessCodex} {
 		got := effectiveAgentConfig(harness, domain.KindWorker, unpinned)
 		if got.Model != "worker" || got.Mode != "high" {
 			t.Fatalf("unpinned worker config for %q = %#v, want model=worker mode=high", harness, got)
@@ -582,7 +582,7 @@ func TestResolveAgentConfigRejectsExplicitEffortForUnsupportedHarness(t *testing
 	m := &Manager{modelCatalog: tuningCatalog{catalog: ports.AgentModelCatalog{Models: []ports.AgentModelInfo{
 		{ID: "gemini-2.5-pro", IsDefault: true, Efforts: []string{"low", "high"}},
 	}}}}
-	for _, harness := range []domain.AgentHarness{domain.HarnessDroid, domain.HarnessGoose, domain.HarnessAmp} {
+	for _, harness := range []domain.AgentHarness{domain.HarnessOpenCodeV2, domain.HarnessOMP, domain.HarnessPi} {
 		// A flagged explicit effort override must fail loudly instead of being
 		// silently discarded: the caller asked for something the harness cannot
 		// honor.
@@ -613,7 +613,7 @@ func TestResolveAgentConfigRejectsExplicitEffortForUnsupportedHarness(t *testing
 	// Inherited project/role effort still clears silently: nothing explicit was
 	// requested, so there is nothing to reject.
 	resolved, err := m.resolveAgentConfig(context.Background(), ports.SpawnConfig{
-		ProjectID: "p", Kind: domain.KindWorker, Harness: domain.HarnessDroid,
+		ProjectID: "p", Kind: domain.KindWorker, Harness: domain.HarnessOMP,
 		AgentConfig: ports.AgentConfig{Model: "gemini-2.5-pro"},
 	}, domain.ProjectConfig{Worker: domain.RoleOverride{AgentConfig: domain.AgentConfig{Effort: "high"}}})
 	if err != nil {

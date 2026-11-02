@@ -137,7 +137,6 @@ func TestPersistentACPDriverSurvivesRealProcessDetach(t *testing.T) {
 	// every vendor. Each runs the real detached host with a fake ACP process.
 	for _, harness := range []domain.AgentHarness{
 		domain.HarnessClaudeCode, domain.HarnessOpenCodeV2, domain.HarnessOpenCodeV2,
-		domain.HarnessDroid, domain.HarnessKimi,
 		domain.HarnessPi, domain.HarnessOMP,
 	} {
 		t.Run(string(harness), func(t *testing.T) { testACPProcessDetach(t, harness, 0) })
@@ -832,7 +831,7 @@ type fakeAgent struct {
 	steerExtensionErr   error
 }
 
-type legacyKimiAgent struct {
+type legacyAliasAgent struct {
 	mu                 sync.Mutex
 	currentModel       string
 	availableModels    []legacyModelInfo
@@ -844,11 +843,11 @@ type legacyKimiAgent struct {
 	configCalls        int
 }
 
-func fakeLegacyKimiSpawn(agent *legacyKimiAgent) spawnFunc {
+func fakeLegacyAliasSpawn(agent *legacyAliasAgent) spawnFunc {
 	return func(Launch, string) (*process, error) {
 		clientToAgentR, clientToAgentW := io.Pipe()
 		agentToClientR, agentToClientW := io.Pipe()
-		go serveLegacyKimi(agent, clientToAgentR, agentToClientW)
+		go serveLegacyAliasAgent(agent, clientToAgentR, agentToClientW)
 		var once sync.Once
 		return &process{
 			stdin: clientToAgentW, stdout: agentToClientR,
@@ -865,7 +864,7 @@ func fakeLegacyKimiSpawn(agent *legacyKimiAgent) spawnFunc {
 	}
 }
 
-func serveLegacyKimi(agent *legacyKimiAgent, in io.Reader, out io.Writer) {
+func serveLegacyAliasAgent(agent *legacyAliasAgent, in io.Reader, out io.Writer) {
 	decoder := json.NewDecoder(in)
 	encoder := json.NewEncoder(out)
 	for {
@@ -891,15 +890,15 @@ func serveLegacyKimi(agent *legacyKimiAgent, in io.Reader, out io.Writer) {
 			currentModel := agent.currentModel
 			availableModels := agent.availableModels
 			if currentModel == "" {
-				currentModel = "kimi-code/kimi-for-coding"
+				currentModel = "acme/acme-for-coding"
 			}
 			if len(availableModels) == 0 {
 				availableModels = []legacyModelInfo{{
-					ModelID: "kimi-code/kimi-for-coding", Name: "Kimi for Coding",
+					ModelID: "acme/acme-for-coding", Name: "Acme for Coding",
 				}}
 			}
 			result = map[string]any{
-				"sessionId": "kimi-session-1",
+				"sessionId": "legacy-session-1",
 				"models": map[string]any{
 					"currentModelId":  currentModel,
 					"availableModels": availableModels,
@@ -3546,10 +3545,10 @@ func TestACPDriverExposesAndMutatesAdvertisedConfigOptions(t *testing.T) {
 	}
 }
 
-func TestACPDriverConsumesLegacyKimiSelectorsOnSDK0135(t *testing.T) {
-	agent := &legacyKimiAgent{}
+func TestACPDriverConsumesLegacySelectorsOnSDK0135(t *testing.T) {
+	agent := &legacyAliasAgent{}
 	driver := New(Config{
-		Harness:      domain.HarnessKimi,
+		Harness:      domain.HarnessOMP,
 		Capabilities: ports.ChatCapabilities{ports.ChatCapabilityStreaming: true},
 		Probe:        func(context.Context) error { return nil },
 		Launch:       func(context.Context, LaunchConfig) (Launch, error) { return Launch{Command: "fake"}, nil },
@@ -3560,10 +3559,10 @@ func TestACPDriverConsumesLegacyKimiSelectorsOnSDK0135(t *testing.T) {
 			return []SessionOption{{ID: "model", Value: settings.Model}}
 		},
 	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	driver.useTestProcess(fakeLegacyKimiSpawn(agent))
+	driver.useTestProcess(fakeLegacyAliasSpawn(agent))
 
 	conv, err := driver.Start(context.Background(), ports.ChatStartConfig{
-		WorkspacePath: t.TempDir(), Model: "kimi-code/kimi-for-coding",
+		WorkspacePath: t.TempDir(), Model: "acme/acme-for-coding",
 	})
 	if err != nil {
 		t.Fatalf("Start: %v", err)
@@ -3574,14 +3573,14 @@ func TestACPDriverConsumesLegacyKimiSelectorsOnSDK0135(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListConfigOptions: %v", err)
 	}
-	if len(options) != 2 || options[0].ID != "model" || options[0].Current.Select != "kimi-code/kimi-for-coding" ||
+	if len(options) != 2 || options[0].ID != "model" || options[0].Current.Select != "acme/acme-for-coding" ||
 		options[1].ID != "mode" || options[1].Current.Select != "default" {
-		t.Fatalf("legacy Kimi options = %#v, want model and default mode", options)
+		t.Fatalf("legacy options = %#v, want model and default mode", options)
 	}
 
 	controller := conv.(ports.ChatConfigOptionController)
 	if _, err := controller.SetConfigOption(context.Background(), "model", ports.ChatConfigOptionValue{
-		Select: "kimi-code/kimi-for-coding",
+		Select: "acme/acme-for-coding",
 	}); err != nil {
 		t.Fatalf("SetConfigOption model: %v", err)
 	}
@@ -3595,7 +3594,7 @@ func TestACPDriverConsumesLegacyKimiSelectorsOnSDK0135(t *testing.T) {
 	model, modelCalls := agent.model, agent.modelCalls
 	mode, modeCalls, configCalls := agent.mode, agent.modeCalls, agent.configCalls
 	agent.mu.Unlock()
-	if model != "kimi-code/kimi-for-coding" || modelCalls != 2 ||
+	if model != "acme/acme-for-coding" || modelCalls != 2 ||
 		mode != "default" || modeCalls != 1 || configCalls != 0 {
 		t.Fatalf("legacy setters: model=%q/%d mode=%q/%d config=%d",
 			model, modelCalls, mode, modeCalls, configCalls)
@@ -3603,7 +3602,7 @@ func TestACPDriverConsumesLegacyKimiSelectorsOnSDK0135(t *testing.T) {
 }
 
 func TestACPDriverRejectsNonFastAliasWhenOnlyFastParameterizedChoiceIsAdvertised(t *testing.T) {
-	agent := &legacyKimiAgent{
+	agent := &legacyAliasAgent{
 		currentModel: "auto",
 		availableModels: []legacyModelInfo{
 			{ModelID: "auto", Name: "Auto"},
@@ -3623,7 +3622,7 @@ func TestACPDriverRejectsNonFastAliasWhenOnlyFastParameterizedChoiceIsAdvertised
 			return []SessionOption{{ID: "model", Value: settings.Model}}
 		},
 	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	driver.useTestProcess(fakeLegacyKimiSpawn(agent))
+	driver.useTestProcess(fakeLegacyAliasSpawn(agent))
 
 	_, err := driver.Start(context.Background(), ports.ChatStartConfig{
 		WorkspacePath: t.TempDir(), Model: "composer-2.5",
@@ -3640,7 +3639,7 @@ func TestACPDriverRejectsNonFastAliasWhenOnlyFastParameterizedChoiceIsAdvertised
 }
 
 func TestACPDriverRejectsLegacyModelAliasWithoutAdvertisedModelCatalog(t *testing.T) {
-	agent := &legacyKimiAgent{
+	agent := &legacyAliasAgent{
 		currentModel: "auto",
 		availableModels: []legacyModelInfo{
 			{ModelID: "auto", Name: "Auto"},
@@ -3654,7 +3653,7 @@ func TestACPDriverRejectsLegacyModelAliasWithoutAdvertisedModelCatalog(t *testin
 		Probe:        func(context.Context) error { return nil },
 		Launch:       func(context.Context, LaunchConfig) (Launch, error) { return Launch{Command: "fake"}, nil },
 	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	driver.useTestProcess(fakeLegacyKimiSpawn(agent))
+	driver.useTestProcess(fakeLegacyAliasSpawn(agent))
 
 	conv, err := driver.Start(context.Background(), ports.ChatStartConfig{WorkspacePath: t.TempDir()})
 	if err != nil {
@@ -3678,7 +3677,7 @@ func TestACPDriverRejectsLegacyModelAliasWithoutAdvertisedModelCatalog(t *testin
 }
 
 func TestACPDriverRejectsAmbiguousLegacyModelAlias(t *testing.T) {
-	agent := &legacyKimiAgent{
+	agent := &legacyAliasAgent{
 		currentModel: "auto",
 		availableModels: []legacyModelInfo{
 			{ModelID: "composer-2.5[fast=false]", Name: "Composer 2.5"},
@@ -3692,7 +3691,7 @@ func TestACPDriverRejectsAmbiguousLegacyModelAlias(t *testing.T) {
 		Probe:        func(context.Context) error { return nil },
 		Launch:       func(context.Context, LaunchConfig) (Launch, error) { return Launch{Command: "fake"}, nil },
 	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	driver.useTestProcess(fakeLegacyKimiSpawn(agent))
+	driver.useTestProcess(fakeLegacyAliasSpawn(agent))
 
 	_, err := driver.Start(context.Background(), ports.ChatStartConfig{
 		WorkspacePath: t.TempDir(), Model: "composer-2.5",
@@ -4090,7 +4089,7 @@ func TestACPDriverSendTurnPropagatesMethodNotFound(t *testing.T) {
 func TestACPDriverRejectsUnsupportedTurnSettingsAtStartAndSend(t *testing.T) {
 	agent := &fakeAgent{}
 	driver := New(Config{
-		Harness:      domain.HarnessKimi,
+		Harness:      domain.HarnessOMP,
 		Capabilities: ports.ChatCapabilities{ports.ChatCapabilityStreaming: true},
 		Probe:        func(context.Context) error { return nil },
 		Launch:       func(context.Context, LaunchConfig) (Launch, error) { return Launch{Command: "fake"}, nil },
@@ -4167,7 +4166,7 @@ func TestNormalizeMCPServersEmptyReturnsEmptySlice(t *testing.T) {
 // updates received via session/update during session/new are not overwritten
 // when the NewSession response carries an empty config options catalog.
 func TestACPDriverPreservesEarlyConfigOptionUpdates(t *testing.T) {
-	earlyOption := selectConfigOption("model", "Model", "model", "glm-5.2", "glm-5.2", "kimi")
+	earlyOption := selectConfigOption("model", "Model", "model", "glm-5.2", "glm-5.2", "acme")
 	agent := &fakeAgent{
 		newConfig: nil, // session/new response has no config options
 		newSessionUpdates: []acpsdk.SessionUpdate{

@@ -86,7 +86,7 @@ const agentInventory = {
 	agents: [
 		agentReadiness("claude-code", "Claude Code"),
 		agentReadiness("codex", "Codex"),
-		agentReadiness("qwen", "Qwen", { authentication: "unknown" }),
+		agentReadiness("omp", "OMP", { authentication: "unknown" }),
 	],
 };
 
@@ -380,7 +380,7 @@ describe("NewTaskDialog", () => {
 
 		await user.click(screen.getByRole("button", { name: "Agent" }));
 		const options = await screen.findAllByRole("menuitem");
-		expect(options.map((option) => option.textContent)).toEqual(["Claude Code", "Codex", "QwenAuth unknown", "Manage agents"]);
+		expect(options.map((option) => option.textContent)).toEqual(["Claude Code", "Codex", "OMPAuth unknown", "Manage agents"]);
 		await user.keyboard("{Escape}");
 
 		await user.type(screen.getByLabelText("Task"), "B");

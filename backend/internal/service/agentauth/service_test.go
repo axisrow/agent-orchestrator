@@ -2,12 +2,8 @@ package agentauth
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"os"
-	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/httpd/apierr"
@@ -27,7 +23,6 @@ func TestStartRejectsUnstartablePlans(t *testing.T) {
 	}{
 		{name: "unknown target", agentID: "not-a-harness", code: "AGENT_AUTH_TARGET_UNKNOWN"},
 		{name: "unavailable command", agentID: "codex", code: "AGENT_AUTH_UNAVAILABLE"},
-		{name: "documentation setup", agentID: "memcode", code: "AGENT_AUTH_DOCUMENTATION_ONLY"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -40,77 +35,6 @@ func TestStartRejectsUnstartablePlans(t *testing.T) {
 	}
 	if opener.calls != 0 {
 		t.Fatalf("OpenCommandTerminal calls = %d, want 0", opener.calls)
-	}
-}
-
-func TestStartOpensFXNativeLogin(t *testing.T) {
-	t.Parallel()
-
-	opener := &recordingTerminalOpener{}
-	svc := New(foundExecutable("fx"), opener)
-
-	_, err := svc.Start(context.Background(), "fx")
-	if err != nil {
-		t.Fatalf("Start(fx): %v", err)
-	}
-	want := shellterm.OpenCommandTerminalInput{
-		Argv:  []string{"/test/bin/fx", "login"},
-		Title: "Log in to fx",
-	}
-	if !reflect.DeepEqual(opener.input, want) {
-		t.Fatalf("OpenCommandTerminal input = %#v, want %#v", opener.input, want)
-	}
-}
-
-func TestStartOpensAmpNativeLogin(t *testing.T) {
-	t.Parallel()
-
-	opener := &recordingTerminalOpener{}
-	svc := New(foundExecutable("amp"), opener)
-
-	_, err := svc.Start(context.Background(), "amp")
-	if err != nil {
-		t.Fatalf("Start(amp): %v", err)
-	}
-	want := shellterm.OpenCommandTerminalInput{
-		Argv:  []string{"/test/bin/amp", "login"},
-		Title: "Log in to Amp",
-	}
-	if !reflect.DeepEqual(opener.input, want) {
-		t.Fatalf("OpenCommandTerminal input = %#v, want %#v", opener.input, want)
-	}
-}
-
-func TestStartOpensResolvedPlanAndReturnsSafeTerminal(t *testing.T) {
-	t.Parallel()
-
-	terminal := shellterm.ShellTerminal{HandleID: "shellterm-123", Title: "Log in to Droid"}
-	opener := &recordingTerminalOpener{terminal: terminal}
-	svc := New(foundExecutable("droid"), opener)
-
-	got, err := svc.Start(context.Background(), "droid")
-	if err != nil {
-		t.Fatalf("Start(droid): %v", err)
-	}
-	if opener.calls != 1 {
-		t.Fatalf("OpenCommandTerminal calls = %d, want 1", opener.calls)
-	}
-	wantInput := shellterm.OpenCommandTerminalInput{
-		Argv:  []string{"/test/bin/droid"},
-		Title: "Log in to Droid",
-	}
-	if !reflect.DeepEqual(opener.input, wantInput) {
-		t.Fatalf("OpenCommandTerminal input = %#v, want %#v", opener.input, wantInput)
-	}
-	if got.AgentID != "droid" || got.Action != ActionLogin || got.Guidance != "Select Open login after Droid finishes starting" || got.TerminalInput != "/login\r" || got.Terminal != terminal {
-		t.Fatalf("Start(droid) = %#v, want display-safe Droid result with terminal %#v", got, terminal)
-	}
-	data, err := json.Marshal(got)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(data), "argv") || strings.Contains(string(data), "initialInput") {
-		t.Fatalf("Start(droid) serialized trusted terminal input: %s", data)
 	}
 }
 
@@ -209,25 +133,6 @@ func TestPiReadyStatesMatchRenderedPiScreens(t *testing.T) {
 	}
 }
 
-func TestStartOpensAutohandNativeLogin(t *testing.T) {
-	t.Parallel()
-
-	opener := &recordingTerminalOpener{}
-	svc := New(foundExecutable("autohand"), opener)
-
-	_, err := svc.Start(context.Background(), "autohand")
-	if err != nil {
-		t.Fatalf("Start(autohand): %v", err)
-	}
-	want := shellterm.OpenCommandTerminalInput{
-		Argv:  []string{"/test/bin/autohand", "login"},
-		Title: "Log in to Autohand",
-	}
-	if !reflect.DeepEqual(opener.input, want) {
-		t.Fatalf("OpenCommandTerminal input = %#v, want %#v", opener.input, want)
-	}
-}
-
 func TestStartFallsBackToAgentResolvedBinaryOutsidePATH(t *testing.T) {
 	t.Parallel()
 
@@ -267,55 +172,15 @@ func TestStartPrefersAdapterResolvedBinaryOverGenericPATHMatch(t *testing.T) {
 	t.Parallel()
 
 	opener := &recordingTerminalOpener{}
-	resolver := managedExecutableResolver{agentID: "amp", path: "/validated/ampcode/amp"}
-	svc := NewWithAgentResolver(foundExecutable("amp"), resolver, opener, "")
+	resolver := managedExecutableResolver{agentID: "agy", path: "/validated/agy/agy"}
+	svc := NewWithAgentResolver(foundExecutable("agy"), resolver, opener, "")
 
-	_, err := svc.Start(context.Background(), "amp")
+	_, err := svc.Start(context.Background(), "agy")
 	if err != nil {
-		t.Fatalf("Start(amp): %v", err)
+		t.Fatalf("Start(agy): %v", err)
 	}
-	if got := opener.input.Argv; !reflect.DeepEqual(got, []string{"/validated/ampcode/amp", "login"}) {
-		t.Fatalf("terminal argv = %#v, want adapter-validated Amp binary", got)
-	}
-}
-
-func TestStartPreparesKimiAuthWorkspaceWithSeededTrust(t *testing.T) {
-	// Not parallel: isolates HOME/KIMI_CODE_HOME so the kimi adapter's trust
-	// seed lands in a throwaway home instead of the developer's real one.
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("KIMI_CODE_HOME", "")
-
-	dataDir := t.TempDir()
-	opener := &recordingTerminalOpener{}
-	svc := NewWithAgentResolver(foundExecutable("kimi"), nil, opener, dataDir)
-
-	if _, err := svc.Start(context.Background(), "kimi"); err != nil {
-		t.Fatalf("Start(kimi): %v", err)
-	}
-	wantDir := filepath.Join(dataDir, "auth-workspace", "kimi")
-	if opener.input.WorkingDir != wantDir {
-		t.Fatalf("terminal working dir = %q, want %q", opener.input.WorkingDir, wantDir)
-	}
-	if got := opener.input.Argv; !reflect.DeepEqual(got, []string{"/test/bin/kimi"}) {
-		t.Fatalf("terminal argv = %#v, want kimi TUI launch", got)
-	}
-	if opener.input.InitialInput != "/login" {
-		t.Fatalf("initial input = %q, want automatic /login injection", opener.input.InitialInput)
-	}
-	if got := opener.input.InitialInputReadyStates; !reflect.DeepEqual(got, []shellterm.InitialInputReadyState{{Text: "Run /login or /provider to get started."}}) {
-		t.Fatalf("initial input ready states = %#v, want Kimi unauthenticated ready message", got)
-	}
-	matches, err := filepath.Glob(filepath.Join(home, ".kimi-code", "workspace-trust", "wd_*"))
-	if err != nil || len(matches) != 1 {
-		t.Fatalf("seeded trust records = %v (err %v), want exactly one", matches, err)
-	}
-	data, err := os.ReadFile(matches[0])
-	if err != nil {
-		t.Fatalf("read trust record: %v", err)
-	}
-	if !strings.Contains(string(data), `"root":"`+wantDir+`"`) {
-		t.Fatalf("trust record = %s, want root %q", data, wantDir)
+	if got := opener.input.Argv; !reflect.DeepEqual(got, []string{"/validated/agy/agy"}) {
+		t.Fatalf("terminal argv = %#v, want adapter-validated Agy binary", got)
 	}
 }
 
@@ -363,7 +228,6 @@ func TestLogoutUsesAdapterExecutableAndNeverLoginLauncher(t *testing.T) {
 	}{
 		{"claude-code", []string{"auth", "logout"}},
 		{"codex", []string{"logout"}},
-		{"amp", []string{"logout"}},
 		{"opencode", []string{"auth", "logout"}},
 	} {
 		t.Run(tc.agent, func(t *testing.T) {
@@ -388,7 +252,8 @@ func TestLogoutUsesAdapterExecutableAndNeverLoginLauncher(t *testing.T) {
 func TestLogoutRejectsUnknownUnsupportedAndMissingExecutable(t *testing.T) {
 	for _, tc := range []struct{ agent, code string }{
 		{"not-a-harness", "AGENT_AUTH_TARGET_UNKNOWN"},
-		{"goose", "AGENT_LOGOUT_UNSUPPORTED"},
+		{"goose", "AGENT_AUTH_TARGET_UNKNOWN"},
+		{"pi", "AGENT_LOGOUT_UNSUPPORTED"},
 		{"codex", "AGENT_AUTH_UNAVAILABLE"},
 	} {
 		t.Run(tc.agent, func(t *testing.T) {

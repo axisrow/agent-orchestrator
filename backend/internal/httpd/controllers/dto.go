@@ -504,7 +504,7 @@ type SpawnSessionRequest struct {
 	ParentSessionID domain.SessionID       `json:"parentSessionId,omitempty"`
 	TrackerProvider domain.TrackerProvider `json:"trackerProvider,omitempty" enum:"github,gitlab"`
 	Kind            domain.SessionKind     `json:"kind,omitempty" enum:"worker,orchestrator"`
-	Harness         domain.AgentHarness    `json:"harness,omitempty" enum:"claude-code,codex,opencode-v2,droid,amp,agy,qwen,goose,kimi,pi,autohand,omp,fx,memcode"`
+	Harness         domain.AgentHarness    `json:"harness,omitempty" enum:"claude-code,codex,opencode-v2,agy,pi,omp"`
 	Branch          string                 `json:"branch,omitempty"`
 	// Mode picks the conversation controller: chat talks to the agent over a
 	// structured connection, tui opens the agent's native terminal interface.
@@ -573,7 +573,7 @@ type SpawnSessionResponse struct {
 
 // SwitchAgentRequest is the body of POST /api/v1/sessions/{sessionId}/switch-agent.
 type SwitchAgentRequest struct {
-	TargetHarness  domain.AgentHarness `json:"targetHarness" enum:"claude-code,codex,fx" description:"Agent harness to continue the logical AO session with."`
+	TargetHarness  domain.AgentHarness `json:"targetHarness" enum:"claude-code,codex" description:"Agent harness to continue the logical AO session with."`
 	Model          string              `json:"model,omitempty" maxLength:"256" description:"Optional model override for the target agent launch or resume."`
 	IdempotencyKey string              `json:"idempotencyKey,omitempty" maxLength:"128" description:"Optional retry key. Reusing it with a different request is rejected."`
 }
@@ -883,7 +883,7 @@ type RenameSessionRequest struct {
 // SetSessionReviewerRequest sets the durable reviewer preference for a session.
 // Empty clears the preference and falls back to project configuration.
 type SetSessionReviewerRequest struct {
-	Harness     domain.ReviewerHarness `json:"harness,omitempty" enum:"claude-code,codex,opencode-v2,pi,agy,droid,kimi,amp,autohand"`
+	Harness     domain.ReviewerHarness `json:"harness,omitempty" enum:"claude-code,codex,opencode-v2,pi,agy"`
 	AgentConfig domain.AgentConfig     `json:"agentConfig,omitempty"`
 }
 
@@ -1204,7 +1204,7 @@ type DelegateTaskRequest struct {
 	ClientRequestID string              `json:"clientRequestId,omitempty" maxLength:"128"`
 	ProjectID       domain.ProjectID    `json:"projectId"`
 	Brief           string              `json:"brief" maxLength:"16384"`
-	Agent           domain.AgentHarness `json:"agent,omitempty" enum:"claude-code,codex,opencode-v2,droid,amp,agy,qwen,goose,kimi,pi,autohand,omp,fx,memcode,fake"`
+	Agent           domain.AgentHarness `json:"agent,omitempty" enum:"claude-code,codex,opencode-v2,agy,pi,omp,fake"`
 	Model           string              `json:"model,omitempty" maxLength:"256"`
 	// Effort is an explicit, provider-advertised model tuning override. Nil
 	// inherits the project default; an empty string selects the provider default.
@@ -3487,7 +3487,7 @@ type GatewayConfigQuery struct {
 // it for this pass only, without editing project config, so one session's choice
 // cannot change what another session in the project runs.
 type TriggerReviewRequest struct {
-	Harness       domain.ReviewerHarness       `json:"harness,omitempty" enum:"claude-code,codex,opencode-v2,pi,agy,droid,kimi,amp,autohand"`
+	Harness       domain.ReviewerHarness       `json:"harness,omitempty" enum:"claude-code,codex,opencode-v2,pi,agy"`
 	AgentConfig   domain.AgentConfig           `json:"agentConfig,omitempty"`
 	InterfaceMode domain.ReviewerInterfaceMode `json:"interfaceMode,omitempty" enum:"chat,tui"`
 	PRURL         string                       `json:"prUrl,omitempty" description:"Restrict the pass to this pull request, attaching it to the session first if AO does not track it yet (never from another active session). Omit to review every eligible PR on the session."`

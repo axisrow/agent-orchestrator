@@ -27,7 +27,7 @@ function mockStack() {
 	const readiness = { agents: [
 		agentReadiness("claude-code", "Claude Code", { usageCount: 5 }),
 		agentReadiness("codex", "Codex", { usageCount: 30, lastUsedAt: "2026-10-06T12:00:00Z" }),
-		agentReadiness("qwen", "Qwen", { usageCount: 30, lastUsedAt: "2026-10-07T12:00:00Z" }),
+		agentReadiness("omp", "OMP", { usageCount: 30, lastUsedAt: "2026-10-07T12:00:00Z" }),
 	] };
 	const original = vi.mocked(apiClient.GET).getMockImplementation()!;
 	vi.mocked(apiClient.GET).mockImplementation(async (path, options) => {
@@ -43,10 +43,10 @@ function mockUpdatableStack() {
 	mockStack();
 	const original = vi.mocked(apiClient.GET).getMockImplementation()!;
 	vi.mocked(apiClient.GET).mockImplementation(async (path, options) => {
-		if (path === "/api/v1/agents/installers") return { data: { agents: ["claude-code", "codex", "qwen"].map((agentId) => ({
+		if (path === "/api/v1/agents/installers") return { data: { agents: ["claude-code", "codex", "omp"].map((agentId) => ({
 			agentId, methods: [{ id: "official-installer", available: true, updateAvailable: true }],
 		})) } } as never;
-		if (path === "/api/v1/agents/auth-plans") return { data: { plans: ["claude-code", "codex", "qwen"].map((agentId) => ({ agentId, action: "login", available: true })) } } as never;
+		if (path === "/api/v1/agents/auth-plans") return { data: { plans: ["claude-code", "codex", "omp"].map((agentId) => ({ agentId, action: "login", available: true })) } } as never;
 		if (path === "/api/v1/agents/{agent}/update-advisory") return { data: {
 			status: "behind_latest", currentVersion: "1.0.0", latestVersion: "2.0.0", maintenanceMethod: "official-installer",
 		} } as never;
@@ -172,7 +172,7 @@ describe("startup harness update notice", () => {
 			if (path !== "/api/v1/agents/{agent}/install") return (original as (path: string, options: unknown) => Promise<never>)(path, options);
 			const agentId = (options as { params: { path: { agent: string } } }).params.path.agent;
 			started.push(agentId);
-			if (agentId === "qwen") return pending.promise;
+			if (agentId === "omp") return pending.promise;
 			return { data: { target: agentId, status: "installing" } } as never;
 		});
 		const before = useUiStore.getState().settingsModal;
@@ -183,12 +183,12 @@ describe("startup harness update notice", () => {
 		expect(screen.getByRole("article", { name: "Agent updates available" })).toBeInTheDocument();
 		await userEvent.click(screen.getByRole("button", { name: "Show all (3)" }));
 		await userEvent.dblClick(screen.getByRole("button", { name: "Update all" }));
-		await waitFor(() => expect(started).toEqual(["qwen"]));
+		await waitFor(() => expect(started).toEqual(["omp"]));
 		expect(screen.getByRole("button", { name: "Starting updates…" })).toBeDisabled();
 		expect(within(screen.getByRole("article", { name: "Codex" })).getByRole("button", { name: "Update" })).toBeDisabled();
-		await act(async () => pending.resolve({ error: { message: "Qwen update refused" } } as never));
-		await waitFor(() => expect(started).toEqual(["qwen", "codex", "claude-code"]));
-		expect(await screen.findByRole("alert")).toHaveTextContent("Qwen update refused");
+		await act(async () => pending.resolve({ error: { message: "OMP update refused" } } as never));
+		await waitFor(() => expect(started).toEqual(["omp", "codex", "claude-code"]));
+		expect(await screen.findByRole("alert")).toHaveTextContent("OMP update refused");
 		expect(useUiStore.getState().settingsModal).toBe(before);
 	});
 
@@ -210,9 +210,9 @@ describe("startup harness update notice", () => {
 			client.setQueryData(["agent-readiness"], { agents: [
 				agentReadiness("claude-code", "Claude Code"),
 				agentReadiness("codex", "Codex", { authentication: "unauthorized" }),
-				agentReadiness("qwen", "Qwen"),
+				agentReadiness("omp", "OMP"),
 			] });
-			client.setQueryData(installJobsQueryKey, [{ target: "qwen", status: "installing" }]);
+			client.setQueryData(installJobsQueryKey, [{ target: "omp", status: "installing" }]);
 		});
 		// Claude Code is still eligible.
 		expect(screen.getByRole("button", { name: "Update all" })).toBeEnabled();
@@ -370,10 +370,10 @@ describe("startup harness update notice", () => {
 		expect(await screen.findByRole("article", { name: "Agent updates available" })).toBeInTheDocument();
 		expect(screen.getAllByRole("article")).toHaveLength(1);
 		await userEvent.click(screen.getByRole("button", { name: "Show all (3)" }));
-		expect(screen.getAllByRole("article").map((card) => card.getAttribute("aria-label"))).toEqual(["Qwen", "Codex", "Claude Code"]);
-		await userEvent.click(screen.getByRole("button", { name: "Dismiss Qwen update" }));
+		expect(screen.getAllByRole("article").map((card) => card.getAttribute("aria-label"))).toEqual(["OMP", "Codex", "Claude Code"]);
+		await userEvent.click(screen.getByRole("button", { name: "Dismiss OMP update" }));
 		expect(screen.getAllByRole("article").map((card) => card.getAttribute("aria-label"))).toEqual(["Codex", "Claude Code"]);
-		expect(JSON.parse(localStorage.getItem("ao.harness-update-dismissals.v1")!)).toEqual([JSON.stringify(["local", "qwen", "2.0.0"])]);
+		expect(JSON.parse(localStorage.getItem("ao.harness-update-dismissals.v1")!)).toEqual([JSON.stringify(["local", "omp", "2.0.0"])]);
 		await userEvent.click(screen.getByRole("button", { name: "Dismiss Codex update" }));
 		expect(screen.getByRole("article", { name: "Claude Code" })).toBeInTheDocument();
 		await userEvent.click(screen.getByRole("button", { name: "Dismiss Claude Code update" }));
@@ -384,9 +384,9 @@ describe("startup harness update notice", () => {
 		mockStack();
 		mountNotice();
 		const summary = await screen.findByRole("article", { name: "Agent updates available" });
-		expect(screen.queryByRole("article", { name: "Qwen" })).toBeNull();
+		expect(screen.queryByRole("article", { name: "OMP" })).toBeNull();
 		await userEvent.click(within(summary).getByRole("button", { name: "Show all (3)" }));
-		expect(screen.getAllByRole("article").map((card) => card.getAttribute("aria-label"))).toEqual(["Qwen", "Codex", "Claude Code"]);
+		expect(screen.getAllByRole("article").map((card) => card.getAttribute("aria-label"))).toEqual(["OMP", "Codex", "Claude Code"]);
 		expect(screen.getByRole("button", { name: "Show less" })).toHaveAttribute("aria-expanded", "true");
 		await userEvent.click(screen.getByRole("button", { name: "Dismiss Codex update" }));
 		expect(screen.getAllByRole("article")).toHaveLength(2);
@@ -403,7 +403,7 @@ describe("startup harness update notice", () => {
 		const original = vi.mocked(apiClient.GET).getMockImplementation()!;
 		vi.mocked(apiClient.GET).mockImplementation((path, options) => {
 			const agentId = (options as { params?: { path?: { agent?: string } } } | undefined)?.params?.path?.agent;
-			if (path === "/api/v1/agents/{agent}/update-advisory" && agentId === "qwen") return pending.promise;
+			if (path === "/api/v1/agents/{agent}/update-advisory" && agentId === "omp") return pending.promise;
 			return (original as (path: string, options: unknown) => Promise<never>)(path, options);
 		});
 		const { client } = mountNotice();
@@ -411,7 +411,7 @@ describe("startup harness update notice", () => {
 		expect(screen.queryByRole("region")).toBeNull();
 		await act(async () => pending.resolve({ data: { status: "behind_latest", currentVersion: "1.0.0", latestVersion: "2.0.0", maintenanceMethod: "official-installer" } } as never));
 		await userEvent.click(await screen.findByRole("button", { name: "Show all (3)" }));
-		expect(screen.getAllByRole("article").map((card) => card.getAttribute("aria-label"))[0]).toBe("Qwen");
+		expect(screen.getAllByRole("article").map((card) => card.getAttribute("aria-label"))[0]).toBe("OMP");
 	});
 
 	it("keeps other update notices when one harness lookup fails", async () => {
@@ -419,7 +419,7 @@ describe("startup harness update notice", () => {
 		const original = vi.mocked(apiClient.GET).getMockImplementation()!;
 		vi.mocked(apiClient.GET).mockImplementation((path, options) => {
 			const agentId = (options as { params?: { path?: { agent?: string } } } | undefined)?.params?.path?.agent;
-			if (path === "/api/v1/agents/{agent}/update-advisory" && agentId === "qwen") return Promise.reject(new Error("lookup timed out"));
+			if (path === "/api/v1/agents/{agent}/update-advisory" && agentId === "omp") return Promise.reject(new Error("lookup timed out"));
 			return (original as (path: string, options: unknown) => Promise<never>)(path, options);
 		});
 		mountNotice();
@@ -431,7 +431,7 @@ describe("startup harness update notice", () => {
 		mockStack();
 		const view = mountNotice();
 		await userEvent.click(await screen.findByRole("button", { name: "Show all (3)" }));
-		await userEvent.click(screen.getByRole("button", { name: "Dismiss Qwen update" }));
+		await userEvent.click(screen.getByRole("button", { name: "Dismiss OMP update" }));
 		view.unmount();
 		mountNotice();
 		expect(await screen.findByRole("article", { name: "Agent updates available" })).toBeInTheDocument();
@@ -470,12 +470,12 @@ describe("startup harness update notice", () => {
 			client.setQueryData(["agent-readiness"], { agents: [
 				agentReadiness("claude-code", "Claude Code"),
 				agentReadiness("codex", "Codex", { authentication: "unauthorized" }),
-				agentReadiness("qwen", "Qwen"),
+				agentReadiness("omp", "OMP"),
 			] });
 			client.setQueryData(installerQueryKey, [
 				{ agentId: "claude-code", methods: [{ id: "official-installer", available: true, updateAvailable: true }] },
 				{ agentId: "codex", methods: [{ id: "official-installer", available: true, updateAvailable: true }] },
-				{ agentId: "qwen", methods: [{ id: "official-installer", available: true, updateAvailable: false }] },
+				{ agentId: "omp", methods: [{ id: "official-installer", available: true, updateAvailable: false }] },
 			]);
 		});
 		await waitFor(() => expect(screen.getAllByRole("article").map((card) => card.getAttribute("aria-label"))).toEqual(["Claude Code"]));
@@ -633,11 +633,11 @@ describe("harness updates while sessions run", () => {
 		advisories = {
 			"claude-code": { ...claudeAdvisory, inUse: { liveSessions: 2, sessionIds: ["s1", "s2"], level: "warn" } },
 			codex: { ...claudeAdvisory, agentId: "codex", inUse: { liveSessions: 2, sessionIds: ["s3", "s4"], level: "blocked" } },
-			qwen: { ...claudeAdvisory, agentId: "qwen", inUse: { liveSessions: 1, sessionIds: ["s5"], level: "idle" } },
+			omp: { ...claudeAdvisory, agentId: "omp", inUse: { liveSessions: 1, sessionIds: ["s5"], level: "idle" } },
 		};
 		mountNotice();
 		await userEvent.click(await screen.findByRole("button", { name: "Update all" }));
-		await waitFor(() => expect(installs.map((install) => install.agent).sort()).toEqual(["claude-code", "qwen"]));
+		await waitFor(() => expect(installs.map((install) => install.agent).sort()).toEqual(["claude-code", "omp"]));
 		expect(screen.queryByRole("dialog")).toBeNull();
 		expect(await screen.findByText("Updating 2 · Skipped Codex (2)")).toBeInTheDocument();
 	});

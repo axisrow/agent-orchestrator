@@ -12,7 +12,17 @@ import (
 	"time"
 
 	_ "modernc.org/sqlite" // read OMP's native credential store
+
+	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 )
+
+// markConfiguredProviders marks the providers a catalog's harness holds a
+// credential for, so Settings can tell them apart from the rest.
+func markConfiguredProviders(ctx context.Context, catalog *ports.AgentModelCatalog, request ports.AgentModelDiscoveryRequest) {
+	if len(catalog.ConfiguredProviders) == 0 {
+		catalog.ConfiguredProviders = configuredProviders(ctx, request.AgentID, request.Env)
+	}
+}
 
 // configuredProviders is advisory evidence, never an auth verdict or a filter.
 // Missing/unsupported stores and unresolved key commands leave status unknown.

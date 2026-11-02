@@ -154,11 +154,7 @@ const agentCatalogResponse = {
 		agents: [
 			agentReadiness("claude-code", "Claude Code"),
 			agentReadiness("codex", "Codex"),
-			agentReadiness("amp", "Amp"),
-			agentReadiness("qwen", "Qwen"),
-			agentReadiness("goose", "Goose"),
-			agentReadiness("droid", "Droid"),
-			agentReadiness("autohand", "Autohand", { authentication: "unknown" }),
+			agentReadiness("omp", "OMP", { authentication: "unknown" }),
 			agentReadiness("opencode-v2", "OpenCode 2"),
 			agentReadiness("pi", "Pi"),
 		],
@@ -257,7 +253,7 @@ describe("ProjectSettingsForm", () => {
 				agents: [
 					agentReadiness("claude-code", "Claude Code", { authentication: "unauthorized" }),
 					agentReadiness("codex", "Codex", { authentication: "unauthorized" }),
-					agentReadiness("qwen", "Qwen"),
+					agentReadiness("omp", "OMP"),
 					agentReadiness("opencode-v2", "OpenCode 2"),
 				],
 			},
@@ -269,7 +265,7 @@ describe("ProjectSettingsForm", () => {
 		await userEvent.click(trigger);
 		expect((await screen.findAllByRole("menuitem")).map((option) => option.textContent)).toEqual([
 			"OpenCode 2",
-			"Qwen",
+			"OMP",
 			"Manage agents…",
 		]);
 		await userEvent.click(screen.getByRole("menuitem", { name: "Manage agents…" }));
@@ -629,14 +625,14 @@ describe("ProjectSettingsForm", () => {
 		const project = {
 			id: "proj-1", name: "Project One", kind: "single_repo", path: "/repo/project-one",
 			repo: "", defaultBranch: "main", config: {
-				worker: { agent: "amp", agentConfig: { mode: "default" } },
+				worker: { agent: "omp", agentConfig: { mode: "default" } },
 				orchestrator: { agent: "claude-code" },
 			},
 		};
 		getMock.mockImplementation(async (path: string) => {
 			if (path === "/api/v1/agents/readiness") return agentCatalogResponse;
 			if (path === "/api/v1/agents/{agent}/models") return { data: {
-				agentId: "amp", selectionMode: "mode", models: [
+				agentId: "omp", selectionMode: "mode", models: [
 					{ id: "low", label: "Low", isDefault: true },
 					{ id: "high", label: "High" },
 				],
@@ -759,7 +755,7 @@ describe("ProjectSettingsForm", () => {
 		expect(permissionMode).toHaveTextContent("Auto");
 
 		await chooseOption(workerAgent, "OpenCode 2");
-		await chooseOption(orchestratorAgent, "Goose");
+		await chooseOption(orchestratorAgent, "Pi");
 		await chooseCustomModel("Worker model", "openai/gpt-5.4");
 		await chooseCustomModel("Orchestrator model", "anthropic/claude-sonnet");
 
@@ -783,7 +779,7 @@ describe("ProjectSettingsForm", () => {
 						agentConfig: { model: "openai/gpt-5.4", permissions: "auto" },
 					},
 					orchestrator: {
-						agent: "goose",
+						agent: "pi",
 						agentConfig: { model: "anthropic/claude-sonnet", permissions: "auto" },
 					},
 					agentConfig: undefined,
@@ -1434,7 +1430,7 @@ describe("ProjectSettingsForm", () => {
 		expect(screen.getByRole("button", { name: "Orchestrator agent" })).toBeDisabled();
 	});
 
-	it("offers ready Pi reviewers and hides Autohand until authorized", async () => {
+	it("offers ready Pi reviewers", async () => {
 		mockProject({
 			id: "proj-1",
 			name: "Project One",
@@ -1452,59 +1448,7 @@ describe("ProjectSettingsForm", () => {
 		const reviewer = await screen.findByRole("button", { name: "Reviewer agent" });
 		await userEvent.click(reviewer);
 		const labels = (await screen.findAllByRole("menuitem")).map((option) => option.textContent);
-		expect(labels).not.toContain("AutohandAuth unknown");
 		expect(labels).toContain("Pi");
-	});
-
-	it("offers Kimi as a reviewer", async () => {
-		const kimi = agentReadiness("kimi", "Kimi");
-		mockProject({
-			id: "proj-1",
-			name: "Project One",
-			kind: "single_repo",
-			path: "/repo/project-one",
-			repo: "",
-			defaultBranch: "main",
-			config: {
-				worker: { agent: "kimi" },
-				orchestrator: { agent: "claude-code" },
-			},
-		});
-		getMock.mockImplementation(async (path: string) => {
-			if (path === "/api/v1/agents/readiness") {
-				return {
-					data: {
-						agents: [...agentCatalogResponse.data.agents, kimi],
-					},
-					error: undefined,
-				};
-			}
-			return {
-				data: {
-					status: "ok",
-					project: {
-						id: "proj-1",
-						name: "Project One",
-						kind: "single_repo",
-						path: "/repo/project-one",
-						repo: "",
-						defaultBranch: "main",
-						config: {
-							worker: { agent: "kimi" },
-							orchestrator: { agent: "claude-code" },
-						},
-					},
-				},
-				error: undefined,
-			};
-		});
-
-		renderSettings("proj-1", undefined, "agents");
-
-		const reviewer = await screen.findByRole("button", { name: "Reviewer agent" });
-		await userEvent.click(reviewer);
-
-		expect(await screen.findByRole("menuitem", { name: /Kimi/ })).toBeInTheDocument();
 	});
 
 	it("orders reviewers using the default agent priority", async () => {
@@ -1532,63 +1476,18 @@ describe("ProjectSettingsForm", () => {
 			"Codex",
 			"Claude Code",
 			"OpenCode 2",
-			"Amp",
-			"Droid",
 			"Pi",
 			"Manage agents…",
 		]);
 	});
 
-	it("offers the experimental host-trusted reviewer set", async () => {
-		const project = {
-			id: "proj-1",
-			name: "Project One",
-			kind: "single_repo",
-			path: "/repo/project-one",
-			repo: "",
-			defaultBranch: "main",
-			config: { worker: { agent: "codex" }, orchestrator: { agent: "claude-code" } },
-		};
-		const droid = agentReadiness("droid", "Droid");
-		const kimi = agentReadiness("kimi", "Kimi");
-		const amp = agentReadiness("amp", "Amp");
-		const agy = agentReadiness("agy", "Agy");
-		const autohand = agentReadiness("autohand", "Autohand");
-		getMock.mockImplementation(async (path: string) => {
-			if (path === "/api/v1/agents/readiness") {
-				return {
-					data: {
-						agents: [
-							...agentCatalogResponse.data.agents.filter((agent) => agent.id !== "autohand"),
-							droid, kimi, amp, agy, autohand,
-						],
-					},
-					error: undefined,
-				};
-			}
-			return { data: { status: "ok", project }, error: undefined };
-		});
-
-		renderSettings("proj-1", undefined, "agents");
-
-		const reviewer = await screen.findByRole("button", { name: "Reviewer agent" });
-		await userEvent.click(reviewer);
-		const options = await screen.findAllByRole("menuitem");
-		const labels = options.map((option) => option.textContent);
-		expect(labels).toContain("Agy");
-		expect(labels).toContain("Droid");
-		expect(labels).toContain("Kimi");
-		expect(labels).toContain("Amp");
-		expect(labels).toContain("Autohand");
-	});
-
 	it("warns when an experimental reviewer is selected", async () => {
-		const kimi = agentReadiness("kimi", "Kimi");
+		const agy = agentReadiness("agy", "Agy");
 		getMock.mockImplementation(async (path: string) => {
 			if (path === "/api/v1/agents/readiness") {
 				return {
 					data: {
-						agents: [...agentCatalogResponse.data.agents, kimi],
+						agents: [...agentCatalogResponse.data.agents, agy],
 					},
 					error: undefined,
 				};
@@ -1611,7 +1510,7 @@ describe("ProjectSettingsForm", () => {
 		});
 
 		renderSettings("proj-1", undefined, "agents");
-		await chooseOption(await screen.findByRole("button", { name: "Reviewer agent" }), "Kimi");
+		await chooseOption(await screen.findByRole("button", { name: "Reviewer agent" }), "Agy");
 		expect(screen.getByRole("status")).toHaveTextContent("Experimental host-trusted reviewer");
 	});
 
@@ -1638,15 +1537,11 @@ describe("ProjectSettingsForm", () => {
 			"Claude Code",
 			"Codex",
 			"OpenCode 2",
-			"Amp",
-			"Droid",
-			"Goose",
 			"Pi",
-			"Qwen",
-			"AutohandAuth unknown",
+			"OMPAuth unknown",
 			"Manage agents…",
 		]);
-		expect(options[8]).not.toHaveAttribute("aria-disabled", "true");
+		expect(options[4]).not.toHaveAttribute("aria-disabled", "true");
 	});
 
 	it("shows Pi as a reviewer option and saves it in the reviewers payload", async () => {
@@ -1772,12 +1667,12 @@ describe("ProjectSettingsForm", () => {
 		expect(await screen.findByRole("button", { name: "Reviewer approval" })).toHaveTextContent("Accept edits");
 	});
 
-	it("hides the Kimi reviewer when its binary is missing", async () => {
+	it("hides the AGY reviewer when its binary is missing", async () => {
 		getMock.mockImplementation(async (path: string) => {
 			if (path === "/api/v1/agents/readiness") {
 				return {
 					data: {
-						agents: [agentReadiness("kimi", "Kimi", { installation: "not_installed", authentication: "unknown" })],
+						agents: [agentReadiness("agy", "AGY", { installation: "not_installed", authentication: "unknown" })],
 					},
 					error: undefined,
 				};
@@ -1805,19 +1700,19 @@ describe("ProjectSettingsForm", () => {
 		renderSettings("proj-1", undefined, "agents");
 
 		await userEvent.click(await screen.findByRole("button", { name: "Reviewer agent" }));
-		const kimi = (await screen.findAllByRole("menuitem")).find((option) =>
-			option.textContent?.includes("Kimi"),
+		const agy = (await screen.findAllByRole("menuitem")).find((option) =>
+			option.textContent?.includes("AGY"),
 		);
-		expect(kimi).toBeUndefined();
+		expect(agy).toBeUndefined();
 		expect(screen.getByRole("menuitem", { name: "Manage agents…" })).toBeInTheDocument();
 	});
 
-	it("hides an installed Kimi reviewer until authorization is known", async () => {
+	it("hides an installed AGY reviewer until authorization is known", async () => {
 		getMock.mockImplementation(async (path: string) => {
 			if (path === "/api/v1/agents/readiness") {
 				return {
 					data: {
-						agents: [agentReadiness("kimi", "Kimi", { authentication: "unknown" })],
+						agents: [agentReadiness("agy", "AGY", { authentication: "unknown" })],
 					},
 					error: undefined,
 				};
@@ -1845,32 +1740,11 @@ describe("ProjectSettingsForm", () => {
 		renderSettings("proj-1", undefined, "agents");
 
 		await userEvent.click(await screen.findByRole("button", { name: "Reviewer agent" }));
-		const kimi = (await screen.findAllByRole("menuitem")).find((option) =>
-			option.textContent?.includes("Kimi"),
+		const agy = (await screen.findAllByRole("menuitem")).find((option) =>
+			option.textContent?.includes("AGY"),
 		);
-		expect(kimi).toBeUndefined();
+		expect(agy).toBeUndefined();
 		expect(screen.getByRole("menuitem", { name: "Manage agents…" })).toBeInTheDocument();
-	});
-
-	it("offers Amp as a configured reviewer", async () => {
-		mockProject({
-			id: "proj-1",
-			name: "Project One",
-			kind: "single_repo",
-			path: "/repo/project-one",
-			repo: "",
-			defaultBranch: "main",
-			config: {
-				worker: { agent: "codex" },
-				orchestrator: { agent: "claude-code" },
-			},
-		});
-
-		renderSettings("proj-1", undefined, "agents");
-
-		const reviewer = await screen.findByRole("button", { name: "Reviewer agent" });
-		await userEvent.click(reviewer);
-		expect(await screen.findByRole("menuitem", { name: "Amp" })).toBeEnabled();
 	});
 
 	it("offers the experimental Agy reviewer", async () => {
@@ -2148,7 +2022,7 @@ describe("ProjectSettingsForm", () => {
 					defaultBranch: "main",
 					config: {
 						worker: { agent: "codex" },
-						orchestrator: { agent: "goose" },
+						orchestrator: { agent: "pi" },
 					},
 				},
 			},
@@ -2160,7 +2034,7 @@ describe("ProjectSettingsForm", () => {
 				id: "proj-1",
 				name: "Project One",
 				path: "/repo/project-one",
-				orchestratorAgent: "goose",
+				orchestratorAgent: "pi",
 				sessions: [
 					{
 						id: "proj-1-orchestrator",
@@ -2180,7 +2054,7 @@ describe("ProjectSettingsForm", () => {
 		], "agents");
 
 		const orchestratorAgent = await screen.findByRole("button", { name: "Orchestrator agent" });
-		expect(orchestratorAgent).toHaveTextContent("Goose");
+		expect(orchestratorAgent).toHaveTextContent("Pi");
 
 		submitSettings();
 
@@ -2209,7 +2083,7 @@ describe("ProjectSettingsForm", () => {
 		renderSettings("proj-1", undefined, "agents");
 
 		const orchestratorAgent = await screen.findByRole("button", { name: "Orchestrator agent" });
-		await chooseOption(orchestratorAgent, "Goose");
+		await chooseOption(orchestratorAgent, "Pi");
 		submitSettings();
 
 		await waitFor(() => expect(postMock).toHaveBeenCalledTimes(1));
@@ -2234,7 +2108,7 @@ describe("ProjectSettingsForm", () => {
 			data: undefined,
 			error: {
 				code: "ORCHESTRATOR_SPAWN_FAILED",
-				message: "missing goose binary",
+				message: "missing codex binary",
 				requestId: "request-42",
 			},
 			response: { status: 500 },
@@ -2244,19 +2118,19 @@ describe("ProjectSettingsForm", () => {
 		const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
 		const orchestratorAgent = await screen.findByRole("button", { name: "Orchestrator agent" });
-		await chooseOption(orchestratorAgent, "goose");
+		await chooseOption(orchestratorAgent, "Pi");
 		submitSettings();
 
 		await waitFor(() => expect(putMock).toHaveBeenCalledTimes(1));
 		await waitFor(() => expect(postMock).toHaveBeenCalledTimes(1));
 		expect(await screen.findByText("Saved")).toBeInTheDocument();
-		expect(await screen.findByText("Orchestrator restart failed: missing goose binary")).toBeInTheDocument();
+		expect(await screen.findByText("Orchestrator restart failed: missing codex binary")).toBeInTheDocument();
 		expect(screen.queryByText("Save failed")).not.toBeInTheDocument();
 		expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["project", "proj-1"] });
 		expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: workspaceQueryKey });
 		expect(closeSettingsMock).not.toHaveBeenCalled();
 		expect(setOrchestratorReplacementErrorMock).toHaveBeenCalledWith("proj-1", {
-			message: "missing goose binary",
+			message: "missing codex binary",
 			code: "ORCHESTRATOR_SPAWN_FAILED",
 			requestId: "request-42",
 		});

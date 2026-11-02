@@ -179,13 +179,12 @@ func TestDoctorChecksHarnessVersions(t *testing.T) {
 		"git":    "/bin/git",
 		"claude": "/bin/claude",
 		"codex":  "/bin/codex",
-		"kimi":   "/bin/kimi",
 	}
 	c := doctorContext(t, cmdPath, func(_ context.Context, name string, args ...string) ([]byte, error) {
 		switch name {
 		case "/bin/git":
 			return []byte("git version 2.43.0\n"), nil
-		case "/bin/claude", "/bin/codex", "/bin/kimi":
+		case "/bin/claude", "/bin/codex":
 			if len(args) == 1 && args[0] == "--version" {
 				return []byte(strings.TrimPrefix(name, "/bin/") + " 1.2.3\n"), nil
 			}
@@ -202,7 +201,7 @@ func TestDoctorChecksHarnessVersions(t *testing.T) {
 	})
 
 	checks := c.runDoctor(context.Background())
-	for _, name := range []string{"claude-code", "codex", "kimi"} {
+	for _, name := range []string{"claude-code", "codex"} {
 		check := findDoctorCheck(t, checks, name)
 		if check.Level != doctorPass || !strings.Contains(check.Message, "resolves to") {
 			t.Fatalf("%s check = %+v, want PASS with path/version", name, check)
@@ -467,9 +466,9 @@ func TestDoctorTextOutputIsGrouped(t *testing.T) {
 		"Agent harnesses:\nWARN claude-code:",
 		"WARN codex:",
 		"WARN opencode-v2:",
-		"WARN goose:",
 		"WARN agy:",
 		"WARN omp:",
+		"WARN pi:",
 		"GitHub:\nWARN github-token:",
 		"GitLab:\nWARN gitlab-token:",
 	} {
@@ -512,11 +511,11 @@ func TestDoctorPathOnlyHarnessPassesOnFind(t *testing.T) {
 	setConfigEnv(t)
 	c := doctorContext(t,
 		map[string]string{
-			"git":   "/bin/git",
-			"droid": "/usr/local/bin/droid",
+			"git": "/bin/git",
+			"pi":  "/usr/local/bin/pi",
 		},
 		func(_ context.Context, name string, _ ...string) ([]byte, error) {
-			// Only git version calls are expected; droid has no VersionArg.
+			// Only git version calls are expected; pi has no VersionArg.
 			if name == "/bin/git" {
 				return []byte("git version 2.43.0\n"), nil
 			}
@@ -525,9 +524,9 @@ func TestDoctorPathOnlyHarnessPassesOnFind(t *testing.T) {
 		},
 	)
 
-	check := findDoctorCheck(t, c.runDoctor(context.Background()), "droid")
+	check := findDoctorCheck(t, c.runDoctor(context.Background()), "pi")
 	if check.Level != doctorPass || !strings.Contains(check.Message, "resolves to") {
-		t.Fatalf("droid check = %+v, want PASS with path", check)
+		t.Fatalf("pi check = %+v, want PASS with path", check)
 	}
 }
 

@@ -32,15 +32,6 @@ var configuredDefaultSources = map[string]configuredDefaultSource{
 	"opencode-v2": {resolve: func(home, workingDir string, env map[string]string) string {
 		return resolveOpenCodeModel(home, workingDir, env)
 	}},
-	"droid": {
-		paths: func(home string, _ map[string]string) []string {
-			if home == "" {
-				return nil
-			}
-			return []string{filepath.Join(home, ".factory", "settings.json")}
-		},
-		parse: parseJSONCModelKey,
-	},
 	"pi": {
 		paths: func(home string, _ map[string]string) []string {
 			if home == "" {

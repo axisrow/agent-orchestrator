@@ -4134,7 +4134,7 @@ func TestLifecycleNudgeStartupGateUsesAdapterCapability(t *testing.T) {
 		wantSent bool
 	}{
 		{name: "startup-signaling adapter is gated", harness: domain.HarnessAgy, gate: true, wantSent: false},
-		{name: "hookless adapter remains deliverable", harness: domain.HarnessGoose, gate: false, wantSent: true},
+		{name: "hookless adapter remains deliverable", harness: domain.HarnessOMP, gate: false, wantSent: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -5811,7 +5811,7 @@ func TestScopedPostAgentRefreshesIdleProofWithoutStateTransition(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			m, st, _ := newManager()
 			at := time.Now().Add(-time.Minute)
-			rec := domain.SessionRecord{ID: "mer-1", ProjectID: "mer", Harness: domain.HarnessGoose, Mode: domain.SessionModeTUI,
+			rec := domain.SessionRecord{ID: "mer-1", ProjectID: "mer", Harness: domain.HarnessOMP, Mode: domain.SessionModeTUI,
 				Activity: domain.Activity{State: domain.ActivityIdle, LastActivityAt: at}, FirstSignalAt: at,
 				Metadata: domain.SessionMetadata{RuntimeLaunchID: "launch-1", AgentSessionID: "native-1", AgentSessionIDLaunchID: "launch-1"}}
 			st.sessions["mer-1"] = rec

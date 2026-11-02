@@ -24,16 +24,9 @@ The current daemon registers the following capabilities. Availability still depe
 | `codex` | Yes | Yes | Yes |
 | `opencode` | Yes | Yes | Yes |
 | `opencode-v2` | Yes | Yes | Yes |
-| `qwen` | Yes | Yes | — |
-| `kimi` | Yes | Yes | Yes |
-| `droid` | Yes | Yes | Yes |
-| `amp` | Yes | — | Yes |
-| `agy` | Yes | — | Yes |
-| `goose` | Yes | — | — |
+| `agy` | Yes | Yes | Yes |
 | `omp` | Yes | Yes | — |
 | `pi` | Yes | Yes | Yes |
-| `autohand` | Yes | — | Yes |
-| `fx` | Yes | — | — |
 
 The table shows shipped capabilities, not whether an agent is ready on your machine. Run the catalog for current readiness or when scripting:
 
@@ -43,16 +36,6 @@ ao agent ls --refresh --json
 ```
 
 The readiness probe reports whether a harness is supported, installed, and authenticated. Spawn still performs authoritative validation.
-
-### fx (experimental)
-
-Install fx from Settings → Harness on macOS or Linux (expected at
-`~/.local/bin/fx`; on Windows use WSL), then spawn it in Terminal UI mode.
-fx Chat is not supported.
-
-```bash
-ao spawn --name fx-task --agent fx --mode tui
-```
 
 ## Chat versus Terminal UI
 
@@ -64,15 +47,13 @@ All worker adapters provide a terminal interface. These harnesses have structure
 | `claude-code` | `claude-agent-acp` using the user's Claude executable |
 | `opencode` | Native ACP (OpenCode 1) |
 | `opencode-v2` | Native ACP (OpenCode 2) |
-| `droid` | Native ACP |
-| `kimi` | Native ACP |
+| `agy` | Native ACP |
 | `pi` | Separately installed ACP adapter; explicit bypass permissions required |
 | `omp` | Native ACP |
-| `qwen` | Native ACP |
 
 Every other harness is Terminal UI-only. Choose the initial interface with `ao spawn --mode chat|tui`. Compatible Claude Code and Codex sessions can hand off between Chat and Terminal UI while retaining the Orchestrator session and worktree.
 
-Qwen Chat needs version 0.16 or newer; OMP Chat needs version 15 or newer. Check readiness and the provider options offered by your installed Orchestrator version before launching.
+OMP Chat needs version 15 or newer. Check readiness and the provider options offered by your installed Orchestrator version before launching.
 
 Chat registration does not imply interface handoff support. Use the switch action and its disabled reason in the session UI. Experimental reviewer modes and prompts do not sandbox tools or network access.
 

@@ -26,19 +26,6 @@ func TestAgyAdapterIsSelectable(t *testing.T) {
 	}
 }
 
-func TestKimiHarnessAdapterIsSelectable(t *testing.T) {
-	reg, err := Build()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := reg.Get("kimi"); !ok {
-		t.Fatal("Kimi is not registered")
-	}
-	if !domain.AgentHarness("kimi").IsKnown() {
-		t.Fatal("Kimi is not selectable")
-	}
-}
-
 func TestOpenCodeV2IsSelectable(t *testing.T) {
 	reg, err := Build()
 	if err != nil {
@@ -73,16 +60,10 @@ func TestGetAgentHooksFootprintIsGitignored(t *testing.T) {
 	for _, ha := range Harnessed() {
 		t.Run(string(ha.Harness), func(t *testing.T) {
 			ws := t.TempDir()
-			if ha.Harness == "autohand" {
-				t.Setenv("AUTOHAND_CONFIG", filepath.Join(t.TempDir(), "config.json"))
-			}
 			cfg := ports.WorkspaceHookConfig{
 				SessionID:     "proj-1",
 				WorkspacePath: ws,
 				DataDir:       t.TempDir(),
-			}
-			if ha.Harness == "kimi" {
-				cfg.Env = map[string]string{"KIMI_CODE_HOME": filepath.Join(cfg.DataDir, "kimi")}
 			}
 			ensureAgentBinary(t, string(ha.Harness))
 			if err := ha.Agent.GetAgentHooks(context.Background(), cfg); err != nil {
@@ -115,27 +96,6 @@ func TestEveryHarnessReportsAuthStatus(t *testing.T) {
 			t.Errorf("%s does not implement ports.AgentAuthChecker", ha.Harness)
 		}
 	}
-}
-
-func TestRegistryIncludesFX(t *testing.T) {
-	reg, err := Build()
-	if err != nil {
-		t.Fatal(err)
-	}
-	adapter, ok := reg.Get("fx")
-	if !ok {
-		t.Fatal("registry does not contain fx")
-	}
-	if manifest := adapter.Manifest(); manifest.Name != "fx" {
-		t.Fatalf("fx manifest name = %q, want fx", manifest.Name)
-	}
-
-	for _, item := range Harnessed() {
-		if item.Harness == domain.HarnessFX {
-			return
-		}
-	}
-	t.Fatal("Harnessed does not contain fx")
 }
 
 func TestRegistryIncludesPi(t *testing.T) {
@@ -182,24 +142,17 @@ func TestRegistryIncludesOMP(t *testing.T) {
 	t.Fatal("Harnessed does not contain omp")
 }
 
-func TestRegistryIncludesDroid(t *testing.T) {
+// Cut harnesses must not come back through the registry.
+func TestCutHarnessesAreNotRegistered(t *testing.T) {
 	reg, err := Build()
 	if err != nil {
 		t.Fatal(err)
 	}
-	adapter, ok := reg.Get("droid")
-	if !ok {
-		t.Fatal("registry does not contain droid")
-	}
-	if name := adapter.Manifest().Name; name != "Droid" {
-		t.Fatalf("droid manifest name = %q, want Droid", name)
-	}
-	for _, item := range Harnessed() {
-		if item.Harness == domain.HarnessDroid {
-			return
+	for _, cut := range []string{"kimi", "goose", "memcode", "fx", "qwen", "amp", "autohand", "droid"} {
+		if _, still := reg.Get(cut); still {
+			t.Errorf("cut harness %q is registered", cut)
 		}
 	}
-	t.Fatal("Harnessed does not contain droid")
 }
 
 func TestHarnessedExcludesFakeHarness(t *testing.T) {
@@ -274,21 +227,4 @@ func hasLine(content, line string) bool {
 		}
 	}
 	return false
-}
-
-func TestMemcodeAdapterIsSelectable(t *testing.T) {
-	reg, err := Build()
-	if err != nil {
-		t.Fatal(err)
-	}
-	adapter, ok := reg.Get("memcode")
-	if !ok || !domain.HarnessMemcode.IsKnown() {
-		t.Fatal("Memcode is not selectable")
-	}
-	if adapter.Manifest().Name != "memcode" {
-		t.Fatal(adapter.Manifest())
-	}
-	if _, ok := adapter.(ports.Agent); !ok {
-		t.Fatal("missing TUI agent")
-	}
 }

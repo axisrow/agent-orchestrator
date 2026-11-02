@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	fxagent "github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/fx"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/runtime/conpty"
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
@@ -804,18 +803,20 @@ func (a *switchAfterStartAgent) BuildAfterStartPrompt(_ context.Context, cfg por
 
 func (a *switchAfterStartAgent) PromptReadinessHints(context.Context, ports.LaunchConfig) (ports.PromptReadinessHints, error) {
 	a.readinessCalls++
-	return ports.PromptReadinessHints{Patterns: []string{"FX READY"}, PollInterval: time.Millisecond, Timeout: 50 * time.Millisecond}, nil
+	return ports.PromptReadinessHints{Patterns: []string{"TARGET READY"}, PollInterval: time.Millisecond, Timeout: 50 * time.Millisecond}, nil
 }
 
 func (a *switchAfterStartAgent) AugmentRuntimeLaunchEnv(env map[string]string, dataDir string, id domain.SessionID, launchID string) {
-	env["HERDR_SOCKET_PATH"] = filepath.Join(dataDir, "run", "fx-herdr.sock")
-	env["HERDR_PANE_ID"] = string(id) + ":" + launchID
+	env["SWITCH_TEST_SOCKET_PATH"] = filepath.Join(dataDir, "run", "target.sock")
+	env["SWITCH_TEST_PANE_ID"] = string(id) + ":" + launchID
 }
 
-type noFXChatLauncher struct{ *recordingLauncher }
+// noCodexChatLauncher models a Chat surface that drives the Claude Code source
+// but has no driver for a Codex target.
+type noCodexChatLauncher struct{ *recordingLauncher }
 
-func (l noFXChatLauncher) SupportsChat(harness domain.AgentHarness) bool {
-	return harness != domain.HarnessFX
+func (l noCodexChatLauncher) SupportsChat(harness domain.AgentHarness) bool {
+	return harness != domain.HarnessCodex
 }
 
 func (a *switchTestAgent) ContinuationCapabilities() ports.ContinuationCapabilities {
@@ -2313,16 +2314,16 @@ func TestCollectOptionalAgentHandoffRechecksActiveTurnSafetyAtWriteBoundary(t *t
 	}
 }
 
-func TestSwitchAgentRejectsCursorAndKimiBeforeMutation(t *testing.T) {
+func TestSwitchAgentRejectsUnsupportedHarnessesBeforeMutation(t *testing.T) {
 	tests := []struct {
 		name   string
 		source domain.AgentHarness
 		target domain.AgentHarness
 	}{
 		{name: "agy target", source: domain.HarnessClaudeCode, target: domain.HarnessAgy},
-		{name: "kimi target", source: domain.HarnessClaudeCode, target: domain.HarnessKimi},
+		{name: "pi target", source: domain.HarnessClaudeCode, target: domain.HarnessPi},
 		{name: "agy source", source: domain.HarnessAgy, target: domain.HarnessCodex},
-		{name: "kimi source", source: domain.HarnessKimi, target: domain.HarnessCodex},
+		{name: "omp source", source: domain.HarnessOMP, target: domain.HarnessCodex},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -2348,7 +2349,7 @@ func TestSwitchAgentRejectsCursorAndKimiBeforeMutation(t *testing.T) {
 	}
 }
 
-func TestSwitchAgentRejectsFXChatWithoutDriverBeforeMutation(t *testing.T) {
+func TestSwitchAgentRejectsChatTargetWithoutDriverBeforeMutation(t *testing.T) {
 	runtime := &fakeRestartRuntime{fakeRuntime: &fakeRuntime{}}
 	manager, store, _ := newSwitchTestManager(t, runtime)
 	rec := store.sessions["proj-1"]
@@ -2358,13 +2359,10 @@ func TestSwitchAgentRejectsFXChatWithoutDriverBeforeMutation(t *testing.T) {
 	rec.Metadata.ProviderConversationID = "source-chat-native"
 	rec.Metadata.ControllerGeneration = "source-chat-generation"
 	store.sessions[rec.ID] = rec
-	manager.chat = noFXChatLauncher{recordingLauncher: &recordingLauncher{}}
-	manager.agents.(switchTestAgents)[domain.HarnessFX] = &switchAfterStartAgent{switchTestAgent: &switchTestAgent{
-		configDir: filepath.Join(t.TempDir(), "fx"), freshNativeIDMode: ports.FreshNativeSessionIDProviderAssigned,
-	}}
+	manager.chat = noCodexChatLauncher{recordingLauncher: &recordingLauncher{}}
 
 	_, err := switchAgentSynchronously(context.Background(), manager, rec.ID, SwitchAgentConfig{
-		TargetHarness: domain.HarnessFX, IdempotencyKey: "fx-chat-unsupported",
+		TargetHarness: domain.HarnessCodex, IdempotencyKey: "chat-target-without-driver",
 	})
 	if !errors.Is(err, ErrUnsupportedSwitchHarness) {
 		t.Fatalf("SwitchAgent error = %v, want ErrUnsupportedSwitchHarness", err)
@@ -2374,15 +2372,15 @@ func TestSwitchAgentRejectsFXChatWithoutDriverBeforeMutation(t *testing.T) {
 	}
 }
 
-func TestSwitchAgentFromTUIToFXDeliversCombinedContinuationAfterActivation(t *testing.T) {
+func TestSwitchAgentFromTUIToAfterStartTargetDeliversCombinedContinuationAfterActivation(t *testing.T) {
 	runtime := &switchCreateCallbackRuntime{fakeRestartRuntime: &fakeRestartRuntime{fakeRuntime: &fakeRuntime{
-		outputs: []string{"source tail", "FX READY"},
+		outputs: []string{"source tail", "TARGET READY"},
 	}}}
 	manager, store, messenger := newSwitchTestManager(t, runtime)
 	target := &switchAfterStartAgent{switchTestAgent: &switchTestAgent{
-		configDir: filepath.Join(t.TempDir(), "fx"), freshNativeIDMode: ports.FreshNativeSessionIDProviderAssigned,
+		configDir: filepath.Join(t.TempDir(), "target"), freshNativeIDMode: ports.FreshNativeSessionIDProviderAssigned,
 	}}
-	manager.agents.(switchTestAgents)[domain.HarnessFX] = target
+	manager.agents.(switchTestAgents)[domain.HarnessCodex] = target
 	runtime.afterCreate = func(_ ports.RuntimeConfig, _ ports.RuntimeHandle) {
 		sw, ok, err := store.GetActiveAgentSwitch(context.Background(), "proj-1")
 		if err != nil || !ok || sw.TargetNativeSessionRef == nil {
@@ -2392,7 +2390,7 @@ func TestSwitchAgentFromTUIToFXDeliversCombinedContinuationAfterActivation(t *te
 		if err != nil || !found {
 			t.Fatalf("target native session lookup = found %v err %v", found, err)
 		}
-		native.NativeSessionID = "fx-native-1"
+		native.NativeSessionID = "target-native-1"
 		if changed, err := store.UpdateAgentNativeSession(context.Background(), native, sw.TargetGenerationID); err != nil || !changed {
 			t.Fatalf("report target native session = changed %v err %v", changed, err)
 		}
@@ -2408,7 +2406,7 @@ func TestSwitchAgentFromTUIToFXDeliversCombinedContinuationAfterActivation(t *te
 	}
 	messenger.onSend = func(id domain.SessionID, message string) {
 		current := store.sessions[id]
-		if current.Harness != domain.HarnessFX || current.Metadata.RuntimeLaunchID != "target-generation" {
+		if current.Harness != domain.HarnessCodex || current.Metadata.RuntimeLaunchID != "target-generation" {
 			t.Fatalf("delivery owner = harness %q generation %q", current.Harness, current.Metadata.RuntimeLaunchID)
 		}
 		sw, ok, err := store.GetActiveAgentSwitch(context.Background(), id)
@@ -2425,7 +2423,7 @@ func TestSwitchAgentFromTUIToFXDeliversCombinedContinuationAfterActivation(t *te
 	}
 
 	sw, err := switchAgentSynchronously(context.Background(), manager, "proj-1", SwitchAgentConfig{
-		TargetHarness: domain.HarnessFX, IdempotencyKey: "switch-to-fx",
+		TargetHarness: domain.HarnessCodex, IdempotencyKey: "switch-to-after-start-target",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -2437,20 +2435,20 @@ func TestSwitchAgentFromTUIToFXDeliversCombinedContinuationAfterActivation(t *te
 		t.Fatalf("after-start delivery calls = build %d messages %d, want 1/1", target.buildCalls, len(messenger.msgs))
 	}
 	if target.launchPrompt != "" {
-		t.Fatalf("fx launch prompt = %q, want empty", target.launchPrompt)
+		t.Fatalf("after-start launch prompt = %q, want empty", target.launchPrompt)
 	}
-	if got := runtime.lastCfg.Env["HERDR_PANE_ID"]; got != "proj-1:target-generation" {
-		t.Fatalf("fx pane identity = %q, want generation-fenced target identity", got)
+	if got := runtime.lastCfg.Env["SWITCH_TEST_PANE_ID"]; got != "proj-1:target-generation" {
+		t.Fatalf("target pane identity = %q, want generation-fenced target identity", got)
 	}
 	if sw.TargetNativeSessionRef == nil {
-		t.Fatal("completed fx switch has no target native-session reference")
+		t.Fatal("completed switch has no target native-session reference")
 	}
 	native := store.native[*sw.TargetNativeSessionRef]
-	if native.NativeSessionID != "fx-native-1" || native.LastGenerationID != sw.TargetGenerationID || native.Harness != domain.HarnessFX {
-		t.Fatalf("fx native-session ownership = %+v", native)
+	if native.NativeSessionID != "target-native-1" || native.LastGenerationID != sw.TargetGenerationID || native.Harness != domain.HarnessCodex {
+		t.Fatalf("target native-session ownership = %+v", native)
 	}
-	if got := store.sessions["proj-1"]; got.Metadata.AgentSessionID != "fx-native-1" || got.Harness != domain.HarnessFX {
-		t.Fatalf("fx session ownership = %+v", got)
+	if got := store.sessions["proj-1"]; got.Metadata.AgentSessionID != "target-native-1" || got.Harness != domain.HarnessCodex {
+		t.Fatalf("target session ownership = %+v", got)
 	}
 }
 
@@ -2458,19 +2456,19 @@ func TestSwitchAgentAfterStartAcknowledgementCompletesWithoutRecoveryRead(t *tes
 	runtime := &switchCreateCallbackRuntime{fakeRestartRuntime: &fakeRestartRuntime{fakeRuntime: &fakeRuntime{}}}
 	manager, store, _ := newSwitchTestManager(t, runtime)
 	target := &switchAfterStartAgent{switchTestAgent: &switchTestAgent{
-		configDir: filepath.Join(t.TempDir(), "fx"), freshNativeIDMode: ports.FreshNativeSessionIDProviderAssigned,
+		configDir: filepath.Join(t.TempDir(), "target"), freshNativeIDMode: ports.FreshNativeSessionIDProviderAssigned,
 	}}
-	manager.agents.(switchTestAgents)[domain.HarnessFX] = target
+	manager.agents.(switchTestAgents)[domain.HarnessCodex] = target
 	runtime.afterCreate = func(_ ports.RuntimeConfig, _ ports.RuntimeHandle) {
 		sw, _, _ := store.GetActiveAgentSwitch(context.Background(), "proj-1")
 		native, _, _ := store.GetAgentNativeSession(context.Background(), *sw.TargetNativeSessionRef)
-		native.NativeSessionID = "fx-native-direct-completion"
+		native.NativeSessionID = "target-native-direct-completion"
 		_, _ = store.UpdateAgentNativeSession(context.Background(), native, sw.TargetGenerationID)
 	}
 	store.getSwitchErrAfterAck = errors.New("unexpected recovery read after acknowledgement")
 
 	sw, err := switchAgentSynchronously(context.Background(), manager, "proj-1", SwitchAgentConfig{
-		TargetHarness: domain.HarnessFX, IdempotencyKey: "fx-direct-completion",
+		TargetHarness: domain.HarnessCodex, IdempotencyKey: "direct-completion",
 	})
 	if err != nil {
 		t.Fatalf("switch should complete directly after acknowledgement: %v", err)
@@ -2480,92 +2478,20 @@ func TestSwitchAgentAfterStartAcknowledgementCompletesWithoutRecoveryRead(t *tes
 	}
 }
 
-func TestSwitchAgentWithRealFXAdapterInBothDirections(t *testing.T) {
-	binDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(binDir, "fx"), []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", binDir)
-
-	t.Run("to fx", func(t *testing.T) {
-		runtime := &switchCreateCallbackRuntime{fakeRestartRuntime: &fakeRestartRuntime{fakeRuntime: &fakeRuntime{}}}
-		manager, store, _ := newSwitchTestManager(t, runtime)
-		fxHome := t.TempDir()
-		project := store.projects["proj"]
-		project.Config.Env = map[string]string{"HOME": fxHome}
-		store.projects[project.ID] = project
-		manager.agents.(switchTestAgents)[domain.HarnessFX] = fxagent.New()
-		runtime.afterCreate = func(_ ports.RuntimeConfig, _ ports.RuntimeHandle) {
-			sw, _, _ := store.GetActiveAgentSwitch(context.Background(), "proj-1")
-			native, _, _ := store.GetAgentNativeSession(context.Background(), *sw.TargetNativeSessionRef)
-			native.NativeSessionID = "fx-real-target"
-			_, _ = store.UpdateAgentNativeSession(context.Background(), native, sw.TargetGenerationID)
-		}
-		manager.lcm.(*switchReleaseLCM).onRelease = nil
-
-		sw, err := switchAgentSynchronously(context.Background(), manager, "proj-1", SwitchAgentConfig{
-			TargetHarness: domain.HarnessFX, IdempotencyKey: "real-fx-target",
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if sw.State != domain.AgentSwitchCompleted || sw.TargetNativeSessionRef == nil {
-			t.Fatalf("switch = %+v, want completed real fx target", sw)
-		}
-		if got, want := store.native[*sw.TargetNativeSessionRef].ConfigDir, filepath.Join(fxHome, ".fx"); got != want {
-			t.Fatalf("fx target config dir = %q, want %q", got, want)
-		}
-	})
-
-	t.Run("from fx", func(t *testing.T) {
-		runtime := &fakeRestartRuntime{fakeRuntime: &fakeRuntime{}}
-		manager, store, _ := newSwitchTestManager(t, runtime)
-		fxHome := t.TempDir()
-		project := store.projects["proj"]
-		project.Config.Env = map[string]string{"HOME": fxHome}
-		store.projects[project.ID] = project
-		manager.agents.(switchTestAgents)[domain.HarnessFX] = fxagent.New()
-		rec := store.sessions["proj-1"]
-		rec.Harness = domain.HarnessFX
-		rec.Metadata.AgentSessionID = "fx-real-source"
-		store.sessions[rec.ID] = rec
-
-		sw, err := switchAgentSynchronously(context.Background(), manager, rec.ID, SwitchAgentConfig{
-			TargetHarness: domain.HarnessCodex, IdempotencyKey: "real-fx-source",
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if sw.State != domain.AgentSwitchCompleted {
-			t.Fatalf("switch state = %q, want %q", sw.State, domain.AgentSwitchCompleted)
-		}
-		var source *domain.AgentNativeSession
-		for _, native := range store.native {
-			if native.Harness == domain.HarnessFX && native.NativeSessionID == "fx-real-source" {
-				nativeCopy := native
-				source = &nativeCopy
-			}
-		}
-		if source == nil || source.ConfigDir != filepath.Join(fxHome, ".fx") {
-			t.Fatalf("preserved real fx source = %+v", source)
-		}
-	})
-}
-
-func TestSwitchAgentFromFXToOtherTUIRetainsSourceNativeOwnership(t *testing.T) {
+func TestSwitchAgentFromAfterStartSourceRetainsSourceNativeOwnership(t *testing.T) {
 	runtime := &fakeRestartRuntime{fakeRuntime: &fakeRuntime{}}
 	manager, store, _ := newSwitchTestManager(t, runtime)
-	fxSource := &switchAfterStartAgent{switchTestAgent: &switchTestAgent{
-		configDir: filepath.Join(t.TempDir(), "fx"), freshNativeIDMode: ports.FreshNativeSessionIDProviderAssigned,
+	afterStartSource := &switchAfterStartAgent{switchTestAgent: &switchTestAgent{
+		configDir: filepath.Join(t.TempDir(), "source"), freshNativeIDMode: ports.FreshNativeSessionIDProviderAssigned,
 	}}
-	manager.agents.(switchTestAgents)[domain.HarnessFX] = fxSource
+	manager.agents.(switchTestAgents)[domain.HarnessClaudeCode] = afterStartSource
 	rec := store.sessions["proj-1"]
-	rec.Harness = domain.HarnessFX
-	rec.Metadata.AgentSessionID = "fx-source-native"
+	rec.Harness = domain.HarnessClaudeCode
+	rec.Metadata.AgentSessionID = "after-start-source-native"
 	store.sessions[rec.ID] = rec
 
 	sw, err := switchAgentSynchronously(context.Background(), manager, rec.ID, SwitchAgentConfig{
-		TargetHarness: domain.HarnessCodex, IdempotencyKey: "switch-from-fx",
+		TargetHarness: domain.HarnessCodex, IdempotencyKey: "switch-from-after-start-source",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -2575,28 +2501,28 @@ func TestSwitchAgentFromFXToOtherTUIRetainsSourceNativeOwnership(t *testing.T) {
 	}
 	var sourceNative *domain.AgentNativeSession
 	for _, native := range store.native {
-		if native.Harness == domain.HarnessFX && native.NativeSessionID == "fx-source-native" {
+		if native.Harness == domain.HarnessClaudeCode && native.NativeSessionID == "after-start-source-native" {
 			nativeCopy := native
 			sourceNative = &nativeCopy
 			break
 		}
 	}
 	if sourceNative == nil || sourceNative.LastGenerationID != sw.SourceGenerationID || sourceNative.AOSessionID != rec.ID {
-		t.Fatalf("preserved fx source native ownership = %+v", sourceNative)
+		t.Fatalf("preserved source native ownership = %+v", sourceNative)
 	}
 }
 
-func TestSwitchAgentToFXDeliveryFailureKeepsCommittedTargetAndFailsObservably(t *testing.T) {
+func TestSwitchAgentTargetDeliveryFailureKeepsCommittedTargetAndFailsObservably(t *testing.T) {
 	runtime := &switchCreateCallbackRuntime{fakeRestartRuntime: &fakeRestartRuntime{fakeRuntime: &fakeRuntime{}}}
 	manager, store, messenger := newSwitchTestManager(t, runtime)
 	target := &switchAfterStartAgent{switchTestAgent: &switchTestAgent{
-		configDir: filepath.Join(t.TempDir(), "fx"), freshNativeIDMode: ports.FreshNativeSessionIDProviderAssigned,
+		configDir: filepath.Join(t.TempDir(), "target"), freshNativeIDMode: ports.FreshNativeSessionIDProviderAssigned,
 	}}
-	manager.agents.(switchTestAgents)[domain.HarnessFX] = target
+	manager.agents.(switchTestAgents)[domain.HarnessCodex] = target
 	runtime.afterCreate = func(_ ports.RuntimeConfig, _ ports.RuntimeHandle) {
 		sw, _, _ := store.GetActiveAgentSwitch(context.Background(), "proj-1")
 		native, _, _ := store.GetAgentNativeSession(context.Background(), *sw.TargetNativeSessionRef)
-		native.NativeSessionID = "fx-native-failed-delivery"
+		native.NativeSessionID = "target-native-failed-delivery"
 		_, _ = store.UpdateAgentNativeSession(context.Background(), native, sw.TargetGenerationID)
 	}
 	manager.lcm.(*switchReleaseLCM).onRelease = nil
@@ -2608,7 +2534,7 @@ func TestSwitchAgentToFXDeliveryFailureKeepsCommittedTargetAndFailsObservably(t 
 	}
 
 	sw, err := switchAgentSynchronously(context.Background(), manager, "proj-1", SwitchAgentConfig{
-		TargetHarness: domain.HarnessFX, IdempotencyKey: "fx-delivery-failure",
+		TargetHarness: domain.HarnessCodex, IdempotencyKey: "delivery-failure",
 	})
 	if err == nil || !strings.Contains(err.Error(), "pane write failed") {
 		t.Fatalf("switch error = %v, want pane delivery failure", err)
@@ -2616,7 +2542,7 @@ func TestSwitchAgentToFXDeliveryFailureKeepsCommittedTargetAndFailsObservably(t 
 	if sw.State != domain.AgentSwitchFailed || sw.ErrorCode != domain.AgentSwitchErrorDeliveryFailed {
 		t.Fatalf("switch = state %q code %q, want failed/delivery_failed", sw.State, sw.ErrorCode)
 	}
-	if got := store.sessions["proj-1"]; got.Harness != domain.HarnessFX || got.Metadata.RuntimeLaunchID != "target-generation" {
+	if got := store.sessions["proj-1"]; got.Harness != domain.HarnessCodex || got.Metadata.RuntimeLaunchID != "target-generation" {
 		t.Fatalf("failed delivery lost committed target ownership: %+v", got)
 	}
 	if target.buildCalls != 1 || len(messenger.msgs) != 1 {

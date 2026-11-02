@@ -13,9 +13,7 @@ import (
 // adapter is a known reviewer harness, and every known harness has an adapter.
 func TestRegistryMatchesDomainVocabulary(t *testing.T) {
 	registered := map[domain.ReviewerHarness]bool{}
-	oneShotReviewers := map[domain.ReviewerHarness]bool{
-		domain.ReviewerDroid: true,
-	}
+	oneShotReviewers := map[domain.ReviewerHarness]bool{}
 	for _, a := range Constructors() {
 		h := a.Harness()
 		if !h.IsKnown() {
@@ -48,7 +46,7 @@ func TestRegistryMatchesDomainVocabulary(t *testing.T) {
 				if len(spec.Inputs) != 2 || spec.Inputs[0] != "\x1b" || spec.Inputs[1] != "\x1b" {
 					t.Errorf("reviewer harness %q cancel inputs = %#v, want double escape", h, spec.Inputs)
 				}
-			case domain.ReviewerAgy, domain.ReviewerDroid:
+			case domain.ReviewerAgy:
 				if spec.Mode != ports.ReviewCancelInterrupt {
 					t.Errorf("reviewer harness %q cancel mode = %q, want %q", h, spec.Mode, ports.ReviewCancelInterrupt)
 				}
@@ -91,7 +89,7 @@ func TestNewResolverResolvesShippedReviewers(t *testing.T) {
 	if _, ok := resolver.Reviewer("nope"); ok {
 		t.Error("resolver returned an adapter for an unknown harness")
 	}
-	for _, removed := range []domain.ReviewerHarness{"continue", "goose", "vibe", "qwen", "copilot", "cursor"} {
+	for _, removed := range []domain.ReviewerHarness{"continue", "goose", "vibe", "qwen", "copilot", "cursor", "droid", "kimi", "amp", "autohand"} {
 		if _, ok := resolver.Reviewer(removed); ok {
 			t.Errorf("resolver returned removed reviewer %q", removed)
 		}
@@ -114,7 +112,8 @@ func TestResolverInvalidatesOneReviewersBinary(t *testing.T) {
 	}}
 
 	resolver.InvalidateBinaryResolution(domain.HarnessCodex)
-	resolver.InvalidateBinaryResolution(domain.HarnessGoose)
+	// A cut worker harness has no reviewer adapter; the invalidation is a no-op.
+	resolver.InvalidateBinaryResolution(domain.AgentHarness("goose"))
 
 	if codex.invalidated != 1 || claude.invalidated != 0 {
 		t.Fatalf("invalidations codex=%d claude=%d, want 1 and 0", codex.invalidated, claude.invalidated)

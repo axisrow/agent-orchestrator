@@ -24,33 +24,13 @@ func readinessAgentsJSON(agent, installation, authentication string) string {
 		`,"effectiveReadiness":"unknown","usageCount":0}]}`
 }
 
-func TestSpawnHelpListsDroidHarness(t *testing.T) {
-	out, errOut, err := executeCLI(t, Deps{}, "spawn", "--help")
-	if err != nil {
-		t.Fatalf("spawn --help: %v\nstderr: %s", err, errOut)
-	}
-	if !strings.Contains(out, "droid") {
-		t.Fatalf("spawn help does not list droid:\n%s", out)
-	}
-}
-
-func TestSpawnHelpListsFXHarness(t *testing.T) {
-	out, _, err := executeCLI(t, Deps{}, "spawn", "--help")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(out, ", fx,") {
-		t.Fatalf("spawn help does not list fx:\n%s", out)
-	}
-}
-
 func TestSpawnHelpListsOpenCodeV2Harness(t *testing.T) {
 	out, _, err := executeCLI(t, Deps{}, "spawn", "--help")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "opencode, opencode-v2") {
-		t.Fatalf("spawn help does not list OpenCode 1 and 2 distinctly:\n%s", out)
+	if !strings.Contains(out, "opencode-v2") {
+		t.Fatalf("spawn help does not list opencode-v2:\n%s", out)
 	}
 }
 

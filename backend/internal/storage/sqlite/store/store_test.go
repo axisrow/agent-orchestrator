@@ -178,18 +178,20 @@ func TestSessionCreateAllowsPrimeAgentHarness(t *testing.T) {
 	}
 }
 
+// fx is a cut harness; the sessions.harness CHECK still admits it so
+// historical rows keep loading.
 func TestSessionCreateAndReadFXHarness(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 	seedProject(t, s, "fx-project")
 	rec := sampleRecord("fx-project")
-	rec.Harness = domain.HarnessFX
+	rec.Harness = domain.AgentHarness("fx")
 	created, err := s.CreateSession(ctx, rec)
 	if err != nil {
 		t.Fatalf("create fx session: %v", err)
 	}
 	got, ok, err := s.GetSession(ctx, created.ID)
-	if err != nil || !ok || got.Harness != domain.HarnessFX {
+	if err != nil || !ok || got.Harness != domain.AgentHarness("fx") {
 		t.Fatalf("read fx session = %+v, %v, %v", got, ok, err)
 	}
 }

@@ -30,7 +30,7 @@ describe("sessionsAtRiskFromInstall", () => {
 		expect(sessionsAtRiskFromInstall([session({ mode: "tui" })])).toEqual([]);
 	});
 
-	it.each(["codex", "claude-code", "opencode-v2", "droid", "kimi", "pi", "omp"] as const)(
+	it.each(["codex", "claude-code", "opencode-v2", "agy", "pi", "omp"] as const)(
 		"spares %s only when the daemon confirms persistent ownership",
 		(provider) => {
 			expect(sessionsAtRiskFromInstall([session({ provider, chatProviderPreserved: true })])).toEqual([]);

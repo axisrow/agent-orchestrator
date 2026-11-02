@@ -174,18 +174,6 @@ describe("TerminalSwitchAgentButton", () => {
 		expect(screen.queryByRole("button", { name: "Switch agent" })).not.toBeInTheDocument();
 	});
 
-	it("renders for an fx TUI worker", async () => {
-		renderControl({ ...worker, mode: "tui", provider: "fx" });
-
-		expect(await screen.findByRole("button", { name: "Switch agent" })).toBeInTheDocument();
-	});
-
-	it("does not expose switching from an fx Chat worker", () => {
-		renderControl({ ...worker, mode: "chat", provider: "fx" });
-
-		expect(screen.queryByRole("button", { name: "Switch agent" })).not.toBeInTheDocument();
-	});
-
 	it("opens the existing dialog and submits the selected switch", async () => {
 		const activeSwitch = switchRecord();
 		postMock.mockResolvedValue({ data: { switch: activeSwitch }, error: undefined, response: { status: 202 } });
@@ -204,7 +192,7 @@ describe("TerminalSwitchAgentButton", () => {
 		expect(targetAgent).toHaveTextContent("Codex");
 		await userEvent.click(targetAgent);
 		expect(screen.getAllByRole("menuitem")).toHaveLength(AGENT_OPTIONS.length);
-		expect(screen.getByRole("menuitem", { name: /Qwen,\s*Coming soon/ })).toHaveAttribute("data-disabled");
+		expect(screen.getByRole("menuitem", { name: /OMP,\s*Coming soon/ })).toHaveAttribute("data-disabled");
 		await userEvent.keyboard("{Escape}");
 		expect(within(dialog).queryByRole("textbox")).not.toBeInTheDocument();
 		await userEvent.click(within(dialog).getByRole("button", { name: "Switch" }));

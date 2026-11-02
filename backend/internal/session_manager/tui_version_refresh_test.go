@@ -392,9 +392,6 @@ func TestTerminalRefreshSupportMatrix(t *testing.T) {
 	for _, harness := range domain.AllHarnesses {
 		supported[string(harness)] = true
 	}
-	for _, name := range []string{"memcode"} {
-		supported[name] = false
-	}
 	for _, adapter := range agentregistry.Constructors() {
 		name := adapter.Manifest().ID
 		capability, ok := adapter.(ports.AgentTerminalVersionRefresher)

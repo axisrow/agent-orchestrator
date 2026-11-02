@@ -31,9 +31,7 @@ ao spawn [flags]
 
 `--agent` is an alias for `--harness`.
 
-Available harnesses: `claude-code`, `codex`, `opencode-v2`, `droid`, `amp`, `agy`, `qwen`, `goose`, `kimi`, `pi`, `autohand`, `omp`, `fx`, `memcode`. Check `ao agent ls --refresh` for readiness on the installed build.
-
-`fx` is experimental and Terminal UI only: spawn it with `--agent fx --mode tui`.
+Available harnesses: `claude-code`, `codex`, `opencode-v2`, `agy`, `pi`, `omp`. Check `ao agent ls --refresh` for readiness on the installed build.
 
 ## Examples
 

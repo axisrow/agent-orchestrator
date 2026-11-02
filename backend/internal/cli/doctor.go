@@ -101,10 +101,7 @@ var harnessProbeSpecs = map[string]harnessProbeSpec{
 	"claude-code": {BinaryName: "claude", VersionArg: "--version"},
 	"codex":       {BinaryName: "codex", VersionArg: "--version"},
 	"opencode-v2": {BinaryName: "opencode-v2", VersionArg: "--version"},
-	"goose":       {BinaryName: "goose", VersionArg: "--version"},
-	"kimi":        {BinaryName: "kimi", VersionArg: "--version"},
 	"omp":         {BinaryName: "omp", VersionArg: "--version"},
-	"memcode":     {BinaryName: "memcode", VersionArg: "--version"},
 }
 
 func newDoctorCommand(ctx *commandContext) *cobra.Command {

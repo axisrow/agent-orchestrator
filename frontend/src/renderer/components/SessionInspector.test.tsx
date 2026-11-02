@@ -4202,7 +4202,7 @@ describe("SessionInspector summary reviews", () => {
     const failedAutoReview = {
       ...failedReview,
       triggerSource: "auto",
-      body: 'reviewer preflight: reviewer harness "kimi" is unauthorized',
+      body: 'reviewer preflight: reviewer harness "pi" is unauthorized',
     };
     mockCommonGets([], "", [
       {
@@ -4219,7 +4219,7 @@ describe("SessionInspector summary reviews", () => {
     await openReviewsSection();
 
     expect(screen.getByRole("status")).toHaveTextContent(
-      'Auto review Failed: reviewer preflight: reviewer harness "kimi" is unauthorized',
+      'Auto review Failed: reviewer preflight: reviewer harness "pi" is unauthorized',
     );
   });
 

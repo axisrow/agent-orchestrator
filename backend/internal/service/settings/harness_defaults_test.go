@@ -72,20 +72,20 @@ func TestHarnessDisabledModelsAreNormalizedAndBounded(t *testing.T) {
 	store := &harnessSettingsStore{defaults: make(map[string]domain.HarnessDefault)}
 	svc := New(store, nil, Offering{}, nil)
 	for _, ids := range [][]string{{" "}, {strings.Repeat("m", 257)}, {"a\nb"}, make([]string, maxDisabledModels+1)} {
-		if _, err := svc.SetHarnessDefault(ctx, domain.HarnessGoose, domain.HarnessDefault{DisabledModels: ids}); !errors.Is(err, ErrInvalidHarnessDefault) {
+		if _, err := svc.SetHarnessDefault(ctx, domain.HarnessOMP, domain.HarnessDefault{DisabledModels: ids}); !errors.Is(err, ErrInvalidHarnessDefault) {
 			t.Fatalf("disabled models %q: %v", ids, err)
 		}
 	}
-	if _, err := svc.SetHarnessDefault(ctx, domain.HarnessGoose, domain.HarnessDefault{DisabledModels: []string{" gpt-5 ", "claude", "gpt-5"}}); err != nil {
+	if _, err := svc.SetHarnessDefault(ctx, domain.HarnessOMP, domain.HarnessDefault{DisabledModels: []string{" gpt-5 ", "claude", "gpt-5"}}); err != nil {
 		t.Fatal(err)
 	}
-	if got := harnessDefault(t, svc, domain.HarnessGoose); !reflect.DeepEqual(got.DisabledModels, []string{"gpt-5", "claude"}) {
+	if got := harnessDefault(t, svc, domain.HarnessOMP); !reflect.DeepEqual(got.DisabledModels, []string{"gpt-5", "claude"}) {
 		t.Fatalf("disabled models = %+v", got)
 	}
-	if _, err := svc.SetHarnessDefault(ctx, domain.HarnessGoose, domain.HarnessDefault{DisabledModels: []string{}}); err != nil {
+	if _, err := svc.SetHarnessDefault(ctx, domain.HarnessOMP, domain.HarnessDefault{DisabledModels: []string{}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, saved := store.defaults[string(domain.HarnessGoose)]; saved {
+	if _, saved := store.defaults[string(domain.HarnessOMP)]; saved {
 		t.Fatal("empty disabled models should remove the entry")
 	}
 }

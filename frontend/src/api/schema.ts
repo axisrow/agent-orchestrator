@@ -4977,7 +4977,7 @@ export interface components {
             reviewOnly?: boolean;
             reviewerConfig?: components["schemas"]["AgentConfig"];
             /** @enum {string} */
-            reviewerHarness?: "claude-code" | "codex" | "opencode-v2" | "pi" | "agy" | "droid" | "kimi" | "amp" | "autohand";
+            reviewerHarness?: "claude-code" | "codex" | "opencode-v2" | "pi" | "agy";
             /** @enum {string} */
             scmStatus?: "pr_open" | "draft" | "ci_failed" | "review_pending" | "changes_requested" | "commented" | "approved" | "mergeable" | "merged";
             staleBinary?: components["schemas"]["SessionStaleBinary"];
@@ -5358,7 +5358,7 @@ export interface components {
         };
         DelegateTaskRequest: {
             /** @enum {string} */
-            agent?: "claude-code" | "codex" | "opencode-v2" | "droid" | "amp" | "agy" | "qwen" | "goose" | "kimi" | "pi" | "autohand" | "omp" | "fx" | "memcode" | "fake";
+            agent?: "claude-code" | "codex" | "opencode-v2" | "agy" | "pi" | "omp" | "fake";
             /** @enum {string} */
             approvalMode?: "default" | "accept-edits" | "auto" | "bypass-permissions";
             attachments?: components["schemas"]["AttachmentInput"][];
@@ -6808,7 +6808,7 @@ export interface components {
         SetSessionReviewerRequest: {
             agentConfig?: components["schemas"]["AgentConfig"];
             /** @enum {string} */
-            harness?: "claude-code" | "codex" | "opencode-v2" | "pi" | "agy" | "droid" | "kimi" | "amp" | "autohand";
+            harness?: "claude-code" | "codex" | "opencode-v2" | "pi" | "agy";
         };
         SetUserConfigInput: {
             agentConfig: components["schemas"]["AgentConfig"];
@@ -6869,7 +6869,7 @@ export interface components {
             displayName?: string;
             effort?: string;
             /** @enum {string} */
-            harness?: "claude-code" | "codex" | "opencode-v2" | "droid" | "amp" | "agy" | "qwen" | "goose" | "kimi" | "pi" | "autohand" | "omp" | "fx" | "memcode";
+            harness?: "claude-code" | "codex" | "opencode-v2" | "agy" | "pi" | "omp";
             issueId?: string;
             /** @enum {string} */
             kind?: "worker" | "orchestrator";
@@ -7037,7 +7037,7 @@ export interface components {
              * @description Agent harness to continue the logical AO session with.
              * @enum {string}
              */
-            targetHarness: "claude-code" | "codex" | "fx";
+            targetHarness: "claude-code" | "codex";
         };
         SwitchSessionAgentAccountRequest: {
             accountId: string;
@@ -7099,7 +7099,7 @@ export interface components {
             /** @description Turn on the worker session's review auto-inject once a pass has started, so the reviewer's PR review comments reach the worker. */
             enableAutoInject?: boolean;
             /** @enum {string} */
-            harness?: "claude-code" | "codex" | "opencode-v2" | "pi" | "agy" | "droid" | "kimi" | "amp" | "autohand";
+            harness?: "claude-code" | "codex" | "opencode-v2" | "pi" | "agy";
             /** @enum {string} */
             interfaceMode?: "chat" | "tui";
             /** @description Restrict the pass to this pull request, attaching it to the session first if AO does not track it yet (never from another active session). Omit to review every eligible PR on the session. */

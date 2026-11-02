@@ -4,17 +4,9 @@ export const AGENT_OPTIONS = [
 	"claude-code",
 	"codex",
 	"opencode-v2",
-	"droid",
-	"amp",
 	"agy",
-	"qwen",
-	"goose",
-	"kimi",
 	"pi",
-	"autohand",
 	"omp",
-	"fx",
-	"memcode",
 ] as const;
 
 export type AgentId = (typeof AGENT_OPTIONS)[number];
@@ -29,17 +21,9 @@ export const AGENT_LABELS: Record<AgentId, string> = {
 	"claude-code": "Claude Code",
 	codex: "Codex",
 	"opencode-v2": "OpenCode 2",
-	droid: "Droid",
-	amp: "Amp",
 	agy: "AGY",
-	qwen: "Qwen",
-	goose: "Goose",
-	kimi: "Kimi",
 	pi: "Pi",
-	autohand: "Autohand",
 	omp: "OMP",
-	fx: "fx",
-	memcode: "memcode",
 };
 
 export const AGENT_IDENTITIES: ReadonlyMap<AgentId, AgentIdentity> = new Map(

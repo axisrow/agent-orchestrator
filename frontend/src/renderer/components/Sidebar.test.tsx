@@ -1504,9 +1504,9 @@ describe("Sidebar", () => {
 		mockAgentReadinessResponse({
 			data: {
 				agents: [
-					agentReadiness("goose", "Goose"),
-					agentReadiness("amp", "Amp"),
-					agentReadiness("qwen", "Qwen"),
+					agentReadiness("pi", "Pi"),
+					agentReadiness("agy", "AGY"),
+					agentReadiness("omp", "OMP"),
 					agentReadiness("codex", "Codex"),
 					agentReadiness("opencode-v2", "OpenCode 2"),
 				],
@@ -1525,9 +1525,9 @@ describe("Sidebar", () => {
 		expect((await screen.findAllByRole("option")).map((option) => option.textContent)).toEqual([
 			"Codex",
 			"OpenCode 2",
-			"Amp",
-			"Goose",
-			"Qwen",
+			"AGY",
+			"OMP",
+			"Pi",
 			"Manage agents…",
 		]);
 		await user.keyboard("{Escape}");
@@ -1962,7 +1962,7 @@ describe("Sidebar", () => {
 				agents: [
 					agentReadiness("claude-code", "Claude Code"),
 					agentReadiness("opencode", "OpenCode", { authentication: "unauthorized" }),
-					agentReadiness("qwen", "Qwen", { installation: "not_installed", authentication: "unknown" }),
+					agentReadiness("omp", "OMP", { installation: "not_installed", authentication: "unknown" }),
 				],
 			},
 			error: undefined,

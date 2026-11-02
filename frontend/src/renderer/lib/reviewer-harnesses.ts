@@ -12,12 +12,8 @@ export type ReviewerHarnessId = NonNullable<components["schemas"]["TriggerReview
 
 const REVIEWER_HARNESS_IDS = [
 	"agy",
-	"amp",
-	"autohand",
 	"claude-code",
 	"codex",
-	"droid",
-	"kimi",
 	"opencode-v2",
 	"pi",
 ] as const satisfies readonly ReviewerHarnessId[];

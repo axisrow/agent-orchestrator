@@ -957,19 +957,6 @@ func (s *Service) loadModels(ctx context.Context, agentID, projectID string, mod
 		}
 		return fallback, nil
 	}
-	// A partial FX refresh updates successful connections and keeps only the
-	// unavailable connections' previous models in the shared catalog.
-	if agentID == "fx" && hasCached {
-		unavailable := strings.Split(discovered.Metadata["unavailableProviders"], ",")
-		for _, model := range cached.Catalog.Models {
-			for _, provider := range unavailable {
-				if provider != "" && model.Provider == provider {
-					discovered.Models = append(discovered.Models, model)
-					break
-				}
-			}
-		}
-	}
 	now := s.now().UTC()
 	discovered.ValidatedAt = now
 	discovered.LastSuccessAt = &now

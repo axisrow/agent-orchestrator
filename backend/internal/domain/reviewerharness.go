@@ -15,10 +15,6 @@ const (
 	ReviewerOpenCodeV2 ReviewerHarness = "opencode-v2"
 	ReviewerPi         ReviewerHarness = "pi"
 	ReviewerAgy        ReviewerHarness = "agy"
-	ReviewerDroid      ReviewerHarness = "droid"
-	ReviewerKimi       ReviewerHarness = "kimi"
-	ReviewerAmp        ReviewerHarness = "amp"
-	ReviewerAutohand   ReviewerHarness = "autohand"
 )
 
 // AllReviewerHarnesses is the canonical set used to validate a configured
@@ -29,10 +25,6 @@ var AllReviewerHarnesses = []ReviewerHarness{
 	ReviewerOpenCodeV2,
 	ReviewerPi,
 	ReviewerAgy,
-	ReviewerDroid,
-	ReviewerKimi,
-	ReviewerAmp,
-	ReviewerAutohand,
 }
 
 // IsKnown reports whether h is one of the supported reviewer harnesses.

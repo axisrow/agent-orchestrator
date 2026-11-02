@@ -204,9 +204,9 @@ describe("CreateProjectAgentSheet", () => {
 			agents={[
 				agentReadiness("claude-code", "Claude Code", { freshness: "stale" }),
 				agentReadiness("codex", "Codex", { authentication: "unauthorized" }),
-				agentReadiness("qwen", "Qwen", { authentication: "not_applicable" }),
-				agentReadiness("fx", "fx", { authentication: "configured" }),
-				agentReadiness("goose", "Goose", { installation: "not_installed" }),
+				agentReadiness("omp", "OMP", { authentication: "not_applicable" }),
+				agentReadiness("agy", "Agy", { authentication: "configured" }),
+				agentReadiness("pi", "Pi", { installation: "not_installed" }),
 				agentReadiness("opencode", "OpenCode", { authentication: "unknown" }),
 			]}
 		/>);
@@ -217,10 +217,10 @@ describe("CreateProjectAgentSheet", () => {
 		await userEvent.click(trigger);
 		const role = variant === "stacked" ? "option" : "menuitem";
 		expect(screen.getByRole(role, { name: /Claude Code/ })).toBeInTheDocument();
-		expect(screen.getByRole(role, { name: /Qwen/ })).toBeInTheDocument();
-		expect(screen.getByRole(role, { name: /fx.*Unverified/ })).toBeInTheDocument();
+		expect(screen.getByRole(role, { name: /OMP/ })).toBeInTheDocument();
+		expect(screen.getByRole(role, { name: /Agy.*Unverified/ })).toBeInTheDocument();
 		expect(screen.getByRole(role, { name: /OpenCode.*Auth unknown/ })).not.toHaveAttribute("aria-disabled", "true");
-		for (const name of [/Codex/, /Goose/]) expect(screen.queryByRole(role, { name })).not.toBeInTheDocument();
+		for (const name of [/Codex/, /Pi/]) expect(screen.queryByRole(role, { name })).not.toBeInTheDocument();
 		await userEvent.keyboard("{End}{Enter}");
 		await waitFor(() => expect(useUiStore.getState().settingsModal).toEqual({ scope: "global", section: "harness", focusAgentId: "codex" }));
 		expect(onChange).not.toHaveBeenCalled();
@@ -236,10 +236,10 @@ describe("CreateProjectAgentSheet", () => {
 	});
 
 	it("does not send an installed configured agent back to setup", () => {
-		render(<RequiredAgentField id="agent" label="Agent" placeholder="Choose agent" value="fx" variant="chip" onChange={() => undefined}
-			agents={[agentReadiness("fx", "fx", { authentication: "configured" })]} />);
+		render(<RequiredAgentField id="agent" label="Agent" placeholder="Choose agent" value="agy" variant="chip" onChange={() => undefined}
+			agents={[agentReadiness("agy", "Agy", { authentication: "configured" })]} />);
 
-		expect(screen.getByLabelText("Agent")).toHaveTextContent("fx");
+		expect(screen.getByLabelText("Agent")).toHaveTextContent("Agy");
 		expect(screen.getByLabelText("Agent")).not.toHaveTextContent("Needs setup");
 	});
 

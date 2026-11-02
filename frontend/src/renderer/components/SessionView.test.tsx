@@ -4128,7 +4128,7 @@ describe("SessionView", () => {
 		settingsState.chatHarnesses = ["claude-code", "codex"];
 		interfaceTransitionState.status = status;
 		const session = workerSession("sess-1");
-		session.provider = "goose";
+		session.provider = "omp";
 		session.mode = "tui";
 		if (terminated) session.isTerminated = true;
 

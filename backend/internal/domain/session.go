@@ -299,7 +299,7 @@ type SessionRecord struct {
 	Harness                AgentHarness `json:"harness,omitempty"`
 	// ReviewerHarness is this session's preferred reviewer. Empty delegates to
 	// the project configuration.
-	ReviewerHarness   ReviewerHarness `json:"reviewerHarness,omitempty" enum:"claude-code,codex,opencode-v2,pi,agy,droid,kimi,amp,autohand"`
+	ReviewerHarness   ReviewerHarness `json:"reviewerHarness,omitempty" enum:"claude-code,codex,opencode-v2,pi,agy"`
 	ReviewerConfig    AgentConfig     `json:"reviewerConfig,omitempty"`
 	AutoReviewEnabled bool            `json:"autoReviewEnabled"`
 	DisplayName       string          `json:"displayName,omitempty"`

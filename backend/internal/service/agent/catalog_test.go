@@ -1068,38 +1068,6 @@ func TestRefreshUsesNormalResolutionInsteadOfStartupPresenceShortcut(t *testing.
 	}
 }
 
-func TestDefaultCatalogDisplaysDroid(t *testing.T) {
-	got, err := New().List(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, info := range got.Supported {
-		if info.ID == "droid" {
-			if info.Label != "Droid" {
-				t.Fatalf("droid label = %q, want Droid", info.Label)
-			}
-			return
-		}
-	}
-	t.Fatal("default catalog does not contain droid")
-}
-
-func TestDefaultCatalogDisplaysFX(t *testing.T) {
-	got, err := New().List(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, info := range got.Supported {
-		if info.ID == "fx" {
-			if info.Label != "fx" {
-				t.Fatalf("fx label = %q, want fx", info.Label)
-			}
-			return
-		}
-	}
-	t.Fatal("default catalog does not contain fx")
-}
-
 func TestRefreshReportsInstalledAgentsAndIgnoresDetectorErrors(t *testing.T) {
 	svc := NewWithAgents([]agentregistry.HarnessAgent{
 		harnessAgent("codex", "Codex", nil),
@@ -1834,9 +1802,7 @@ func TestModelsUsesCapabilityAwareFallbackWhenDiscoveryCannotRun(t *testing.T) {
 		wantSelection  ports.ModelSelectionMode
 		wantAllowInput bool
 	}{
-		{agent: "qwen", wantEntryMode: ports.CustomModelEntryDirect, wantSelection: ports.ModelSelectionText, wantAllowInput: true},
 		{agent: "opencode-v2", wantEntryMode: ports.CustomModelEntryDirect, wantSelection: ports.ModelSelectionText, wantAllowInput: true},
-		{agent: "goose", wantEntryMode: ports.CustomModelEntryDirect, wantSelection: ports.ModelSelectionText, wantAllowInput: true},
 	} {
 		t.Run(tc.agent, func(t *testing.T) {
 			emptyHome := t.TempDir()
@@ -1853,7 +1819,7 @@ func TestModelsUsesCapabilityAwareFallbackWhenDiscoveryCannotRun(t *testing.T) {
 			if got.SelectionMode != tc.wantSelection || got.CustomModelEntry != tc.wantEntryMode || got.AllowCustom != tc.wantAllowInput || got.Source != "manual" || len(got.Models) != 0 {
 				t.Fatalf("catalog = %#v, want capability-aware fallback", got)
 			}
-			if tc.agent != "qwen" && (!got.Stale || got.Warning == "") {
+			if !got.Stale || got.Warning == "" {
 				t.Fatalf("catalog = %#v, want discovery warning on manual fallback", got)
 			}
 		})
@@ -1868,7 +1834,6 @@ func TestModelsNormalizesCustomEntryPolicyInOldCache(t *testing.T) {
 	}{
 		{agent: "codex", wantEntryMode: ports.CustomModelEntryDirect, wantAllowInput: true},
 		{agent: "opencode-v2", wantEntryMode: ports.CustomModelEntryDirect, wantAllowInput: true},
-		{agent: "goose", wantEntryMode: ports.CustomModelEntryDirect, wantAllowInput: true},
 	} {
 		t.Run(tc.agent, func(t *testing.T) {
 			oldCatalog := map[string]any{
@@ -2746,34 +2711,6 @@ func TestSettingsAndTaskModelsSharePersistentCatalog(t *testing.T) {
 				t.Fatal("Settings created a separate browsing catalog")
 			}
 		})
-	}
-}
-
-func TestSharedCatalogRefreshRetainsOnlyFailedProviderModels(t *testing.T) {
-	cache := &fakeModelCache{}
-	discoverer := successfulModelDiscoverer()
-	discoverer.catalog = ports.AgentModelCatalog{AgentID: "fx", Models: []ports.AgentModelInfo{
-		{ID: "old", Provider: "gateway"}, {ID: "cached", Provider: "codex"},
-	}}
-	svc := newService([]agentregistry.HarnessAgent{harnessAgent("fx", "FX", nil)}, cache, discoverer)
-	if _, err := svc.ModelCatalog(context.Background(), "fx", "", true); err != nil {
-		t.Fatal(err)
-	}
-	discoverer.mu.Lock()
-	discoverer.catalog = ports.AgentModelCatalog{AgentID: "fx", Models: []ports.AgentModelInfo{{ID: "new", Provider: "gateway"}},
-		Metadata: map[string]string{"unavailableProviders": "codex"}, Warning: "Codex unavailable"}
-	discoverer.mu.Unlock()
-	for range 2 {
-		got, err := svc.ModelCatalog(context.Background(), "fx", "", true)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(got.Models) != 2 || got.Models[0].ID != "new" || got.Models[1].ID != "cached" {
-			t.Fatalf("models = %#v", got.Models)
-		}
-		if got.Warning == "" {
-			t.Fatal("missing partial refresh explanation")
-		}
 	}
 }
 

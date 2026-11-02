@@ -14,7 +14,6 @@ import (
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/activitydispatch"
-	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/fx/herdr"
 	agentregistry "github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/registry"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/container/dockerreap"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/reviewer"
@@ -63,7 +62,6 @@ type lifecycleStack struct {
 	autoReviewDone   <-chan struct{}
 	scmDone          <-chan struct{}
 	trackerDone      <-chan struct{}
-	herdr            *herdr.Server
 	automationDone   <-chan struct{}
 }
 
@@ -84,12 +82,6 @@ func startLifecycle(ctx context.Context, dataDir string, store *sqlite.Store, ru
 	rp := reaper.New(lcm, store, runtime, reaper.Config{Logger: logger})
 	activityPoller := activityobserver.New(store, lcm, runtime, agents, activityobserver.Config{Logger: logger})
 	turnFailurePoller := activityobserver.NewTurnFailureObserver(store, lcm, agents, activityobserver.TurnFailureConfig{Logger: logger})
-	herdrServer, err := herdr.Start(ctx, dataDir, lcm, logger)
-	if err != nil {
-		// fx treats reporting as best effort; an occupied or unavailable socket
-		// must not prevent the daemon or ordinary agent sessions from starting.
-		logger.Warn("fx Herdr listener unavailable", "error", err)
-	}
 	artifactVersions := artifactversions.New(store, dataDir, logger)
 	artifactsPoller := artifactsobserver.New(store, lcm, artifactVersions, artifactsobserver.Config{Logger: logger})
 	return &lifecycleStack{
@@ -99,7 +91,6 @@ func startLifecycle(ctx context.Context, dataDir string, store *sqlite.Store, ru
 		reaperDone:       rp.Start(ctx),
 		activityDone:     activityPoller.Start(ctx),
 		turnFailureDone:  turnFailurePoller.Start(ctx),
-		herdr:            herdrServer,
 		artifactsDone:    artifactsPoller.Start(ctx),
 	}
 }
@@ -171,9 +162,6 @@ func activeTurnSteering(agents ports.AgentResolver) func(domain.AgentHarness) bo
 // Stop waits for the reaper goroutine to exit. The caller must cancel the ctx
 // passed to startLifecycle before calling Stop.
 func (l *lifecycleStack) Stop() {
-	if l.herdr != nil {
-		l.herdr.Stop()
-	}
 	<-l.reaperDone
 	if l.activityDone != nil {
 		<-l.activityDone

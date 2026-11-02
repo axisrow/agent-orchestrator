@@ -296,12 +296,11 @@ func TestRunBackgroundTaskUsesResolvedWorkerHarnessAndConfig(t *testing.T) {
 	}
 }
 
-func TestBackgroundTaskPermissionsKeepKimiCompatible(t *testing.T) {
-	if got := backgroundTaskPermissions(domain.HarnessKimi); got != ports.PermissionModeDefault {
-		t.Fatalf("Kimi permissions = %q, want default", got)
-	}
-	if got := backgroundTaskPermissions(domain.HarnessCodex); got != ports.PermissionModeAcceptEdits {
-		t.Fatalf("Codex permissions = %q, want accept-edits", got)
+func TestBackgroundTaskPermissionsDefaultToAcceptEdits(t *testing.T) {
+	for _, harness := range []domain.AgentHarness{domain.HarnessClaudeCode, domain.HarnessCodex, domain.HarnessOMP} {
+		if got := backgroundTaskPermissions(harness); got != ports.PermissionModeAcceptEdits {
+			t.Fatalf("%s permissions = %q, want accept-edits", harness, got)
+		}
 	}
 }
 

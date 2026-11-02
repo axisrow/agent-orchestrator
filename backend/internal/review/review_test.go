@@ -2729,11 +2729,11 @@ func TestTriggerRestoresWhenRecordedReviewerDead(t *testing.T) {
 
 func TestTriggerSpawnsFreshPassForNonReusableReviewer(t *testing.T) {
 	store := &fakeStore{
-		review: &domain.Review{ID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerDroid, ReviewerHandleID: "review-mer-1"},
+		review: &domain.Review{ID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerAgy, ReviewerHandleID: "review-mer-1"},
 		runs:   []domain.ReviewRun{{ID: "run-0", SessionID: "mer-1", PRURL: "https://github.com/o/r/pull/1", TargetSHA: "sha0", Status: domain.ReviewRunComplete}},
 	}
 	launcher := &fakeLauncher{alive: true, handle: "review-mer-1", reusableSet: true, reusable: false}
-	projects := fakeProjects{cfg: domain.ProjectConfig{Reviewers: []domain.ReviewerConfig{{Harness: domain.ReviewerDroid}}}}
+	projects := fakeProjects{cfg: domain.ProjectConfig{Reviewers: []domain.ReviewerConfig{{Harness: domain.ReviewerAgy}}}}
 	eng := newEngineForTest(store, fakeSessions{rec: liveWorker(), ok: true}, prAt("sha1"), projects, launcher)
 
 	res, err := trigger(context.Background(), eng, "mer-1", "", domain.AgentConfig{})
@@ -2744,10 +2744,10 @@ func TestTriggerSpawnsFreshPassForNonReusableReviewer(t *testing.T) {
 		t.Fatalf("expected a fresh review run for sha1, got %+v", res)
 	}
 	if !launcher.spawned || launcher.restored || launcher.notified || launcher.aliveChecked {
-		t.Fatalf("Droid reviewer should spawn fresh without alive/restore/notify reuse: %+v", launcher)
+		t.Fatalf("non-reusable reviewer should spawn fresh without alive/restore/notify reuse: %+v", launcher)
 	}
-	if launcher.gotSpec.Harness != domain.ReviewerDroid {
-		t.Fatalf("spawn harness = %q, want droid", launcher.gotSpec.Harness)
+	if launcher.gotSpec.Harness != domain.ReviewerAgy {
+		t.Fatalf("spawn harness = %q, want agy", launcher.gotSpec.Harness)
 	}
 }
 

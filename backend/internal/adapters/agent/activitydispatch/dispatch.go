@@ -9,14 +9,10 @@
 package activitydispatch
 
 import (
-	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/activitystate"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/agy"
-	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/amp"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/claudecode"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/codex"
-	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/droid"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/fake"
-	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/memcode"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/omp"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/opencodev2"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/pi"
@@ -35,16 +31,9 @@ var Derivers = map[string]DeriveFunc{
 	"claude-code": claudecode.DeriveActivityState,
 	"omp":         omp.DeriveActivityState,
 	"codex":       codex.DeriveActivityState,
-	"droid":       droid.DeriveActivityState,
 	"agy":         agy.DeriveActivityState,
 	"opencode-v2": opencodev2.DeriveActivityState,
-	"memcode":     memcode.DeriveActivityState,
-	"amp":         amp.DeriveActivityState,
 	"pi":          pi.DeriveActivityState,
-	"goose":       activitystate.StandardDeriveActivityState,
-	"qwen":        activitystate.StandardDeriveActivityState,
-	"kimi":        activitystate.StandardDeriveActivityState,
-	"autohand":    activitystate.StandardDeriveActivityState,
 	"fake":        fake.DeriveActivityState,
 }
 
@@ -68,9 +57,7 @@ const (
 
 // signalCoverageOverrides records harnesses whose callback coverage cannot be
 // inferred from a same-named Derivers entry.
-var signalCoverageOverrides = map[domain.AgentHarness]SignalCoverage{
-	domain.HarnessMemcode: SignalCoveragePartial,
-}
+var signalCoverageOverrides = map[domain.AgentHarness]SignalCoverage{}
 
 // CoverageForHarness returns the activity-signal coverage for a selectable
 // harness. Same-named callback pipelines are complete by default; exceptional

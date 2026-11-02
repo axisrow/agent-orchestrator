@@ -831,7 +831,7 @@ describe("ACP session config options", () => {
 		const onChange = vi.fn();
 		render(
 			<TurnSettingsBar
-				harness="qwen"
+				harness="omp"
 				models={[]}
 				settings={{}}
 				showApprovalMode={false}
@@ -1070,7 +1070,7 @@ describe("Provider Ask and Agent chat modes", () => {
 		const user = userEvent.setup();
 		render(
 			<TurnSettingsBar
-				harness="qwen"
+				harness="omp"
 				models={[]}
 				settings={{}}
 				configOptions={[PROVIDER_MODE]}
@@ -1088,7 +1088,7 @@ describe("Provider Ask and Agent chat modes", () => {
 	it("shows the provider's current choice, starting on Ask", () => {
 		render(
 			<TurnSettingsBar
-				harness="qwen"
+				harness="omp"
 				models={[]}
 				settings={{}}
 				configOptions={[PROVIDER_MODE]}
@@ -1104,7 +1104,7 @@ describe("Provider Ask and Agent chat modes", () => {
 	it("shows Agent on the trigger once the provider reports Agent", () => {
 		render(
 			<TurnSettingsBar
-				harness="qwen"
+				harness="omp"
 				models={[]}
 				settings={{}}
 				configOptions={[{ ...PROVIDER_MODE, currentValue: "AGENT" }]}
@@ -1122,7 +1122,7 @@ describe("Provider Ask and Agent chat modes", () => {
 		const user = userEvent.setup();
 		render(
 			<TurnSettingsBar
-				harness="qwen"
+				harness="omp"
 				models={[]}
 				settings={{}}
 				configOptions={[PROVIDER_MODE]}
@@ -1142,7 +1142,7 @@ describe("Provider Ask and Agent chat modes", () => {
 	it("exposes exactly one execution control for the Ask/Agent pair", () => {
 		render(
 			<TurnSettingsBar
-				harness="qwen"
+				harness="omp"
 				models={[]}
 				settings={{}}
 				configOptions={[PROVIDER_MODE]}
@@ -1161,7 +1161,7 @@ describe("Provider Ask and Agent chat modes", () => {
 		const user = userEvent.setup();
 		render(
 			<TurnSettingsBar
-				harness="qwen"
+				harness="omp"
 				models={[]}
 				settings={{}}
 				configOptions={[PROVIDER_MODE]}
@@ -1237,7 +1237,7 @@ describe("Provider Ask and Agent chat modes", () => {
 		const user = userEvent.setup();
 		render(
 			<TurnSettingsBar
-				harness="qwen"
+				harness="omp"
 				models={[]}
 				settings={{}}
 				configOptions={[PROVIDER_MODE, OPTIONS[4]]}
@@ -1285,7 +1285,7 @@ describe("A provider's live Agent/Plan/Ask mode catalog", () => {
 		const user = userEvent.setup();
 		render(
 			<TurnSettingsBar
-				harness="qwen"
+				harness="omp"
 				models={[]}
 				settings={{}}
 				configOptions={[PROVIDER_MODELS, PROVIDER_MODES]}
@@ -1308,7 +1308,7 @@ describe("A provider's live Agent/Plan/Ask mode catalog", () => {
 		const user = userEvent.setup();
 		render(
 			<TurnSettingsBar
-				harness="qwen"
+				harness="omp"
 				models={[]}
 				settings={{}}
 				configOptions={[PROVIDER_MODELS, PROVIDER_MODES]}
@@ -1334,7 +1334,7 @@ describe("A provider's live Agent/Plan/Ask mode catalog", () => {
 	it("shows Ask on the trigger when the provider reports Ask as current", () => {
 		render(
 			<TurnSettingsBar
-				harness="qwen"
+				harness="omp"
 				models={[]}
 				settings={{}}
 				configOptions={[PROVIDER_MODELS, { ...PROVIDER_MODES, currentValue: "ask" }]}
@@ -1350,7 +1350,7 @@ describe("A provider's live Agent/Plan/Ask mode catalog", () => {
 	it("names the option rather than asserting a posture the provider did not report", () => {
 		render(
 			<TurnSettingsBar
-				harness="qwen"
+				harness="omp"
 				models={[]}
 				settings={{}}
 				configOptions={[{ ...PROVIDER_MODES, currentValue: undefined }]}
@@ -1399,7 +1399,7 @@ describe("A provider's live Agent/Plan/Ask mode catalog", () => {
 		const user = userEvent.setup();
 		render(
 			<TurnSettingsBar
-				harness="qwen"
+				harness="omp"
 				models={[]}
 				settings={{}}
 				configOptions={[
@@ -1431,7 +1431,7 @@ describe("A provider's live Agent/Plan/Ask mode catalog", () => {
 	it("disables the standalone mode trigger and a lone extra while a change is in flight", () => {
 		render(
 			<TurnSettingsBar
-				harness="qwen"
+				harness="omp"
 				models={[]}
 				settings={{}}
 				configOptions={[
@@ -1456,7 +1456,7 @@ describe("A provider's live Agent/Plan/Ask mode catalog", () => {
 	it("offers exactly one execution control and no provider approval picker", () => {
 		render(
 			<TurnSettingsBar
-				harness="qwen"
+				harness="omp"
 				models={[]}
 				settings={{}}
 				configOptions={[PROVIDER_MODELS, PROVIDER_MODES]}

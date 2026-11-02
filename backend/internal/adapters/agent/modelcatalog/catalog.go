@@ -58,10 +58,7 @@ var commandSpecs = map[string]commandSpec{
 	"opencode-v2": {args: []string{"models"}, parser: parseProviderIDLines, retryEmpty: true},
 	"agy":         {args: []string{"models"}, parser: parseAgyModels},
 	"pi":          {args: []string{"--list-models"}, parser: parsePiModels},
-	"kimi":        {args: []string{"provider", "list", "--json"}, parser: parseJSONModels},
 	"omp":         {args: []string{"models", "--json"}, parser: parseJSONModels},
-	"droid":       {args: []string{"exec", "--help"}, parser: parseDroidHelpModels},
-	"fx":          {args: []string{"models", "--json"}, parser: parseFXModels},
 }
 
 // Accepts reports whether model may launch agentID. It rejects a model only
@@ -87,51 +84,18 @@ func Accepts(agentID, model string) bool {
 func Base(agentID string) ports.AgentModelCatalog {
 	now := time.Now().UTC()
 	entryMode := customModelEntryMode(agentID)
-	switch agentID {
-	case "memcode":
-		// Memcode v0.38.1 embeds these pinnable labels in models.json. The
-		// interactive /model picker accepts the labels, not the provider IDs.
-		return catalog(agentID, "official-catalog", entryMode, now,
-			model("grok-4.7", "Grok 4.7", false),
-			model("gemini-pro", "Gemini 3.1 Pro", false),
-			model("gemini-flash", "Gemini 3.8 Flash", false),
-			model("opus", "Opus 5.5", false),
-			model("fable", "Fable 5.1", false),
-			model("sonnet", "Sonnet 5", false),
-			model("haiku", "Haiku 4.5", false),
-			model("astra", "GPT-6 Astra", false),
-			model("sol", "GPT-5.6 Sol", false),
-			model("terra", "GPT-5.6 Terra", false),
-			model("luna", "GPT-5.6 Luna", false),
-			model("glm-5p3", "GLM-5.3", false),
-			model("glm-5p3-flash", "GLM-5.3 Flash", false),
-			model("qwen3p8-max", "Qwen3.8 Max", false),
-			model("kimi-k3", "Kimi K3", false),
-			model("deepseek-v4-flash", "DeepSeek V4.1 Flash", false),
-		)
-	case "amp":
-		c := catalog(agentID, "official-modes", entryMode, now,
-			model("low", "Low", false),
-			model("medium", "Medium", true),
-			model("high", "High", false),
-			model("ultra", "Ultra", false),
-		)
-		c.SelectionMode = ports.ModelSelectionModeList
-		return c
-	default:
-		if hasDiscoverySource(agentID) {
-			return ports.AgentModelCatalog{
-				AgentID:          agentID,
-				SelectionMode:    ports.ModelSelectionCatalog,
-				Models:           []ports.AgentModelInfo{},
-				CustomModelEntry: entryMode,
-				AllowCustom:      entryMode == ports.CustomModelEntryDirect,
-				Source:           "cli",
-				FetchedAt:        now,
-			}
+	if hasDiscoverySource(agentID) {
+		return ports.AgentModelCatalog{
+			AgentID:          agentID,
+			SelectionMode:    ports.ModelSelectionCatalog,
+			Models:           []ports.AgentModelInfo{},
+			CustomModelEntry: entryMode,
+			AllowCustom:      entryMode == ports.CustomModelEntryDirect,
+			Source:           "cli",
+			FetchedAt:        now,
 		}
-		return Manual(agentID)
 	}
+	return Manual(agentID)
 }
 
 // Manual returns the capability-aware fallback used when an adapter has no
@@ -157,8 +121,7 @@ func Manual(agentID string) ports.AgentModelCatalog {
 // availability remain agent-owned and are never listed here.
 func customModelEntryMode(agentID string) ports.CustomModelEntryMode {
 	switch agentID {
-	case "claude-code", "codex", "opencode-v2", "qwen",
-		"kimi", "goose", "autohand", "fx":
+	case "claude-code", "codex", "opencode-v2":
 		return ports.CustomModelEntryDirect
 	case "pi":
 		return ports.CustomModelEntryConfigured
@@ -205,39 +168,20 @@ func (d Discoverer) Discover(ctx context.Context, request ports.AgentModelDiscov
 }
 
 func (d Discoverer) discover(ctx context.Context, request ports.AgentModelDiscoveryRequest) (ports.AgentModelCatalog, error) {
-	if request.AgentID == "fx" && request.CredentialType == "" {
-		return discoverFXCatalog(ctx, request, func(ctx context.Context, binary string, args []string, dir string, env map[string]string) ([]byte, error) {
-			return modelCommand(ctx, binary, args, dir, env).CombinedOutput()
-		})
-	}
 	if request.AgentID == "claude-code" {
 		return discoverClaudeCatalog(ctx, request, d.ClaudeModels)
-	}
-	if request.AgentID == "memcode" {
-		return Base(request.AgentID), nil
 	}
 	if request.AgentID == "codex" {
 		return discoverCodexCatalog(ctx, request, d.CodexModels)
 	}
 	if list := d.ACPOptions[request.AgentID]; list != nil {
-		catalog, err := discoverACPOptionCatalog(ctx, request, list)
-		if err == nil {
-			return catalog, nil
-		}
-		// A harness that also keeps configured provider selections (Cline) may be
-		// an older release with no ACP config options. Fall back to those rather
-		// than emptying the picker.
-		//
-		// A harness whose only source is ACP (DeepSeek Harness) has nothing to
-		// fall back to: the generic path below has no command and no config
-		// parser for it, so it would answer with an empty catalog and no error.
-		// The caller records that as a successful discovery, which parks the
-		// catalog until the next calendar day and never runs the retry ladder —
-		// so an ACP session that merely needed a workspace looks like a harness
-		// with no models. Report the failure instead.
-		if !hasConfigDiscoverySource(request.AgentID) {
-			return catalog, err
-		}
+		// A harness whose only source is ACP has nothing to fall back to: the
+		// generic path below has no command for it, so it would answer with an
+		// empty catalog and no error. The caller records that as a successful
+		// discovery, which parks the catalog until the next calendar day and
+		// never runs the retry ladder — so an ACP session that merely needed a
+		// workspace looks like a harness with no models. Report the failure.
+		return discoverACPOptionCatalog(ctx, request, list)
 	}
 	env := request.Env
 	if request.AgentID == "opencode-v2" {
@@ -360,10 +304,7 @@ func applyClaudeConfiguredDefault(models []ports.AgentModelInfo, configured stri
 // cached catalog, since the binary alone does not change when settings do.
 func (d Discoverer) CatalogFingerprint(ctx context.Context, request ports.AgentModelDiscoveryRequest) string {
 	fingerprint := CatalogFingerprint(ctx, request.AgentID, request.Binary, request.WorkingDir, request.Env)
-	if request.AgentID == "fx" && request.CredentialType == "" {
-		return fingerprint + ":shared-providers-v1:" + fingerprintConfigPaths([]string{fxSettingsPath(request.Env)})
-	}
-	if request.CredentialType == "" && (hasLocalProviderCatalog(request.AgentID) || browseProviderCredentials[request.AgentID] != nil) {
+	if request.CredentialType == "" && hasLocalProviderCatalog(request.AgentID) {
 		// Replace older task-only snapshots through the normal background refresh.
 		return fingerprint + ":shared-providers-v1"
 	}
@@ -382,9 +323,6 @@ func (Discoverer) Manual(agentID string) ports.AgentModelCatalog { return Manual
 // Credential-scoped cloud discovery excludes the device-local catalogs.
 func discoverCommandCatalog(ctx context.Context, agentID, binary, workingDir string, env map[string]string, includeLocal bool) (ports.AgentModelCatalog, error) {
 	base := Base(agentID)
-	if hasConfigDiscoverySource(agentID) {
-		return discoverConfigCatalog(agentID, workingDir, env)
-	}
 	spec, ok := commandSpecs[agentID]
 	if !ok {
 		return base, nil
@@ -579,9 +517,6 @@ func hasDiscoverySource(agentID string) bool {
 	case "claude-code", "codex":
 		return true
 	}
-	if hasConfigDiscoverySource(agentID) {
-		return true
-	}
 	_, hasCommand := commandSpecs[agentID]
 	return hasCommand
 }
@@ -684,7 +619,7 @@ func BinaryVersion(ctx context.Context, binary string) string {
 
 // catalogSchemaVersions invalidates snapshots when an adapter's catalog format
 // changes independently of its installed executable or configuration.
-var catalogSchemaVersions = map[string]string{"memcode": "native-picker-v1"}
+var catalogSchemaVersions = map[string]string{}
 
 // CatalogFingerprint hashes every stable discovery input for an agent: the
 // resolved executable plus the configuration and credentials its discovery
@@ -698,7 +633,7 @@ func CatalogFingerprint(ctx context.Context, agentID, binary, workingDir string,
 	// Refresh pre-provider catalogs after upgrading and when observed credential
 	// presence changes. The fingerprint includes names only, never key material.
 	switch agentID {
-	case "opencode-v2", "pi", "omp", "kimi":
+	case "opencode-v2", "pi", "omp":
 		config += ";providers-v2=" + strings.Join(configuredProviders(ctx, agentID, env), ",") + providerCatalogFingerprint(agentID, env)
 	}
 	if config == "" {
@@ -718,9 +653,6 @@ func CatalogFingerprint(ctx context.Context, agentID, binary, workingDir string,
 func discoveryConfigInputs(ctx context.Context, agentID, workingDir string, env map[string]string) string {
 	if agentID == "claude-code" {
 		return "config=" + claudeCodeDiscoveryFingerprint(ctx, workingDir, env)
-	}
-	if config := configDiscoveryFingerprint(agentID, workingDir, env); config != "" {
-		return "config=" + config
 	}
 	// The listed models come from the binary, but which one is the default comes
 	// from the agent's settings, so a changed default must invalidate the cached
@@ -750,22 +682,6 @@ func claudeCodeDiscoveryFingerprint(ctx context.Context, workingDir string, env 
 		_, _ = hash.Write(raw)
 	}
 	return fmt.Sprintf("%x", hash.Sum(nil)[:8])
-}
-
-func catalog(agentID, source string, entryMode ports.CustomModelEntryMode, at time.Time, models ...ports.AgentModelInfo) ports.AgentModelCatalog {
-	return ports.AgentModelCatalog{
-		AgentID:          agentID,
-		SelectionMode:    ports.ModelSelectionCatalog,
-		Models:           models,
-		CustomModelEntry: entryMode,
-		AllowCustom:      entryMode == ports.CustomModelEntryDirect,
-		Source:           source,
-		FetchedAt:        at,
-	}
-}
-
-func model(id, label string, isDefault bool) ports.AgentModelInfo {
-	return ports.AgentModelInfo{ID: id, Label: label, IsDefault: isDefault}
 }
 
 // These harnesses' native selector is provider/model. Restrict this parsing to
@@ -829,76 +745,6 @@ func parseAgyModels(output []byte) ([]ports.AgentModelInfo, error) {
 	return normalize(models), nil
 }
 
-func parseDroidHelpModels(output []byte) ([]ports.AgentModelInfo, error) {
-	text := ansiPattern.ReplaceAllString(string(output), "")
-	inModels := false
-	var models []ports.AgentModelInfo
-	for _, rawLine := range strings.Split(text, "\n") {
-		line := strings.TrimSpace(rawLine)
-		if !inModels {
-			if line == "Available Models:" {
-				inModels = true
-			}
-			continue
-		}
-		if line == "" {
-			if len(models) > 0 {
-				break
-			}
-			continue
-		}
-		fields := strings.Fields(line)
-		if len(fields) < 2 || !looksLikeModelID(fields[0]) {
-			break
-		}
-		id := fields[0]
-		label := strings.TrimSpace(strings.TrimPrefix(line, id))
-		isDefault := strings.HasSuffix(strings.ToLower(label), "(default)")
-		if isDefault {
-			label = strings.TrimSpace(label[:len(label)-len("(default)")])
-		}
-		models = append(models, ports.AgentModelInfo{ID: id, Label: label, IsDefault: isDefault})
-	}
-	return normalize(models), nil
-}
-
-func parseSectionModels(output, startMarker, stopMarker string) ([]ports.AgentModelInfo, error) {
-	output = ansiPattern.ReplaceAllString(output, "")
-	inModels := false
-	var models []ports.AgentModelInfo
-	for _, rawLine := range strings.Split(output, "\n") {
-		line := strings.TrimSpace(rawLine)
-		if !inModels {
-			if line == startMarker {
-				inModels = true
-			}
-			continue
-		}
-		if stopMarker != "" && strings.HasPrefix(line, stopMarker) {
-			break
-		}
-		line = strings.TrimSpace(strings.TrimLeft(line, "•*-✓>│├└ "))
-		fields := strings.Fields(line)
-		if len(fields) == 0 || !looksLikeModelID(fields[0]) {
-			continue
-		}
-		id := strings.Trim(fields[0], "`\"'[](),:")
-		label := id
-		if before, after, ok := strings.Cut(line, " - "); ok && strings.TrimSpace(before) == id {
-			label = strings.TrimSpace(after)
-			if suffix, _, found := strings.Cut(label, " ("); found {
-				label = strings.TrimSpace(suffix)
-			}
-		}
-		models = append(models, ports.AgentModelInfo{
-			ID:        id,
-			Label:     label,
-			IsDefault: strings.Contains(strings.ToLower(line), "(default)"),
-		})
-	}
-	return normalize(models), nil
-}
-
 func parsePiModels(output []byte) ([]ports.AgentModelInfo, error) {
 	contextColumn := -1
 	output = []byte(ansiPattern.ReplaceAllString(string(output), ""))
@@ -932,23 +778,6 @@ func parsePiModels(output []byte) ([]ports.AgentModelInfo, error) {
 		models = append(models, item)
 	}
 	return normalize(models), nil
-}
-
-func parseFXModels(output []byte) ([]ports.AgentModelInfo, error) {
-	var response struct {
-		IDs []string `json:"ids"`
-	}
-	if err := json.Unmarshal(output, &response); err != nil {
-		return nil, err
-	}
-	models := make([]ports.AgentModelInfo, 0, len(response.IDs))
-	for _, id := range response.IDs {
-		if id == "" {
-			continue
-		}
-		models = append(models, ports.AgentModelInfo{ID: id, Label: id})
-	}
-	return models, nil
 }
 
 func looksLikeModelID(value string) bool {

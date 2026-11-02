@@ -47,11 +47,11 @@ func TestProjectConfigValidate(t *testing.T) {
 		{"unsupported continue reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: "continue"}}}, true},
 		{"unsupported goose reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: "goose"}}}, true},
 		{"unsupported copilot reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: "copilot"}}}, true},
-		{"good experimental Droid reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: ReviewerDroid}}}, false},
-		{"good experimental Kimi reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: ReviewerKimi}}}, false},
+		{"cut droid reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: "droid"}}}, true},
+		{"cut kimi reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: "kimi"}}}, true},
 		{"unknown reviewer harness", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: "nope"}}}, true},
-		{"good interactive Amp reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: ReviewerAmp}}}, false},
-		{"good experimental Autohand reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: ReviewerAutohand}}}, false},
+		{"cut amp reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: "amp"}}}, true},
+		{"cut autohand reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: "autohand"}}}, true},
 		{"empty reviewer harness", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: ""}}}, true},
 		{"tracker intake assignee rule", ProjectConfig{TrackerIntake: TrackerIntakeConfig{Enabled: true, Assignee: "alice"}}, false},
 		{"tracker intake explicit github", ProjectConfig{TrackerIntake: TrackerIntakeConfig{Enabled: true, Provider: TrackerProviderGitHub, Assignee: "alice"}}, false},
@@ -187,12 +187,13 @@ func TestResolveReviewerHarness(t *testing.T) {
 	}
 
 	// A worker harness that is not itself a reviewer falls back to claude-code.
-	if got := (ProjectConfig{}).ResolveReviewerHarness(HarnessGoose); got != FallbackReviewerHarness {
+	// The cut harness literals double as proof that removed ids stay rejected.
+	if got := (ProjectConfig{}).ResolveReviewerHarness(AgentHarness("goose")); got != FallbackReviewerHarness {
 		t.Fatalf("goose worker = %q, want %q", got, FallbackReviewerHarness)
 	}
 	for _, worker := range []AgentHarness{
-		HarnessOpenCodeV2, HarnessPi, HarnessAmp, HarnessQwen, HarnessAgy,
-		HarnessGoose, HarnessDroid, HarnessKimi, HarnessAutohand,
+		HarnessOpenCodeV2, HarnessPi, HarnessOMP,
+		AgentHarness("amp"), AgentHarness("qwen"), AgentHarness("droid"),
 	} {
 		if got := (ProjectConfig{}).ResolveReviewerHarness(worker); got != FallbackReviewerHarness {
 			t.Errorf("%s worker = %q, want explicit-selection fallback %q", worker, got, FallbackReviewerHarness)

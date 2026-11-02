@@ -75,7 +75,7 @@ func TestProjectSetConfig_TrackerIntakeJSON(t *testing.T) {
 
 	_, errOut, err := executeCLI(t, Deps{
 		ProcessAlive: func(int) bool { return true },
-	}, "project", "set-config", "demo", "--config-json", `{"worker":{"agent":"amp","agentConfig":{"mode":"ultra"}},"trackerIntake":{"enabled":true,"provider":"github","assignee":"alice"}}`)
+	}, "project", "set-config", "demo", "--config-json", `{"worker":{"agent":"codex","agentConfig":{"mode":"ultra"}},"trackerIntake":{"enabled":true,"provider":"github","assignee":"alice"}}`)
 	if err != nil {
 		t.Fatalf("unexpected error: %v\nstderr=%s", err, errOut)
 	}
@@ -86,8 +86,8 @@ func TestProjectSetConfig_TrackerIntakeJSON(t *testing.T) {
 	if !got.Config.TrackerIntake.Enabled || got.Config.TrackerIntake.Provider != "github" || got.Config.TrackerIntake.Assignee != "alice" {
 		t.Fatalf("tracker intake request = %#v", got.Config.TrackerIntake)
 	}
-	if got.Config.Worker.Agent != "amp" || got.Config.Worker.AgentConfig.Mode != "ultra" {
-		t.Fatalf("worker config = %#v, want preserved amp ultra mode", got.Config.Worker)
+	if got.Config.Worker.Agent != "codex" || got.Config.Worker.AgentConfig.Mode != "ultra" {
+		t.Fatalf("worker config = %#v, want preserved codex ultra mode", got.Config.Worker)
 	}
 }
 
@@ -456,7 +456,7 @@ func TestProjectGet_Success(t *testing.T) {
 
 func TestProjectGet_JSON(t *testing.T) {
 	cfg := setConfigEnv(t)
-	srv, capture := projectServer(t, http.StatusOK, `{"status":"degraded","project":{"id":"demo","name":"Demo","path":"/repo/demo","resolveError":"config missing","config":{"worker":{"agent":"amp","agentConfig":{"mode":"high"}}}}}`)
+	srv, capture := projectServer(t, http.StatusOK, `{"status":"degraded","project":{"id":"demo","name":"Demo","path":"/repo/demo","resolveError":"config missing","config":{"worker":{"agent":"codex","agentConfig":{"mode":"high"}}}}}`)
 	writeRunFileFor(t, cfg, srv)
 
 	out, errOut, err := executeCLI(t, Deps{

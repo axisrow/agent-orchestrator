@@ -14291,10 +14291,6 @@ components:
           - opencode-v2
           - pi
           - agy
-          - droid
-          - kimi
-          - amp
-          - autohand
           type: string
         scmStatus:
           enum:
@@ -15320,17 +15316,9 @@ components:
           - claude-code
           - codex
           - opencode-v2
-          - droid
-          - amp
           - agy
-          - qwen
-          - goose
-          - kimi
           - pi
-          - autohand
           - omp
-          - fx
-          - memcode
           - fake
           type: string
         approvalMode:
@@ -18967,10 +18955,6 @@ components:
           - opencode-v2
           - pi
           - agy
-          - droid
-          - kimi
-          - amp
-          - autohand
           type: string
       type: object
     SetUserConfigInput:
@@ -19124,17 +19108,9 @@ components:
           - claude-code
           - codex
           - opencode-v2
-          - droid
-          - amp
           - agy
-          - qwen
-          - goose
-          - kimi
           - pi
-          - autohand
           - omp
-          - fx
-          - memcode
           type: string
         issueId:
           type: string
@@ -19530,7 +19506,6 @@ components:
           enum:
           - claude-code
           - codex
-          - fx
           type: string
       required:
       - targetHarness
@@ -19683,10 +19658,6 @@ components:
           - opencode-v2
           - pi
           - agy
-          - droid
-          - kimi
-          - amp
-          - autohand
           type: string
         interfaceMode:
           enum:

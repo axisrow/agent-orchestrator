@@ -19,10 +19,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/amp"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/claudecode"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/codex"
-	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/memcode"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/runtime/conpty/ptyregistry"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/workspace/gitworktree"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/workspace/scratch"
@@ -1716,21 +1714,6 @@ func mkLive(id domain.SessionID) domain.SessionRecord {
 	return domain.SessionRecord{ID: id, ProjectID: "mer", Metadata: domain.SessionMetadata{WorkspacePath: "/ws/" + string(id), RuntimeHandleID: "h1"}, Activity: domain.Activity{State: domain.ActivityActive}}
 }
 
-func TestMemcodeIgnoresInheritedModelFromPreviousHarness(t *testing.T) {
-	cfg := domain.ProjectConfig{
-		AgentConfig: domain.AgentConfig{Model: "claude-opus-4-1"},
-		Worker:      domain.RoleOverride{Harness: domain.HarnessCodex, AgentConfig: domain.AgentConfig{Model: "gpt-5"}},
-	}
-	if got := effectiveAgentConfig(domain.HarnessMemcode, domain.KindWorker, cfg).Model; got != "" {
-		t.Fatalf("inherited foreign model = %q, want native selection", got)
-	}
-	cfg.Worker.Harness = domain.HarnessMemcode
-	cfg.Worker.AgentConfig.Model = "opus"
-	if got := effectiveAgentConfig(domain.HarnessMemcode, domain.KindWorker, cfg).Model; got != "opus" {
-		t.Fatalf("memcode project choice = %q, want opus", got)
-	}
-}
-
 func TestSpawn_ResolvesProjectConfig(t *testing.T) {
 	st := newFakeStore()
 	st.projects["mer"] = domain.ProjectRecord{ID: "mer", Config: domain.ProjectConfig{
@@ -1845,7 +1828,7 @@ func (g *rejectingHarnessUseGate) TryBeginHarnessUse(harness domain.AgentHarness
 func TestSpawnHarnessGateUsesResolvedProjectDefault(t *testing.T) {
 	m, st, rt, _ := newManager()
 	project := st.projects["mer"]
-	project.Config.Worker.Harness = domain.HarnessDroid
+	project.Config.Worker.Harness = domain.HarnessPi
 	st.projects["mer"] = project
 	gate := &rejectingHarnessUseGate{}
 	m.SetHarnessUseGate(gate)
@@ -1854,11 +1837,11 @@ func TestSpawnHarnessGateUsesResolvedProjectDefault(t *testing.T) {
 	if !errors.Is(err, ErrHarnessInstallActive) {
 		t.Fatalf("Spawn error = %v, want ErrHarnessInstallActive", err)
 	}
-	if gate.harness != domain.HarnessDroid {
-		t.Fatalf("gated harness = %q, want resolved Droid default", gate.harness)
+	if gate.harness != domain.HarnessPi {
+		t.Fatalf("gated harness = %q, want resolved Pi default", gate.harness)
 	}
 	if rt.created != 0 {
-		t.Fatal("runtime was created while Droid installer owned the gate")
+		t.Fatal("runtime was created while the installer owned the gate")
 	}
 }
 
@@ -1894,12 +1877,12 @@ func TestResumeHarnessGateRejectsCodexMaintenance(t *testing.T) {
 	}
 }
 
-// TestSpawnModelValidation asserts spawn rejects models a fixed-catalog harness
-// cannot honor, while harnesses that accept arbitrary model ids pass through.
+// TestSpawnModelValidation asserts spawn defers model validation to agents with
+// dynamic catalogs: Codex accepts an arbitrary custom model id at spawn time.
 func TestSpawnModelValidation(t *testing.T) {
 	st := newFakeStore()
-	st.projects["mer"] = domain.ProjectRecord{ID: "mer", Config: domain.ProjectConfig{
-		Worker: domain.RoleOverride{Harness: domain.HarnessAmp},
+	st.projects["codex-proj"] = domain.ProjectRecord{ID: "codex-proj", Config: domain.ProjectConfig{
+		Worker: domain.RoleOverride{Harness: domain.HarnessCodex},
 	}}
 	agent := &recordingAgent{}
 	rt := &fakeRuntime{}
@@ -1907,132 +1890,8 @@ func TestSpawnModelValidation(t *testing.T) {
 	lookPath := func(string) (string, error) { return "/bin/true", nil }
 	m := New(Deps{Runtime: rt, Agents: singleAgent{agent: agent}, Workspace: ws, Store: st, Messenger: &fakeMessenger{}, Lifecycle: &fakeLCM{store: st}, LookPath: lookPath})
 
-	// Amp has a fixed mode list; "high" is valid. The spawn model override is
-	// routed into AgentConfig.Mode so adapters that read Mode receive the value.
-	if _, _, _, err := m.Spawn(ctx, ports.SpawnConfig{ProjectID: "mer", Kind: domain.KindWorker, AgentConfig: ports.AgentConfig{Model: "high"}}); err != nil {
-		t.Fatalf("amp spawn with model high failed: %v", err)
-	}
-	if agent.lastConfig.Mode != "high" {
-		t.Fatalf("amp launch mode = %q, want high", agent.lastConfig.Mode)
-	}
-	if agent.lastConfig.Model != "" {
-		t.Fatalf("amp launch model = %q, want empty after routing to mode", agent.lastConfig.Model)
-	}
-
-	// Amp rejects a model outside its mode list.
-	before := len(st.sessions)
-	_, _, _, err := m.Spawn(ctx, ports.SpawnConfig{ProjectID: "mer", Kind: domain.KindWorker, AgentConfig: ports.AgentConfig{Model: "invalid-mode"}})
-	if err == nil {
-		t.Fatal("expected amp to reject invalid-mode")
-	}
-	if !errors.Is(err, ErrUnsupportedModel) {
-		t.Fatalf("err = %v, want ErrUnsupportedModel", err)
-	}
-	if len(st.sessions) != before {
-		t.Fatalf("invalid model left a session row behind: %d sessions, want %d", len(st.sessions), before)
-	}
-
-	// Codex accepts arbitrary custom model ids.
-	st.projects["codex-proj"] = domain.ProjectRecord{ID: "codex-proj", Config: domain.ProjectConfig{
-		Worker: domain.RoleOverride{Harness: domain.HarnessCodex},
-	}}
 	if _, _, _, err := m.Spawn(ctx, ports.SpawnConfig{ProjectID: "codex-proj", Kind: domain.KindWorker, AgentConfig: ports.AgentConfig{Model: "custom-snapshot-id"}}); err != nil {
 		t.Fatalf("codex spawn with custom model failed: %v", err)
-	}
-}
-
-// TestSpawnAmpModelOverrideLaunchArgv uses the real Amp adapter to verify that
-// a spawn model override for Amp ends up as `--mode <value>` in the actual
-// launch argv instead of silently being dropped because Amp reads Config.Mode.
-func TestSpawnAmpModelOverrideLaunchArgv(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("PATH setup differs on windows")
-	}
-	st := newFakeStore()
-	st.projects["mer"] = domain.ProjectRecord{ID: "mer", Config: domain.ProjectConfig{
-		Worker: domain.RoleOverride{Harness: domain.HarnessAmp},
-	}}
-
-	dir := t.TempDir()
-	fakeAmp := filepath.Join(dir, "amp")
-	if err := os.WriteFile(fakeAmp, []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatalf("write fake amp binary: %v", err)
-	}
-	t.Setenv("PATH", dir+string(filepath.ListSeparator)+os.Getenv("PATH"))
-
-	wsDir := t.TempDir()
-	rt := &fakeRuntime{}
-	ws := &fakeWorkspace{path: wsDir}
-	lookPath := func(string) (string, error) { return fakeAmp, nil }
-	m := New(Deps{Runtime: rt, Agents: singleAgent{agent: amp.New()}, Workspace: ws, Store: st, Messenger: &fakeMessenger{}, Lifecycle: &fakeLCM{store: st}, LookPath: lookPath,
-		Executable: func() (string, error) { return "/opt/ao", nil }, NewLaunchID: func() string { return "amp-launch" },
-	})
-
-	if _, _, _, err := m.Spawn(ctx, ports.SpawnConfig{ProjectID: "mer", Kind: domain.KindWorker, AgentConfig: ports.AgentConfig{Model: "high"}}); err != nil {
-		t.Fatalf("amp spawn with model high failed: %v", err)
-	}
-
-	want := []string{"/opt/ao", "agent-process", "supervise", "--session", "mer-1", "--launch", "amp-launch", "--", fakeAmp, "--mode", "high"}
-	if !reflect.DeepEqual(rt.lastCfg.Argv, want) {
-		t.Fatalf("launch argv = %#v, want %#v", rt.lastCfg.Argv, want)
-	}
-
-	// The user-visible resolved model is still persisted, not cleared by the
-	// adapter-facing normalization that moved it into Mode.
-	if len(st.sessions) != 1 {
-		t.Fatalf("expected 1 session, got %d", len(st.sessions))
-	}
-	var rec domain.SessionRecord
-	for _, r := range st.sessions {
-		rec = r
-	}
-	if rec.Metadata.Model != "high" {
-		t.Fatalf("persisted metadata model = %q, want high", rec.Metadata.Model)
-	}
-}
-
-// TestSpawnAmpProjectDefaultModePersistsAsModel verifies that when Amp's mode
-// comes from project/role config (not an explicit spawn --model override), the
-// resolved value is still reported as metadata.Model instead of appearing as
-// the agent default.
-func TestSpawnAmpProjectDefaultModePersistsAsModel(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("PATH setup differs on windows")
-	}
-	st := newFakeStore()
-	st.projects["mer"] = domain.ProjectRecord{ID: "mer", Config: domain.ProjectConfig{
-		Worker: domain.RoleOverride{
-			Harness:     domain.HarnessAmp,
-			AgentConfig: domain.AgentConfig{Mode: "high"},
-		},
-	}}
-
-	dir := t.TempDir()
-	fakeAmp := filepath.Join(dir, "amp")
-	if err := os.WriteFile(fakeAmp, []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatalf("write fake amp binary: %v", err)
-	}
-	t.Setenv("PATH", dir+string(filepath.ListSeparator)+os.Getenv("PATH"))
-
-	wsDir := t.TempDir()
-	rt := &fakeRuntime{}
-	ws := &fakeWorkspace{path: wsDir}
-	lookPath := func(string) (string, error) { return fakeAmp, nil }
-	m := New(Deps{Runtime: rt, Agents: singleAgent{agent: amp.New()}, Workspace: ws, Store: st, Messenger: &fakeMessenger{}, Lifecycle: &fakeLCM{store: st}, LookPath: lookPath,
-		Executable: func() (string, error) { return "/opt/ao", nil }, NewLaunchID: func() string { return "amp-launch" },
-	})
-
-	rec, _, _, err := m.Spawn(ctx, ports.SpawnConfig{ProjectID: "mer", Kind: domain.KindWorker})
-	if err != nil {
-		t.Fatalf("amp spawn with project default mode failed: %v", err)
-	}
-
-	want := []string{"/opt/ao", "agent-process", "supervise", "--session", "mer-1", "--launch", "amp-launch", "--", fakeAmp, "--mode", "high"}
-	if !reflect.DeepEqual(rt.lastCfg.Argv, want) {
-		t.Fatalf("launch argv = %#v, want %#v", rt.lastCfg.Argv, want)
-	}
-	if rec.Metadata.Model != "high" {
-		t.Fatalf("persisted metadata model = %q, want high (project default mode should be reported)", rec.Metadata.Model)
 	}
 }
 
@@ -3082,187 +2941,22 @@ func TestNativeModelConfirmationIgnoresRawScrollback(t *testing.T) {
 	}
 }
 
-type modelCheckingMemcodeAgent struct {
-	recordingAgent
-	hookModel string
+// An agent whose startup command is empty for an empty launch config: nothing
+// to select, so the promptless launch must neither poll readiness nor type.
+type emptyAfterStartAgent struct {
+	*recordingAgent
 }
 
-func (a *modelCheckingMemcodeAgent) GetAgentHooks(ctx context.Context, cfg ports.WorkspaceHookConfig) error {
-	a.hookModel = cfg.Config.Model
-	return memcode.New().GetAgentHooks(ctx, cfg)
+func (emptyAfterStartAgent) AfterStartCommand(context.Context, ports.LaunchConfig) (string, error) {
+	return "", nil
 }
 
-func (a *modelCheckingMemcodeAgent) GetLaunchCommand(ctx context.Context, cfg ports.LaunchConfig) ([]string, error) {
-	// Exercise Memcode's real launch validation without requiring its executable.
-	if _, err := memcode.New().AfterStartCommand(ctx, cfg); err != nil {
-		return nil, err
-	}
-	return a.recordingAgent.GetLaunchCommand(ctx, cfg)
-}
-
-func TestRestoreMemcodeModelFollowsNativeEndpointConfiguration(t *testing.T) {
-	for _, test := range []struct {
-		name            string
-		model           string
-		endpoint        string
-		globalEndpoint  bool
-		daemonEndpoint  bool
-		workspaceConfig string
-		want            string
-		wantError       bool
-	}{
-		{name: "unsupported saved model", model: "claude-opus-4-1"},
-		{name: "native catalog model", model: "opus", want: "opus"},
-		{name: "project endpoint", model: "opus", endpoint: "http://127.0.0.1:11434/v1"},
-		{name: "daemon endpoint", model: "opus", daemonEndpoint: true},
-		{name: "global endpoint", model: "opus", globalEndpoint: true},
-		{name: "workspace endpoint", model: "opus", workspaceConfig: `{"endpoints":[{"name":"local","base_url":"http://127.0.0.1:11434/v1","last_model":"local-model"}]}`},
-		{name: "workspace without endpoints", model: "opus", workspaceConfig: `{"endpoints":[]}`, want: "opus"},
-		{name: "malformed workspace config", model: "opus", workspaceConfig: `{`, wantError: true},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			configHome := t.TempDir()
-			t.Setenv("XDG_CONFIG_HOME", configHome)
-			t.Setenv("MEMCODE_ENDPOINT_URL", "")
-			if test.daemonEndpoint {
-				t.Setenv("MEMCODE_ENDPOINT_URL", "http://127.0.0.1:11434/v1")
-			}
-			if test.globalEndpoint {
-				if err := os.MkdirAll(filepath.Join(configHome, "memcode"), 0o700); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.WriteFile(filepath.Join(configHome, "memcode", ".env"), []byte("MEMCODE_ENDPOINT_URL=http://127.0.0.1:11434/v1\n"), 0o600); err != nil {
-					t.Fatal(err)
-				}
-			}
-			workspace := t.TempDir()
-			if test.workspaceConfig != "" {
-				if err := os.MkdirAll(filepath.Join(workspace, ".memcode"), 0o700); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.WriteFile(filepath.Join(workspace, ".memcode", "config.json"), []byte(test.workspaceConfig), 0o600); err != nil {
-					t.Fatal(err)
-				}
-			}
-			st := newFakeStore()
-			config := testRoleAgents()
-			config.Env = map[string]string{"MEMCODE_ENDPOINT_URL": test.endpoint}
-			st.projects["mer"] = domain.ProjectRecord{ID: "mer", Config: config}
-			st.sessions["mer-1"] = domain.SessionRecord{
-				ID: "mer-1", ProjectID: "mer", Kind: domain.KindWorker, Harness: domain.HarnessMemcode, IsTerminated: true,
-				Metadata: domain.SessionMetadata{WorkspacePath: workspace, Branch: "b", Model: test.model, Prompt: "saved task"},
-			}
-			agent := &modelCheckingMemcodeAgent{}
-			m := New(Deps{DataDir: t.TempDir(), Runtime: &fakeRuntime{}, Agents: singleAgent{agent: agent}, Workspace: &fakeWorkspace{path: workspace}, Store: st,
-				Messenger: &fakeMessenger{}, Lifecycle: &fakeLCM{store: st}, LookPath: func(string) (string, error) { return "/bin/true", nil }})
-			_, err := m.RestoreWithMode(ctx, "mer-1")
-			if test.wantError {
-				if err == nil || !strings.Contains(err.Error(), "read memcode model configuration") || agent.launchCalls != 0 {
-					t.Fatalf("malformed configuration reached launch: err=%v, launches=%d", err, agent.launchCalls)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			if agent.launchCalls != 1 || agent.lastConfig.Model != test.want {
-				t.Fatalf("restored model = %q, want %q (saved %q, endpoint %q)", agent.lastConfig.Model, test.want, test.model, test.endpoint)
-			}
-		})
-	}
-}
-
-func TestSpawnMemcodeCustomEndpointClearsOnlyInheritedModels(t *testing.T) {
-	for _, source := range []string{"project environment", "daemon environment", "global settings", "workspace settings", "no endpoint", "malformed settings"} {
-		for _, modelSource := range []string{"project default", "role default", "explicit override"} {
-			t.Run(source+"/"+modelSource, func(t *testing.T) {
-				configHome := t.TempDir()
-				t.Setenv("XDG_CONFIG_HOME", configHome)
-				t.Setenv("MEMCODE_ENDPOINT_URL", "")
-				workspace := t.TempDir()
-				config := testRoleAgents()
-				config.Worker.Harness = domain.HarnessMemcode
-				spawn := ports.SpawnConfig{ProjectID: "mer", Kind: domain.KindWorker}
-				switch modelSource {
-				case "project default":
-					config.AgentConfig.Model = "opus"
-				case "role default":
-					config.Worker.AgentConfig.Model = "opus"
-				case "explicit override":
-					config.AgentConfig.Model = "sonnet"
-					spawn.AgentConfig.Model = "opus"
-				}
-				endpoint := "http://127.0.0.1:11434/v1"
-				switch source {
-				case "project environment":
-					config.Env = map[string]string{"MEMCODE_ENDPOINT_URL": endpoint}
-				case "daemon environment":
-					t.Setenv("MEMCODE_ENDPOINT_URL", endpoint)
-				case "global settings":
-					if err := os.MkdirAll(filepath.Join(configHome, "memcode"), 0o700); err != nil {
-						t.Fatal(err)
-					}
-					if err := os.WriteFile(filepath.Join(configHome, "memcode", ".env"), []byte("MEMCODE_ENDPOINT_URL="+endpoint+"\n"), 0o600); err != nil {
-						t.Fatal(err)
-					}
-				case "workspace settings", "malformed settings":
-					if err := os.MkdirAll(filepath.Join(workspace, ".memcode"), 0o700); err != nil {
-						t.Fatal(err)
-					}
-					contents := `{"endpoints":[{"name":"local","base_url":"http://127.0.0.1:11434/v1"}]}`
-					if source == "malformed settings" {
-						contents = `{`
-					}
-					if err := os.WriteFile(filepath.Join(workspace, ".memcode", "config.json"), []byte(contents), 0o600); err != nil {
-						t.Fatal(err)
-					}
-				}
-				st := newFakeStore()
-				st.projects["mer"] = domain.ProjectRecord{ID: "mer", Config: config}
-				agent := &modelCheckingMemcodeAgent{}
-				rt := &fakeRuntime{}
-				m := New(Deps{DataDir: t.TempDir(), Runtime: rt, Agents: singleAgent{agent: agent}, Workspace: &fakeWorkspace{path: workspace}, Store: st,
-					Messenger: &fakeMessenger{}, Lifecycle: &fakeLCM{store: st}, LookPath: func(string) (string, error) { return "/bin/true", nil }})
-				rec, _, _, err := m.Spawn(ctx, spawn)
-				if source == "malformed settings" || (source != "no endpoint" && modelSource == "explicit override") {
-					if err == nil || rt.created != 0 || agent.launchCalls != 0 {
-						t.Fatalf("incompatible selection reached launch: err=%v, runtimes=%d, launches=%d", err, rt.created, agent.launchCalls)
-					}
-					if source != "malformed settings" && !errors.Is(err, ErrUnsupportedModel) {
-						t.Fatalf("explicit model error = %v, want ErrUnsupportedModel", err)
-					}
-					if source == "malformed settings" && !strings.Contains(err.Error(), "read memcode model configuration") {
-						t.Fatalf("malformed model configuration error = %v", err)
-					}
-					return
-				}
-				if err != nil {
-					t.Fatal(err)
-				}
-				want := ""
-				if source == "no endpoint" {
-					want = "opus"
-				}
-				if rt.created != 1 || agent.launchCalls != 1 || agent.lastConfig.Model != want || agent.hookModel != want || rec.Metadata.Model != want {
-					t.Fatalf("spawn: runtimes=%d, launches=%d, launch model=%q, hook model=%q, saved model=%q; want model=%q",
-						rt.created, agent.launchCalls, agent.lastConfig.Model, agent.hookModel, rec.Metadata.Model, want)
-				}
-			})
-		}
-	}
-}
-
-func TestMemcodeWithoutPromptOrModelSkipsReadiness(t *testing.T) {
-	agent := memcode.New()
-	cfg := ports.LaunchConfig{}
-	hints, err := agent.PromptReadinessHints(ctx, cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rt := &fakeRuntime{outputs: hints.Patterns}
+func TestEmptyAfterStartCommandSkipsReadiness(t *testing.T) {
+	rt := &fakeRuntime{}
 	msg := &fakeMessenger{}
 	m := New(Deps{Runtime: rt, Messenger: msg})
-	if err := m.deliverAfterStartPrompt(ctx, agent, cfg, ports.RuntimeHandle{}, "mer-1", ""); err != nil {
+	agent := &emptyAfterStartAgent{recordingAgent: &recordingAgent{}}
+	if err := m.deliverAfterStartPrompt(ctx, agent, ports.LaunchConfig{}, ports.RuntimeHandle{}, "mer-1", ""); err != nil {
 		t.Fatal(err)
 	}
 	if rt.outputCalls != 0 || len(msg.msgs) != 0 {
@@ -6994,13 +6688,13 @@ func TestRestore_OpenCodeWithoutAgentSessionIDFallsBackToSavedPrompt(t *testing.
 	}
 }
 
-func TestRestore_AgyAndGooseWithoutAgentSessionIDFallBackToSavedPrompt(t *testing.T) {
+func TestRestore_AgyAndOMPWithoutAgentSessionIDFallBackToSavedPrompt(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		harness domain.AgentHarness
 	}{
 		{name: "agy", harness: domain.HarnessAgy},
-		{name: "goose", harness: domain.HarnessGoose},
+		{name: "omp", harness: domain.HarnessOMP},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			st := newFakeStore()
@@ -7042,13 +6736,13 @@ func TestRestore_AgyAndGooseWithoutAgentSessionIDFallBackToSavedPrompt(t *testin
 	}
 }
 
-func TestRestore_AgyAndGooseWithAgentSessionIDUseNativeResume(t *testing.T) {
+func TestRestore_AgyAndOMPWithAgentSessionIDUseNativeResume(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		harness domain.AgentHarness
 	}{
 		{name: "agy", harness: domain.HarnessAgy},
-		{name: "goose", harness: domain.HarnessGoose},
+		{name: "omp", harness: domain.HarnessOMP},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			st := newFakeStore()
@@ -7094,13 +6788,13 @@ func TestRestore_AgyAndGooseWithAgentSessionIDUseNativeResume(t *testing.T) {
 	}
 }
 
-func TestRestore_AgyAndGoosePromptlessWorkersWithoutAgentSessionIDNotResumable(t *testing.T) {
+func TestRestore_AgyAndOMPPromptlessWorkersWithoutAgentSessionIDNotResumable(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		harness domain.AgentHarness
 	}{
 		{name: "agy", harness: domain.HarnessAgy},
-		{name: "goose", harness: domain.HarnessGoose},
+		{name: "omp", harness: domain.HarnessOMP},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			st := newFakeStore()
@@ -7968,7 +7662,7 @@ func TestSpawn_RejectsExplicitEffortForUnsupportedHarnessBeforeSessionRow(t *tes
 	_, _, _, err := m.Spawn(ctx, ports.SpawnConfig{
 		ProjectID:     "mer",
 		Kind:          domain.KindWorker,
-		Harness:       domain.HarnessDroid,
+		Harness:       domain.HarnessOMP,
 		RequestedMode: domain.SessionModeTUI,
 		AgentConfig: ports.AgentConfig{
 			Model: "gemini-2.5-pro", Effort: "high",
@@ -8190,13 +7884,7 @@ func TestSpawn_HookPATHPinUnavailable(t *testing.T) {
 // TestSpawn_ProjectPATHIsPinBase asserts a project's PATH override survives the
 // pin as its base rather than being clobbered or clobbering: the daemon dir
 // still comes first.
-func TestValidateSpawnModelOnlyRejectsUnknownStaticChoices(t *testing.T) {
-	if err := validateSpawnModel(domain.HarnessAmp, "high"); err != nil {
-		t.Fatalf("known Amp mode: %v", err)
-	}
-	if err := validateSpawnModel(domain.HarnessAmp, "not-a-mode"); err == nil {
-		t.Fatal("unknown Amp mode: want validation error")
-	}
+func TestValidateSpawnModelDefersDynamicCatalogsToTheAgent(t *testing.T) {
 	for _, harness := range []domain.AgentHarness{"opencode", "grok", "codex"} {
 		if err := validateSpawnModel(harness, "agent-owned-model"); err != nil {
 			t.Fatalf("%s dynamic model should be validated by the agent: %v", harness, err)
@@ -8292,7 +7980,7 @@ func TestSpawnAndRestore_PrependsResolvedBinaryAndNodeDirsToRuntimePATH(t *testi
 	home := t.TempDir()
 	binDir := filepath.Join(home, ".npm-global", "bin")
 	nodeDir := filepath.Join(home, ".nvm", "versions", "node", "v22.23.1", "bin")
-	agentBin := filepath.Join(binDir, "kimi")
+	agentBin := filepath.Join(binDir, "pi")
 	for _, path := range []string{
 		agentBin,
 		filepath.Join(home, ".nvm", "versions", "node", "v18.20.0", "bin", "node"),
@@ -11150,7 +10838,7 @@ type startupReadySignalingAgent struct{ fakeAgent }
 func (startupReadySignalingAgent) FirstSignalProvesInputReady() bool { return true }
 
 // submitOnlyAgent advertises a prompt-submit signal but NOT a blocked one — a
-// harness like goose/opencode/agy that submits yet installs no permission hook.
+// harness like opencode/agy that submits yet installs no permission hook.
 // confirmActive must refuse to nudge it (it could Enter into a decision the
 // harness cannot report).
 type submitOnlyAgent struct{ fakeAgent }
@@ -11892,7 +11580,7 @@ func TestSend_TUIStartupPendingRejectsDelivery(t *testing.T) {
 func TestSend_HooklessTUIStartupAllowsDelivery(t *testing.T) {
 	st := newFakeStore()
 	st.sessions["s1"] = domain.SessionRecord{
-		ID: "s1", Harness: domain.HarnessGoose, Mode: domain.SessionModeTUI,
+		ID: "s1", Harness: domain.HarnessOMP, Mode: domain.SessionModeTUI,
 		Activity: domain.Activity{State: domain.ActivityIdle},
 		Metadata: domain.SessionMetadata{RuntimeHandleID: "h1"},
 	}
@@ -11999,11 +11687,11 @@ func TestSend_NoNudgeWhenBlockedAppearsBeforeNudge(t *testing.T) {
 }
 
 func TestSend_SkipsConfirmForSubmitOnlyHarness(t *testing.T) {
-	// A harness that submits but cannot report blocked (goose/opencode/agy) is
+	// A harness that submits but cannot report blocked (agy/opencode) is
 	// NOT nudge-safe: confirmActive must be skipped entirely, so an Enter can
 	// never reach a permission dialog the harness could not have signalled.
 	st := newFakeStore()
-	st.sessions["s1"] = pastStartupGate(domain.SessionRecord{ID: "s1", Harness: "goose",
+	st.sessions["s1"] = pastStartupGate(domain.SessionRecord{ID: "s1", Harness: "agy",
 		Activity: domain.Activity{State: domain.ActivityIdle}})
 	msg := &fakeMessenger{}
 	m := newSendTestManager(t, submitOnlyAgent{}, msg, st)

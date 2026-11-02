@@ -15,7 +15,6 @@ const (
 	UsageSourceClaudeMain     UsageSourceKind = "claude_main"
 	UsageSourceClaudeSubagent UsageSourceKind = "claude_subagent"
 	UsageSourceCodexRollout   UsageSourceKind = "codex_rollout"
-	UsageSourceKimiWire       UsageSourceKind = "kimi_wire"
 )
 
 // UsageBindingState tracks the root native-session binding lifecycle.

@@ -72,12 +72,7 @@ func TestConfiguredDefaultModelSources(t *testing.T) {
 		t.Errorf("pi = %q", got)
 	}
 
-	writeConfig(t, filepath.Join(home, ".factory", "settings.json"), `{"model": "claude-sonnet-4-6"}`)
-	if got := configuredDefaultModel("droid", workDir, nil); got != "claude-sonnet-4-6" {
-		t.Errorf("droid = %q", got)
-	}
-
-	if got := configuredDefaultModel("memcode", workDir, nil); got != "" {
+	if got := configuredDefaultModel("omp", workDir, nil); got != "" {
 		t.Errorf("agent without a config source = %q, want empty", got)
 	}
 }

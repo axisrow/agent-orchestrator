@@ -89,7 +89,7 @@ func TestBindingLaunchesExactUserInstalledBinary(t *testing.T) {
 
 func TestBindingMapsPluginDiscoveryAndAuth(t *testing.T) {
 	t.Run("incomplete provider binding", func(t *testing.T) {
-		cfg := buildConfig(fakePlugin{binary: "/user/provider"}, Config{Harness: domain.HarnessDroid}, nil)
+		cfg := buildConfig(fakePlugin{binary: "/user/provider"}, Config{Harness: domain.HarnessOMP}, nil)
 		if err := cfg.Probe(context.Background()); !errors.Is(err, ports.ErrChatDriverUnavailable) {
 			t.Fatalf("Probe error = %v", err)
 		}
@@ -100,7 +100,7 @@ func TestBindingMapsPluginDiscoveryAndAuth(t *testing.T) {
 
 	t.Run("missing user binary", func(t *testing.T) {
 		cfg := buildConfig(fakePlugin{binErr: ports.ErrAgentBinaryNotFound}, Config{
-			Harness: domain.HarnessDroid, Configure: func(context.Context, acpdriver.LaunchConfig) ([]string, map[string]string, error) {
+			Harness: domain.HarnessOMP, Configure: func(context.Context, acpdriver.LaunchConfig) ([]string, map[string]string, error) {
 				return []string{"exec"}, nil, nil
 			},
 		}, nil)
@@ -111,8 +111,8 @@ func TestBindingMapsPluginDiscoveryAndAuth(t *testing.T) {
 	})
 
 	t.Run("installed but logged out", func(t *testing.T) {
-		cfg := buildConfig(fakePlugin{binary: "/user/droid", status: ports.AgentAuthStatusUnauthorized}, Config{
-			Harness: domain.HarnessDroid, Configure: func(context.Context, acpdriver.LaunchConfig) ([]string, map[string]string, error) {
+		cfg := buildConfig(fakePlugin{binary: "/user/omp", status: ports.AgentAuthStatusUnauthorized}, Config{
+			Harness: domain.HarnessOMP, Configure: func(context.Context, acpdriver.LaunchConfig) ([]string, map[string]string, error) {
 				return []string{"exec"}, nil, nil
 			},
 		}, nil)

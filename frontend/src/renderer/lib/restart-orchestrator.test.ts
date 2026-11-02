@@ -36,7 +36,7 @@ describe("restartProjectOrchestrator", () => {
 		const setProjectRestarting = vi.fn();
 		const setOrchestratorReplacementError = vi.fn();
 		const onError = vi.fn();
-		const failure = new Error("missing goose binary");
+		const failure = new Error("missing codex binary");
 		spawnMock.mockRejectedValue(failure);
 
 		await restartProjectOrchestrator({
@@ -51,7 +51,7 @@ describe("restartProjectOrchestrator", () => {
 		expect(spawnMock).toHaveBeenCalledWith("proj-1", "restart", true, undefined, undefined);
 		expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: workspaceQueryKey });
 		expect(setOrchestratorReplacementError).toHaveBeenNthCalledWith(1, "proj-1", {
-			message: "missing goose binary",
+			message: "missing codex binary",
 		});
 		expect(setProjectRestarting).toHaveBeenNthCalledWith(1, "proj-1", true);
 		expect(setProjectRestarting).toHaveBeenLastCalledWith("proj-1", false);
@@ -116,7 +116,7 @@ describe("restartProjectOrchestrator", () => {
 		const setProjectRestarting = vi.fn();
 		const setOrchestratorReplacementError = vi.fn();
 		const onError = vi.fn();
-		const failure = new Error("missing goose binary");
+		const failure = new Error("missing codex binary");
 		spawnMock.mockRejectedValue(failure);
 
 		await restartProjectOrchestrator({
@@ -129,7 +129,7 @@ describe("restartProjectOrchestrator", () => {
 		});
 
 		expect(setOrchestratorReplacementError).toHaveBeenLastCalledWith("proj-1", {
-			message: "missing goose binary",
+			message: "missing codex binary",
 		});
 		expect(setProjectRestarting).toHaveBeenLastCalledWith("proj-1", false);
 		expect(onError).toHaveBeenCalledWith(failure);

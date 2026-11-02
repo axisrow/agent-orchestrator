@@ -11,24 +11,24 @@ import (
 	usagesvc "github.com/aoagents/agent-orchestrator/backend/internal/service/usage"
 )
 
-// TestUsagePipelineWatchRootsIncludesKimiWrites catches daemon wiring that
-// registers Kimi sources but omits their managed root from the file watcher.
-func TestUsagePipelineWatchRootsIncludesKimiWrites(t *testing.T) {
-	kimiHome := filepath.Join(t.TempDir(), "kimi")
-	wireDir := filepath.Join(kimiHome, "sessions", "native-1", "agents", "main")
-	if err := os.MkdirAll(wireDir, 0o700); err != nil {
+// TestUsagePipelineWatchRootsIncludeProviderWrites catches daemon wiring that
+// registers provider sources but omits their managed roots from the file
+// watcher.
+func TestUsagePipelineWatchRootsIncludeProviderWrites(t *testing.T) {
+	codexSessions := filepath.Join(t.TempDir(), "sessions")
+	rolloutDir := filepath.Join(codexSessions, "2026", "11", "03")
+	if err := os.MkdirAll(rolloutDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	wirePath := filepath.Join(wireDir, "wire.jsonl")
-	if err := os.WriteFile(wirePath, []byte("{}\n"), 0o600); err != nil {
+	rolloutPath := filepath.Join(rolloutDir, "rollout-2026-11-03-native-1.jsonl")
+	if err := os.WriteFile(rolloutPath, []byte("{}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	roots := usagesvc.SourceRoots{
 		ClaudeProjects: t.TempDir(),
-		CodexSessions:  t.TempDir(),
+		CodexSessions:  codexSessions,
 		CodexArchived:  t.TempDir(),
-		KimiHome:       kimiHome,
 	}
 	watcher, err := usagepipeline.NewTranscriptWatcher(
 		context.Background(), usagePipelineWatchRoots(roots),
@@ -36,7 +36,7 @@ func TestUsagePipelineWatchRootsIncludesKimiWrites(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create usage watcher: %v", err)
 	}
-	if err := watcher.Rebuild(context.Background(), []string{wirePath}); err != nil {
+	if err := watcher.Rebuild(context.Background(), []string{rolloutPath}); err != nil {
 		t.Fatalf("rebuild usage watcher: %v", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -50,10 +50,10 @@ func TestUsagePipelineWatchRootsIncludesKimiWrites(t *testing.T) {
 		}
 	})
 
-	if err := os.WriteFile(wirePath, []byte("{\"updated\":true}\n"), 0o600); err != nil {
+	if err := os.WriteFile(rolloutPath, []byte("{\"updated\":true}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	wantPath, err := filepath.EvalSymlinks(wirePath)
+	wantPath, err := filepath.EvalSymlinks(rolloutPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,6 +63,6 @@ func TestUsagePipelineWatchRootsIncludesKimiWrites(t *testing.T) {
 			t.Fatalf("usage event path = %q, want %q", event.Path, wantPath)
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("Kimi wire write did not reach the usage watcher")
+		t.Fatal("codex rollout write did not reach the usage watcher")
 	}
 }

@@ -2,9 +2,9 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { AgentAvatar } from "./AgentAvatar";
 import agyLogo from "../assets/agents/agy.svg";
-import fxDarkLogo from "../assets/agents/fx-dark.svg";
-import fxLightLogo from "../assets/agents/fx-light.svg";
-import memcodeLogo from "../assets/agents/memcode.png";
+import ompLogo from "../assets/agents/omp.svg";
+import piDarkLogo from "../assets/agents/pi-dark.svg";
+import piLightLogo from "../assets/agents/pi-light.svg";
 
 function themeSources(name: string) {
 	const mark = screen.getByRole("img", { name });
@@ -12,14 +12,10 @@ function themeSources(name: string) {
 }
 
 describe("AgentAvatar", () => {
-	it("renders the bundled Memcode mark", () => {
-		render(<AgentAvatar provider="memcode" />);
-		expect(screen.getByRole("img", { name: "memcode" })).toHaveAttribute("src", memcodeLogo);
-	});
-	it("renders the official fx light and dark marks under one accessible name", () => {
-		render(<AgentAvatar provider="fx" />);
+	it("renders the official pi light and dark marks under one accessible name", () => {
+		render(<AgentAvatar provider="pi" />);
 
-		expect(themeSources("fx")).toEqual([fxLightLogo, fxDarkLogo]);
+		expect(themeSources("pi")).toEqual([piLightLogo, piDarkLogo]);
 	});
 
 	it("renders a single mark when the brand reads on both themes", () => {
@@ -28,8 +24,13 @@ describe("AgentAvatar", () => {
 		expect(screen.getByRole("img", { name: "agy" })).toHaveAttribute("src", agyLogo);
 	});
 
+	it("renders the bundled OMP mark", () => {
+		render(<AgentAvatar provider="omp" />);
+		expect(screen.getByRole("img", { name: "omp" })).toHaveAttribute("src", ompLogo);
+	});
+
 	it("gives every harness a theme-safe brand mark", () => {
-		const providers = ["omp", "qwen", "droid", "kimi", "goose", "pi", "amp"];
+		const providers = ["codex", "claude-code", "opencode-v2", "omp", "pi", "agy"];
 		render(
 			<>
 				{providers.map((provider) => (

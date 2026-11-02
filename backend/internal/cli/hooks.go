@@ -20,7 +20,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/activitydispatch"
-	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/memcode"
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 	"github.com/aoagents/agent-orchestrator/backend/internal/pricing"
 )
@@ -664,25 +663,6 @@ func (c *commandContext) runHook(ctx context.Context, agent, event string) error
 		// without a piped payload can't block on EOF.
 		return nil
 	}
-	if agent == "memcode" && strings.HasPrefix(event, "context-chunk-") {
-		if err := memcode.EmitInstructionChunk(c.deps.Out, event); err != nil {
-			c.reportHookFailure(agent, event, sessionID, err)
-		}
-		return nil
-	}
-	if agent == "memcode" && event == "session-start" {
-		reportAfterRestore, err := memcode.EmitStartWitness(c.deps.Out)
-		if err != nil {
-			c.reportHookFailure(agent, event, sessionID, err)
-			return nil
-		}
-		if os.Getenv("AO_MEMCODE_INTERACTIVE_RESTORE") == "1" && !reportAfterRestore {
-			return nil
-		}
-	}
-	if agent == "memcode" && event == "session-end" {
-		return nil
-	}
 	var payload []byte
 	{
 		var err error
@@ -701,9 +681,6 @@ func (c *commandContext) runHook(ctx context.Context, agent, event string) error
 
 	state, hasActivity := activitydispatch.Derive(agent, event, payload)
 	agentSessionID := hookAgentSessionIDForHarness(agent, payload)
-	if agent == "memcode" && event == "session-start" {
-		agentSessionID = os.Getenv("MEMCODE_SESSION_ID")
-	}
 	usage := hookUsageMetadata(agent, payload)
 	hookSource := ""
 	if domain.AgentHarness(agent) == domain.HarnessClaudeCode && event == "session-start" {
@@ -738,7 +715,7 @@ func (c *commandContext) runHook(ctx context.Context, agent, event string) error
 	switch domain.AgentHarness(agent) {
 	case domain.HarnessClaudeCode, domain.HarnessCodex:
 		conversation = hookConversationFacts(domain.AgentHarness(agent), event, payload)
-	case domain.HarnessOMP, domain.HarnessPi, domain.HarnessAmp:
+	case domain.HarnessOMP, domain.HarnessPi:
 		conversation = hookSemanticAcceptanceFacts(event, payload)
 	}
 	path := "sessions/" + url.PathEscape(sessionID) + "/activity"

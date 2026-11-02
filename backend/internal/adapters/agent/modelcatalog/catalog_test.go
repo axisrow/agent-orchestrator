@@ -133,14 +133,12 @@ func TestOpenCodeDiscoveryUsesStableModelsCommand(t *testing.T) {
 	}
 }
 
-func TestOMPAndHelpBackedAgentsUseDocumentedDiscoveryCommands(t *testing.T) {
+func TestOMPUsesDocumentedDiscoveryCommand(t *testing.T) {
 	tests := []struct {
 		agent string
 		want  []string
 	}{
 		{agent: "omp", want: []string{"models", "--json"}},
-		{agent: "droid", want: []string{"exec", "--help"}},
-		{agent: "fx", want: []string{"models", "--json"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.agent, func(t *testing.T) {
@@ -158,45 +156,7 @@ func TestOMPAndHelpBackedAgentsUseDocumentedDiscoveryCommands(t *testing.T) {
 	}
 }
 
-func TestParseFXModelsUsesOnlyIDsAndPreservesThem(t *testing.T) {
-	got, err := parseFXModels([]byte(`{
-		"ids": ["anthropic/claude-sonnet-4-6", "openai/gpt-5.6-sol-high"],
-		"models": [{"id": "must-not-be-used"}]
-	}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []ports.AgentModelInfo{
-		{ID: "anthropic/claude-sonnet-4-6", Label: "anthropic/claude-sonnet-4-6"},
-		{ID: "openai/gpt-5.6-sol-high", Label: "openai/gpt-5.6-sol-high"},
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("models = %#v, want %#v", got, want)
-	}
-}
-
-func TestParseFXModelsPreservesEveryNonEmptyIDExactly(t *testing.T) {
-	got, err := parseFXModels([]byte(`{"ids":["  padded/model  ","","   ","plain"]}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []ports.AgentModelInfo{
-		{ID: "  padded/model  ", Label: "  padded/model  "},
-		{ID: "   ", Label: "   "},
-		{ID: "plain", Label: "plain"},
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("models = %#v, want exact non-empty IDs %#v", got, want)
-	}
-}
-
-func TestParseFXModelsRejectsMalformedJSON(t *testing.T) {
-	if _, err := parseFXModels([]byte(`{"ids":`)); err == nil {
-		t.Fatal("parseFXModels error = nil, want malformed JSON error")
-	}
-}
-
-func TestBaseClassifiesStaticTextAndModeAgents(t *testing.T) {
+func TestBaseClassifiesDiscoveryAndManualAgents(t *testing.T) {
 	tests := []struct {
 		agent string
 		mode  ports.ModelSelectionMode
@@ -204,11 +164,12 @@ func TestBaseClassifiesStaticTextAndModeAgents(t *testing.T) {
 	}{
 		{agent: "claude-code", mode: ports.ModelSelectionCatalog},
 		{agent: "codex", mode: ports.ModelSelectionCatalog},
-		{agent: "amp", mode: ports.ModelSelectionModeList, count: 4},
-		{agent: "autohand", mode: ports.ModelSelectionCatalog},
-		{agent: "qwen", mode: ports.ModelSelectionCatalog},
-		{agent: "droid", mode: ports.ModelSelectionCatalog},
+		{agent: "opencode-v2", mode: ports.ModelSelectionCatalog},
+		{agent: "agy", mode: ports.ModelSelectionCatalog},
+		{agent: "pi", mode: ports.ModelSelectionCatalog},
 		{agent: "omp", mode: ports.ModelSelectionCatalog},
+		// An agent with no discovery source falls back to the manual catalog.
+		{agent: "amp", mode: ports.ModelSelectionCatalog},
 	}
 	for _, tc := range tests {
 		t.Run(tc.agent, func(t *testing.T) {
@@ -217,28 +178,6 @@ func TestBaseClassifiesStaticTextAndModeAgents(t *testing.T) {
 				t.Fatalf("Base(%q) = %#v", tc.agent, got)
 			}
 		})
-	}
-}
-
-func TestMemcodeReturnsNativePickerLabelsWithoutStartingAgent(t *testing.T) {
-	got, err := (Discoverer{}).Discover(context.Background(), ports.AgentModelDiscoveryRequest{
-		AgentID: "memcode",
-		Binary:  "/missing/memcode",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Source != "official-catalog" || got.AllowCustom || len(got.Models) != 16 {
-		t.Fatalf("memcode catalog = %#v", got)
-	}
-	byID := map[string]string{}
-	for _, model := range got.Models {
-		byID[model.ID] = model.Label
-	}
-	for id, label := range map[string]string{"opus": "Opus 5.5", "sonnet": "Sonnet 5", "glm-5p3-flash": "GLM-5.3 Flash"} {
-		if byID[id] != label {
-			t.Fatalf("memcode catalog model %q = %q, want %q", id, byID[id], label)
-		}
 	}
 }
 
@@ -264,17 +203,11 @@ func TestCustomModelEntryPolicy(t *testing.T) {
 		{agent: "claude-code", wantEntryMode: "direct", wantSelection: ports.ModelSelectionCatalog},
 		{agent: "codex", wantEntryMode: "direct", wantSelection: ports.ModelSelectionCatalog},
 		{agent: "opencode-v2", wantEntryMode: "direct", wantSelection: ports.ModelSelectionCatalog},
-		{agent: "qwen", wantEntryMode: "direct", wantSelection: ports.ModelSelectionCatalog},
-		{agent: "kimi", wantEntryMode: "direct", wantSelection: ports.ModelSelectionCatalog},
-		{agent: "droid", wantEntryMode: "none", wantSelection: ports.ModelSelectionCatalog},
-		{agent: "amp", wantEntryMode: "none", wantSelection: ports.ModelSelectionModeList},
 		{agent: "agy", wantEntryMode: "none", wantSelection: ports.ModelSelectionCatalog},
-		{agent: "goose", wantEntryMode: "direct", wantSelection: ports.ModelSelectionCatalog},
 		{agent: "omp", wantEntryMode: "none", wantSelection: ports.ModelSelectionCatalog},
 		{agent: "pi", wantEntryMode: "configured", wantSelection: ports.ModelSelectionCatalog},
-		{agent: "autohand", wantEntryMode: "direct", wantSelection: ports.ModelSelectionCatalog},
-		{agent: "fx", wantEntryMode: "direct", wantSelection: ports.ModelSelectionCatalog},
-		{agent: "memcode", wantEntryMode: "none", wantSelection: ports.ModelSelectionCatalog},
+		// An agent with no discovery source keeps the catalog-only manual shape.
+		{agent: "amp", wantEntryMode: "none", wantSelection: ports.ModelSelectionCatalog},
 	}
 
 	for _, tc := range tests {
@@ -440,21 +373,6 @@ func TestParseOMPModelsUsesSelectorAsLaunchID(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []ports.AgentModelInfo{{ID: "anthropic/claude-opus-5", Label: "Claude Opus 5", Provider: "anthropic"}}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("models = %#v, want %#v", got, want)
-	}
-}
-
-func TestParseDroidHelpModels(t *testing.T) {
-	got, err := parseDroidHelpModels([]byte("Available Models:\n  auto                    Auto Model\n  claude-opus-5           Opus 5 (default)\n  gpt-5.6-sol             GPT-5.6 Sol\n\nTool Controls:\n  --list-tools            List tools\n"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []ports.AgentModelInfo{
-		{ID: "claude-opus-5", Label: "Opus 5", IsDefault: true},
-		{ID: "auto", Label: "Auto Model"},
-		{ID: "gpt-5.6-sol", Label: "GPT-5.6 Sol"},
-	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("models = %#v, want %#v", got, want)
 	}
@@ -724,12 +642,5 @@ func TestACPOnlyHarnessReportsDiscoveryFailure(t *testing.T) {
 				t.Fatalf("err = %v, want it to wrap %v", err, boom)
 			}
 		})
-	}
-}
-
-func TestMemcodeCatalogFingerprintInvalidatesFormerEmptyCatalog(t *testing.T) {
-	got := CatalogFingerprint(context.Background(), "memcode", "", "", nil)
-	if got == BinaryVersion(context.Background(), "") {
-		t.Fatal("Memcode catalog fingerprint matches the old executable-only cache key")
 	}
 }

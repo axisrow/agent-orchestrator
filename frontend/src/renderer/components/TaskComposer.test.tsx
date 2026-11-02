@@ -550,12 +550,12 @@ describe("TaskComposer", () => {
 	});
 
 	it("leaves the catalog default mode to the daemon for a mode-list worker", async () => {
-		h.agentCatalog = { agents: [agentReadiness("amp", "Amp")] };
+		h.agentCatalog = { agents: [agentReadiness("omp", "OMP")] };
 		h.get.mockImplementation(async (path: string) => {
 			if (path.includes("/models")) {
 				return {
 					data: {
-						agent: "amp",
+						agent: "omp",
 						selectionMode: "mode",
 						models: [
 							{ id: "high", label: "High", isDefault: true },
@@ -566,7 +566,7 @@ describe("TaskComposer", () => {
 					},
 				};
 			}
-			return { data: { status: "ok", project: { agent: "amp", config: {} } } };
+			return { data: { status: "ok", project: { agent: "omp", config: {} } } };
 		});
 		h.post.mockResolvedValueOnce({ data: { workerId: "worker-1" } });
 
@@ -578,7 +578,7 @@ describe("TaskComposer", () => {
 		await waitFor(() =>
 			expect(h.post).toHaveBeenCalledWith(
 				"/api/v1/orchestrators/delegate",
-				expect.objectContaining({ body: expect.objectContaining({ agent: "amp" }) }),
+				expect.objectContaining({ body: expect.objectContaining({ agent: "omp" }) }),
 			),
 		);
 		expect(h.post.mock.calls[0][1].body).not.toHaveProperty("model");
@@ -1470,27 +1470,27 @@ describe("TaskComposer", () => {
 			if (path.includes("/models")) {
 				return {
 					data: {
-						agent: "qwen",
+						agent: "omp",
 						selectionMode: "catalog",
-						models: [{ id: "qwen3", label: "qwen3", isDefault: true }],
+						models: [{ id: "omp3", label: "omp3", isDefault: true }],
 						allowCustom: true,
 					},
 				};
 			}
-			return { data: { status: "ok", project: { agent: "qwen", config: {} } } };
+			return { data: { status: "ok", project: { agent: "omp", config: {} } } };
 		});
-		h.post.mockResolvedValueOnce({ data: { workerId: "sess-qwen" } });
+		h.post.mockResolvedValueOnce({ data: { workerId: "sess-omp" } });
 
 		render(<Wrap><TaskComposer projectId="proj-1" onCreated={vi.fn()} /></Wrap>);
 
-		expect(await screen.findByRole("button", { name: "Model" })).toHaveTextContent("qwen3");
+		expect(await screen.findByRole("button", { name: "Model" })).toHaveTextContent("omp3");
 		expect(screen.queryByRole("status")).not.toBeInTheDocument();
 		fireEvent.change(task(), { target: { value: "Do the thing" } });
 		fireEvent.click(screen.getByText("Start task"));
 
 		await waitFor(() => expect(h.post).toHaveBeenCalledWith(
 			"/api/v1/orchestrators/delegate",
-			expect.objectContaining({ body: expect.objectContaining({ agent: "qwen", mode: "tui" }) }),
+			expect.objectContaining({ body: expect.objectContaining({ agent: "omp", mode: "tui" }) }),
 		));
 	});
 
@@ -1544,9 +1544,9 @@ describe("TaskComposer", () => {
 	it("offers an explicit approval-less retry from structured capability details", async () => {
 		h.get.mockImplementation(async (path: string) => {
 			if (path.includes("/models")) {
-				return { data: { agent: "qwen", selectionMode: "text", models: [], allowCustom: true } };
+				return { data: { agent: "omp", selectionMode: "text", models: [], allowCustom: true } };
 			}
-			return { data: { status: "ok", project: { agent: "qwen", config: {} } } };
+			return { data: { status: "ok", project: { agent: "omp", config: {} } } };
 		});
 		h.post
 			.mockResolvedValueOnce({
@@ -1567,7 +1567,7 @@ describe("TaskComposer", () => {
 				<TaskComposer projectId="proj-1" onCreated={onCreated} />
 			</Wrap>,
 		);
-		await waitFor(() => expect(screen.getByTestId("agent-field")).toHaveAttribute("data-value", "qwen"));
+		await waitFor(() => expect(screen.getByTestId("agent-field")).toHaveAttribute("data-value", "omp"));
 		fireEvent.change(task(), { target: { value: "Use approval-less Chat" } });
 		fireEvent.click(screen.getByText("Start task"));
 
@@ -1948,11 +1948,11 @@ describe("TaskComposer", () => {
 		expect(h.post.mock.calls[0][1].body).not.toHaveProperty("model");
 	});
 
-	it("shows Memcode's native model list and sends an explicit choice", async () => {
-		h.agentCatalog = { agents: [agentReadiness("memcode", "memcode", { authentication: "configured" })] };
+	it("shows the harness's native model list and sends an explicit choice", async () => {
+		h.agentCatalog = { agents: [agentReadiness("omp", "OMP", { authentication: "configured" })] };
 		h.get.mockImplementation(async (path: string) => {
-			if (path.includes("/models")) return { data: { agentId: "memcode", selectionMode: "catalog", models: [{ id: "sonnet", label: "Sonnet 5" }, { id: "opus", label: "Opus 5.5" }], customModelEntry: "none", allowCustom: false } };
-			return { data: { status: "ok", project: { agent: "memcode", config: { worker: { agent: "memcode" } } } } };
+			if (path.includes("/models")) return { data: { agentId: "omp", selectionMode: "catalog", models: [{ id: "sonnet", label: "Sonnet 5" }, { id: "opus", label: "Opus 5.5" }], customModelEntry: "none", allowCustom: false } };
+			return { data: { status: "ok", project: { agent: "omp", config: { worker: { agent: "omp" } } } } };
 		});
 
 		render(<Wrap><TaskComposer projectId="proj-1" onCreated={vi.fn()} /></Wrap>);
@@ -1962,7 +1962,7 @@ describe("TaskComposer", () => {
 		expect(await screen.findByRole("menuitem", { name: "Sonnet 5" })).toBeInTheDocument();
 		await userEvent.click(screen.getByRole("menuitem", { name: "Opus 5.5" }));
 		expect(picker).toHaveTextContent("Opus 5.5");
-		h.post.mockResolvedValueOnce({ data: { workerId: "memcode-task" } });
+		h.post.mockResolvedValueOnce({ data: { workerId: "omp-task" } });
 		fireEvent.change(task(), { target: { value: "Use the native model" } });
 		fireEvent.click(startTask());
 		await waitFor(() => expect(h.post).toHaveBeenCalled());
@@ -2170,27 +2170,27 @@ describe("TaskComposer", () => {
 		expect(task()).toHaveValue("Use the native model");
 	});
 
-	it.each([false, true])("keeps FX's native provider when no default is reported (unrelated model hidden: %s)", async (hideUnrelated) => {
-		h.agentCatalog = { agents: [agentReadiness("fx", "FX")] };
+	it.each([false, true])("keeps OMP's native provider when no default is reported (unrelated model hidden: %s)", async (hideUnrelated) => {
+		h.agentCatalog = { agents: [agentReadiness("omp", "OMP")] };
 		h.get.mockImplementation(async (path: string) => {
 			if (path === "/api/v1/settings") {
-				return { data: { defaultSessionMode: "tui", chatHarnesses: [], harnessDefaults: { fx: {
-					disabledModels: hideUnrelated ? ["fx:gateway:beta"] : [],
+				return { data: { defaultSessionMode: "tui", chatHarnesses: [], harnessDefaults: { omp: {
+					disabledModels: hideUnrelated ? ["omp:gateway:beta"] : [],
 				} } } };
 			}
 			if (path.includes("/models")) {
-				return { data: { agent: "fx", selectionMode: "catalog", allowCustom: true, refreshRecommended: false, models: [
-					{ id: "fx:codex:alpha", label: "Codex Alpha", provider: "codex" },
-					{ id: "fx:gateway:beta", label: "Gateway Beta", provider: "gateway" },
-					{ id: "fx:gateway:zeta", label: "Gateway Zeta", provider: "gateway" },
+				return { data: { agent: "omp", selectionMode: "catalog", allowCustom: true, refreshRecommended: false, models: [
+					{ id: "omp:codex:alpha", label: "Codex Alpha", provider: "codex" },
+					{ id: "omp:gateway:beta", label: "Gateway Beta", provider: "gateway" },
+					{ id: "omp:gateway:zeta", label: "Gateway Zeta", provider: "gateway" },
 				] } };
 			}
-			return { data: { status: "ok", project: { config: { worker: { agent: "fx" } } } } };
+			return { data: { status: "ok", project: { config: { worker: { agent: "omp" } } } } };
 		});
-		h.post.mockResolvedValue({ data: { workerId: "sess-fx-native" } });
+		h.post.mockResolvedValue({ data: { workerId: "sess-omp-native" } });
 
 		render(<Wrap><TaskComposer projectId="proj-1" onCreated={vi.fn()} /></Wrap>);
-		await waitFor(() => expect(screen.getByTestId("agent-field")).toHaveAttribute("data-value", "fx"));
+		await waitFor(() => expect(screen.getByTestId("agent-field")).toHaveAttribute("data-value", "omp"));
 		const picker = await screen.findByRole("button", { name: "Model" });
 		await userEvent.click(picker);
 		expect(await screen.findByRole("menuitem", { name: "Gateway Zeta" })).toBeInTheDocument();
@@ -2201,11 +2201,11 @@ describe("TaskComposer", () => {
 		}
 		await userEvent.keyboard("{Escape}");
 		expect(picker).toHaveTextContent("Select model");
-		fireEvent.change(task(), { target: { value: "Use FX native Gateway selection" } });
+		fireEvent.change(task(), { target: { value: "Use OMP native Gateway selection" } });
 		await waitForTaskReady();
 		fireEvent.click(startTask());
 		await waitFor(() => expect(h.post).toHaveBeenCalledTimes(1));
-		expect(h.post.mock.calls[0][1].body).toMatchObject({ agent: "fx" });
+		expect(h.post.mock.calls[0][1].body).toMatchObject({ agent: "omp" });
 		expect(h.post.mock.calls[0][1].body).not.toHaveProperty("model");
 	});
 

@@ -35,8 +35,8 @@ const REVIEWER_AGENT_PRIORITY_RANK = new Map<string, number>(
 	REVIEWER_AGENT_PRIORITY.map((agent, index) => [agent, index]),
 );
 
-const HOST_TRUSTED_REVIEWERS = new Set(["agy", "droid", "kimi"]);
-const USER_APPROVED_REVIEWERS = new Set(["autohand"]);
+const HOST_TRUSTED_REVIEWERS = new Set(["agy"]);
+const USER_APPROVED_REVIEWERS = new Set<string>();
 
 type ReviewerAgentConfig = components["schemas"]["AgentConfig"];
 

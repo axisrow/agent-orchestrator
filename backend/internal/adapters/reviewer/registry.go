@@ -7,12 +7,8 @@ import (
 	"fmt"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/reviewer/agy"
-	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/reviewer/amp"
-	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/reviewer/autohand"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/reviewer/claudecode"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/reviewer/codex"
-	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/reviewer/droid"
-	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/reviewer/kimi"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/reviewer/opencodev2"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/reviewer/pi"
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
@@ -30,12 +26,8 @@ type Adapter interface {
 func Constructors() []Adapter {
 	return []Adapter{
 		agy.New(),
-		amp.New(),
-		autohand.New(),
 		claudecode.New(),
 		codex.New(),
-		droid.New(),
-		kimi.New(),
 		opencodev2.New(),
 		pi.New(),
 	}

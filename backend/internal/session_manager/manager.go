@@ -19,7 +19,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/memcode"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/modelcatalog"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/runtime/conpty/ptyregistry"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/runtime/runtimeselect"
@@ -1167,7 +1166,6 @@ func (m *Manager) spawn(ctx context.Context, cfg ports.SpawnConfig, timings *spa
 	// Resolve the effective agent config (project base + role override + spawn
 	// override) and validate the model before any durable state is created. A
 	// model the harness cannot honor should not leave a seed row behind.
-	explicitModel := cfg.AgentConfig.Model != ""
 	agentConfig := applySpawnAgentConfig(effectiveAgentConfig(cfg.Harness, cfg.Kind, project.Config), cfg.AgentConfig)
 	if err := validateSpawnModel(cfg.Harness, agentConfig.Model); err != nil {
 		return domain.SessionRecord{}, 0, 0, fmt.Errorf("spawn: %w: %s", ErrUnsupportedModel, err.Error())
@@ -1548,23 +1546,6 @@ func (m *Manager) spawn(ctx context.Context, cfg ports.SpawnConfig, timings *spa
 	if err != nil {
 		m.rollbackSeedSpawnWorkspace(ctx, rec, ws, workspaceProject, true, false)
 		return domain.SessionRecord{}, 0, 0, wrapSpawnStage(id, ErrSpawnBrowser, err)
-	}
-	if cfg.Harness == domain.HarnessMemcode && agentConfig.Model != "" {
-		// The workspace may introduce a native endpoint, so resolve this after
-		// provisioning but before hooks or launch validation see the model.
-		customEndpoint, modelErr := memcode.UsesCustomEndpoint(ctx, ws.Path, env)
-		if modelErr == nil && customEndpoint {
-			if explicitModel {
-				modelErr = fmt.Errorf("%w: memcode custom endpoints require native model selection", ErrUnsupportedModel)
-			} else {
-				agentConfig.Model = ""
-				adapterConfig.Model = ""
-			}
-		}
-		if modelErr != nil {
-			m.rollbackSeedSpawnWorkspace(ctx, rec, ws, workspaceProject, true, false)
-			return domain.SessionRecord{}, 0, 0, wrapSpawnStage(id, ErrSpawnPrepare, modelErr)
-		}
 	}
 	m.applyRoleProviderPin(ctx, env, project.ID, cfg.Kind, project.Config)
 	m.augmentAgentRuntimeEnv(agent, env)
@@ -2473,12 +2454,6 @@ func effectiveAgentConfig(harness domain.AgentHarness, kind domain.SessionKind, 
 	}
 	if len(override.PluginDirs) > 0 {
 		merged.PluginDirs = append([]string(nil), override.PluginDirs...)
-	}
-	// A project may carry a model from its previous worker harness. Memcode
-	// accepts only its native catalog; leave an incompatible inherited choice
-	// to the TUI instead of making every launch and restore fail.
-	if harness == domain.HarnessMemcode && validateSpawnModel(harness, merged.Model) != nil {
-		merged.Model = ""
 	}
 	return merged
 }
@@ -3697,15 +3672,6 @@ func (m *Manager) relaunchSessionWithPolicyAndGeneration(ctx context.Context, op
 		return RestoreResult{}, relaunchFailed("browser capability", fmt.Errorf("%s %s: browser capability: %w", operation, rec.ID, err))
 	}
 	m.applyRoleProviderPin(ctx, env, project.ID, rec.Kind, project.Config)
-	if rec.Harness == domain.HarnessMemcode && agentConfig.Model != "" {
-		customEndpoint, err := memcode.UsesCustomEndpoint(ctx, ws.Path, env)
-		if err != nil {
-			return RestoreResult{}, relaunchFailed("model configuration", fmt.Errorf("%s %s: model configuration: %w", operation, rec.ID, err))
-		}
-		if customEndpoint || validateSpawnModel(rec.Harness, agentConfig.Model) != nil {
-			agentConfig.Model = ""
-		}
-	}
 	m.augmentAgentRuntimeEnv(agent, env)
 	pinRuntimePermissionEnv(env, agentConfig.Permissions)
 	if validator, ok := agent.(ports.AgentLaunchAuthValidator); ok {

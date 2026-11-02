@@ -71,7 +71,7 @@ func TestRunBackgroundTaskUsesNativeDriverAndTerminatesIt(t *testing.T) {
 }
 
 func TestRunBackgroundTaskQuotesInputAsData(t *testing.T) {
-	for _, harness := range []domain.AgentHarness{domain.HarnessClaudeCode, domain.HarnessCodex, domain.HarnessKimi} {
+	for _, harness := range []domain.AgentHarness{domain.HarnessClaudeCode, domain.HarnessCodex, domain.HarnessOMP} {
 		t.Run(string(harness), func(t *testing.T) {
 			conversation := &backgroundTestConversation{terminatingConversation: &terminatingConversation{fakeConversation: newFakeConversation()}}
 			service := chatsvc.New(chatsvc.Options{

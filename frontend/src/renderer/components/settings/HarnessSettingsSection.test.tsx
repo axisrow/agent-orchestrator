@@ -76,9 +76,9 @@ function catalogWithInstalled(...installed: string[]) {
 		agents: [
 			{ id: "claude-code", label: "Claude Code" },
 			{ id: "codex", label: "Codex" },
-			{ id: "qwen", label: "Qwen" },
-			{ id: "goose", label: "Goose" },
-			{ id: "kimi", label: "Kimi" },
+			{ id: "omp", label: "OMP" },
+			{ id: "pi", label: "Pi" },
+			{ id: "agy", label: "AGY" },
 		].map((agent) => ({
 			...agent,
 			installation: { state: installed.includes(agent.id) ? "installed" : "not_installed", freshness: "fresh", reason: "", reasonCode: "", attemptedAt: null, checkedAt: null },
@@ -110,25 +110,20 @@ const plans = {
 			],
 		},
 		{
-			agentId: "qwen", available: true, automatic: true, method: "npm",
-			command: "npm install -g @qwen-code/qwen-code", documentationUrl: "https://qwen.ai/docs",
-			methods: [{ id: "npm", label: "npm", available: true, recommended: true, command: "npm install -g @qwen-code/qwen-code", reinstallAvailable: true, reinstallCommand: "npm install -g @qwen-code/qwen-code --force" }],
+			agentId: "omp", available: true, automatic: true, method: "npm",
+			command: "npm install -g @aoagents/omp", documentationUrl: "https://example.test/omp/docs",
+			methods: [{ id: "npm", label: "npm", available: true, recommended: true, command: "npm install -g @aoagents/omp", reinstallAvailable: true, reinstallCommand: "npm install -g @aoagents/omp --force" }],
 		},
 		{
-			agentId: "droid", available: true, automatic: true, method: "official-installer",
-			command: "curl -fsSL https://example.test/droid/install | sh", documentationUrl: "https://example.test/droid",
-			methods: [{ id: "official-installer", label: "Official installer", available: true, recommended: true, command: "curl -fsSL https://example.test/droid/install | sh", reinstallAvailable: false, reinstallReason: "No headless reinstall" }],
+			agentId: "pi", available: true, automatic: true, method: "official-installer",
+			command: "pwsh.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File <downloaded from https://example.test/pi/install.ps1>",
+			documentationUrl: "https://example.test/pi/docs/installation/",
+			methods: [{ id: "official-installer", label: "Official installer", available: true, recommended: true, command: "pwsh.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File <downloaded from https://example.test/pi/install.ps1>", reinstallAvailable: false, reinstallReason: "No headless reinstall" }],
 		},
 		{
-			agentId: "goose", available: true, automatic: true, method: "official-installer",
-			command: "pwsh.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File <downloaded from https://raw.githubusercontent.com/aaif-goose/goose/main/download_cli.ps1>",
-			documentationUrl: "https://goose-docs.ai/docs/getting-started/installation/",
-			methods: [{ id: "official-installer", label: "Official installer", available: true, recommended: true, command: "pwsh.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File <downloaded from https://raw.githubusercontent.com/aaif-goose/goose/main/download_cli.ps1>", reinstallAvailable: false, reinstallReason: "No headless reinstall" }],
-		},
-		{
-			agentId: "memcode", available: false, automatic: false, method: "manual",
-			reason: "AO does not automatically install memcode.", documentationUrl: "https://example.test/memcode",
-			methods: [{ id: "manual", label: "Manual", available: false, recommended: true, reason: "AO does not automatically install memcode.", reinstallAvailable: false }],
+			agentId: "opencode-v2", available: false, automatic: false, method: "manual",
+			reason: "AO does not automatically install opencode-v2.", documentationUrl: "https://example.test/opencode-v2",
+			methods: [{ id: "manual", label: "Manual", available: false, recommended: true, reason: "AO does not automatically install opencode-v2.", reinstallAvailable: false }],
 		},
 	],
 };
@@ -182,7 +177,7 @@ function renderSection(focusAgentId?: string, selectorAgentId?: string, initialV
 }
 
 function readyCatalog() {
-	const readiness = catalogWithInstalled("claude-code", "codex", "qwen");
+	const readiness = catalogWithInstalled("claude-code", "codex", "omp");
 	for (const agent of readiness.agents) agent.authentication.state = "authorized";
 	return readiness;
 }
@@ -553,28 +548,6 @@ describe("HarnessSettingsSection", () => {
 		expect(screen.queryByRole("menuitem", { name: "empty · 0" })).toBeNull();
 	});
 
-	it.each(["kimi", "fx"] as const)("allows %s browsing while signed out", async (agentId) => {
-		const readiness = catalogWithInstalled(agentId);
-		if (!readiness.agents.some((agent) => agent.id === agentId)) {
-			const [template] = catalogWithInstalled("kimi").agents.filter((agent) => agent.id === "kimi");
-			readiness.agents.push({ ...template, id: agentId, label: "FX" });
-		}
-		readiness.agents.find((agent) => agent.id === agentId)!.authentication.state = "unauthorized";
-		mockInstalledOperations("npm", readiness);
-		const get = vi.mocked(apiClient.GET).getMockImplementation()!;
-		vi.mocked(apiClient.GET).mockImplementation(async (path, options) => path === "/api/v1/agents/{agent}/models"
-			? { data: { agentId, providers: ["available", "empty"], models: [{ id: "model", label: "Browse me", provider: "available" }] } } as never
-			: path === "/api/v1/agents/auth-plans" ? { data: { plans: [{ agentId, action: "login", launchMode: "terminal", available: true }] } } as never
-			: (get as (path: string, options: unknown) => Promise<never>)(path, options));
-		renderSection(agentId);
-		const page = await findAgentRow(agentId);
-		await userEvent.click(within(page).getByRole("tab", { name: "Models" }));
-		expect(await within(page).findByText("Browse me")).toBeInTheDocument();
-		await userEvent.click(within(page).getByRole("button", { name: "Provider" }));
-		expect(screen.getByRole("menuitem", { name: "available · 1" })).toBeInTheDocument();
-		expect(screen.queryByRole("menuitem", { name: "empty · 0" })).toBeNull();
-	});
-
 	it("asks for login before refreshing models", async () => {
 		const readiness = readyCatalog();
 		readiness.agents[1].authentication.state = "unauthorized";
@@ -764,7 +737,7 @@ describe("HarnessSettingsSection", () => {
 	it("hides logout when the harness has no native logout command", async () => {
 		mockInstalledOperations("npm");
 		renderSection();
-		expect(within(await findAgentRow("qwen")).queryByRole("button", { name: "Log out" })).toBeNull();
+		expect(within(await findAgentRow("omp")).queryByRole("button", { name: "Log out" })).toBeNull();
 	});
 
 	it("offers to log in again for a signed-in harness", async () => {
@@ -785,14 +758,14 @@ describe("HarnessSettingsSection", () => {
 		const readiness = readyCatalog();
 		const codex = readiness.agents.find((agent) => agent.id === "codex")!;
 		Object.assign(codex.authentication, { account: { email: "dev@example.com", organization: "Acme", plan: "pro", method: "account" } });
-		const qwen = readiness.agents.find((agent) => agent.id === "qwen")!;
-		Object.assign(qwen.authentication, { account: { method: "api_key", provider: "zai", sourceKind: "environment", source: "ZAI_API_KEY" } });
+		const omp = readiness.agents.find((agent) => agent.id === "omp")!;
+		Object.assign(omp.authentication, { account: { method: "api_key", provider: "zai", sourceKind: "environment", source: "ZAI_API_KEY" } });
 		mockInstalledOperations("npm", readiness);
 		renderSection();
 		expect(await within(await findAgentRow("codex")).findByText("Signed in as dev@example.com · Pro · Acme")).toBeInTheDocument();
 		backToList();
 		// The credential's source is never shown, only who and how.
-		expect(await within(await findAgentRow("qwen")).findByText("Using an API key · zai")).toBeInTheDocument();
+		expect(await within(await findAgentRow("omp")).findByText("Using an API key · zai")).toBeInTheDocument();
 	});
 
 	it("keeps the list beside the open harness when there is room", async () => {
@@ -817,7 +790,7 @@ describe("HarnessSettingsSection", () => {
 			expect(await within(page).findByRole("button", { name: "Update" })).toBeEnabled();
 			expect(await findListRow("codex")).toHaveAttribute("aria-current", "true");
 			expect(first).not.toHaveAttribute("aria-current");
-			expect(await findListRow("qwen")).toBeInTheDocument();
+			expect(await findListRow("omp")).toBeInTheDocument();
 		} finally {
 			window.ResizeObserver = original;
 		}
@@ -1039,11 +1012,11 @@ describe("HarnessSettingsSection", () => {
 
 	it("explains a harness with no installable method instead of questioning its ownership", async () => {
 		const reason = "Built into AO; update AO to update the harness.";
-		const readiness = catalogWithInstalled("goose");
+		const readiness = catalogWithInstalled("pi");
 		vi.mocked(apiClient.GET).mockImplementation(async (path, options) => {
 			if (path === "/api/v1/agents/readiness") return { data: readiness } as never;
-			if (path === "/api/v1/agents/installers") return { data: { agents: [...plans.agents.filter((plan) => plan.agentId !== "goose"), {
-				agentId: "goose", available: false, automatic: false, method: "manual", reason,
+			if (path === "/api/v1/agents/installers") return { data: { agents: [...plans.agents.filter((plan) => plan.agentId !== "pi"), {
+				agentId: "pi", available: false, automatic: false, method: "manual", reason,
 				methods: [{ id: "manual", label: "Manual", available: false, recommended: true, reason, reinstallAvailable: false, updateAvailable: false }],
 			}] } } as never;
 			if (path === "/api/v1/agents/install-jobs") return { data: { jobs: [] } } as never;
@@ -1055,7 +1028,7 @@ describe("HarnessSettingsSection", () => {
 		});
 		vi.mocked(apiClient.POST).mockResolvedValue({ data: readiness } as never);
 		renderSection();
-		const row = await findAgentRow("goose");
+		const row = await findAgentRow("pi");
 		expect(within(row).getAllByText(reason).length).toBeGreaterThan(0);
 		expect(within(row).queryByText("Installation method could not be verified. Manage this CLI using its original installer.")).toBeNull();
 		expect(within(row).queryByText("Update availability could not be verified.")).toBeNull();
@@ -1172,11 +1145,11 @@ describe("HarnessSettingsSection", () => {
 		act(() => { client.setQueryData(["agent-install-jobs"], [failed]); });
 		await waitFor(() => expect(document.querySelector('div[data-agent="codex"]')).not.toBeNull());
 		await findAgentRow("claude-code");
-		act(() => { client.setQueryData(["agent-install-jobs"], [failed, { target: "goose", status: "installing", output: "Downloading" }]); });
+		act(() => { client.setQueryData(["agent-install-jobs"], [failed, { target: "pi", status: "installing", output: "Downloading" }]); });
 		await waitFor(() => expect(document.querySelector('div[data-agent="claude-code"]')).not.toBeNull());
 		expect(document.querySelector('div[data-agent="codex"]')).toBeNull();
 		backToList();
-		expect(await within(await findListRow("goose")).findByRole("status")).toHaveTextContent("Working…");
+		expect(await within(await findListRow("pi")).findByRole("status")).toHaveTextContent("Working…");
 	});
 
 	it("prioritizes login and never auto-updates", async () => {
@@ -1278,7 +1251,7 @@ describe("HarnessSettingsSection", () => {
 		expect(screen.getByRole("radio", { name: "Local" })).toHaveAttribute("aria-checked", "true");
 		expect(screen.queryByRole("button", { name: "Login" })).toBeNull();
 		expect(within(claudeRow).queryByText(/Cloud/)).toBeNull();
-		expect(screen.getByText("Goose")).toBeInTheDocument();
+		expect(screen.getByText("Pi")).toBeInTheDocument();
 	});
 
 	it("logs cloud harnesses in from the cloud view", async () => {
@@ -1287,11 +1260,11 @@ describe("HarnessSettingsSection", () => {
 		cloudMocks.connections = [{ provider: "codex", label: "default", validationState: "valid" }];
 		const user = userEvent.setup();
 		renderSection();
-		await screen.findByText("Goose");
+		await screen.findByText("Pi");
 
 		await user.click(screen.getByRole("radio", { name: "Cloud" }));
 		// Only cloud-supported harnesses, with no local install or login controls.
-		expect(screen.queryByText("Goose")).toBeNull();
+		expect(screen.queryByText("Pi")).toBeNull();
 		const claudeRow = screen.getByText("Claude Code").closest('[data-agent="claude-code"]') as HTMLElement;
 		expect(within(claudeRow).getByText("Not connected")).toBeInTheDocument();
 		// A disclosure and one cloud login action; no local install controls.
@@ -1337,7 +1310,7 @@ describe("HarnessSettingsSection", () => {
 
 		expect(await screen.findByRole("radio", { name: "Cloud" })).toHaveAttribute("aria-checked", "true");
 		expect((await screen.findAllByRole("button", { name: "Login" })).length).toBeGreaterThan(0);
-		expect(screen.queryByText("Goose")).toBeNull();
+		expect(screen.queryByText("Pi")).toBeNull();
 	});
 
 	it("asks to sign in to AO Cloud in the cloud view when signed out", async () => {
@@ -1358,7 +1331,7 @@ describe("HarnessSettingsSection", () => {
 		const claudeRow = await findListRow("claude-code");
 		expect(screen.queryByRole("radio", { name: "Cloud" })).toBeNull();
 		expect(within(claudeRow).queryByRole("button", { name: "Login" })).toBeNull();
-		expect(screen.getByText("Goose")).toBeInTheDocument();
+		expect(screen.getByText("Pi")).toBeInTheDocument();
 	});
 
 	it("refreshes local readiness in the background without a Refresh login button", async () => {
@@ -1381,59 +1354,59 @@ describe("HarnessSettingsSection", () => {
 		expect(within(row).queryByRole("button", { name: "Authorized" })).toBeNull();
 	});
 
-	it("offers native login when fx is installed but unauthorized", async () => {
-		const fxCatalog = { agents: [{ ...catalogWithInstalled("claude-code").agents[0], id: "fx", label: "fx", authentication: { state: "unauthorized", freshness: "fresh", reason: "fx is not logged in.", reasonCode: "", attemptedAt: null, checkedAt: null } }] };
+	it("offers native login when a harness is installed but unauthorized", async () => {
+		const piCatalog = { agents: [{ ...catalogWithInstalled("claude-code").agents[0], id: "pi", label: "Pi", authentication: { state: "unauthorized", freshness: "fresh", reason: "Pi is not logged in.", reasonCode: "", attemptedAt: null, checkedAt: null } }] };
 		vi.mocked(apiClient.GET).mockImplementation(async (path) => {
-			if (path === "/api/v1/agents/readiness") return { data: fxCatalog } as never;
-			if (path === "/api/v1/agents/auth-plans") return { data: { plans: [{ agentId: "fx", action: "login", launchMode: "terminal", available: true, displayCommand: "fx login", documentationUrl: "https://fx.sh/docs" }] } } as never;
-			if (path === "/api/v1/agents/installers") return { data: { agents: [{ agentId: "fx", available: true, automatic: true, method: "official-installer", documentationUrl: "https://fx.sh/docs", methods: [] }] } } as never;
+			if (path === "/api/v1/agents/readiness") return { data: piCatalog } as never;
+			if (path === "/api/v1/agents/auth-plans") return { data: { plans: [{ agentId: "pi", action: "login", launchMode: "terminal", available: true, displayCommand: "pi login", documentationUrl: "https://pi.sh/docs" }] } } as never;
+			if (path === "/api/v1/agents/installers") return { data: { agents: [{ agentId: "pi", available: true, automatic: true, method: "official-installer", documentationUrl: "https://pi.sh/docs", methods: [] }] } } as never;
 			if (path === "/api/v1/agents/install-jobs") return { data: { jobs: [] } } as never;
 			return { data: undefined } as never;
 		});
-		vi.mocked(apiClient.POST).mockResolvedValue({ data: fxCatalog } as never);
+		vi.mocked(apiClient.POST).mockResolvedValue({ data: piCatalog } as never);
 		renderSection();
-		const row = await findAgentRow("fx");
+		const row = await findAgentRow("pi");
 		expect(await within(row).findByRole("button", { name: "Login" })).toBeInTheDocument();
 		expect(within(row).queryByRole("button", { name: "Instructions" })).not.toBeInTheDocument();
 	});
 
-	it("shows configured Kimi as connected and offers to log in again", async () => {
-		const configured = { agents: [agentReadiness("kimi", "Kimi", { authentication: "configured" })] };
+	it("shows a configured harness as connected and offers to log in again", async () => {
+		const configured = { agents: [agentReadiness("agy", "AGY", { authentication: "configured" })] };
 		vi.mocked(apiClient.GET).mockImplementation(async (path) => {
 			if (path === "/api/v1/agents/readiness") return { data: configured } as never;
-			if (path === "/api/v1/agents/auth-plans") return { data: { plans: [{ agentId: "kimi", action: "login", launchMode: "terminal", available: true }] } } as never;
+			if (path === "/api/v1/agents/auth-plans") return { data: { plans: [{ agentId: "agy", action: "login", launchMode: "terminal", available: true }] } } as never;
 			if (path === "/api/v1/agents/installers") return { data: { agents: [] } } as never;
 			if (path === "/api/v1/agents/install-jobs") return { data: { jobs: [] } } as never;
 			return { data: undefined } as never;
 		});
 		renderSection();
-		const row = await findAgentRow("kimi");
+		const row = await findAgentRow("agy");
 		expect(await within(row).findByText("Connected")).toBeInTheDocument();
 		expect(within(row).queryByText("Configured")).toBeNull();
 		expect(within(row).queryByRole("button", { name: "Login" })).not.toBeInTheDocument();
 		expect(within(row).getByRole("button", { name: "Log in again" })).toBeEnabled();
 	});
 
-	it("offers fx installation while readiness refreshes automatically", async () => {
-		const fxCatalog = { agents: [{ ...catalogWithInstalled().agents[0], id: "fx", label: "fx" }] };
-		const fxPlan = { agentId: "fx", available: true, automatic: true, method: "official-installer", command: "bash <downloaded from https://fx.sh/setup.sh>", documentationUrl: "https://fx.sh/docs", expectedDestination: "~/.local/bin/fx", methods: [{ id: "official-installer", label: "Official installer", available: true, recommended: true, command: "bash <downloaded from https://fx.sh/setup.sh>", reinstallAvailable: false }] };
+	it("offers installation while readiness refreshes automatically", async () => {
+		const piCatalog = { agents: [{ ...catalogWithInstalled().agents[0], id: "pi", label: "Pi" }] };
+		const piPlan = { agentId: "pi", available: true, automatic: true, method: "official-installer", command: "bash <downloaded from https://pi.sh/setup.sh>", documentationUrl: "https://pi.sh/docs", expectedDestination: "~/.local/bin/pi", methods: [{ id: "official-installer", label: "Official installer", available: true, recommended: true, command: "bash <downloaded from https://pi.sh/setup.sh>", reinstallAvailable: false }] };
 		vi.mocked(apiClient.GET).mockImplementation(async (path) => {
-			if (path === "/api/v1/agents/auth-plans") return { data: { plans: [{ agentId: "fx", action: "login", launchMode: "terminal", available: true, displayCommand: "fx login", documentationUrl: "https://fx.sh/docs" }] } } as never;
-			if (path === "/api/v1/agents/readiness") return { data: fxCatalog } as never;
-			if (path === "/api/v1/agents/installers") return { data: { agents: [fxPlan] } } as never;
+			if (path === "/api/v1/agents/auth-plans") return { data: { plans: [{ agentId: "pi", action: "login", launchMode: "terminal", available: true, displayCommand: "pi login", documentationUrl: "https://pi.sh/docs" }] } } as never;
+			if (path === "/api/v1/agents/readiness") return { data: piCatalog } as never;
+			if (path === "/api/v1/agents/installers") return { data: { agents: [piPlan] } } as never;
 			if (path === "/api/v1/agents/install-jobs") return { data: { jobs: [] } } as never;
 			return { data: undefined } as never;
 		});
 		vi.mocked(apiClient.POST).mockImplementation(async (path) => {
-			if (path === "/api/v1/agents/{agent}/install") return { data: { target: "fx", status: "installing", method: "official-installer" } } as never;
-			return { data: fxCatalog } as never;
+			if (path === "/api/v1/agents/{agent}/install") return { data: { target: "pi", status: "installing", method: "official-installer" } } as never;
+			return { data: piCatalog } as never;
 		});
 		renderSection();
-		const row = await findAgentRow("fx");
+		const row = await findAgentRow("pi");
 		expect(within(row).queryByRole("button", { name: "Instructions" })).not.toBeInTheDocument();
 		await waitFor(() => expect(apiClient.POST).toHaveBeenCalledWith("/api/v1/agents/refresh"));
 		await userEvent.click(await within(row).findByRole("button", { name: "Install" }));
-		expect(apiClient.POST).toHaveBeenCalledWith("/api/v1/agents/{agent}/install", { params: { path: { agent: "fx" } }, body: { method: "official-installer", operation: "install" } });
+		expect(apiClient.POST).toHaveBeenCalledWith("/api/v1/agents/{agent}/install", { params: { path: { agent: "pi" } }, body: { method: "official-installer", operation: "install" } });
 	});
 
 	it("never lets the Settings body scroll on the harness page", async () => {
@@ -1484,7 +1457,7 @@ describe("HarnessSettingsSection", () => {
 		view.rerender(
 			<QueryClientProvider client={view.client}>
 				<TooltipProvider>
-					<HarnessSettingsSection focusAgentId="qwen" />
+					<HarnessSettingsSection focusAgentId="omp" />
 				</TooltipProvider>
 			</QueryClientProvider>,
 		);
@@ -1560,50 +1533,50 @@ describe("HarnessSettingsSection", () => {
 	it("opens the installation guide for a manual-only harness", async () => {
 		const openExternal = vi.spyOn(aoBridge.app, "openExternal").mockResolvedValue(undefined);
 		renderSection();
-		const row = await findAgentRow("memcode");
+		const row = await findAgentRow("opencode-v2");
 		await userEvent.click(await within(row).findByRole("button", { name: "Open installation guide" }));
 
-		expect(openExternal).toHaveBeenCalledWith("https://example.test/memcode");
+		expect(openExternal).toHaveBeenCalledWith("https://example.test/opencode-v2");
 	});
 
-	it("classifies an unauthorized Droid as not configured and offers documentation", async () => {
-		const droidCatalog = { agents: [agentReadiness("droid", "Droid", { authentication: "unauthorized" })] };
-		const documentationUrl = "https://example.test/droid/setup";
+	it("classifies an unauthorized harness with a setup action as not configured and offers documentation", async () => {
+		const agyCatalog = { agents: [agentReadiness("agy", "AGY", { authentication: "unauthorized" })] };
+		const documentationUrl = "https://example.test/agy/setup";
 		vi.mocked(apiClient.GET).mockImplementation(async (path) => {
-			if (path === "/api/v1/agents/readiness") return { data: droidCatalog } as never;
+			if (path === "/api/v1/agents/readiness") return { data: agyCatalog } as never;
 			if (path === "/api/v1/agents/auth-plans") {
-				return { data: { plans: [{ agentId: "droid", action: "setup", launchMode: "documentation", available: true, documentationUrl }] } } as never;
+				return { data: { plans: [{ agentId: "agy", action: "setup", launchMode: "documentation", available: true, documentationUrl }] } } as never;
 			}
 			if (path === "/api/v1/agents/installers") return { data: { agents: [] } } as never;
 			if (path === "/api/v1/agents/install-jobs") return { data: { jobs: [] } } as never;
 			return { data: undefined } as never;
 		});
-		vi.mocked(apiClient.POST).mockResolvedValue({ data: droidCatalog } as never);
+		vi.mocked(apiClient.POST).mockResolvedValue({ data: agyCatalog } as never);
 		const openExternal = vi.spyOn(aoBridge.app, "openExternal").mockResolvedValue(undefined);
 
 		renderSection();
-		const row = await findAgentRow("droid");
+		const row = await findAgentRow("agy");
 		expect(await within(row).findByText("Not set up")).toBeInTheDocument();
 		const documentation = within(row).getByRole("button", { name: "View documentation" });
 		await userEvent.click(documentation);
 		expect(openExternal).toHaveBeenCalledWith(documentationUrl);
 	});
 
-	it("keeps Droid documentation available when credentials are configured but unverified", async () => {
-		const droidCatalog = { agents: [agentReadiness("droid", "Droid", { authentication: "configured" })] };
+	it("keeps setup documentation available when credentials are configured but unverified", async () => {
+		const agyCatalog = { agents: [agentReadiness("agy", "AGY", { authentication: "configured" })] };
 		vi.mocked(apiClient.GET).mockImplementation(async (path) => {
-			if (path === "/api/v1/agents/readiness") return { data: droidCatalog } as never;
+			if (path === "/api/v1/agents/readiness") return { data: agyCatalog } as never;
 			if (path === "/api/v1/agents/auth-plans") {
-				return { data: { plans: [{ agentId: "droid", action: "setup", launchMode: "documentation", available: true, documentationUrl: "https://example.test/droid" }] } } as never;
+				return { data: { plans: [{ agentId: "agy", action: "setup", launchMode: "documentation", available: true, documentationUrl: "https://example.test/agy" }] } } as never;
 			}
 			if (path === "/api/v1/agents/installers") return { data: { agents: [] } } as never;
 			if (path === "/api/v1/agents/install-jobs") return { data: { jobs: [] } } as never;
 			return { data: undefined } as never;
 		});
-		vi.mocked(apiClient.POST).mockResolvedValue({ data: droidCatalog } as never);
+		vi.mocked(apiClient.POST).mockResolvedValue({ data: agyCatalog } as never);
 
 		renderSection();
-		const row = await findAgentRow("droid");
+		const row = await findAgentRow("agy");
 		expect(await within(row).findByText("Configured")).toBeInTheDocument();
 		expect(within(row).getByRole("button", { name: "View documentation" })).toBeEnabled();
 	});
@@ -1836,36 +1809,36 @@ describe("HarnessSettingsSection", () => {
 		await waitFor(() => expect(within(row).queryByTestId("inline-terminal-body")).not.toBeInTheDocument(), { timeout: 5_000 });
 	}, 15_000);
 
-	it("completes Kimi login when the login terminal exits", async () => {
-		const initial = { agents: [agentReadiness("kimi", "Kimi", { authentication: "unauthorized" })] };
-		const configured = { agents: [agentReadiness("kimi", "Kimi", { authentication: "authorized" })] };
+	it("completes login when the login terminal exits", async () => {
+		const initial = { agents: [agentReadiness("agy", "AGY", { authentication: "unauthorized" })] };
+		const configured = { agents: [agentReadiness("agy", "AGY", { authentication: "authorized" })] };
 		let probed = false;
 		vi.mocked(apiClient.GET).mockImplementation(async (path) => {
 			if (path === "/api/v1/agents/readiness") return { data: initial } as never;
-			if (path === "/api/v1/agents/auth-plans") return { data: { plans: [{ agentId: "kimi", action: "login", launchMode: "terminal", available: true }] } } as never;
+			if (path === "/api/v1/agents/auth-plans") return { data: { plans: [{ agentId: "agy", action: "login", launchMode: "terminal", available: true }] } } as never;
 			if (path === "/api/v1/agents/installers") return { data: { agents: [] } } as never;
 			if (path === "/api/v1/agents/install-jobs") return { data: { jobs: [] } } as never;
 			return { data: undefined } as never;
 		});
 		vi.mocked(apiClient.POST).mockImplementation(async (path) => {
 			if (path === "/api/v1/agents/{agent}/auth") return { data: {
-				agentId: "kimi", action: "login", terminal: { handleId: "auth-kimi", projectId: null, sessionId: null, workingDir: "/tmp", title: "Kimi login", createdAt: "2026-09-29T00:00:00Z" },
+				agentId: "agy", action: "login", terminal: { handleId: "auth-agy", projectId: null, sessionId: null, workingDir: "/tmp", title: "AGY login", createdAt: "2026-09-29T00:00:00Z" },
 			} } as never;
 			if (path === "/api/v1/agents/{agent}/probe") {
 				probed = true;
-				return { data: { agent: { id: "kimi", authStatus: "authorized" }, installed: true } } as never;
+				return { data: { agent: { id: "agy", authStatus: "authorized" }, installed: true } } as never;
 			}
 			if (path === "/api/v1/agents/readiness/ensure") return { data: probed ? configured : initial } as never;
 			return { data: undefined } as never;
 		});
 		const close = vi.spyOn(apiClient, "DELETE").mockResolvedValue({ data: undefined } as never);
 		renderSection();
-		const row = await findAgentRow("kimi");
+		const row = await findAgentRow("agy");
 		await userEvent.click(await within(row).findByRole("button", { name: "Login" }));
 		await userEvent.click(await within(row).findByRole("button", { name: "Complete login terminal" }));
 
 		await waitFor(() => expect(close).toHaveBeenCalledWith("/api/v1/shell-terminals/{handleId}", {
-			params: { path: { handleId: "auth-kimi" } },
+			params: { path: { handleId: "auth-agy" } },
 		}));
 		expect(await within(row).findByText("Connected")).toBeInTheDocument();
 		expect(within(row).queryByText("Configured")).toBeNull();
@@ -2035,7 +2008,7 @@ describe("HarnessSettingsSection", () => {
 	});
 
 	it("sorts harnesses by authentication state while preserving catalog order within each group", async () => {
-		const readiness = catalogWithInstalled("claude-code", "codex", "qwen", "goose");
+		const readiness = catalogWithInstalled("claude-code", "codex", "omp", "pi");
 		readiness.agents[0].authentication.state = "unknown";
 		readiness.agents[1].authentication.state = "authorized";
 		readiness.agents[2].authentication.state = "unauthorized";
@@ -2052,7 +2025,7 @@ describe("HarnessSettingsSection", () => {
 		await waitFor(() => {
 			const agentIds = Array.from(document.querySelectorAll<HTMLElement>("[data-agent]"))
 				.map((row) => row.dataset.agent);
-			expect(agentIds.slice(0, 4)).toEqual(["codex", "goose", "qwen", "claude-code"]);
+			expect(agentIds.slice(0, 4)).toEqual(["codex", "pi", "omp", "claude-code"]);
 		});
 	});
 
@@ -2172,7 +2145,7 @@ describe("HarnessSettingsSection", () => {
 
 	it("does not offer reinstall actions for installed harnesses", async () => {
 		vi.mocked(apiClient.GET).mockImplementation(async (path) => {
-			if (path === "/api/v1/agents/readiness") return { data: catalogWithInstalled("claude-code", "qwen") } as never;
+			if (path === "/api/v1/agents/readiness") return { data: catalogWithInstalled("claude-code", "omp") } as never;
 			if (path === "/api/v1/agents/installers") return { data: plans } as never;
 			if (path === "/api/v1/agents/install-jobs") return { data: { jobs: [] } } as never;
 			return { data: undefined } as never;
@@ -2181,36 +2154,36 @@ describe("HarnessSettingsSection", () => {
 		const claudeRow = await findAgentRow("claude-code");
 		expect(claudeRow).toHaveTextContent("Installed");
 		expect(within(claudeRow).queryByRole("button", { name: "Reinstall" })).not.toBeInTheDocument();
-		const qwenRow = await findAgentRow("qwen");
-		expect(within(qwenRow).queryByRole("button", { name: "Reinstall" })).not.toBeInTheDocument();
-		expect(within(qwenRow).queryByRole("button", { name: "Instructions" })).not.toBeInTheDocument();
+		const ompRow = await findAgentRow("omp");
+		expect(within(ompRow).queryByRole("button", { name: "Reinstall" })).not.toBeInTheDocument();
+		expect(within(ompRow).queryByRole("button", { name: "Instructions" })).not.toBeInTheDocument();
 	});
 
 	it("starts an official vendor installer with one click and no instructions dialog", async () => {
 		vi.mocked(apiClient.POST).mockImplementation(async (path) => {
 			if (path === "/api/v1/agents/{agent}/install") {
-				return { data: { target: "qwen", status: "installing", method: "npm" } } as never;
+				return { data: { target: "omp", status: "installing", method: "npm" } } as never;
 			}
 			return { data: undefined } as never;
 		});
 		const user = userEvent.setup();
 		renderSection();
-		const row = await findAgentRow("qwen");
+		const row = await findAgentRow("omp");
 		await within(row).findByRole("button", { name: "Install" });
 		expect(within(row).queryByRole("button", { name: "Instructions" })).not.toBeInTheDocument();
 
 		await user.click(within(row).getByRole("button", { name: "Install" }));
 
 		await waitFor(() => expect(apiClient.POST).toHaveBeenCalledWith("/api/v1/agents/{agent}/install", {
-			params: { path: { agent: "qwen" } },
+			params: { path: { agent: "omp" } },
 			body: { method: "npm", operation: "install" },
 		}));
 		expect(row).toHaveTextContent("Installing…");
 	});
 
-	it("shows the official Goose installer", async () => {
+	it("shows the official Pi installer", async () => {
 		renderSection();
-		const row = await findAgentRow("goose");
+		const row = await findAgentRow("pi");
 		await within(row).findByRole("button", { name: "Install" });
 		expect(within(row).getByRole("button", { name: "Install" })).toBeInTheDocument();
 	});
@@ -2376,21 +2349,21 @@ describe("HarnessSettingsSection", () => {
 		await waitFor(() => expect(within(codexPage).getByRole("button", { name: "Install" })).toBeEnabled());
 		await user.click(within(codexPage).getByRole("button", { name: "Install" }));
 		expect(await within(codexPage).findByRole("status")).toHaveTextContent("Installing…");
-		const qwenPage = await findAgentRow("qwen");
-		await user.click(within(qwenPage).getByRole("button", { name: "Install" }));
-		expect(await within(qwenPage).findByRole("status")).toHaveTextContent("Installing…");
+		const ompPage = await findAgentRow("omp");
+		await user.click(within(ompPage).getByRole("button", { name: "Install" }));
+		expect(await within(ompPage).findByRole("status")).toHaveTextContent("Installing…");
 		backToList();
 
 		const codexRow = await findListRow("codex");
-		const qwenRow = await findListRow("qwen");
+		const ompRow = await findListRow("omp");
 		const codexStatus = within(codexRow).getByRole("status");
-		const qwenStatus = within(qwenRow).getByRole("status");
+		const ompStatus = within(ompRow).getByRole("status");
 		expect(codexStatus.querySelector("svg.animate-spin")).not.toBeNull();
-		expect(qwenStatus.querySelector("svg.animate-spin")).not.toBeNull();
+		expect(ompStatus.querySelector("svg.animate-spin")).not.toBeNull();
 		expect(within(codexRow).queryByRole("progressbar")).not.toBeInTheDocument();
-		expect(within(qwenRow).queryByRole("progressbar")).not.toBeInTheDocument();
+		expect(within(ompRow).queryByRole("progressbar")).not.toBeInTheDocument();
 		expect(within(codexRow).getAllByText("Installing…")).toHaveLength(1);
-		expect(within(qwenRow).getAllByText("Installing…")).toHaveLength(1);
+		expect(within(ompRow).getAllByText("Installing…")).toHaveLength(1);
 	});
 
 	it("hydrates interrupted jobs and offers verification", async () => {
@@ -2412,24 +2385,6 @@ describe("HarnessSettingsSection", () => {
 		await user.click(within(row).getByRole("button", { name: "Verify again" }));
 		expect(apiClient.POST).toHaveBeenCalledWith("/api/v1/agents/{agent}/verify", { params: { path: { agent: "codex" } } });
 		await waitFor(() => expect(row).toHaveTextContent("Verifying…"));
-	});
-
-	it("shows Autohand component repair after verified CLI success", async () => {
-		const warning = "Computer control needs a separate repair: autohand computer install";
-		vi.mocked(apiClient.GET).mockImplementation(async (path) => {
-			if (path === "/api/v1/agents/readiness") return { data: { agents: [agentReadiness("autohand", "Autohand")] } } as never;
-			if (path === "/api/v1/agents/installers") return { data: plans } as never;
-			if (path === "/api/v1/agents/install-jobs") return { data: { jobs: [{ target: "autohand", status: "succeeded", method: "official-installer", output: `Installed to C:\\autohand\\autohand.exe\nAutohand CLI install will be verified. ${warning}\n0.9.8` }] } } as never;
-			return { data: undefined } as never;
-		});
-		const user = userEvent.setup();
-		renderSection();
-		const row = await findAgentRow("autohand");
-		expect(await within(row).findByRole("status")).toHaveTextContent(warning);
-		expect(within(row).queryByRole("button", { name: "Verify again" })).not.toBeInTheDocument();
-		await user.click(within(row).getByRole("button", { name: "Show diagnostics" }));
-		expect(within(row).getByRole("button", { name: "Copy diagnostics" })).toBeInTheDocument();
-		expect(row).toHaveTextContent("0.9.8");
 	});
 
 	it("shows and copies daemon diagnostics", async () => {

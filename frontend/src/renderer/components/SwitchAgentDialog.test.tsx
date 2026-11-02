@@ -70,7 +70,7 @@ function renderDialog(
 		);
 	}
 	const catalogProjectId = session.workspaceId;
-	for (const agentId of ["claude-code", "codex", "fx"]) {
+	for (const agentId of ["claude-code", "codex"]) {
 		queryClient.setQueryData(agentModelsQueryKey(agentId, catalogProjectId, session.hostId), {
 			agentId,
 			allowCustom: false,
@@ -172,34 +172,12 @@ describe("SwitchAgentDialog", () => {
 		expect(onOpenChange).toHaveBeenCalledWith(false);
 	});
 
-	it("offers fx as a switch target", async () => {
-		const tuiWorker = { ...worker, mode: "tui" as const };
-		renderDialog(tuiWorker);
-		const dialog = screen.getByRole("dialog", { name: "Switch agent" });
-		await userEvent.click(within(dialog).getByRole("button", { name: "Target agent" }));
-
-		const fxOption = screen.getByRole("menuitem", { name: "fx" });
-		expect(fxOption).not.toHaveAttribute("data-disabled");
-		await userEvent.click(fxOption);
-		await userEvent.click(within(dialog).getByRole("button", { name: "Switch" }));
-
-		expect(switchMocks.mutate).toHaveBeenCalledWith(
-			{
-				idempotencyKey: "idempotency-1",
-				model: "",
-				session: tuiWorker,
-				targetHarness: "fx",
-			},
-			{ onSuccess: expect.any(Function) },
-		);
-	});
-
-	it("keeps fx unavailable as a Chat switch target", async () => {
+	it("keeps non-switch-target harnesses unavailable", async () => {
 		renderDialog({ ...worker, mode: "chat" });
 		const dialog = screen.getByRole("dialog", { name: "Switch agent" });
 		await userEvent.click(within(dialog).getByRole("button", { name: "Target agent" }));
 
-		expect(screen.getByRole("menuitem", { name: /fx,\s*Coming soon/ })).toHaveAttribute(
+		expect(screen.getByRole("menuitem", { name: /OMP,\s*Coming soon/ })).toHaveAttribute(
 			"data-disabled",
 		);
 	});
