@@ -6,7 +6,7 @@ import { scmUserAvatarUrl } from "./scm-avatar";
 import { UserAvatar } from "./UserAvatar";
 import type { ExternalLinkProps } from "./external-link";
 import { PRCardStatusSummary, PRSummaryMeta, PRSummaryParts } from "./PRSummaryDisplay";
-import type { PRCardPresentation, PRSummaryPart } from "./pull-request-models";
+import type { PRCardPresentation, PRDisplayTone, PRSummaryPart } from "./pull-request-models";
 
 function ExternalLink({ ariaLabel, children, stopPropagation, ...props }: ExternalLinkProps) {
 	return (
@@ -134,7 +134,7 @@ describe("portable leaf components", () => {
 					label: "Checks running",
 					href: "https://example.com/checks",
 					breathe: true,
-					tone: "neutral",
+					tone: "validating",
 					links: [],
 				},
 			],
@@ -145,7 +145,35 @@ describe("portable leaf components", () => {
 
 		expect(screen.getByText("Review required")).toBeInTheDocument();
 		expect(screen.getByRole("link", { name: "Checks running" })).toBeInTheDocument();
-		expect(container.querySelector(".animate-status-pulse")).toBeInTheDocument();
+		expect(container.querySelector(".animate-spin")).toBeInTheDocument();
+		expect(container.querySelector(".animate-status-pulse")).not.toBeInTheDocument();
+		expect(container.querySelector(".text-status-validating")).toBeInTheDocument();
+	});
+
+	it("renders the three CI states distinctly: pass, fail, running with spinner", () => {
+		const cases: Array<{ tone: PRDisplayTone; breathe?: boolean; glyph: string; toneClass: string }> = [
+			{ tone: "success", glyph: ".size-dot-sm", toneClass: ".text-success" },
+			{ tone: "error", glyph: ".size-dot-sm", toneClass: ".text-error" },
+			{ tone: "validating", breathe: true, glyph: ".animate-spin", toneClass: ".text-status-validating" },
+		];
+		for (const c of cases) {
+			const { container } = render(
+				<PRCardStatusSummary
+					externalLink={ExternalLink}
+					presentation={{
+						primary: { key: "ci", label: `Checks ${c.tone}`, tone: c.tone, breathe: c.breathe, links: [] },
+						supporting: [],
+					}}
+				/>,
+			);
+			expect(container.querySelector(c.glyph), `glyph for ${c.tone}`).toBeInTheDocument();
+			expect(container.querySelector(c.toneClass), `tone for ${c.tone}`).toBeInTheDocument();
+			// Running CI must never render as failing or neutral.
+			if (c.tone === "validating") {
+				expect(container.querySelector(".text-error")).not.toBeInTheDocument();
+				expect(container.querySelector(".text-muted-foreground")).not.toBeInTheDocument();
+			}
+		}
 	});
 
 	it("keeps review details compact and inline with the review detail", () => {

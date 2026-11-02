@@ -1250,6 +1250,81 @@ func TestSCMThreadFromGraphQLMarksThreadBotOnlyWhenAllCommentsAreBots(t *testing
 	}
 }
 
+// rollupPR builds a minimal GraphQL pull-request payload whose head commit
+// carries a statusCheckRollup with the given top-level state and contexts.
+func rollupPR(state string, contexts ...map[string]any) map[string]any {
+	return map[string]any{
+		"commits": map[string]any{"nodes": []any{
+			map[string]any{"commit": map[string]any{"statusCheckRollup": map[string]any{
+				"state":    state,
+				"contexts": map[string]any{"nodes": append([]any{}, anySlice(contexts...)...)},
+			}}},
+		}},
+	}
+}
+
+func anySlice(maps ...map[string]any) []any {
+	out := make([]any, len(maps))
+	for i, m := range maps {
+		out[i] = m
+	}
+	return out
+}
+
+// TestSCMObservationInProgressChecksArePending reproduces issue #227: GitHub's
+// rollup "state" stays FAILURE while failed checks re-run (and can lag the
+// live check runs), so the aggregate must come from the per-check statuses —
+// a run with queued/in_progress checks is running, not failing.
+func TestSCMObservationInProgressChecksArePending(t *testing.T) {
+	pr := rollupPR("FAILURE",
+		map[string]any{"__typename": "CheckRun", "name": "test-a", "status": "QUEUED", "conclusion": ""},
+		map[string]any{"__typename": "CheckRun", "name": "test-b", "status": "IN_PROGRESS", "conclusion": ""},
+		map[string]any{"__typename": "CheckRun", "name": "lint", "status": "COMPLETED", "conclusion": "SUCCESS"},
+	)
+	obs := scmObservationFromGraphQL(ports.SCMPRRef{Repo: ports.SCMRepo{Provider: "github", Host: "github.com", Owner: "octocat", Name: "hello", Repo: "octocat/hello"}, Number: 42}, pr)
+	if obs.CI.Summary != string(domain.CIPending) {
+		t.Fatalf("observer CI summary = %q, want pending while checks run", obs.CI.Summary)
+	}
+}
+
+func TestSCMObservationSettledFailureIsFailing(t *testing.T) {
+	pr := rollupPR("FAILURE",
+		map[string]any{"__typename": "CheckRun", "name": "test-a", "status": "COMPLETED", "conclusion": "FAILURE"},
+		map[string]any{"__typename": "CheckRun", "name": "lint", "status": "COMPLETED", "conclusion": "SUCCESS"},
+	)
+	obs := scmObservationFromGraphQL(ports.SCMPRRef{Repo: ports.SCMRepo{Provider: "github", Host: "github.com", Owner: "octocat", Name: "hello", Repo: "octocat/hello"}, Number: 42}, pr)
+	if obs.CI.Summary != string(domain.CIFailing) {
+		t.Fatalf("observer CI summary = %q, want failing once nothing runs", obs.CI.Summary)
+	}
+}
+
+// TestCISummaryFromGraphQLRunningOutranksSettledFailure pins the same
+// precedence on the legacy per-URL Observe path so both classify alike:
+// while anything is queued or in progress the verdict is pending.
+func TestCISummaryFromGraphQLRunningOutranksSettledFailure(t *testing.T) {
+	running := ciSummaryFromGraphQL(rollupPR("FAILURE",
+		map[string]any{"__typename": "CheckRun", "name": "test-a", "status": "IN_PROGRESS", "conclusion": ""},
+		map[string]any{"__typename": "CheckRun", "name": "test-b", "status": "COMPLETED", "conclusion": "FAILURE"},
+	))
+	if running != domain.CIPending {
+		t.Fatalf("ciSummaryFromGraphQL(running+failed) = %q, want pending", running)
+	}
+
+	failed := ciSummaryFromGraphQL(rollupPR("FAILURE",
+		map[string]any{"__typename": "CheckRun", "name": "test-a", "status": "COMPLETED", "conclusion": "FAILURE"},
+	))
+	if failed != domain.CIFailing {
+		t.Fatalf("ciSummaryFromGraphQL(failed) = %q, want failing", failed)
+	}
+
+	passing := ciSummaryFromGraphQL(rollupPR("SUCCESS",
+		map[string]any{"__typename": "CheckRun", "name": "lint", "status": "COMPLETED", "conclusion": "SUCCESS"},
+	))
+	if passing != domain.CIPassing {
+		t.Fatalf("ciSummaryFromGraphQL(passing) = %q, want passing", passing)
+	}
+}
+
 func TestSCMObservationUsesRollupStateWhenContextsPaginated(t *testing.T) {
 	fx := basePRFixture()
 	var pr map[string]any
