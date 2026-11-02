@@ -758,8 +758,13 @@ func Run() error {
 	// PR merge notices (fork issue #243): lifecycle one-shot project facts ride
 	// the same semantic path as report batches, addressed by the same
 	// active-orchestrator rule. Late-bound here because the sender needs the
-	// coordinator that was just constructed.
-	lcStack.LCM.SetOrchestratorNotifier(orchestratorNoticeSender{reports: reportCoordinator, sessions: reportSessions})
+	// coordinator that was just constructed. Opt-in: the notice is unwired
+	// unless AO_ENABLE_PR_MERGE_NOTICES=1 — the bell row records merges
+	// either way, only the orchestrator-conversation notice is gated.
+	if prMergeNoticesEnabled(os.Getenv) {
+		log.Info("PR merge notices enabled", "env", prMergeNoticesEnabledEnv)
+		lcStack.LCM.SetOrchestratorNotifier(orchestratorNoticeSender{reports: reportCoordinator, sessions: reportSessions})
+	}
 	reportDeliveryDone := reportCoordinator.Start(ctx)
 	defer func() {
 		stop()
