@@ -250,6 +250,7 @@ function setupHost(agentBrowserRuntime?: import("./agent-browser-runtime").Agent
 	};
 	const view = {
 		webContents,
+		getBounds: vi.fn(),
 		setBounds: vi.fn(),
 		setBorderRadius: vi.fn(),
 		setVisible: vi.fn(),
