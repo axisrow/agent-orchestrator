@@ -28,6 +28,12 @@ const TurnFailureEvent = "stop-failure"
 // reports, matching Codex's Interrupt hook.
 const TurnInterruptEvent = "interrupt"
 
+// TurnCompletionEvent is the activity event a transcript-proven completed
+// turn reports when its own end-of-turn hook never reached the daemon (the
+// daemon was down when the hook fired). It matches what the hook would have
+// said, so lifecycle treats it as the same turn boundary.
+const TurnCompletionEvent = "turn-completed"
+
 // turnFailureHarnesses are the harnesses whose terminal turn can end without
 // firing a hook. Codex runs its Stop hook only after a successful turn, so a
 // turn that fails or is interrupted reports nothing; Claude Code reports a
@@ -47,12 +53,15 @@ type TurnFailureConfig struct {
 }
 
 // TurnFailureObserver marks a terminal session idle when its harness's
-// transcript proves the current turn ended on an error or was interrupted.
-// Some harnesses fire no hook at all for such a turn (Codex for a failed or
-// interrupted turn, Claude Code for an Esc interrupt), so the hook-driven
-// activity stayed active: the session read "working", queued messages were
-// held, and Finish-then-switch waited for a stop that never came. The 30 second stale-activity observer only recovers that
-// after two minutes, and only when the screen positively shows an idle prompt.
+// transcript proves the current turn ended — on an error, an interrupt, or
+// normally with its end-of-turn hook lost (the daemon was down when the hook
+// fired). Some ends fire no hook at all (Codex for a failed or interrupted
+// turn, Claude Code for an Esc interrupt), and any hook is lost while the
+// daemon cannot receive it: the hook-driven activity stayed active, the
+// session read "working" long after its turn was over, queued messages were
+// held, and Finish-then-switch waited for a stop that never came. The 30
+// second stale-activity observer only recovers that after two minutes, and
+// only when the screen positively shows an idle prompt.
 type TurnFailureObserver struct {
 	sessions turnFailureSource
 	sink     activitySink
@@ -68,15 +77,15 @@ type turnFailureWatch struct {
 	path    string
 	size    int64
 	modTime time.Time
-	failure ports.TurnFailure
-	failed  bool
-	// reported is the failure the lifecycle already accepted. It may have
+	end     ports.TurnEnd
+	ended   bool
+	// reported is the turn end the lifecycle already accepted. It may have
 	// applied it, kept the parent active while a subagent runs (recording the
 	// idle for when the child ends), or fenced it for a stale launch: in every
-	// case re-sending the same failure on a later revision gets the same
+	// case re-sending the same end on a later revision gets the same
 	// answer, so it is sent and logged once.
 	reported turnFailureKey
-	// errorKey and errorLoggedAt rate-limit the error log while one failure's
+	// errorKey and errorLoggedAt rate-limit the error log while one end's
 	// report keeps failing.
 	errorKey      turnFailureKey
 	errorLoggedAt time.Time
@@ -143,8 +152,8 @@ func (o *TurnFailureObserver) Poll(ctx context.Context) error {
 	return nil
 }
 
-// detector returns the harness's failed-turn capability.
-func (o *TurnFailureObserver) detector(harness domain.AgentHarness) (ports.TranscriptTurnFailureDetector, bool) {
+// detector returns the harness's turn-end capability.
+func (o *TurnFailureObserver) detector(harness domain.AgentHarness) (ports.TranscriptTurnEndDetector, bool) {
 	if o.agents == nil {
 		return nil, false
 	}
@@ -152,11 +161,11 @@ func (o *TurnFailureObserver) detector(harness domain.AgentHarness) (ports.Trans
 	if !ok {
 		return nil, false
 	}
-	detector, ok := agent.(ports.TranscriptTurnFailureDetector)
+	detector, ok := agent.(ports.TranscriptTurnEndDetector)
 	return detector, ok
 }
 
-func (o *TurnFailureObserver) reconcile(ctx context.Context, session domain.TurnFailureCandidate, detector ports.TranscriptTurnFailureDetector) {
+func (o *TurnFailureObserver) reconcile(ctx context.Context, session domain.TurnFailureCandidate, detector ports.TranscriptTurnEndDetector) {
 	path := session.NativeTranscriptPath
 	info, err := os.Stat(path)
 	if err != nil {
@@ -165,7 +174,7 @@ func (o *TurnFailureObserver) reconcile(ctx context.Context, session domain.Turn
 	}
 	watch := o.watches[session.ID]
 	if watch == nil || watch.path != path || watch.size != info.Size() || !watch.modTime.Equal(info.ModTime()) {
-		failure, failed, err := detector.LastTurnFailure(ctx, path)
+		end, ended, err := detector.LastTurnEnd(ctx, path)
 		if err != nil {
 			o.logger.Debug("turn failure observer: transcript unreadable", "session", session.ID, "err", err)
 			return
@@ -175,37 +184,48 @@ func (o *TurnFailureObserver) reconcile(ctx context.Context, session domain.Turn
 			o.watches[session.ID] = watch
 		}
 		watch.path, watch.size, watch.modTime = path, info.Size(), info.ModTime()
-		watch.failure, watch.failed = failure, failed
+		watch.end, watch.ended = end, ended
 	}
-	if !watch.failed {
+	if !watch.ended {
 		return
 	}
 	// The current state was entered by a hook (a prompt, or an approval
-	// request) at LastActivityAt. A failure recorded before it belongs to an
+	// request) at LastActivityAt. A turn end recorded before it belongs to an
 	// earlier turn: replaying it would idle a turn that is still running.
 	// A prompt submitted while the session still read active (within a poll
 	// of an Esc, before the harness records the prompt) starts a turn without
 	// moving LastActivityAt, so the newest prompt bounds the turn too.
-	if session.Activity.LastActivityAt.IsZero() || watch.failure.At.Before(session.Activity.LastActivityAt) ||
-		watch.failure.At.Before(session.LatestUserPromptAt) {
+	if session.Activity.LastActivityAt.IsZero() || watch.end.At.Before(session.Activity.LastActivityAt) ||
+		watch.end.At.Before(session.LatestUserPromptAt) {
 		return
 	}
-	key := turnFailureKey{launchID: session.RuntimeLaunchID, at: watch.failure.At.UnixNano()}
+	// A completed turn demotes only a session believed to be mid-turn. A
+	// waiting_input or blocked pause is the agent asking the user something
+	// the hook pipeline knows about; its transcript may still end in a
+	// completed turn (the ask rides on the turn's final message), and only a
+	// hook or the user may lift that state.
+	if watch.end.Completed && session.Activity.State != domain.ActivityActive {
+		return
+	}
+	key := turnFailureKey{launchID: session.RuntimeLaunchID, at: watch.end.At.UnixNano()}
 	if watch.reported == key {
 		return
 	}
 	event, what := TurnFailureEvent, "ended on an error"
-	if watch.failure.Interrupted {
+	switch {
+	case watch.end.Interrupted:
 		event, what = TurnInterruptEvent, "was interrupted"
+	case watch.end.Completed:
+		event, what = TurnCompletionEvent, "completed"
 	}
 	revision := session.Revision
 	err = o.sink.ApplyActivitySignal(ctx, session.ID, ports.ActivitySignal{
 		Valid: true,
 		State: domain.ActivityIdle,
 		// Dated when the turn ended, not when this poll saw it: terminal input
-		// typed after the failure is newer than this idle, so a Chat switch
+		// typed after the end is newer than this idle, so a Chat switch
 		// still waits for the turn that input started.
-		Timestamp:        watch.failure.At,
+		Timestamp:        watch.end.At,
 		ExpectedRevision: &revision,
 		ExpectedHarness:  session.Harness,
 		Event:            event,
@@ -220,5 +240,5 @@ func (o *TurnFailureObserver) reconcile(ctx context.Context, session domain.Turn
 	}
 	watch.reported = key
 	o.logger.Info("agent turn "+what+"; marking the session idle",
-		"session", session.ID, "harness", session.Harness, "error_message", watch.failure.Message)
+		"session", session.ID, "harness", session.Harness, "error_message", watch.end.Message)
 }

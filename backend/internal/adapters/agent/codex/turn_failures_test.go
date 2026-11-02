@@ -41,40 +41,70 @@ func lines(records ...string) string {
 	return strings.Join(records, "\n") + "\n"
 }
 
-func TestLastTurnFailureReportsAFailedTurn(t *testing.T) {
+func TestLastTurnEndReportsAFailedTurn(t *testing.T) {
 	path := writeRollout(t, lines(rolloutMeta, rolloutTaskStarted, rolloutUserMessage, rolloutErrorEvent, rolloutFailed, rolloutTokenCount))
-	failure, ok, err := New().LastTurnFailure(context.Background(), path)
-	if err != nil || !ok {
-		t.Fatalf("LastTurnFailure = ok %v err %v, want a failure", ok, err)
+	end, ok, err := New().LastTurnEnd(context.Background(), path)
+	if err != nil || !ok || end.Completed || end.Interrupted {
+		t.Fatalf("LastTurnEnd = %#v ok %v err %v, want a failure", end, ok, err)
 	}
-	if want := time.Date(2026, 10, 18, 10, 0, 2, 250_000_000, time.UTC); !failure.At.Equal(want) {
-		t.Fatalf("failure.At = %v, want the record's own timestamp %v", failure.At, want)
+	if want := time.Date(2026, 10, 18, 10, 0, 2, 250_000_000, time.UTC); !end.At.Equal(want) {
+		t.Fatalf("end.At = %v, want the record's own timestamp %v", end.At, want)
 	}
-	if !strings.Contains(failure.Message, "not supported") {
-		t.Fatalf("failure.Message = %q", failure.Message)
+	if !strings.Contains(end.Message, "not supported") {
+		t.Fatalf("end.Message = %q", end.Message)
 	}
 }
 
 // Esc fires no Stop hook (only Codex 0.150+'s Interrupt hook, which AO does
 // not install); the rollout records the aborted turn.
-func TestLastTurnFailureReportsAnInterruptedTurn(t *testing.T) {
+func TestLastTurnEndReportsAnInterruptedTurn(t *testing.T) {
 	path := writeRollout(t, lines(rolloutMeta, rolloutTaskStarted, rolloutFailed, rolloutNextStarted, rolloutAborted, rolloutTokenCount))
-	failure, ok, err := New().LastTurnFailure(context.Background(), path)
-	if err != nil || !ok || !failure.Interrupted {
-		t.Fatalf("LastTurnFailure = %#v ok %v err %v, want the interrupt", failure, ok, err)
+	end, ok, err := New().LastTurnEnd(context.Background(), path)
+	if err != nil || !ok || !end.Interrupted {
+		t.Fatalf("LastTurnEnd = %#v ok %v err %v, want the interrupt", end, ok, err)
 	}
-	if want := time.Date(2026, 10, 18, 10, 0, 9, 500_000_000, time.UTC); !failure.At.Equal(want) {
-		t.Fatalf("interrupt At = %v, want the record's own timestamp %v", failure.At, want)
+	if want := time.Date(2026, 10, 18, 10, 0, 9, 500_000_000, time.UTC); !end.At.Equal(want) {
+		t.Fatalf("interrupt At = %v, want the record's own timestamp %v", end.At, want)
 	}
 }
 
-func TestLastTurnFailureIgnoresTurnsThatDidNotFail(t *testing.T) {
+// A clean task_complete is the completed turn its Stop hook reports when that
+// hook reaches the daemon at all (#235).
+func TestLastTurnEndReportsACompletedTurn(t *testing.T) {
+	cases := map[string]struct {
+		content string
+		at      time.Time
+	}{
+		"successful turn": {
+			lines(rolloutMeta, rolloutTaskStarted, rolloutSucceeded),
+			time.Date(2026, 10, 18, 10, 0, 5, 0, time.UTC),
+		},
+		"explicit null error": {
+			lines(rolloutMeta, rolloutTaskStarted, rolloutNullError),
+			time.Date(2026, 10, 18, 10, 0, 5, 0, time.UTC),
+		},
+		"failure then a success": {
+			lines(rolloutMeta, rolloutTaskStarted, rolloutFailed, rolloutTaskStarted, rolloutSucceeded),
+			time.Date(2026, 10, 18, 10, 0, 5, 0, time.UTC),
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			end, ok, err := New().LastTurnEnd(context.Background(), writeRollout(t, tc.content))
+			if err != nil || !ok || !end.Completed {
+				t.Fatalf("LastTurnEnd = %#v ok %v err %v, want the completion", end, ok, err)
+			}
+			if !end.At.Equal(tc.at) {
+				t.Fatalf("completion At = %v, want %v", end.At, tc.at)
+			}
+		})
+	}
+}
+
+func TestLastTurnEndIgnoresUnfinishedTurns(t *testing.T) {
 	cases := map[string]string{
-		// A successful turn is already reported by Codex's Stop hook.
-		"successful turn":               lines(rolloutMeta, rolloutTaskStarted, rolloutSucceeded),
-		"explicit null error":           lines(rolloutMeta, rolloutTaskStarted, rolloutNullError),
-		"failure then a success":        lines(rolloutMeta, rolloutTaskStarted, rolloutFailed, rolloutTaskStarted, rolloutSucceeded),
 		"old failure, turn now running": lines(rolloutMeta, rolloutTaskStarted, rolloutFailed, rolloutNextStarted, rolloutUserMessage),
+		"completed, then a new turn":    lines(rolloutMeta, rolloutTaskStarted, rolloutSucceeded, rolloutNextStarted),
 		"interrupted, then a new turn":  lines(rolloutMeta, rolloutNextStarted, rolloutAborted, rolloutTaskStarted),
 		// A turn replaced by a newer one is not a turn the user stopped.
 		"replaced turn": lines(rolloutMeta, rolloutTaskStarted, rolloutFailed, rolloutNextStarted,
@@ -86,50 +116,54 @@ func TestLastTurnFailureIgnoresTurnsThatDidNotFail(t *testing.T) {
 		"empty":              "",
 		// Codex has not finished writing the record: it is not read yet.
 		"unfinished failure record": lines(rolloutMeta, rolloutTaskStarted) + rolloutFailed,
-		// Without its own time a failure cannot be ordered against the current
-		// prompt, so it is not reported, and the older failure behind it is
+		// Without its own time an end cannot be ordered against the current
+		// prompt, so it is not reported, and the older end behind it is
 		// not reached either.
 		"failure without a readable timestamp": lines(rolloutMeta, rolloutFailed, rolloutTaskStarted,
 			strings.Replace(rolloutFailed, `"timestamp":"2026-10-18T10:00:02.250Z"`, `"timestamp":"not a time"`, 1)),
 		"failure without a timestamp": lines(rolloutMeta, rolloutTaskStarted,
 			strings.Replace(rolloutFailed, `"timestamp":"2026-10-18T10:00:02.250Z",`, ``, 1)),
+		"completion without a readable timestamp": lines(rolloutMeta, rolloutTaskStarted,
+			strings.Replace(rolloutSucceeded, `"timestamp":"2026-10-18T10:00:05.000Z"`, `"timestamp":"nope"`, 1)),
+		"completion without a timestamp": lines(rolloutMeta, rolloutTaskStarted,
+			strings.Replace(rolloutSucceeded, `"timestamp":"2026-10-18T10:00:05.000Z",`, ``, 1)),
 	}
 	for name, content := range cases {
 		t.Run(name, func(t *testing.T) {
 			path := writeRollout(t, content)
-			if failure, ok, err := New().LastTurnFailure(context.Background(), path); ok || err != nil {
-				t.Fatalf("LastTurnFailure = %#v ok %v err %v, want none", failure, ok, err)
+			if end, ok, err := New().LastTurnEnd(context.Background(), path); ok || err != nil {
+				t.Fatalf("LastTurnEnd = %#v ok %v err %v, want none", end, ok, err)
 			}
 		})
 	}
 }
 
-// A large tool output earlier in the turn must not hide the failure, and a
+// A large tool output earlier in the turn must not hide the end, and a
 // record cut by the tail window's start must not be parsed as a fragment.
-func TestLastTurnFailureReadsOnlyTheRolloutTail(t *testing.T) {
+func TestLastTurnEndReadsOnlyTheRolloutTail(t *testing.T) {
 	huge := `{"timestamp":"2026-10-18T10:00:01.500Z","type":"response_item","payload":{"type":"function_call_output","output":"` +
 		strings.Repeat("x", codexTurnTailWindow+1024) + `"}}`
 	path := writeRollout(t, lines(rolloutMeta, rolloutTaskStarted, huge, rolloutErrorEvent, rolloutFailed))
-	if _, ok, err := New().LastTurnFailure(context.Background(), path); !ok || err != nil {
-		t.Fatalf("failure after a large record: ok %v err %v", ok, err)
+	if _, ok, err := New().LastTurnEnd(context.Background(), path); !ok || err != nil {
+		t.Fatalf("end after a large record: ok %v err %v", ok, err)
 	}
-	// The failure itself sits beyond the window: only the huge record's end
+	// The end itself sits beyond the window: only the huge record's end
 	// is in reach, which is no turn boundary.
 	path = writeRollout(t, lines(rolloutMeta, rolloutFailed, huge))
-	if _, ok, err := New().LastTurnFailure(context.Background(), path); ok || err != nil {
-		t.Fatalf("failure outside the tail window: ok %v err %v, want none", ok, err)
+	if _, ok, err := New().LastTurnEnd(context.Background(), path); ok || err != nil {
+		t.Fatalf("end outside the tail window: ok %v err %v, want none", ok, err)
 	}
 }
 
-func TestLastTurnFailureReadsOnlyCodexRollouts(t *testing.T) {
+func TestLastTurnEndReadsOnlyCodexRollouts(t *testing.T) {
 	dir := t.TempDir()
 	other := filepath.Join(dir, "notes.jsonl")
 	if err := os.WriteFile(other, []byte(lines(rolloutFailed)), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	for _, path := range []string{other, "rollout-relative.jsonl", filepath.Join(dir, "rollout-missing.jsonl"), ""} {
-		if _, ok, err := New().LastTurnFailure(context.Background(), path); ok || err != nil {
-			t.Fatalf("LastTurnFailure(%q) = ok %v err %v, want none", path, ok, err)
+		if _, ok, err := New().LastTurnEnd(context.Background(), path); ok || err != nil {
+			t.Fatalf("LastTurnEnd(%q) = ok %v err %v, want none", path, ok, err)
 		}
 	}
 }
@@ -137,12 +171,12 @@ func TestLastTurnFailureReadsOnlyCodexRollouts(t *testing.T) {
 // Event records of other types are skipped before decoding, even when they
 // name a turn (turn_id) or are not valid JSON, and do not hide the boundary
 // before them.
-func TestLastTurnFailureSkipsOtherEventRecords(t *testing.T) {
+func TestLastTurnEndSkipsOtherEventRecords(t *testing.T) {
 	agentMessage := `{"timestamp":"2026-10-18T10:00:02.400Z","type":"event_msg","payload":{"type":"agent_message","turn_id":"1","message":"hi"}}`
 	garbled := `{"timestamp":"2026-10-18T10:00:02.500Z","type":"event_msg","payload":{"type":"agent_reasoning"`
 	path := writeRollout(t, lines(rolloutMeta, rolloutTaskStarted, rolloutFailed, rolloutTokenCount, agentMessage, garbled))
-	if _, ok, err := New().LastTurnFailure(context.Background(), path); !ok || err != nil {
-		t.Fatalf("LastTurnFailure = ok %v err %v, want the failure", ok, err)
+	if _, ok, err := New().LastTurnEnd(context.Background(), path); !ok || err != nil {
+		t.Fatalf("LastTurnEnd = ok %v err %v, want the failure", ok, err)
 	}
 	for _, line := range []string{rolloutTokenCount, agentMessage, garbled, rolloutUserMessage} {
 		if containsCodexTurnBoundaryType([]byte(line)) {

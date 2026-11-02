@@ -160,7 +160,8 @@ func TestTurnFailureObserverIdlesAFailedCodexTurn(t *testing.T) {
 }
 
 // A resumed conversation whose last turn failed before this prompt must not
-// idle the new turn, even before Codex writes the new turn's start.
+// idle the new turn, even before Codex writes the new turn's start. The same
+// bounds an older completion: the prompt after it is the turn that is running.
 func TestTurnFailureObserverDoesNotReplayAnEarlierFailure(t *testing.T) {
 	promptAt := time.Now().UTC().Add(-10 * time.Second).Truncate(time.Millisecond)
 	h := newTurnFailureHarness(t, promptAt)
@@ -168,14 +169,28 @@ func TestTurnFailureObserverDoesNotReplayAnEarlierFailure(t *testing.T) {
 	if got := h.poll(t); got.Activity.State != domain.ActivityActive {
 		t.Fatalf("state = %q, want active", got.Activity.State)
 	}
+
+	h = newTurnFailureHarness(t, promptAt)
+	h.appendRollout(t, startedTurn(promptAt.Add(-time.Hour)), succeededTurn(promptAt.Add(-time.Hour+time.Second)))
+	if got := h.poll(t); got.Activity.State != domain.ActivityActive {
+		t.Fatalf("state = %q, want active (the completion predates the prompt)", got.Activity.State)
+	}
 }
 
-func TestTurnFailureObserverLeavesSuccessfulTurnsToTheStopHook(t *testing.T) {
+// A transcript-proven completed turn idles the session when its own
+// end-of-turn hook never reached the daemon — the #235 lost-stop case. When
+// the hook does arrive it lands first and the idle session is no longer a
+// candidate, so the observer never competes with it.
+func TestTurnFailureObserverIdlesASuccessfulTurnWhoseHookWasLost(t *testing.T) {
 	promptAt := time.Now().UTC().Add(-10 * time.Second).Truncate(time.Millisecond)
 	h := newTurnFailureHarness(t, promptAt)
 	h.appendRollout(t, startedTurn(promptAt.Add(100*time.Millisecond)), succeededTurn(promptAt.Add(3*time.Second)))
-	if got := h.poll(t); got.Activity.State != domain.ActivityActive {
-		t.Fatalf("state = %q, want active (Codex's Stop hook reports a successful turn)", got.Activity.State)
+	got := h.poll(t)
+	if got.Activity.State != domain.ActivityIdle {
+		t.Fatalf("state = %q, want idle (the Stop hook was lost; the rollout proves the turn completed)", got.Activity.State)
+	}
+	if !got.Activity.LastActivityAt.Equal(promptAt.Add(3 * time.Second)) {
+		t.Fatalf("idle LastActivityAt = %v, want the completion time %v", got.Activity.LastActivityAt, promptAt.Add(3*time.Second))
 	}
 }
 
@@ -229,6 +244,48 @@ func TestTurnFailureObserverIgnoresChatSessions(t *testing.T) {
 		if got.Activity.State != want {
 			t.Fatalf("%s session state = %q, want %q", mode, got.Activity.State, want)
 		}
+	}
+}
+
+// A completed turn demotes only a session believed to be mid-turn. A
+// waiting_input pause is the agent asking the user something; its transcript
+// still ends in a completed turn, and only a hook or the user may lift it.
+func TestTurnFailureObserverLeavesWaitingInputToItsHook(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	rollout := filepath.Join(t.TempDir(), "rollout-2026-10-18T10-00-00-0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b.jsonl")
+	if err := os.WriteFile(rollout, []byte(startedTurn(now.Add(-2*time.Second))+succeededTurn(now.Add(-time.Second))), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	candidate := func(id domain.SessionID, state domain.ActivityState) domain.TurnFailureCandidate {
+		return domain.TurnFailureCandidate{
+			ID:                   id,
+			Harness:              domain.HarnessCodex,
+			Activity:             domain.Activity{State: state, LastActivityAt: now.Add(-3 * time.Second)},
+			LatestUserPromptAt:   now.Add(-2 * time.Second),
+			Revision:             1,
+			RuntimeLaunchID:      "launch-1",
+			NativeTranscriptPath: rollout,
+		}
+	}
+	sessions := fakeTurnFailureSessions{rows: []domain.TurnFailureCandidate{
+		candidate("waiting-1", domain.ActivityWaitingInput),
+		candidate("active-1", domain.ActivityActive),
+	}}
+	sink := &fakeSink{}
+	observer := NewTurnFailureObserver(sessions, sink,
+		fakeAgents{domain.HarnessCodex: codex.New()}, TurnFailureConfig{Logger: testLogger()})
+	if err := observer.Poll(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(sink.signals) != 1 {
+		t.Fatalf("signals = %d, want only the active session idled", len(sink.signals))
+	}
+	if sink.id != "active-1" {
+		t.Fatalf("idled session = %q, want active-1", sink.id)
+	}
+	signal := sink.signals[0]
+	if signal.State != domain.ActivityIdle || signal.Event != TurnCompletionEvent {
+		t.Fatalf("signal = %#v, want the active session's turn-completed idle", signal)
 	}
 }
 
