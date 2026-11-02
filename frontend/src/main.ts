@@ -1144,6 +1144,13 @@ function resolveAgentBrowserBinaryPath(): string {
 const PORT_DISCOVERY_TIMEOUT_MS = 30_000;
 const DAEMON_RESTART_STOP_TIMEOUT_MS = 5_000;
 const RUN_FILE_POLL_MS = 300;
+// Ownership-replace shutdown budgets (gracefullyReplaceDaemonForBrowser): the
+// fast window for the common quick exit, then a total budget that outlasts any
+// real daemon teardown before SIGKILL escalation.
+const DAEMON_REPLACE_SHUTDOWN_WINDOW_MS = 8_000;
+const DAEMON_REPLACE_TOTAL_BUDGET_MS = 60_000;
+const DAEMON_REPLACE_KILL_WINDOW_MS = 2_000;
+const DAEMON_REPLACE_POLL_MS = 200;
 // Accept run-files stamped slightly before our spawn timestamp: the daemon's
 // clock reading and ours race within normal scheduling jitter.
 const RUN_FILE_FRESHNESS_SKEW_MS = 2_000;
@@ -1711,17 +1718,54 @@ async function inspectExistingDaemon(
 	return { status, owner: info?.owner, appRunId: info?.appRunId };
 }
 
+// Ownership-replace shutdown polling. The old daemon has already accepted
+// POST /shutdown, so it is doomed however long it takes to die; the 2026-11-02
+// outage saw a stale-session teardown tail stretch that death to 20s against
+// the old 8s window, and the failed takeover left zero daemons serving (the
+// app advised stopping the daemon it had just killed and restarting itself).
+// So the 8s window only covers the common quick exit; past it the replace
+// keeps waiting for the port to free within a generous total budget, then
+// escalates to SIGKILL of the PID the dying daemon itself reported. Throwing
+// here is the last resort: the callers surface it as an error and spawn no
+// replacement.
 async function gracefullyReplaceDaemonForBrowser(status: DaemonStatus): Promise<void> {
 	if (!status.port) throw new Error("the running daemon did not report a port");
 	const response = await fetch(`http://127.0.0.1:${status.port}/shutdown`, { method: "POST" });
 	if (!response.ok) throw new Error(`daemon shutdown returned HTTP ${response.status}`);
 
-	const deadline = Date.now() + 8_000;
-	while (Date.now() < deadline) {
+	if (await waitForDaemonExit(status.port, DAEMON_REPLACE_SHUTDOWN_WINDOW_MS)) return;
+	const totalDeadline = Date.now() + DAEMON_REPLACE_TOTAL_BUDGET_MS;
+	while (Date.now() < totalDeadline) {
 		if (!(await readDaemonProbe(status.port, "healthz"))) return;
-		await new Promise<void>((resolve) => setTimeout(resolve, 200));
+		await new Promise<void>((resolve) => setTimeout(resolve, DAEMON_REPLACE_POLL_MS));
 	}
-	throw new Error("the previous daemon did not stop within 8 seconds");
+	// ponytail: still serving a minute past an accepted shutdown means wedged
+	// teardown; SIGKILL so the port frees. The PID is fresh evidence — the same
+	// daemon answered /shutdown and these probes — and the group signal follows
+	// killDaemon's practice.
+	const pid = status.pid;
+	if (pid && pid > 1) {
+		try {
+			process.kill(-pid, "SIGKILL");
+		} catch {
+			try {
+				process.kill(pid, "SIGKILL");
+			} catch {
+				// already gone
+			}
+		}
+	}
+	if (await waitForDaemonExit(status.port, DAEMON_REPLACE_KILL_WINDOW_MS)) return;
+	throw new Error("the previous daemon did not stop even after SIGKILL");
+}
+
+async function waitForDaemonExit(port: number, budgetMs: number): Promise<boolean> {
+	const deadline = Date.now() + budgetMs;
+	for (;;) {
+		if (!(await readDaemonProbe(port, "healthz"))) return true;
+		if (Date.now() >= deadline) return false;
+		await new Promise<void>((resolve) => setTimeout(resolve, DAEMON_REPLACE_POLL_MS));
+	}
 }
 
 async function refreshDaemonStatus(): Promise<DaemonStatus> {

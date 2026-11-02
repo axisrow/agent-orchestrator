@@ -2,6 +2,7 @@ import { Check, ChevronDown, Loader2, RefreshCw, Search } from "lucide-react";
 import { type ReactNode, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AgentModelCatalog } from "../../hooks/useAgentModelsQuery";
+import { usePortaledListScroll } from "../../hooks/usePortaledListScroll";
 import { useSuppressStrayFocusRing } from "../../hooks/useSuppressStrayFocusRing";
 import { isConcreteModelID, modelChoiceLabel, splitClaudeModels } from "../../lib/agent-model-choices";
 import { fallbackEffort, useApplyEffortDefault } from "../../lib/effort";
@@ -212,6 +213,11 @@ export function AgentModelCombobox({
 	// With no identified model, nothing is selected and the menu just lists models.
 	const currentLabel = (triggerLabel ?? selected?.label ?? explicitModel) || emptyLabel || t("settings.models.selectModel");
 	const scrollRef = useRef<HTMLDivElement>(null);
+	const bindPortaledListScroll = usePortaledListScroll();
+	const scrollListRef = useCallback((node: HTMLDivElement | null) => {
+		scrollRef.current = node;
+		return bindPortaledListScroll(node);
+	}, [bindPortaledListScroll]);
 	const searchInputRef = useRef<HTMLInputElement>(null);
 	const effortTriggerRef = useRef<HTMLDivElement>(null);
 	const [canScrollDown, setCanScrollDown] = useState(false);
@@ -393,7 +399,7 @@ export function AgentModelCombobox({
 
 				<div className="relative grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)] overflow-hidden">
 					<div
-						ref={scrollRef}
+						ref={scrollListRef}
 						className="model-menu-scroll min-h-0 overflow-y-auto overscroll-contain"
 						onScroll={updateScrollCue}
 					>
