@@ -4004,6 +4004,7 @@ export function Timeline({
 									transform: `translateY(${row.start - virtualScrollMargin}px)`,
 								} : undefined}
 								data-chat-scroll-anchor={groupHasHumanPrompt(group) ? "" : undefined}
+								data-chat-turn={group.key}
 							>
 								<TurnGroup
 									group={group}

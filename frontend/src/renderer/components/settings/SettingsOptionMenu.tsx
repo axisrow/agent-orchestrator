@@ -1,6 +1,7 @@
 import { Fragment, type ReactNode, type Ref, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { cn } from "../../lib/utils";
+import { usePortaledListScroll } from "../../hooks/usePortaledListScroll";
 import { useSuppressStrayFocusRing } from "../../hooks/useSuppressStrayFocusRing";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "../ui/dropdown-menu";
 import {
@@ -71,6 +72,11 @@ export function SettingsOptionMenu<T extends string>({
 			)
 		: options;
 	const scrollRef = useRef<HTMLDivElement>(null);
+	const bindPortaledListScroll = usePortaledListScroll();
+	const scrollListRef = useCallback((node: HTMLDivElement | null) => {
+		scrollRef.current = node;
+		return bindPortaledListScroll(node);
+	}, [bindPortaledListScroll]);
 	const [canScrollDown, setCanScrollDown] = useState(false);
 	const updateScrollCue = useCallback(() => {
 		const element = scrollRef.current;
@@ -145,7 +151,7 @@ export function SettingsOptionMenu<T extends string>({
 					className="relative grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)] overflow-hidden"
 				>
 					<div
-						ref={scrollRef}
+						ref={scrollListRef}
 						className="model-menu-scroll min-h-0 overflow-y-auto overscroll-contain"
 						onScroll={updateScrollCue}
 					>

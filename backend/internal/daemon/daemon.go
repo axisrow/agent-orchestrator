@@ -205,6 +205,14 @@ func Run() error {
 	ignoreBrokenPipeSignal()
 
 	log := newLogger()
+	// A daemon restarted from a shell carrying another session's sandbox HOME
+	// would hand that HOME to every child it spawns: pty hosts and the tmux
+	// server inherit os.Environ(), and their panes inherit the server's env
+	// (issue #248). Repair the process env before any child can start.
+	if leaked, repaired := agentlaunch.RepairForeignHome(); repaired {
+		log.Warn("daemon environment carried a foreign HOME; reset to the account home",
+			"previous", leaked, "home", agentlaunch.RealUserHome())
+	}
 	var browserRuntimeToken string
 	if os.Getenv(browserruntime.RuntimeTokenStdinEnv) == "1" {
 		browserRuntimeToken, err = browserruntime.ReadRuntimeToken(os.Stdin)
@@ -755,6 +763,16 @@ func Run() error {
 		Log:      log,
 	})
 	chatSvc.SetReportCoordinator(reportCoordinator)
+	// PR merge notices (fork issue #243): lifecycle one-shot project facts ride
+	// the same semantic path as report batches, addressed by the same
+	// active-orchestrator rule. Late-bound here because the sender needs the
+	// coordinator that was just constructed. Opt-in: the notice is unwired
+	// unless AO_ENABLE_PR_MERGE_NOTICES=1 — the bell row records merges
+	// either way, only the orchestrator-conversation notice is gated.
+	if prMergeNoticesEnabled(os.Getenv) {
+		log.Info("PR merge notices enabled", "env", prMergeNoticesEnabledEnv)
+		lcStack.LCM.SetOrchestratorNotifier(orchestratorNoticeSender{reports: reportCoordinator, sessions: reportSessions})
+	}
 	reportDeliveryDone := reportCoordinator.Start(ctx)
 	defer func() {
 		stop()
@@ -1280,6 +1298,12 @@ func Run() error {
 				log.Warn("reviewer chat recovery deferred", "err", reconcileErr)
 			}
 			close(reviewerChatsRecovered)
+			// Runs orphaned by the previous daemon's death cannot wait for a
+			// per-session List: convert the ones whose carrier provably died
+			// before any restore can re-point a review row at a fresh pane.
+			if sweepErr := reviewSvc.SweepDaemonRestartOrphans(ctx); sweepErr != nil {
+				log.Warn("review orphan sweep incomplete", "err", sweepErr)
+			}
 			if reconcileErr := sessMgr.ReconcileBackground(ctx); reconcileErr != nil {
 				log.Error("background session reconciliation on boot failed", "err", reconcileErr)
 			}
@@ -1431,6 +1455,31 @@ func Run() error {
 type reportSemanticSession interface {
 	SendSemantic(context.Context, domain.SessionID, string, string) error
 	InterruptTUI(context.Context, domain.SessionID) error
+}
+
+// orchestratorNoticeSender delivers lifecycle one-shot project facts (the
+// fork issue #243 PR merge notice) to the project's active orchestrator over
+// the same semantic send report batches use. No active orchestrator means the
+// notice ends after the bell row recorded the fact: an orchestrator started
+// later sees the merged PR through its own tooling, and a nonexistent
+// recipient is not a delivery failure to retry.
+type orchestratorNoticeSender struct {
+	reports  *reportsvc.Coordinator
+	sessions reportSemanticSession
+}
+
+func (s orchestratorNoticeSender) NotifyOrchestrator(ctx context.Context, projectID domain.ProjectID, message, idempotencyKey string) error {
+	if s.reports == nil || s.sessions == nil {
+		return nil
+	}
+	target, ok, err := s.reports.ActiveOrchestrator(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return nil
+	}
+	return s.sessions.SendSemantic(ctx, target.ID, message, idempotencyKey)
 }
 
 type reportSemanticDelivery struct {

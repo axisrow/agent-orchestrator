@@ -87,6 +87,7 @@ type Store interface {
 	ListReviewRunsBySession(ctx stdctx.Context, id domain.SessionID) ([]domain.ReviewRun, error)
 	ListRunningReviewRunsBySession(ctx stdctx.Context, id domain.SessionID) ([]domain.ReviewRun, error)
 	ListRecoverableChatReviews(ctx stdctx.Context) ([]domain.Review, error)
+	ListSessionsWithRunningReviewRuns(ctx stdctx.Context) ([]domain.SessionID, error)
 	RecordReviewChatControllerError(ctx stdctx.Context, id, message string, now time.Time) (bool, error)
 }
 
@@ -1134,6 +1135,51 @@ func (e *Engine) RecoverChatReviewers(ctx stdctx.Context) error {
 	return errors.Join(recoveryErrors...)
 }
 
+// SweepDaemonRestartOrphans reconciles every session whose review runs still
+// say running. It runs once at daemon startup: List reconciles lazily, per
+// session, so after a daemon crash a run whose reviewer carrier died during
+// the outage stays "running" until someone happens to open the session — and
+// a reviewer restore in the meantime re-points the row at a fresh pane,
+// hiding the dead launch from every later probe. The same gated
+// reconciliation List uses does the conversion, so only a confirmed-dead
+// carrier fails a run; a reviewer that survived the crash keeps its running
+// pass, and its result can still land on the new daemon.
+func (e *Engine) SweepDaemonRestartOrphans(ctx stdctx.Context) error {
+	if err := e.waitForChatRecovery(ctx); err != nil {
+		return err
+	}
+	sessionIDs, err := e.store.ListSessionsWithRunningReviewRuns(ctx)
+	if err != nil {
+		return err
+	}
+	var sweepErrs []error
+	for _, workerID := range sessionIDs {
+		if err := e.sweepSessionOrphans(ctx, workerID); err != nil {
+			sweepErrs = append(sweepErrs, fmt.Errorf("sweep review orphans for session %s: %w", workerID, err))
+		}
+	}
+	return errors.Join(sweepErrs...)
+}
+
+func (e *Engine) sweepSessionOrphans(ctx stdctx.Context, workerID domain.SessionID) error {
+	unlock := e.lockWorker(workerID)
+	defer unlock()
+	runs, err := e.store.ListReviewRunsBySession(ctx, workerID)
+	if err != nil {
+		return err
+	}
+	reviewRows, err := e.store.ListReviewsBySession(ctx, workerID)
+	if err != nil {
+		return err
+	}
+	for i := range reviewRows {
+		if _, err := e.reconcileExitedReviewer(ctx, &reviewRows[i], runs); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (e *Engine) restoreRecoverableChatReviewer(ctx stdctx.Context, review domain.Review) (RestoreReviewerResult, error) {
 	unlock := e.lockWorker(review.SessionID)
 	defer unlock()
@@ -1363,6 +1409,15 @@ func (e *Engine) restoreReviewerLocked(
 			_ = e.launcher.Destroy(ctx, launch.HandleID)
 			return RestoreReviewerResult{}, err
 		}
+	}
+	// The relaunch only happened because the previous launch was confirmed dead
+	// (or had no handle at all), so its unfinished passes can never complete:
+	// this fresh idle pane waits for a new task file. Fail them instead of
+	// leaving a running run whose only remaining effect is a spinning card and
+	// a re-trigger blocked by the same-commit idempotency check.
+	if err := e.failRunningRestoredRuns(ctx, previousRuns, reviewerExitedBeforeSubmission); err != nil {
+		_ = e.launcher.Destroy(ctx, launch.HandleID)
+		return RestoreReviewerResult{}, err
 	}
 	if launch.AgentSessionID != "" {
 		agentSessionID = launch.AgentSessionID
@@ -1709,11 +1764,24 @@ func reviewerRowActive(review domain.Review, runs []domain.ReviewRun) bool {
 
 const reviewerExitedBeforeSubmission = "reviewer process exited before submitting a result"
 
-// reconcileExitedReviewer converts a definitively dead active reviewer into
-// durable failed-run facts. Probe errors are intentionally ignored: an unknown
-// runtime state is not proof that the reviewer exited.
+// reviewerStoppedByUser is the failed-run reason when the reviewer's own
+// supervisor reported the process exit mid-pass, which is how a user-stopped
+// reviewer pane reaches AO.
+const reviewerStoppedByUser = "stopped by user"
+
+// reconcileExitedReviewer converts a definitively dead reviewer into durable
+// failed-run facts. Probe errors are intentionally ignored: an unknown runtime
+// state is not proof that the reviewer exited.
 func (e *Engine) reconcileExitedReviewer(ctx stdctx.Context, review *domain.Review, runs []domain.ReviewRun) (bool, error) {
-	if review.ID == "" || review.ReviewerHandleID == "" || review.ReviewerActivityState != domain.ActivityActive {
+	if review.ID == "" || review.ReviewerHandleID == "" {
+		return false, nil
+	}
+	// The reviewer's supervisor reports the process exit as a launch-fenced
+	// activity signal, so an exited row still holding a running pass is a pane
+	// the user stopped mid-review: the pass cannot finish and needs no probe.
+	// Without this, a user-stopped reviewer left its pass running forever.
+	hookExited := review.ReviewerActivityState == domain.ActivityExited
+	if !hookExited && review.ReviewerActivityState != domain.ActivityActive {
 		return false, nil
 	}
 	hasRunning := false
@@ -1726,21 +1794,31 @@ func (e *Engine) reconcileExitedReviewer(ctx stdctx.Context, review *domain.Revi
 	if !hasRunning {
 		return false, nil
 	}
-	alive, err := e.launcher.Alive(ctx, review.ReviewerHandleID, review.ReviewerLaunchID)
-	if err != nil {
-		// An unavailable probe is unknown, not evidence that the reviewer died.
-		alive = true
+	if !hookExited {
+		alive, err := e.launcher.Alive(ctx, review.ReviewerHandleID, review.ReviewerLaunchID)
+		if err != nil {
+			// An unavailable probe is unknown, not evidence that the reviewer died.
+			alive = true
+		}
+		if alive {
+			return false, nil
+		}
 	}
-	if alive {
-		return false, nil
+	body := reviewerExitedBeforeSubmission
+	if hookExited {
+		body = reviewerStoppedByUser
 	}
 	for _, run := range runs {
 		if run.ReviewID != review.ID || run.Status != domain.ReviewRunRunning {
 			continue
 		}
-		if _, err := e.store.UpdateReviewRunResult(ctx, run.ID, domain.ReviewRunFailed, domain.VerdictNone, reviewerExitedBeforeSubmission, "", "", run.AutoInjectReview); err != nil {
+		if _, err := e.store.UpdateReviewRunResult(ctx, run.ID, domain.ReviewRunFailed, domain.VerdictNone, body, "", "", run.AutoInjectReview); err != nil {
 			return false, err
 		}
+	}
+	if hookExited {
+		// The row already carries the exited report; only the runs changed.
+		return true, nil
 	}
 	review.ReviewerActivityState = domain.ActivityExited
 	review.UpdatedAt = e.clock()
