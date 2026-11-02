@@ -64,6 +64,7 @@ type setActivityAPIRequest struct {
 	AgentSessionID               string                              `json:"agentSessionId,omitempty"`
 	LatestUserPrompt             string                              `json:"latestUserPrompt,omitempty"`
 	LatestAssistantUpdate        string                              `json:"latestAssistantUpdate,omitempty"`
+	Harness                      string                              `json:"harness,omitempty"`
 	ConversationCheckpointOrigin domain.ConversationCheckpointOrigin `json:"conversationCheckpointOrigin,omitempty"`
 	CoordinationID               string                              `json:"coordinationId,omitempty"`
 	ProviderTurnID               string                              `json:"providerTurnId,omitempty"`
@@ -786,6 +787,7 @@ func (c *commandContext) runHook(ctx context.Context, agent, event string) error
 		ProviderTurnID:               conversation.ProviderTurnID,
 		TranscriptPath:               conversation.TranscriptPath,
 		LaunchID:                     launchID,
+		Harness:                      agent,
 		HookSource:                   hookSource,
 		Usage:                        usage,
 	}
