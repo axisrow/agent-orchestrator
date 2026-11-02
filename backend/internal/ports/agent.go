@@ -539,28 +539,34 @@ type TerminalActivityDetector interface {
 	DetectTerminalActivity(output string) (domain.ActivityState, bool)
 }
 
-// TurnFailure is a provider turn that ended on an error, and when it ended.
-type TurnFailure struct {
+// TurnEnd is a provider turn whose end is recorded in its native transcript,
+// and when it ended. Exactly one kind applies: Completed is a turn the
+// harness finished normally, Interrupted one the user stopped (Esc), and a
+// turn that ended on an error is neither — its Message, when present, says why.
+type TurnEnd struct {
 	At      time.Time
 	Message string
 	// Interrupted marks a turn the user interrupted (Esc) rather than one
 	// that ended on an error.
 	Interrupted bool
+	// Completed marks a turn the harness finished normally: the record its
+	// Stop hook would have reported, still readable when that hook was lost.
+	Completed bool
 }
 
-// TranscriptTurnFailureDetector is implemented by adapters whose harness can
-// end a turn without firing the hook that reports the turn's end, while still
-// recording that end in its native transcript. Codex runs its Stop hook only
-// after a successful turn, and fires no Stop when Esc interrupts one; Claude
-// Code fires no hook at all for an Esc interrupt. Without this such a turn
-// left the session active until the stale-activity observer screen-proved it
-// idle.
-type TranscriptTurnFailureDetector interface {
-	// LastTurnFailure reports the newest turn end recorded in the transcript
-	// when that turn ended on an error or was interrupted and no later turn
-	// has started. ok is false for a successful or still-running turn, and
-	// for a transcript that is missing or not the harness's own.
-	LastTurnFailure(ctx context.Context, transcriptPath string) (failure TurnFailure, ok bool, err error)
+// TranscriptTurnEndDetector is implemented by adapters whose harness records
+// every turn end in its native transcript, including the ends its hooks miss:
+// Codex runs its Stop hook only after a successful turn and fires no Stop when
+// Esc interrupts one or the turn fails; Claude Code fires no hook at all for
+// an Esc interrupt, and any hook is lost when it fires while the daemon is
+// down. Without the transcript proof such a turn left the session active until
+// the stale-activity observer screen-proved it idle.
+type TranscriptTurnEndDetector interface {
+	// LastTurnEnd reports the newest turn end recorded in the transcript when
+	// that turn has ended — on an error, an interrupt, or normally — and no
+	// later turn has started. ok is false while the newest turn is still
+	// running, and for a transcript that is missing or not the harness's own.
+	LastTurnEnd(ctx context.Context, transcriptPath string) (end TurnEnd, ok bool, err error)
 }
 
 // TerminalActivityOptions lets an adapter declare how the shared observer

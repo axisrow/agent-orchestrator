@@ -218,6 +218,11 @@ func TestToolPrecedence_TurnBoundariesClearBlocked(t *testing.T) {
 		// Esc at the dialog ends the turn: an interrupt read from the
 		// transcript (Claude, Codex) or Codex's Interrupt hook.
 		{"interrupt", sig(domain.ActivityIdle, "interrupt", "", ""), domain.ActivityIdle},
+		// A turn that completed normally while its own Stop hook was lost
+		// (the daemon was down when the hook fired), proven by the transcript
+		// and reported by the turn-failure observer (#235), ends the turn the
+		// same way.
+		{"turn-completed", sig(domain.ActivityIdle, "turn-completed", "", ""), domain.ActivityIdle},
 		{"session-end", sig(domain.ActivityExited, "session-end", "", ""), domain.ActivityExited},
 		{"chat-controller-stopped", sig(domain.ActivityExited, "chat.controller.stopped", "", ""), domain.ActivityExited},
 	}
