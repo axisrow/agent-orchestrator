@@ -773,7 +773,7 @@ describe("CloudSessionChatSurface", () => {
 
 	it.each([
 		["claude-code", "trusted", ["default", "accept-edits", "auto", "bypass-permissions"], "accept-edits"],
-		["cursor", "trusted", ["default", "accept-edits", "auto", "bypass-permissions"], "auto"],
+		["opencode-v2", "trusted", ["default", "accept-edits", "auto", "bypass-permissions"], "auto"],
 		["codex", "trusted", ["default", "accept-edits", "auto", "bypass-permissions"], "accept-edits"],
 	] as const)("offers Cloud %s approval modes and sends the selected policy", async (provider, ceiling, modes, chosen) => {
 		cloudMocks.listChatEvents.mockResolvedValue({ events: [], hasMore: false, nextAfter: 0 });
@@ -1180,7 +1180,7 @@ describe("CloudSessionChatSurface", () => {
 		cloudMocks.decideChatApproval.mockResolvedValue({ ok: true });
 		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
 		render(<QueryClientProvider client={queryClient}>
-			<CloudSessionChatSurface session={{ ...session, provider: "cursor", cloud: { orgId: "org-1", permissionMode: "standard" } }} />
+			<CloudSessionChatSurface session={{ ...session, provider: "opencode-v2", cloud: { orgId: "org-1", permissionMode: "standard" } }} />
 		</QueryClientProvider>);
 		await waitFor(() => expect(cloudMocks.chatProps.mock.lastCall?.[0].snapshot.items).toContainEqual(expect.objectContaining({
 			activityKind: "approval", requestId: "approval-1", status: "pending",

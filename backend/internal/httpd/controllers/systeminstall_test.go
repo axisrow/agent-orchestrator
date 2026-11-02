@@ -191,7 +191,7 @@ func TestAgentInstallMapsMethodAndActiveHarnessErrors(t *testing.T) {
 			installer := &fakeInstaller{startErr: tt.err}
 			srv := httptest.NewServer(httpd.NewRouterWithControl(config.Config{}, log, nil, httpd.APIDeps{Installer: installer}, httpd.ControlDeps{}))
 			defer srv.Close()
-			body, status, _ := doRequest(t, srv, http.MethodPost, "/api/v1/agents/droid/install", `{"method":"homebrew"}`)
+			body, status, _ := doRequest(t, srv, http.MethodPost, "/api/v1/agents/codex/install", `{"method":"homebrew"}`)
 			if status != tt.wantStatus || !strings.Contains(string(body), `"code":"`+tt.wantCode+`"`) || !strings.Contains(string(body), `"requestId":"`) {
 				t.Fatalf("status = %d body=%s", status, body)
 			}
@@ -208,7 +208,7 @@ func TestAgentInstallHarnessActiveDetails(t *testing.T) {
 	}{
 		{
 			name:     "sessions must end first",
-			err:      &systeminstall.HarnessActiveError{Target: systeminstall.TargetAuggie, SessionIDs: []domain.SessionID{"s1"}, ReviewerIDs: []domain.SessionID{"s2"}, Level: systeminstall.UpdateWhileRunningBlocked},
+			err:      &systeminstall.HarnessActiveError{Target: systeminstall.TargetCodex, SessionIDs: []domain.SessionID{"s1"}, ReviewerIDs: []domain.SessionID{"s2"}, Level: systeminstall.UpdateWhileRunningBlocked},
 			wantBody: []string{`"count":2`, `"sessionIds":["s1"]`, `"reviewerSessionIds":["s2"]`, `"level":"blocked"`, `"starting":false`},
 		},
 		{
@@ -337,7 +337,7 @@ func TestPostSystemInstall_NotImplemented(t *testing.T) {
 func TestGetSystemInstallStatus(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	installer := &fakeInstaller{statusJob: systeminstall.Job{
-		Target: systeminstall.TargetOpencode,
+		Target: systeminstall.TargetCodex,
 		Status: systeminstall.StatusSucceeded,
 	}}
 	srv := httptest.NewServer(httpd.NewRouterWithControl(config.Config{}, log, nil, httpd.APIDeps{
@@ -345,15 +345,15 @@ func TestGetSystemInstallStatus(t *testing.T) {
 	}, httpd.ControlDeps{}))
 	defer srv.Close()
 
-	body, status, _ := doRequest(t, srv, http.MethodGet, "/api/v1/system/install/opencode", "")
+	body, status, _ := doRequest(t, srv, http.MethodGet, "/api/v1/system/install/codex", "")
 	if status != http.StatusOK {
-		t.Fatalf("GET /system/install/opencode = %d, body=%s", status, body)
+		t.Fatalf("GET /system/install/codex = %d, body=%s", status, body)
 	}
 	if !strings.Contains(string(body), `"status":"succeeded"`) {
 		t.Fatalf("body missing status: %s", body)
 	}
-	if installer.lastTarget != systeminstall.TargetOpencode {
-		t.Fatalf("lastTarget = %q, want %q", installer.lastTarget, systeminstall.TargetOpencode)
+	if installer.lastTarget != systeminstall.TargetCodex {
+		t.Fatalf("lastTarget = %q, want %q", installer.lastTarget, systeminstall.TargetCodex)
 	}
 }
 

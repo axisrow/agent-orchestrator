@@ -205,11 +205,11 @@ describe("GlobalSettingsForm", () => {
 	});
 
 	it("propagates a Harness focus target through the settings catalog", async () => {
-		renderForm("harness", "cursor");
+		renderForm("harness", "opencode-v2");
 
 		expect(await screen.findByTestId("harness-settings-section")).toBeInTheDocument();
 		// Headings that repeat the page title are now hidden by SettingsSection, not this flag.
-		expect(harnessSettingsSectionMock).toHaveBeenCalledWith({ focusAgentId: "cursor", titleHidden: false });
+		expect(harnessSettingsSectionMock).toHaveBeenCalledWith({ focusAgentId: "opencode-v2", titleHidden: false });
 	});
 
 	it("keeps Browser in its dedicated settings page", async () => {

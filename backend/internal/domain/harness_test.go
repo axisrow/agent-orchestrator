@@ -2,17 +2,12 @@ package domain
 
 import "testing"
 
-func TestOpenCodeV2HarnessIsKnownAndDistinct(t *testing.T) {
+func TestOpenCodeV2HarnessIsKnown(t *testing.T) {
 	if HarnessOpenCodeV2 != AgentHarness("opencode-v2") {
 		t.Fatalf("HarnessOpenCodeV2 = %q, want opencode-v2", HarnessOpenCodeV2)
 	}
-	if HarnessOpenCodeV2 == HarnessOpenCode {
-		t.Fatal("OpenCode 2 harness must remain distinct from OpenCode 1")
-	}
-	for _, harness := range []AgentHarness{HarnessOpenCode, HarnessOpenCodeV2} {
-		if !harness.IsKnown() {
-			t.Fatalf("%q.IsKnown() = false, want true", harness)
-		}
+	if !HarnessOpenCodeV2.IsKnown() {
+		t.Fatal("HarnessOpenCodeV2.IsKnown() = false, want true")
 	}
 }
 
@@ -31,24 +26,25 @@ func TestFXHarnessIsKnown(t *testing.T) {
 	t.Fatal("AllHarnesses does not contain HarnessFX")
 }
 
-func TestPrimeAgentHarnessIsKnown(t *testing.T) {
-	if HarnessPrimeAgent != AgentHarness("prime-agent") {
-		t.Fatalf("HarnessPrimeAgent = %q, want prime-agent", HarnessPrimeAgent)
+func TestAgyHarnessIsKnown(t *testing.T) {
+	if HarnessAgy != AgentHarness("agy") {
+		t.Fatalf("HarnessAgy = %q, want agy", HarnessAgy)
 	}
-	if !HarnessPrimeAgent.IsKnown() {
-		t.Fatal("HarnessPrimeAgent.IsKnown() = false, want true")
+	if !HarnessAgy.IsKnown() {
+		t.Fatal("HarnessAgy.IsKnown() = false, want true")
 	}
 	found := false
 	for _, harness := range AllHarnesses {
-		if harness == HarnessPrimeAgent {
+		if harness == HarnessAgy {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Fatal("AllHarnesses does not contain HarnessPrimeAgent")
+		t.Fatal("AllHarnesses does not contain HarnessAgy")
 	}
 }
+
 func TestOMPHarnessIsKnown(t *testing.T) {
 	if HarnessOMP != AgentHarness("omp") {
 		t.Fatalf("HarnessOMP = %q, want omp", HarnessOMP)
@@ -65,70 +61,5 @@ func TestOMPHarnessIsKnown(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("AllHarnesses does not contain HarnessOMP")
-	}
-}
-
-func TestCodewhaleHarnessIsKnown(t *testing.T) {
-	if HarnessCodewhale != AgentHarness("codewhale") {
-		t.Fatalf("HarnessCodewhale = %q, want codewhale", HarnessCodewhale)
-	}
-	if !HarnessCodewhale.IsKnown() {
-		t.Fatal("HarnessCodewhale.IsKnown() = false, want true")
-	}
-}
-
-func TestMiMoCodeHarnessIsKnown(t *testing.T) {
-	if HarnessMiMoCode != AgentHarness("mimo-code") {
-		t.Fatalf("HarnessMiMoCode = %q, want mimo-code", HarnessMiMoCode)
-	}
-	if !HarnessMiMoCode.IsKnown() {
-		t.Fatal("HarnessMiMoCode.IsKnown() = false, want true")
-	}
-}
-
-func TestCommandCodeHarnessIsKnown(t *testing.T) {
-	if HarnessCommandCode != AgentHarness("command-code") {
-		t.Fatalf("HarnessCommandCode = %q, want command-code", HarnessCommandCode)
-	}
-	if !HarnessCommandCode.IsKnown() {
-		t.Fatal("HarnessCommandCode.IsKnown() = false, want true")
-	}
-	found := false
-	for _, harness := range AllHarnesses {
-		if harness == HarnessCommandCode {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatal("AllHarnesses does not contain HarnessCommandCode")
-	}
-}
-
-func TestDeepSeekHarnessIsKnown(t *testing.T) {
-	if HarnessDeepSeek != AgentHarness("deepseek-harness") {
-		t.Fatalf("HarnessDeepSeek = %q, want deepseek-harness", HarnessDeepSeek)
-	}
-	if !HarnessDeepSeek.IsKnown() {
-		t.Fatal("HarnessDeepSeek.IsKnown() = false, want true")
-	}
-	found := false
-	for _, harness := range AllHarnesses {
-		if harness == HarnessDeepSeek {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatal("AllHarnesses does not contain HarnessDeepSeek")
-	}
-}
-
-func TestOpenHandsHarnessIsKnown(t *testing.T) {
-	if HarnessOpenHands != AgentHarness("openhands") {
-		t.Fatalf("HarnessOpenHands = %q, want openhands", HarnessOpenHands)
-	}
-	if !HarnessOpenHands.IsKnown() {
-		t.Fatal("HarnessOpenHands.IsKnown() = false, want true")
 	}
 }

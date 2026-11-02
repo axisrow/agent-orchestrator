@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/commandcode"
+	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/claudecode"
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 	browsersvc "github.com/aoagents/agent-orchestrator/backend/internal/service/browser"
@@ -257,7 +257,7 @@ func TestRunBackgroundTaskUsesResolvedWorkerHarnessAndConfig(t *testing.T) {
 		ID:        "mer-1",
 		ProjectID: chatTestProject,
 		Kind:      domain.KindWorker,
-		Harness:   domain.HarnessCursor,
+		Harness:   domain.HarnessAgy,
 		Metadata: domain.SessionMetadata{
 			WorkspacePath: "/ws/mer-1",
 			Model:         "selected-model",
@@ -1271,33 +1271,6 @@ func TestDefaultChatSpawnUsesChatWhenAvailable(t *testing.T) {
 	}
 }
 
-func TestUnrealSpawnDefaultsToChatWithBypassPermissions(t *testing.T) {
-	launcher := &recordingLauncher{}
-	mgr, _, runtime := newChatManager(launcher)
-	mgr.defaults = fixedSessionModeDefaults(domain.SessionModeTUI)
-
-	rec, _, _, err := mgr.Spawn(context.Background(), ports.SpawnConfig{
-		ProjectID: chatTestProject,
-		Kind:      domain.KindWorker,
-		Harness:   domain.HarnessUnreal,
-	})
-	if err != nil {
-		t.Fatalf("Spawn: %v", err)
-	}
-	if rec.Mode != domain.SessionModeChat {
-		t.Fatalf("mode = %q, want chat", rec.Mode)
-	}
-	if runtime.created != 0 {
-		t.Fatalf("Unreal spawn created %d terminal runtimes, want 0", runtime.created)
-	}
-	if len(launcher.preflightPermissions) != 1 || launcher.preflightPermissions[0] != ports.PermissionModeBypassPermissions {
-		t.Fatalf("preflight permissions = %v, want bypass-permissions", launcher.preflightPermissions)
-	}
-	if len(launcher.started) != 1 || launcher.started[0].Permissions != ports.PermissionModeBypassPermissions {
-		t.Fatalf("started controllers = %#v, want one bypass-permissions controller", launcher.started)
-	}
-}
-
 // A TUI spawn must never reach the chat launcher, even when one is wired.
 func TestTUISpawnNeverTouchesTheChatLauncher(t *testing.T) {
 	launcher := &recordingLauncher{}
@@ -1479,9 +1452,6 @@ func TestChatStartsPassTheAOToolServerWithOnlyDaemonCoordinates(t *testing.T) {
 		if start.Env[EnvBrowserCapability] == "" || !reflect.DeepEqual(start.MCPServers, want) {
 			t.Fatalf("start %d: MCPServers = %+v, want %+v", i, start.MCPServers, want)
 		}
-	}
-	if got := mgr.aoMCPServers(domain.HarnessUnreal, launcher.started[0].Env); got != nil {
-		t.Fatalf("unreal agent got tool servers %+v; its driver refuses them", got)
 	}
 }
 
@@ -1858,7 +1828,7 @@ func TestChatSpawnInstallsAgentHooksBeforeControllerStart(t *testing.T) {
 			st.projects["mer"] = domain.ProjectRecord{ID: "mer", Config: testRoleAgents()}
 			mgr := New(Deps{
 				Runtime:   &fakeRuntime{},
-				Agents:    switchTestAgents{domain.HarnessCommandCode: hooks},
+				Agents:    switchTestAgents{domain.HarnessCodex: hooks},
 				Workspace: &fakeWorkspace{path: wsDir},
 				Store:     st,
 				Messenger: &fakeMessenger{},
@@ -1875,7 +1845,7 @@ func TestChatSpawnInstallsAgentHooksBeforeControllerStart(t *testing.T) {
 			rec, _, _, err := mgr.Spawn(context.Background(), ports.SpawnConfig{
 				ProjectID:     chatTestProject,
 				Kind:          kind,
-				Harness:       domain.HarnessCommandCode,
+				Harness:       domain.HarnessCodex,
 				Prompt:        "say hi",
 				RequestedMode: domain.SessionModeChat,
 			})
@@ -1915,7 +1885,7 @@ func TestChatSpawnFailsWhenHookInstallFails(t *testing.T) {
 	st.projects["mer"] = domain.ProjectRecord{ID: "mer", Config: testRoleAgents()}
 	mgr := New(Deps{
 		Runtime:   &fakeRuntime{},
-		Agents:    switchTestAgents{domain.HarnessCommandCode: hooks},
+		Agents:    switchTestAgents{domain.HarnessCodex: hooks},
 		Workspace: &fakeWorkspace{path: t.TempDir()},
 		Store:     st,
 		Messenger: &fakeMessenger{},
@@ -1928,7 +1898,7 @@ func TestChatSpawnFailsWhenHookInstallFails(t *testing.T) {
 	_, _, _, err := mgr.Spawn(context.Background(), ports.SpawnConfig{
 		ProjectID:     chatTestProject,
 		Kind:          domain.KindWorker,
-		Harness:       domain.HarnessCommandCode,
+		Harness:       domain.HarnessCodex,
 		Prompt:        "say hi",
 		RequestedMode: domain.SessionModeChat,
 	})
@@ -1940,14 +1910,13 @@ func TestChatSpawnFailsWhenHookInstallFails(t *testing.T) {
 	}
 }
 
-// TestChatSpawnWritesCommandCodeSessionStartHook drives a fresh Chat spawn
-// through the real Command Code adapter and asserts the workspace actually
+// TestChatSpawnWritesClaudeCodeSessionStartHook drives a fresh Chat spawn
+// through the real Claude Code adapter and asserts the workspace actually
 // receives the managed hooks (SessionStart for the TUI lifecycle plus
-// PreToolUse/PostToolUse/Stop for activity). The SessionStart hook itself
-// never fires under `cmd acp` (issue #6784); Chat standing instructions ride
+// PreToolUse/PostToolUse/Stop for activity). Chat standing instructions ride
 // the first prompt preamble instead, so this asserts hook installation — not
 // Chat delivery.
-func TestChatSpawnWritesCommandCodeSessionStartHook(t *testing.T) {
+func TestChatSpawnWritesClaudeCodeSessionStartHook(t *testing.T) {
 	dataDir := t.TempDir()
 	wsDir := t.TempDir()
 	launcher := &recordingLauncher{}
@@ -1955,7 +1924,7 @@ func TestChatSpawnWritesCommandCodeSessionStartHook(t *testing.T) {
 	st.projects["mer"] = domain.ProjectRecord{ID: "mer", Config: testRoleAgents()}
 	mgr := New(Deps{
 		Runtime:   &fakeRuntime{},
-		Agents:    switchTestAgents{domain.HarnessCommandCode: commandcode.New()},
+		Agents:    switchTestAgents{domain.HarnessClaudeCode: claudecode.New()},
 		Workspace: &fakeWorkspace{path: wsDir},
 		Store:     st,
 		Messenger: &fakeMessenger{},
@@ -1968,20 +1937,20 @@ func TestChatSpawnWritesCommandCodeSessionStartHook(t *testing.T) {
 	if _, _, _, err := mgr.Spawn(context.Background(), ports.SpawnConfig{
 		ProjectID:     chatTestProject,
 		Kind:          domain.KindWorker,
-		Harness:       domain.HarnessCommandCode,
+		Harness:       domain.HarnessClaudeCode,
 		Prompt:        "say hi",
 		RequestedMode: domain.SessionModeChat,
 	}); err != nil {
 		t.Fatalf("Spawn: %v", err)
 	}
-	settingsPath := filepath.Join(wsDir, ".commandcode", "settings.json")
+	settingsPath := filepath.Join(wsDir, ".claude", "settings.local.json")
 	raw, err := os.ReadFile(settingsPath)
 	if err != nil {
 		t.Fatalf("read %s: %v (hook was never installed)", settingsPath, err)
 	}
-	for _, want := range []string{"SessionStart", "ao hooks command-code session-start"} {
+	for _, want := range []string{"SessionStart", "ao hooks claude-code session-start"} {
 		if !strings.Contains(string(raw), want) {
-			t.Errorf("settings.json missing %q; standing instructions have no delivery hook:\n%s", want, raw)
+			t.Errorf("settings.local.json missing %q; standing instructions have no delivery hook:\n%s", want, raw)
 		}
 	}
 }
@@ -2099,7 +2068,7 @@ func TestChatRestoreAppliesRoleEnvToController(t *testing.T) {
 		"CHAT_PROJECT_ONLY":  "project",
 	}
 	project.Config.Worker = domain.RoleOverride{
-		Harness: domain.HarnessCursor,
+		Harness: domain.HarnessAgy,
 		AgentConfig: domain.AgentConfig{Env: map[string]string{
 			"ANTHROPIC_BASE_URL": "https://role.example",
 			"CHAT_ROLE_ONLY":     "role",
@@ -2121,9 +2090,9 @@ func TestChatRestoreAppliesRoleEnvToController(t *testing.T) {
 	})
 	rec := domain.SessionRecord{
 		ID: "scratch-chat", ProjectID: "scratch", Kind: domain.KindWorker,
-		Harness: domain.HarnessCursor, Mode: domain.SessionModeChat,
+		Harness: domain.HarnessAgy, Mode: domain.SessionModeChat,
 		Metadata: domain.SessionMetadata{
-			WorkspacePath: "/ws/scratch-chat", ProviderConversationID: "cursor-thread",
+			WorkspacePath: "/ws/scratch-chat", ProviderConversationID: "agy-thread",
 			ControllerGeneration: "generation-old",
 		},
 		Activity: domain.Activity{State: domain.ActivityActive},

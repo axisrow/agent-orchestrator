@@ -70,52 +70,6 @@ func TestBuildLaunchCommands(t *testing.T) {
 				"--", "fix auth",
 			},
 		},
-		{
-			name: "cursor",
-			cfg: LaunchConfig{
-				Harness:    HarnessCursor,
-				Binary:     "/usr/bin/cursor-agent",
-				Permission: PermissionBypassPermissions,
-				Model:      " claude-4 ",
-				Prompt:     "-fix auth",
-			},
-			want: []string{
-				"/usr/bin/cursor-agent",
-				"--yolo",
-				"--model", "claude-4",
-				"--", "-fix auth",
-			},
-		},
-		{
-			// opencode v2 carries the model, agent, and system prompt in the
-			// caller-written OPENCODE_CONFIG (v2 has no flags for them), so the argv
-			// is just the approval flag plus the task prompt. Auto and bypass both
-			// map to --auto.
-			name: "opencode auto",
-			cfg: LaunchConfig{
-				Harness:    HarnessOpenCode,
-				Binary:     "/usr/bin/opencode",
-				Permission: PermissionAuto,
-				Model:      "anthropic/claude-opus-4-8",
-				Prompt:     "fix auth",
-			},
-			want: []string{
-				"/usr/bin/opencode",
-				"--auto",
-				"--prompt", "fix auth",
-			},
-		},
-		{
-			// default carries no approval flag; the prompt still rides --prompt so a
-			// leading "-" is never read as a flag.
-			name: "opencode default no prompt flag",
-			cfg: LaunchConfig{
-				Harness:    HarnessOpenCode,
-				Binary:     "opencode",
-				Permission: PermissionDefault,
-			},
-			want: []string{"opencode"},
-		},
 	}
 
 	for _, test := range tests {
@@ -188,29 +142,6 @@ func TestBuildRestoreCommands(t *testing.T) {
 				"thread-1",
 			},
 		},
-		{
-			name: "cursor metadata identity",
-			cfg: RestoreConfig{
-				Harness:    HarnessCursor,
-				Binary:     "cursor-agent",
-				Metadata:   map[string]string{MetadataKeyAgentSessionID: "chat-1"},
-				Permission: PermissionAuto,
-			},
-			want: []string{"cursor-agent", "--force", "--resume", "chat-1"},
-		},
-		{
-			// opencode resumes by its plugin-captured native id via --session; bypass
-			// maps to --auto with the full-access rule riding the caller's config.
-			name: "opencode metadata identity",
-			cfg: RestoreConfig{
-				Harness:    HarnessOpenCode,
-				Binary:     "opencode",
-				Metadata:   map[string]string{MetadataKeyAgentSessionID: "ses_abc"},
-				Permission: PermissionBypassPermissions,
-				Prompt:     "keep going",
-			},
-			want: []string{"opencode", "--auto", "--session", "ses_abc", "--prompt", "keep going"},
-		},
 	}
 
 	for _, test := range tests {
@@ -228,7 +159,7 @@ func TestBuildRestoreCommands(t *testing.T) {
 
 // TestBuildRestoreCommandAppliesModel proves every harness restore command
 // carries the model chosen in ChatUI (#4893): rebuilding TUI must pass the
-// session's model through Codex, Claude Code, and Cursor resume commands rather
+// session's model through Codex and Claude Code resume commands rather
 // than silently reverting to a different default.
 func TestBuildRestoreCommandAppliesModel(t *testing.T) {
 	tests := []struct {
@@ -268,18 +199,6 @@ func TestBuildRestoreCommandAppliesModel(t *testing.T) {
 				"thread-1",
 			},
 		},
-		{
-			name: "cursor",
-			cfg: RestoreConfig{
-				Harness:    HarnessCursor,
-				Binary:     "cursor-agent",
-				SessionID:  "session-1",
-				Metadata:   map[string]string{MetadataKeyAgentSessionID: "chat-1"},
-				Model:      "claude-4",
-				Permission: PermissionAuto,
-			},
-			want: []string{"cursor-agent", "--force", "--model", "claude-4", "--resume", "chat-1"},
-		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -295,7 +214,7 @@ func TestBuildRestoreCommandAppliesModel(t *testing.T) {
 }
 
 func TestRestoreIdentityRequiresCapturedIDOutsideClaude(t *testing.T) {
-	for _, harness := range []Harness{HarnessCodex, HarnessCursor, HarnessOpenCode} {
+	for _, harness := range []Harness{HarnessCodex} {
 		cmd, ok, err := BuildRestoreCommand(RestoreConfig{
 			Harness:   harness,
 			Binary:    "agent",

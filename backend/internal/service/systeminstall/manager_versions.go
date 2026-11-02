@@ -31,7 +31,7 @@ func newManagedVersionChecker(commands ports.CommandRunner, client *http.Client)
 	}
 	return func(ctx context.Context, plan Plan) (string, error) {
 		plan.Package = packageWithoutLatest(plan.Package)
-		scheme := versionSchemeFor(plan.Target)
+		scheme := versionSemver
 		switch plan.Method {
 		case "npm", "pnpm", "yarn", "bun":
 			// The public registry answers without starting a package manager. Ask
@@ -49,8 +49,6 @@ func newManagedVersionChecker(commands ports.CommandRunner, client *http.Client)
 			return homebrewManagedVersion(ctx, commands, client, plan, scheme)
 		case "winget":
 			return wingetManagedVersion(ctx, commands, plan, scheme)
-		case "uv", "pipx":
-			return pypiManagedVersion(ctx, client, plan.Package, scheme)
 		default:
 			return "", fmt.Errorf("unsupported version source %s", plan.Method)
 		}
@@ -346,17 +344,6 @@ func npmRegistryVersion(ctx context.Context, client *http.Client, pkg string, sc
 	return "", fmt.Errorf("%w: npm package %s latest dist-tag %q", errLatestUnparseable, pkg, raw)
 }
 
-func pypiManagedVersion(ctx context.Context, client *http.Client, pkg string, scheme versionScheme) (string, error) {
-	raw, err := pypiLatestRelease(ctx, client, pkg)
-	if err != nil {
-		return "", err
-	}
-	if result, ok := managedResult(raw, scheme); ok {
-		return result, nil
-	}
-	return "", fmt.Errorf("%w: PyPI version for %s", errLatestUnparseable, pkg)
-}
-
 // npmLatestTag reads the release the npm registry tags latest. The dist-tags
 // endpoint returns only the tag map; the full package document lists every
 // published version and exceeds the metadata limit for popular harnesses
@@ -367,19 +354,6 @@ func npmLatestTag(ctx context.Context, client *http.Client, pkg string) (string,
 		return "", err
 	}
 	return distTags["latest"], nil
-}
-
-// pypiLatestRelease reads a PyPI project's current release.
-func pypiLatestRelease(ctx context.Context, client *http.Client, pkg string) (string, error) {
-	var metadata struct {
-		Info struct {
-			Version string `json:"version"`
-		} `json:"info"`
-	}
-	if err := fetchRegistryJSON(ctx, client, "https://pypi.org/pypi/"+url.PathEscape(pkg)+"/json", &metadata); err != nil {
-		return "", err
-	}
-	return metadata.Info.Version, nil
 }
 
 func fetchRegistryJSON(ctx context.Context, client *http.Client, endpoint string, destination any) error {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -125,8 +124,8 @@ func TestAgentPlansCoverEveryHarnessOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(plans) != 28 {
-		t.Fatalf("got %d plans, want 28", len(plans))
+	if len(plans) != 6 {
+		t.Fatalf("got %d plans, want 6", len(plans))
 	}
 	seen := make(map[string]bool, len(plans))
 	for _, plan := range plans {
@@ -235,19 +234,10 @@ func TestOpenCodeV2OfficialInstallerRunsWithPrivateHome(t *testing.T) {
 	}
 }
 
-func TestOpenCodeV2HomebrewUnlinksItselfAndRestoresLinkedV1(t *testing.T) {
+func TestOpenCodeV2HomebrewUnlinksItself(t *testing.T) {
 	for _, operation := range []AgentOperation{AgentOperationInstall, AgentOperationUpdate} {
 		t.Run(string(operation), func(t *testing.T) {
 			prefix := t.TempDir()
-			linked := filepath.Join(prefix, "var", "homebrew", "linked")
-			if err := os.MkdirAll(linked, 0o755); err != nil {
-				t.Fatal(err)
-			}
-			// Homebrew's marker is a symlink; any entry counts, and a plain file
-			// needs no symlink privilege on Windows runners.
-			if err := os.WriteFile(filepath.Join(linked, "opencode"), nil, 0o644); err != nil {
-				t.Fatal(err)
-			}
 			s := newTestService("darwin", "brew")
 			s.installCapabilities = installCapabilitiesStub{prefix: "/Users/test/.npm", homebrewPrefix: prefix, writable: true}
 			planner, err := s.newRequestPlanner(context.Background())
@@ -263,19 +253,12 @@ func TestOpenCodeV2HomebrewUnlinksItselfAndRestoresLinkedV1(t *testing.T) {
 			if plan.Unsupported {
 				t.Fatalf("homebrew plan = %+v, want available", plan)
 			}
-			if plan.homebrewV1Prefix != prefix {
-				t.Fatalf("Homebrew prefix = %q, want %q", plan.homebrewV1Prefix, prefix)
-			}
-			plan = plan.withLinkedOpenCodeV1()
-			if len(plan.Prepare) == 0 || strings.Join(plan.Prepare[len(plan.Prepare)-1], " ") != "brew unlink opencode" {
-				t.Fatalf("Prepare = %v, want OpenCode 1 unlinked last", plan.Prepare)
-			}
-			wantCleanup := [][]string{{"brew", "unlink", "opencode-v2"}, {"brew", "link", "opencode"}}
+			wantCleanup := [][]string{{"brew", "unlink", "opencode-v2"}}
 			if !slices.EqualFunc(plan.Cleanup, wantCleanup, slices.Equal[[]string]) {
 				t.Fatalf("Cleanup = %v, want %v", plan.Cleanup, wantCleanup)
 			}
-			if !slices.Equal(plan.alsoChanges, []Target{TargetOpencode}) {
-				t.Fatalf("alsoChanges = %v, want OpenCode 1 held while unlinked", plan.alsoChanges)
+			if len(plan.alsoChanges) != 0 {
+				t.Fatalf("alsoChanges = %v, want none", plan.alsoChanges)
 			}
 		})
 	}
@@ -319,9 +302,8 @@ func TestAgentPlanSelectsAvailableFallback(t *testing.T) {
 	}{
 		{"claude brew", "darwin", TargetClaudeCode, []string{"brew"}, "homebrew", "brew install --cask claude-code"},
 		{"codex npm", "linux", TargetCodex, []string{"npm"}, "npm", "npm install -g @openai/codex"},
-		{"copilot winget", "windows", TargetCopilot, []string{"winget", "npm"}, "winget", "winget install -e --id GitHub.Copilot --silent --accept-package-agreements --accept-source-agreements --disable-interactivity"},
-		{"vibe pipx", "linux", TargetVibe, []string{"pipx"}, "pipx", "pipx install mistral-vibe"},
-		{"openhands uv", "windows", TargetOpenHands, []string{"uv"}, "uv", "uv tool install openhands"},
+		{"omp official", "linux", TargetOMP, []string{"sh"}, "official-installer", ""},
+		{"agy official", "linux", TargetAgy, []string{"bash"}, "official-installer", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -333,23 +315,6 @@ func TestAgentPlanSelectsAvailableFallback(t *testing.T) {
 	}
 }
 
-func TestGeminiMacInstallUsesSupportedNPMRelease(t *testing.T) {
-	s := newTestService("darwin", "brew", "npm")
-	s.installCapabilities = installCapabilitiesStub{prefix: "/Users/test/.npm", writable: true}
-	planner, err := s.newRequestPlanner(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	plans := planner.agentMethodPlans(TargetGemini, AgentOperationInstall)
-	if len(plans) != 1 || plans[0].Method != "npm" || plans[0].Unsupported ||
-		strings.Join(plans[0].Command, " ") != "npm install -g @google/gemini-cli@latest" {
-		t.Fatalf("Gemini install plans = %+v, want supported npm release only", plans)
-	}
-	if _, err := planner.resolveAgentMethod(TargetGemini, "homebrew", AgentOperationInstall); err == nil {
-		t.Fatal("Homebrew method should not be offered while its Gemini CLI formula is below the required version")
-	}
-}
-
 func TestOfficialInstallerPlansAreAutomaticAndServerOwned(t *testing.T) {
 	tests := []struct {
 		goos        string
@@ -358,15 +323,8 @@ func TestOfficialInstallerPlansAreAutomaticAndServerOwned(t *testing.T) {
 		wantURL     string
 		wantProgram string
 	}{
-		{"darwin", TargetCursor, []string{"bash"}, "https://cursor.com/install", "bash"},
-		{"windows", TargetCursor, []string{"pwsh.exe"}, "https://cursor.com/install?win32=true", "pwsh.exe"},
-		{"linux", TargetAider, []string{"sh"}, "https://aider.chat/install.sh", "sh"},
-		{"linux", TargetGrok, []string{"bash"}, "https://x.ai/cli/install.sh", "bash"},
-		{"linux", TargetDevin, []string{"bash"}, "https://cli.devin.ai/install.sh", "bash"},
-		{"windows", TargetKiro, []string{"powershell.exe"}, "https://cli.kiro.dev/install.ps1", "powershell.exe"},
-		{"linux", TargetMuse, []string{"bash"}, "https://dev.meta.ai/install.sh", "bash"},
-		{"linux", TargetKimchi, []string{"sh"}, "https://github.com/getkimchi/kimchi/releases/latest/download/install.sh", "sh"},
-		{"linux", TargetPrimeAgent, []string{"sh"}, "https://app.primeintellect.ai/prime-agent/install.sh", "sh"},
+		{"windows", TargetAgy, []string{"pwsh"}, "https://antigravity.google/cli/install.ps1", "pwsh"},
+		{"linux", TargetOMP, []string{"sh"}, "https://omp.sh/install", "sh"},
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.target)+"/"+tt.goos, func(t *testing.T) {
@@ -409,7 +367,7 @@ func TestAgentInstallPlansNeverUseShellEvaluationOrSudo(t *testing.T) {
 }
 
 func TestOfficialInstallersRejectUnsupportedOperatingSystems(t *testing.T) {
-	for _, target := range []Target{TargetCodex, TargetCursor, TargetKiro, TargetKimchi, TargetDevin, TargetMuse, TargetPrimeAgent} {
+	for _, target := range []Target{TargetCodex, TargetOMP, TargetAgy} {
 		plan := newTestService("freebsd", "sh", "bash", "pwsh").planAgent(target)
 		if !plan.Unsupported || plan.Script != nil {
 			t.Fatalf("%s plan = %+v, want manual unsupported plan", target, plan)
@@ -447,33 +405,6 @@ func TestOfficialInstallerIsPreferredOverPackageManagers(t *testing.T) {
 	t.Fatal("codex plan not found")
 }
 
-func TestVibeRequiresIsolatedToolInstaller(t *testing.T) {
-	for _, found := range [][]string{{"python3"}, {"python"}, {}} {
-		plan := newTestService("linux", found...).planAgent(TargetVibe)
-		if !plan.Unsupported || plan.Method != "pipx" {
-			t.Errorf("found %v: plan = %+v, want unavailable isolated-tool plan", found, plan)
-		}
-	}
-}
-
-func TestVibeReinstallUsesPackageManagerReinstallCommands(t *testing.T) {
-	s := newTestService("darwin", "uv", "pipx")
-	planner, err := s.newRequestPlanner(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	plans := planner.agentMethodPlans(TargetVibe, AgentOperationReinstall)
-	want := map[string]string{
-		"uv":   "uv tool install mistral-vibe --force --reinstall",
-		"pipx": "pipx install --force mistral-vibe",
-	}
-	for _, plan := range plans {
-		if got := strings.Join(plan.Command, " "); got != want[plan.Method] {
-			t.Errorf("%s reinstall command = %q, want %q", plan.Method, got, want[plan.Method])
-		}
-	}
-}
-
 func TestHomebrewReinstallRepairsThroughInstallWhenPackageIsNotOwned(t *testing.T) {
 	for _, tt := range []struct {
 		name      string
@@ -498,39 +429,6 @@ func TestHomebrewReinstallRepairsThroughInstallWhenPackageIsNotOwned(t *testing.
 				t.Fatalf("Homebrew repair command = %q, want %q", got, tt.want)
 			}
 		})
-	}
-}
-
-func TestKiroReinstallIsUnavailableWithoutVerifiedHeadlessRecipe(t *testing.T) {
-	s := newTestService("windows", "powershell.exe", "kiro-cli")
-	planner, err := s.newRequestPlanner(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	plans := planner.agentMethodPlans(TargetKiro, AgentOperationReinstall)
-	if len(plans) != 1 {
-		t.Fatalf("Kiro reinstall plans = %d, want 1", len(plans))
-	}
-	plan := plans[0]
-	if !plan.Unsupported || len(plan.Command) != 0 || plan.Script != nil {
-		t.Fatalf("Kiro reinstall plan = %+v, want instructions-only", plan)
-	}
-	if !strings.Contains(plan.Reason, "verified headless reinstall") {
-		t.Fatalf("Kiro reinstall reason = %q", plan.Reason)
-	}
-	_, err = planner.resolveAgentMethod(TargetKiro, "official-installer", AgentOperationReinstall)
-	if !errors.Is(err, ErrInstallMethod) {
-		t.Fatalf("Kiro reinstall error = %v, want ErrInstallMethod", err)
-	}
-}
-
-func TestKiroMacOSInstallRequiresInteractiveVendorFlow(t *testing.T) {
-	plan := newTestService("darwin", "bash").planAgent(TargetKiro)
-	if !plan.Unsupported || plan.Method != "manual" || plan.Script != nil || len(plan.Command) != 0 {
-		t.Fatalf("Kiro macOS plan = %+v, want manual interactive installation", plan)
-	}
-	if !strings.Contains(plan.Reason, "must be run interactively") || plan.DocsURL == "" {
-		t.Fatalf("Kiro macOS guidance = %+v, want interactive reason and documentation", plan)
 	}
 }
 
@@ -572,8 +470,6 @@ func TestNPMPlanUsesTargetSpecificNodeFloors(t *testing.T) {
 		wantReason  string
 	}{
 		{name: "codex accepts node 16", target: TargetCodex, nodeVersion: "v16.0.0", wantAllowed: true},
-		{name: "auggie accepts node 20", target: TargetAuggie, nodeVersion: "v20.0.0", wantAllowed: true},
-		{name: "auggie rejects node 18", target: TargetAuggie, nodeVersion: "v18.20.0", wantReason: "Node.js 20+"},
 		{name: "claude rejects node 20", target: TargetClaudeCode, nodeVersion: "v20.19.0", wantReason: "Node.js 22+"},
 		{name: "pi rejects node 22.18", target: TargetPi, nodeVersion: "v22.18.0", wantReason: "Node.js 22.19+"},
 	} {
@@ -676,36 +572,6 @@ func TestHomebrewPlanFailsClosedWhenInstalledPackageProbeFails(t *testing.T) {
 	}
 }
 
-func TestKimchiUsesOnlyDocumentedInstallMethods(t *testing.T) {
-	s := newTestService("darwin", "brew", "npm", "sh")
-	s.installCapabilities = installCapabilitiesStub{homebrewPrefix: "/opt/homebrew", writable: true}
-	plans, err := s.AgentPlans(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, agent := range plans {
-		if agent.AgentID != string(TargetKimchi) {
-			continue
-		}
-		if agent.DocumentationURL != "https://docs.kimchi.dev/docs/coding-getting-started" {
-			t.Fatalf("documentation URL = %q", agent.DocumentationURL)
-		}
-		if agent.Method != "official-installer" || agent.Command != "/usr/bin/sh <downloaded from https://github.com/getkimchi/kimchi/releases/latest/download/install.sh>" {
-			t.Fatalf("recommended Kimchi plan = %+v", agent)
-		}
-		for _, method := range agent.Methods {
-			if method.ID == "npm" || strings.Contains(method.Command, "@kimchi-dev/cli") {
-				t.Fatalf("invalid Kimchi npm method remains: %+v", method)
-			}
-		}
-		if len(agent.Methods) != 2 || agent.Methods[1].ID != "official-installer" || !agent.Methods[1].Available {
-			t.Fatalf("Kimchi official installer missing: %+v", agent.Methods)
-		}
-		return
-	}
-	t.Fatal("Kimchi plan not found")
-}
-
 func TestAgentPlansExposeEveryViableServerOwnedMethod(t *testing.T) {
 	s := newTestService("darwin", "brew", "npm")
 	s.installCapabilities = installCapabilitiesStub{prefix: "/Users/test/.npm", writable: true}
@@ -761,18 +627,5 @@ func TestAgentTargetsAreValidButPrerequisitesAreNotHarnessRows(t *testing.T) {
 		if !Valid(target) || IsAgentTarget(target) {
 			t.Fatalf("prerequisite target %q was classified incorrectly", target)
 		}
-	}
-}
-
-func TestCodewhaleInstallPlanIsManualOnly(t *testing.T) {
-	plan := newTestService("darwin", "brew", "npm", "sh").planAgent(TargetCodewhale)
-	if !plan.Unsupported || plan.Method != "manual" || len(plan.Command) != 0 || plan.Script != nil {
-		t.Fatalf("Codewhale plan = %+v, want command-free manual plan", plan)
-	}
-	if plan.DocsURL != "https://github.com/Hmbown/Codewhale" {
-		t.Fatalf("Codewhale documentation URL = %q", plan.DocsURL)
-	}
-	if !strings.Contains(plan.Reason, "does not automatically install Codewhale") {
-		t.Fatalf("Codewhale reason = %q", plan.Reason)
 	}
 }

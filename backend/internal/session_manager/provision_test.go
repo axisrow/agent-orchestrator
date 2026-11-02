@@ -262,7 +262,7 @@ func TestEffectiveHarnessAndAgentConfig(t *testing.T) {
 	}
 
 	// Explicit harness always wins.
-	if h := effectiveHarness(domain.HarnessAider, domain.KindWorker, cfg); h != domain.HarnessAider {
+	if h := effectiveHarness(domain.HarnessGoose, domain.KindWorker, cfg); h != domain.HarnessGoose {
 		t.Fatalf("explicit harness = %q, want aider", h)
 	}
 	// Empty harness falls back to the role override per kind.
@@ -285,7 +285,7 @@ func TestEffectiveHarnessAndAgentConfig(t *testing.T) {
 	// A launch harness that differs from the role's configured harness drops the
 	// role's model/mode — they were tuned for the other agent — but keeps the
 	// harness-neutral permissions.
-	if got := effectiveAgentConfig(domain.HarnessAider, domain.KindWorker, cfg); got.Model != "base" || got.Mode != "low" || got.Permissions != domain.PermissionModeAuto {
+	if got := effectiveAgentConfig(domain.HarnessGoose, domain.KindWorker, cfg); got.Model != "base" || got.Mode != "low" || got.Permissions != domain.PermissionModeAuto {
 		t.Fatalf("mismatched-harness worker config = %#v, want model=base mode=low permissions=auto", got)
 	}
 	// A role override with no harness pinned is deliberately treated as
@@ -297,7 +297,7 @@ func TestEffectiveHarnessAndAgentConfig(t *testing.T) {
 		AgentConfig: domain.AgentConfig{Model: "base", Mode: "low"},
 		Worker:      domain.RoleOverride{AgentConfig: domain.AgentConfig{Model: "worker", Mode: "high"}},
 	}
-	for _, harness := range []domain.AgentHarness{domain.HarnessAider, domain.HarnessCodex} {
+	for _, harness := range []domain.AgentHarness{domain.HarnessGoose, domain.HarnessCodex} {
 		got := effectiveAgentConfig(harness, domain.KindWorker, unpinned)
 		if got.Model != "worker" || got.Mode != "high" {
 			t.Fatalf("unpinned worker config for %q = %#v, want model=worker mode=high", harness, got)
@@ -582,7 +582,7 @@ func TestResolveAgentConfigRejectsExplicitEffortForUnsupportedHarness(t *testing
 	m := &Manager{modelCatalog: tuningCatalog{catalog: ports.AgentModelCatalog{Models: []ports.AgentModelInfo{
 		{ID: "gemini-2.5-pro", IsDefault: true, Efforts: []string{"low", "high"}},
 	}}}}
-	for _, harness := range []domain.AgentHarness{domain.HarnessDroid, domain.HarnessAider, domain.HarnessAmp} {
+	for _, harness := range []domain.AgentHarness{domain.HarnessDroid, domain.HarnessGoose, domain.HarnessAmp} {
 		// A flagged explicit effort override must fail loudly instead of being
 		// silently discarded: the caller asked for something the harness cannot
 		// honor.
@@ -593,7 +593,7 @@ func TestResolveAgentConfigRejectsExplicitEffortForUnsupportedHarness(t *testing
 		if !errors.Is(err, ports.ErrUnsupportedEffort) {
 			t.Fatalf("harness %q override error = %v, want ErrUnsupportedEffort", harness, err)
 		}
-		if !strings.Contains(err.Error(), "only supported for codex, claude-code, and command-code") {
+		if !strings.Contains(err.Error(), "only supported for codex and claude-code agents") {
 			t.Fatalf("harness %q error = %v, want support hint", harness, err)
 		}
 		// Unflagged request-carried effort still clears silently, matching the
@@ -706,37 +706,13 @@ func TestResolveCodexTUIAgentConfigFallsBackWhenCatalogLookupTimesOut(t *testing
 	}
 }
 
-func TestResolveCommandCodeTUIAgentConfigPassesEffortThrough(t *testing.T) {
-	// Command Code's catalog advertises no effort levels, so resolution must
-	// forward the raw level without consulting the catalog at all — even a
-	// discovery failure must not clear it or fail the spawn.
+func TestResolveTUIAgentConfigClearsEffortForNonEffortHarnesses(t *testing.T) {
+	// Only codex and claude-code honor effort; every other harness has an
+	// unflagged or inherited level cleared silently.
 	m := &Manager{modelCatalog: tuningCatalog{err: errors.New("discovery failed")}}
 
 	resolved, err := m.resolveAgentConfig(context.Background(), ports.SpawnConfig{
-		ProjectID: "p", Kind: domain.KindWorker, Harness: domain.HarnessCommandCode,
-		RequestedMode: domain.SessionModeTUI,
-		AgentConfig:   ports.AgentConfig{Model: "deepseek/deepseek-v4-flash", Effort: "high"},
-	}, domain.ProjectConfig{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resolved.Model != "deepseek/deepseek-v4-flash" || resolved.Effort != "high" {
-		t.Fatalf("resolved = %#v, want model deepseek/deepseek-v4-flash effort high", resolved)
-	}
-
-	resolved, err = m.resolveAgentConfig(context.Background(), ports.SpawnConfig{
-		ProjectID: "p", Kind: domain.KindWorker, Harness: domain.HarnessCommandCode,
-		RequestedMode: domain.SessionModeTUI,
-	}, domain.ProjectConfig{Worker: domain.RoleOverride{AgentConfig: domain.AgentConfig{Effort: "medium"}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resolved.Effort != "medium" {
-		t.Fatalf("project effort = %q, want medium", resolved.Effort)
-	}
-
-	resolved, err = m.resolveAgentConfig(context.Background(), ports.SpawnConfig{
-		ProjectID: "p", Kind: domain.KindWorker, Harness: domain.HarnessOpenCode,
+		ProjectID: "p", Kind: domain.KindWorker, Harness: domain.HarnessOpenCodeV2,
 		RequestedMode: domain.SessionModeTUI,
 		AgentConfig:   ports.AgentConfig{Effort: "high"},
 	}, domain.ProjectConfig{})

@@ -26,7 +26,7 @@ func TestPersistentACPReplayBackpressure(t *testing.T) {
 	session, _ := json.Marshal(acpsdk.NewSessionResponse{SessionId: "provider-session"})
 	daemon, host := net.Pipe()
 	t.Cleanup(func() { _ = host.Close() })
-	driver := New(Config{Harness: domain.HarnessOpenCode}, slog.New(slog.DiscardHandler))
+	driver := New(Config{Harness: domain.HarnessOpenCodeV2}, slog.New(slog.DiscardHandler))
 	driver.connectHost = func(context.Context, persistenthost.Config) (*persistenthost.Transport, error) {
 		return &persistenthost.Transport{
 			Stdin: daemon, Stdout: daemon, Reconnected: true,

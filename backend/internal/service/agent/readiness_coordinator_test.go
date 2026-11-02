@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -564,7 +563,7 @@ func TestReadinessCoordinatorClassifiesTimeouts(t *testing.T) {
 }
 
 func TestReadinessCoordinatorAllowsOpenCodeVersionProbeBudget(t *testing.T) {
-	for _, id := range []string{"opencode", "opencode-v2"} {
+	for _, id := range []string{"opencode-v2"} {
 		t.Run(id, func(t *testing.T) {
 			agent := &readinessTestAgent{resolve: func(ctx context.Context) (string, error) {
 				deadline, ok := ctx.Deadline()
@@ -598,17 +597,12 @@ func TestReadinessCoordinatorDoesNotSurfaceSeparateOpenCodeVersionAsMismatch(t *
 		version, binaryPath string
 		wantReasonHas       string
 	}{
-		// OpenCode 2 at OpenCode 1's default location replaced it; say so and how to repair it.
-		{"opencode", "OpenCode", 1, 2, "2.0.0", "/usr/local/bin/opencode", "/usr/local/bin/opencode is OpenCode 2 (2.0.0), which replaced OpenCode 1"},
-		// OpenCode 2 only where AO keeps it apart: OpenCode 1 simply is not installed.
-		{"opencode", "OpenCode", 1, 2, "2.0.0", "/opt/homebrew/opt/opencode-v2/bin/opencode", ""},
-		{"opencode-v2", "OpenCode 2", 2, 1, "1.18.33", "/opt/homebrew/bin/opencode", ""},
+		// A v1 binary found where opencode-v2 resolves is classified as a version
+		// mismatch, not an unknown install failure.
+		{"opencode-v2", "OpenCode 2", 2, 1, "1.18.33", "/opt/homebrew/bin/opencode", "requires OpenCode 2"},
 	} {
 		t.Run(tc.id+tc.binaryPath, func(t *testing.T) {
 			t.Parallel()
-			if runtime.GOOS == "windows" && strings.Contains(tc.binaryPath, "/opt/homebrew/opt/") {
-				t.Skip("Homebrew opt links do not exist on Windows")
-			}
 			testAgent := &readinessTestAgent{
 				resolve: func(context.Context) (string, error) {
 					return "", &opencode.IncompatibleVersionError{
@@ -634,12 +628,8 @@ func TestReadinessCoordinatorDoesNotSurfaceSeparateOpenCodeVersionAsMismatch(t *
 			if observation.ReasonCode != domain.AgentReadinessReasonNotInstalled {
 				t.Fatalf("installation reason code = %q, want not_installed", observation.ReasonCode)
 			}
-			if tc.wantReasonHas != "" {
-				if !strings.Contains(observation.Reason, tc.wantReasonHas) || !strings.Contains(observation.Reason, "first reinstall OpenCode 2 from AO") {
-					t.Fatalf("installation reason = %q, want replacement explanation %q with repair steps", observation.Reason, tc.wantReasonHas)
-				}
-			} else if wantReason := tc.label + " is not installed."; observation.Reason != wantReason {
-				t.Fatalf("installation reason = %q, want %q", observation.Reason, wantReason)
+			if !strings.Contains(observation.Reason, tc.wantReasonHas) || !strings.Contains(observation.Reason, "is not installed") {
+				t.Fatalf("installation reason = %q, want mismatch explanation containing %q", observation.Reason, tc.wantReasonHas)
 			}
 			if items[0].EffectiveReadiness != domain.AgentReadinessNotReady {
 				t.Fatalf("effective readiness = %q, want not_ready", items[0].EffectiveReadiness)

@@ -80,11 +80,8 @@ func TestInstalledAgentHarnessMapsManagedHarnessInstalls(t *testing.T) {
 		{target: systeminstall.TargetClaude, harness: "claude-code", ok: true},
 		{target: systeminstall.TargetClaudeCode, harness: "claude-code", ok: true},
 		{target: systeminstall.TargetCodex, harness: "codex", ok: true},
-		{target: systeminstall.TargetOpencode, harness: "opencode", ok: true},
-		{target: systeminstall.TargetCopilot, harness: "copilot", ok: true},
-		{target: systeminstall.TargetKiro, harness: "kiro", ok: true},
+		{target: systeminstall.TargetOMP, harness: "omp", ok: true},
 		{target: systeminstall.TargetPi, harness: "pi", ok: true},
-		{target: systeminstall.TargetVibe, harness: "vibe", ok: true},
 		{target: systeminstall.TargetTmux},
 		{target: systeminstall.TargetGH},
 	} {
@@ -216,32 +213,16 @@ func TestWiring_AgentResolverResolvesRealAdapters(t *testing.T) {
 	}{
 		{domain.HarnessClaudeCode, "claude-code"},
 		{domain.HarnessCodex, "codex"},
-		{domain.HarnessOpenCode, "opencode"},
-		{domain.HarnessGrok, "grok"},
-		{domain.HarnessCursor, "cursor"},
+		{domain.HarnessOpenCodeV2, "opencode-v2"},
 		{domain.HarnessQwen, "qwen"},
-		{domain.HarnessCopilot, "copilot"},
 		{domain.HarnessKimi, "kimi"},
-		{domain.HarnessMuse, "muse"},
 		{domain.HarnessDroid, "droid"},
 		{domain.HarnessAmp, "amp"},
 		{domain.HarnessAgy, "agy"},
-		{domain.HarnessCrush, "crush"},
-		{domain.HarnessAider, "aider"},
 		{domain.HarnessGoose, "goose"},
-		{domain.HarnessAuggie, "auggie"},
-		{domain.HarnessContinue, "continue"},
-		{domain.HarnessDevin, "devin"},
-		{domain.HarnessCline, "cline"},
-		{domain.HarnessKiro, "kiro"},
-		{domain.HarnessKilocode, "kilocode"},
-		{domain.HarnessVibe, "vibe"},
 		{domain.HarnessPi, "pi"},
-		{domain.HarnessPrimeAgent, "prime-agent"},
 		{domain.HarnessAutohand, "autohand"},
 		{domain.HarnessFX, "fx"},
-		{domain.HarnessUnreal, "unreal-agent"},
-		{domain.HarnessCommandCode, "command-code"},
 		{domain.HarnessMemcode, "memcode"},
 	} {
 		agent, ok := resolver.Agent(tc.harness)
@@ -281,10 +262,7 @@ func TestWiring_ActiveTurnSteeringComesFromAdapters(t *testing.T) {
 	if !steers(domain.HarnessCodex) {
 		t.Error("codex declares SteersActiveTurn; want true from the adapter-backed policy")
 	}
-	if !steers(domain.HarnessPrimeAgent) {
-		t.Error("prime-agent declares SteersActiveTurn; want true from the adapter-backed policy")
-	}
-	for _, harness := range []domain.AgentHarness{domain.HarnessClaudeCode, domain.HarnessAider, "definitely-not-an-agent", ""} {
+	for _, harness := range []domain.AgentHarness{domain.HarnessClaudeCode, domain.HarnessGoose, "definitely-not-an-agent", ""} {
 		if steers(harness) {
 			t.Errorf("harness %q must not be steerable mid-turn", harness)
 		}
@@ -302,15 +280,14 @@ func TestWiring_StartupSignalGateComesFromAdapters(t *testing.T) {
 	}
 	gates := startupSignalGatesInput(agents)
 
-	if !gates(domain.HarnessCursor) {
-		t.Error("cursor declares startup-ready signaling; want its TUI input gated")
-	}
-	for _, harness := range []domain.AgentHarness{domain.HarnessAider, domain.HarnessOMP, "definitely-not-an-agent", ""} {
+	// No shipped adapter declares startup-ready signaling today; the gate stays
+	// closed for every harness rather than gating TUI input speculatively.
+	for _, harness := range []domain.AgentHarness{domain.HarnessAgy, domain.HarnessOMP, "definitely-not-an-agent", ""} {
 		if gates(harness) {
 			t.Errorf("harness %q must not require a startup signal", harness)
 		}
 	}
-	if startupSignalGatesInput(nil)(domain.HarnessCursor) {
+	if startupSignalGatesInput(nil)(domain.HarnessAgy) {
 		t.Error("a nil resolver must leave startup input ungated")
 	}
 }
@@ -330,17 +307,16 @@ func TestWiring_UrgentNudgeGateComesFromAdapters(t *testing.T) {
 	}
 	safe := urgentNudgeWaitingInputSafe(agents)
 
-	for _, harness := range []domain.AgentHarness{domain.HarnessClaudeCode, domain.HarnessKimchi} {
-		if !safe(harness) {
-			t.Errorf("harness %q reports permission dialogs as blocked; urgent nudge must be allowed at waiting_input", harness)
-		}
+	if !safe(domain.HarnessClaudeCode) {
+		t.Error("claude-code reports permission dialogs as blocked; urgent nudge must be allowed at waiting_input")
 	}
 	// Codex maps permission-request to waiting_input; Droid folds both permission
-	// decisions and idle notifications into waiting_input; Goose/Devin ride the
-	// shared name-only StandardDeriveActivityState with no blocked signal. All
-	// must keep urgent delivery suppressed at a waiting_input prompt.
+	// decisions and idle notifications into waiting_input; Agy hooks expose no
+	// permission-wait event; Goose rides the shared name-only
+	// StandardDeriveActivityState with no blocked signal. All must keep urgent
+	// delivery suppressed at a waiting_input prompt.
 	for _, harness := range []domain.AgentHarness{
-		domain.HarnessCodex, domain.HarnessDroid, domain.HarnessGoose, domain.HarnessDevin,
+		domain.HarnessCodex, domain.HarnessDroid, domain.HarnessGoose, domain.HarnessAgy,
 		"definitely-not-an-agent", "",
 	} {
 		if safe(harness) {

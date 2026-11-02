@@ -2,7 +2,6 @@ package registry_test
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -20,7 +19,7 @@ func TestEveryRefreshHarnessResumesExactConversation(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX executable fixtures")
 	}
-	binaries := map[string]string{"claude-code": "claude", "codex": "codex", "opencode": "opencode", "opencode-v2": "opencode", "grok": "grok", "cursor": "cursor-agent", "qwen": "qwen", "gemini": "gemini", "copilot": "copilot", "kimi": "kimi", "muse": "muse", "droid": "droid", "amp": "amp", "agy": "agy", "crush": "crush", "goose": "goose", "auggie": "auggie", "devin": "devin", "omp": "omp", "codewhale": "codewhale", "openhands": "openhands", "cline": "cline", "kiro": "kiro-cli", "kilocode": "kilo", "vibe": "vibe", "pi": "pi", "kimchi": "kimchi", "prime-agent": "prime-agent", "autohand": "autohand", "fx": "fx", "command-code": "cmd", "mimo-code": "mimo"}
+	binaries := map[string]string{"claude-code": "claude", "codex": "codex", "opencode-v2": "opencode", "qwen": "qwen", "kimi": "kimi", "droid": "droid", "amp": "amp", "agy": "agy", "goose": "goose", "omp": "omp", "pi": "pi", "autohand": "autohand", "fx": "fx", "memcode": "memcode"}
 	for _, harness := range agentregistry.Harnessed() {
 		t.Run(string(harness.Harness), func(t *testing.T) {
 			capability, ok := harness.Agent.(ports.AgentTerminalVersionRefresher)
@@ -31,9 +30,6 @@ func TestEveryRefreshHarnessResumesExactConversation(t *testing.T) {
 				return
 			}
 			nativeID := "019e950e-52e0-7411-961b-d380ca7e610f"
-			if string(harness.Harness) == "mimo-code" {
-				nativeID = "ses_original"
-			}
 			dir := t.TempDir()
 			home := t.TempDir()
 			workspace := t.TempDir()
@@ -43,29 +39,11 @@ func TestEveryRefreshHarnessResumesExactConversation(t *testing.T) {
 			}
 			binary := filepath.Join(dir, cli)
 			version := "1.36.0"
-			switch string(harness.Harness) {
-			case "opencode":
-				version = "1.2.27"
-			case "opencode-v2":
+			if string(harness.Harness) == "opencode-v2" {
 				version = "2.0.0"
-			case "mimo-code":
-				version = "0.1.12"
 			}
 			label := cli
-			switch string(harness.Harness) {
-			case "muse":
-				label = "Muse Code"
-			case "openhands":
-				label = "OpenHands CLI"
-			}
 			script := "#!/bin/sh\ncase \"$1\" in --version|-v|-V) echo '" + label + " " + version + "';; --help|help) printf 'Usage: goose [OPTIONS] COMMAND\\nsession Start sessions\\nrecipe Recipes\\n';; *) if [ \"$2\" = list ]; then printf '%s' '[{\"id\":\"" + nativeID + "\"}]'; else printf '%s' '{\"info\":{\"id\":\"" + nativeID + "\"}}'; fi;; esac\n"
-			if string(harness.Harness) == "cline" {
-				history, err := json.Marshal([]map[string]string{{"sessionId": nativeID, "cwd": workspace}})
-				if err != nil {
-					t.Fatal(err)
-				}
-				script = "#!/bin/sh\nprintf '%s' '" + string(history) + "'\n"
-			}
 			if err := os.WriteFile(binary, []byte(script), 0755); err != nil {
 				t.Fatal(err)
 			}
@@ -113,7 +91,7 @@ func TestEveryRefreshHarnessResumesExactConversation(t *testing.T) {
 					t.Fatalf("passive resume starts another conversation/turn: %q", argv)
 				}
 			}
-			jsonProbe := slices.Contains([]string{"opencode", "opencode-v2", "kimi", "kilocode", "mimo-code"}, string(harness.Harness))
+			jsonProbe := slices.Contains([]string{"opencode-v2", "kimi"}, string(harness.Harness))
 			if probe, ok := harness.Agent.(ports.AgentInterfaceHandoffHistoryProbe); ok && jsonProbe {
 				exists, err := probe.NativeConversationExists(context.Background(), cfg.Session, nativeID, nil)
 				if err != nil || !exists {
@@ -126,13 +104,6 @@ func TestEveryRefreshHarnessResumesExactConversation(t *testing.T) {
 				exists, err = probe.NativeConversationExists(context.Background(), cfg.Session, nativeID, nil)
 				if exists {
 					t.Fatalf("history preflight accepted missing native session: %v", err)
-				}
-			}
-			if string(harness.Harness) == "cline" {
-				// Without hook metadata Cline can still recover from history;
-				// the missing-identity case must also have no matching history.
-				if err := os.WriteFile(binary, []byte("#!/bin/sh\nprintf '[]'\n"), 0755); err != nil {
-					t.Fatal(err)
 				}
 			}
 			cfg.Session.Metadata = nil

@@ -831,7 +831,7 @@ describe("ACP session config options", () => {
 		const onChange = vi.fn();
 		render(
 			<TurnSettingsBar
-				harness="cursor"
+				harness="qwen"
 				models={[]}
 				settings={{}}
 				showApprovalMode={false}
@@ -1051,10 +1051,10 @@ describe("native model selection", () => {
 	});
 });
 
-describe("Cursor Ask and Agent chat modes", () => {
+describe("Provider Ask and Agent chat modes", () => {
 	// Values are deliberately not lowercase: AO must round-trip whatever the
 	// provider advertised, never a value re-derived from the label.
-	const CURSOR_MODE: ChatConfigOption = {
+	const PROVIDER_MODE: ChatConfigOption = {
 		id: "mode",
 		name: "Chat mode",
 		category: "mode",
@@ -1070,10 +1070,10 @@ describe("Cursor Ask and Agent chat modes", () => {
 		const user = userEvent.setup();
 		render(
 			<TurnSettingsBar
-				harness="cursor"
+				harness="qwen"
 				models={[]}
 				settings={{}}
-				configOptions={[CURSOR_MODE]}
+				configOptions={[PROVIDER_MODE]}
 				onChangeConfigOption={vi.fn()}
 			/>,
 		);
@@ -1088,10 +1088,10 @@ describe("Cursor Ask and Agent chat modes", () => {
 	it("shows the provider's current choice, starting on Ask", () => {
 		render(
 			<TurnSettingsBar
-				harness="cursor"
+				harness="qwen"
 				models={[]}
 				settings={{}}
-				configOptions={[CURSOR_MODE]}
+				configOptions={[PROVIDER_MODE]}
 				onChangeConfigOption={vi.fn()}
 			/>,
 		);
@@ -1104,10 +1104,10 @@ describe("Cursor Ask and Agent chat modes", () => {
 	it("shows Agent on the trigger once the provider reports Agent", () => {
 		render(
 			<TurnSettingsBar
-				harness="cursor"
+				harness="qwen"
 				models={[]}
 				settings={{}}
-				configOptions={[{ ...CURSOR_MODE, currentValue: "AGENT" }]}
+				configOptions={[{ ...PROVIDER_MODE, currentValue: "AGENT" }]}
 				onChangeConfigOption={vi.fn()}
 			/>,
 		);
@@ -1122,10 +1122,10 @@ describe("Cursor Ask and Agent chat modes", () => {
 		const user = userEvent.setup();
 		render(
 			<TurnSettingsBar
-				harness="cursor"
+				harness="qwen"
 				models={[]}
 				settings={{}}
-				configOptions={[CURSOR_MODE]}
+				configOptions={[PROVIDER_MODE]}
 				onChangeConfigOption={onChange}
 			/>,
 		);
@@ -1142,10 +1142,10 @@ describe("Cursor Ask and Agent chat modes", () => {
 	it("exposes exactly one execution control for the Ask/Agent pair", () => {
 		render(
 			<TurnSettingsBar
-				harness="cursor"
+				harness="qwen"
 				models={[]}
 				settings={{}}
-				configOptions={[CURSOR_MODE]}
+				configOptions={[PROVIDER_MODE]}
 				onChangeConfigOption={vi.fn()}
 			/>,
 		);
@@ -1161,10 +1161,10 @@ describe("Cursor Ask and Agent chat modes", () => {
 		const user = userEvent.setup();
 		render(
 			<TurnSettingsBar
-				harness="cursor"
+				harness="qwen"
 				models={[]}
 				settings={{}}
-				configOptions={[CURSOR_MODE]}
+				configOptions={[PROVIDER_MODE]}
 				onChange={vi.fn()}
 				onChangeConfigOption={vi.fn()}
 			/>,
@@ -1237,10 +1237,10 @@ describe("Cursor Ask and Agent chat modes", () => {
 		const user = userEvent.setup();
 		render(
 			<TurnSettingsBar
-				harness="cursor"
+				harness="qwen"
 				models={[]}
 				settings={{}}
-				configOptions={[CURSOR_MODE, OPTIONS[4]]}
+				configOptions={[PROVIDER_MODE, OPTIONS[4]]}
 				onChangeConfigOption={vi.fn()}
 			/>,
 		);
@@ -1254,10 +1254,10 @@ describe("Cursor Ask and Agent chat modes", () => {
 	});
 });
 
-// Captured from a live `cursor-agent acp` session/new response: Cursor advertises
+// Captured from a live provider ACP session/new response: the provider advertises
 // three postures in one mode option, alongside its own model catalog.
-describe("Cursor's live Agent/Plan/Ask mode catalog", () => {
-	const CURSOR_MODES: ChatConfigOption = {
+describe("A provider's live Agent/Plan/Ask mode catalog", () => {
+	const PROVIDER_MODES: ChatConfigOption = {
 		id: "mode",
 		name: "Mode",
 		category: "mode",
@@ -1269,7 +1269,7 @@ describe("Cursor's live Agent/Plan/Ask mode catalog", () => {
 			{ value: "ask", name: "Ask", description: "Q&A mode - no edits or command execution" },
 		],
 	};
-	const CURSOR_MODELS: ChatConfigOption = {
+	const PROVIDER_MODELS: ChatConfigOption = {
 		id: "model",
 		name: "Model",
 		category: "model",
@@ -1285,10 +1285,10 @@ describe("Cursor's live Agent/Plan/Ask mode catalog", () => {
 		const user = userEvent.setup();
 		render(
 			<TurnSettingsBar
-				harness="cursor"
+				harness="qwen"
 				models={[]}
 				settings={{}}
-				configOptions={[CURSOR_MODELS, CURSOR_MODES]}
+				configOptions={[PROVIDER_MODELS, PROVIDER_MODES]}
 				onChangeConfigOption={vi.fn()}
 			/>,
 		);
@@ -1303,15 +1303,15 @@ describe("Cursor's live Agent/Plan/Ask mode catalog", () => {
 		expect(screen.getByRole("menuitemradio", { name: "Ask" })).toBeInTheDocument();
 	});
 
-	it("sends Cursor's own mode ids, including the bracketed model ids untouched", async () => {
+	it("sends the provider's own mode ids, including the bracketed model ids untouched", async () => {
 		const onChange = vi.fn();
 		const user = userEvent.setup();
 		render(
 			<TurnSettingsBar
-				harness="cursor"
+				harness="qwen"
 				models={[]}
 				settings={{}}
-				configOptions={[CURSOR_MODELS, CURSOR_MODES]}
+				configOptions={[PROVIDER_MODELS, PROVIDER_MODES]}
 				onChangeConfigOption={onChange}
 			/>,
 		);
@@ -1331,13 +1331,13 @@ describe("Cursor's live Agent/Plan/Ask mode catalog", () => {
 		});
 	});
 
-	it("shows Ask on the trigger when Cursor reports Ask as current", () => {
+	it("shows Ask on the trigger when the provider reports Ask as current", () => {
 		render(
 			<TurnSettingsBar
-				harness="cursor"
+				harness="qwen"
 				models={[]}
 				settings={{}}
-				configOptions={[CURSOR_MODELS, { ...CURSOR_MODES, currentValue: "ask" }]}
+				configOptions={[PROVIDER_MODELS, { ...PROVIDER_MODES, currentValue: "ask" }]}
 				onChangeConfigOption={vi.fn()}
 			/>,
 		);
@@ -1350,10 +1350,10 @@ describe("Cursor's live Agent/Plan/Ask mode catalog", () => {
 	it("names the option rather than asserting a posture the provider did not report", () => {
 		render(
 			<TurnSettingsBar
-				harness="cursor"
+				harness="qwen"
 				models={[]}
 				settings={{}}
-				configOptions={[{ ...CURSOR_MODES, currentValue: undefined }]}
+				configOptions={[{ ...PROVIDER_MODES, currentValue: undefined }]}
 				onChangeConfigOption={vi.fn()}
 			/>,
 		);
@@ -1399,11 +1399,11 @@ describe("Cursor's live Agent/Plan/Ask mode catalog", () => {
 		const user = userEvent.setup();
 		render(
 			<TurnSettingsBar
-				harness="cursor"
+				harness="qwen"
 				models={[]}
 				settings={{}}
 				configOptions={[
-					CURSOR_MODES,
+					PROVIDER_MODES,
 					{
 						id: "verbosity",
 						name: "Verbosity",
@@ -1431,11 +1431,11 @@ describe("Cursor's live Agent/Plan/Ask mode catalog", () => {
 	it("disables the standalone mode trigger and a lone extra while a change is in flight", () => {
 		render(
 			<TurnSettingsBar
-				harness="cursor"
+				harness="qwen"
 				models={[]}
 				settings={{}}
 				configOptions={[
-					CURSOR_MODES,
+					PROVIDER_MODES,
 					{
 						id: "verbosity",
 						name: "Verbosity",
@@ -1456,10 +1456,10 @@ describe("Cursor's live Agent/Plan/Ask mode catalog", () => {
 	it("offers exactly one execution control and no provider approval picker", () => {
 		render(
 			<TurnSettingsBar
-				harness="cursor"
+				harness="qwen"
 				models={[]}
 				settings={{}}
-				configOptions={[CURSOR_MODELS, CURSOR_MODES]}
+				configOptions={[PROVIDER_MODELS, PROVIDER_MODES]}
 				onChangeConfigOption={vi.fn()}
 			/>,
 		);

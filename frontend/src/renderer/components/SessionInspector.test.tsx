@@ -224,7 +224,7 @@ function commonGetsResponder(
 ) {
   return async (path: string) => {
     if (path === "/api/v1/agents/readiness") {
-      const agents = ["claude-code", "codex", "opencode"].map((id) => agentReadiness(id));
+      const agents = ["claude-code", "codex", "opencode-v2"].map((id) => agentReadiness(id));
       return { data: { agents } };
     }
     if (path === "/api/v1/agents/{agent}/models") {
@@ -337,7 +337,6 @@ beforeEach(() => {
     harnesses: [
       { harness: "claude-code", status: "ready" },
       { harness: "codex", status: "ready" },
-      { harness: "cursor", status: "ready" },
     ],
   });
   cloudCpMock.updateSessionPreferences.mockResolvedValue({
@@ -2236,7 +2235,7 @@ describe("SessionInspector summary reviews", () => {
   it("labels the default reviewer with its display name, not the raw id", async () => {
     getMock.mockImplementation(async (path: string) => {
       if (path === "/api/v1/agents/readiness") {
-        const agents = ["claude-code", "codex", "opencode"].map((id) => agentReadiness(id));
+        const agents = ["claude-code", "codex", "opencode-v2"].map((id) => agentReadiness(id));
         return { data: { agents } };
       }
       if (path === "/api/v1/sessions/{sessionId}/workspace/manifest") {
@@ -2313,7 +2312,7 @@ describe("SessionInspector summary reviews", () => {
   it("configures session auto-review and disables manual controls", async () => {
     getMock.mockImplementation(async (path: string) => {
       if (path === "/api/v1/agents/readiness") {
-        const agents = ["claude-code", "codex", "opencode"].map((id) => agentReadiness(id));
+        const agents = ["claude-code", "codex", "opencode-v2"].map((id) => agentReadiness(id));
         return { data: { agents } };
       }
       if (path === "/api/v1/sessions/{sessionId}/reviews") {
@@ -2452,7 +2451,7 @@ describe("SessionInspector summary reviews", () => {
     };
     getMock.mockImplementation(async (path: string) => {
       if (path === "/api/v1/agents/readiness") {
-        const agents = ["claude-code", "codex", "opencode"].map((id) => agentReadiness(id));
+        const agents = ["claude-code", "codex", "opencode-v2"].map((id) => agentReadiness(id));
         return { data: { agents } };
       }
       if (path === "/api/v1/sessions/{sessionId}/reviews") {
@@ -3468,7 +3467,7 @@ describe("SessionInspector summary reviews", () => {
         "/api/v1/sessions/{sessionId}/reviews/switch",
         {
           params: { path: { sessionId: "sess-1" } },
-          body: { harness: "opencode" },
+          body: { harness: "opencode-v2" },
         },
       ),
     );
@@ -3480,7 +3479,7 @@ describe("SessionInspector summary reviews", () => {
       "/api/v1/sessions/{sessionId}/reviews/trigger",
       {
         params: { path: { sessionId: "sess-1" } },
-        body: { harness: "opencode" },
+        body: { harness: "opencode-v2" },
       },
     );
   });
@@ -3605,9 +3604,9 @@ describe("SessionInspector summary reviews", () => {
         return {
           data: {
             agentId: agent,
-            selectionMode: agent === "opencode" ? "text" : "catalog",
+            selectionMode: agent === "opencode-v2" ? "text" : "catalog",
             models: [],
-            allowCustom: agent === "opencode",
+            allowCustom: agent === "opencode-v2",
             source: "manual",
             fetchedAt: "2026-08-30T00:00:00Z",
             stale: false,
@@ -3627,14 +3626,14 @@ describe("SessionInspector summary reviews", () => {
     await openReviewsSection();
 
     await userEvent.click(await screen.findByRole("button", { name: /Select reviewer agent/ }));
-    await userEvent.click(await screen.findByRole("menuitem", { name: /^opencode$/i }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: /^opencode-v2$/i }));
 
     await waitFor(() =>
       expect(postMock).toHaveBeenCalledWith(
         "/api/v1/sessions/{sessionId}/reviews/switch",
         {
           params: { path: { sessionId: "sess-1" } },
-          body: { harness: "opencode" },
+          body: { harness: "opencode-v2" },
         },
       ),
     );
@@ -3647,7 +3646,7 @@ describe("SessionInspector summary reviews", () => {
     getMock.mockImplementation(async (path: string, options?: { params?: { path?: { agent?: string } } }) => {
       if (path === "/api/v1/agents/{agent}/models") {
         const agent = options?.params?.path?.agent ?? "";
-        if (agent === "opencode") {
+        if (agent === "opencode-v2") {
           return {
             data: {
               agentId: agent,
@@ -3689,18 +3688,18 @@ describe("SessionInspector summary reviews", () => {
     await openReviewsSection();
 
     await userEvent.click(await screen.findByRole("button", { name: /Select reviewer agent/ }));
-    await userEvent.click(await screen.findByRole("menuitem", { name: /^opencode$/i }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: /^opencode-v2$/i }));
     await waitFor(() =>
       expect(postMock).toHaveBeenCalledWith(
         "/api/v1/sessions/{sessionId}/reviews/switch",
         {
           params: { path: { sessionId: "sess-1" } },
-          body: { harness: "opencode" },
+          body: { harness: "opencode-v2" },
         },
       ),
     );
     await userEvent.click(await screen.findByRole("button", { name: /Select reviewer agent/ }));
-    await userEvent.click(await screen.findByRole("menuitem", { name: /^opencode$/i }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: /^opencode-v2$/i }));
     expect(await screen.findByRole("menuitem", { name: "Suggested A" })).toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: /^custom opencode model$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: /custom opencode/i })).not.toBeInTheDocument();
@@ -3713,9 +3712,9 @@ describe("SessionInspector summary reviews", () => {
         return {
           data: {
             agentId: agent,
-            selectionMode: agent === "opencode" ? "text" : "catalog",
+            selectionMode: agent === "opencode-v2" ? "text" : "catalog",
             models: [],
-            allowCustom: agent === "opencode",
+            allowCustom: agent === "opencode-v2",
             source: "manual",
             fetchedAt: "2026-08-30T00:00:00Z",
             stale: false,
@@ -3735,13 +3734,13 @@ describe("SessionInspector summary reviews", () => {
     await openReviewsSection();
 
     await userEvent.click(await screen.findByRole("button", { name: /Select reviewer agent/ }));
-    await userEvent.click(await screen.findByRole("menuitem", { name: /^opencode$/i }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: /^opencode-v2$/i }));
     await waitFor(() =>
       expect(postMock).toHaveBeenCalledWith(
         "/api/v1/sessions/{sessionId}/reviews/switch",
         {
           params: { path: { sessionId: "sess-1" } },
-          body: { harness: "opencode" },
+          body: { harness: "opencode-v2" },
         },
       ),
     );
@@ -3865,7 +3864,7 @@ describe("SessionInspector summary reviews", () => {
         "/api/v1/sessions/{sessionId}/reviews/switch",
         {
           params: { path: { sessionId: "sess-1" } },
-          body: { harness: "opencode" },
+          body: { harness: "opencode-v2" },
         },
       ),
     );
@@ -4400,24 +4399,23 @@ describe("SessionInspector Cloud reviews", () => {
     cloudCpMock.getSessionReviewState.mockResolvedValue({
       sessionId: "sess-1",
       reviewerHarness: "claude-code",
-      availableReviewerHarnesses: ["claude-code", "cursor"],
+      availableReviewerHarnesses: ["claude-code", "codex"],
       reviews: [],
       runs: [],
     });
     cloudCpMock.inspectSessionReviewerHarnesses.mockResolvedValue({
       harnesses: [
         { harness: "claude-code", status: "ready" },
-        { harness: "codex", status: "ready" },
-        { harness: "cursor", status: "missing" },
+        { harness: "codex", status: "missing" },
       ],
     });
     cloudCpMock.installSessionReviewerHarness.mockResolvedValue({
-      harness: "cursor",
+      harness: "codex",
       status: "ready",
       version: "2026.08.11",
     });
     cloudCpMock.updateSessionPreferences.mockResolvedValue({
-      session: { harness: "claude-code", reviewerHarness: "cursor" },
+      session: { harness: "claude-code", reviewerHarness: "codex" },
     });
 
     renderWithQuery(
@@ -4430,7 +4428,7 @@ describe("SessionInspector Cloud reviews", () => {
     );
     await userEvent.click(
       await screen.findByRole("option", {
-        name: /^Cursor$/i,
+        name: /^Codex$/i,
       }),
     );
 
@@ -4442,7 +4440,7 @@ describe("SessionInspector Cloud reviews", () => {
       expect(cloudCpMock.installSessionReviewerHarness).toHaveBeenCalledWith(
         "org-1",
         "sess-1",
-        "cursor",
+        "codex",
       ),
     );
     await waitFor(() =>
@@ -4450,7 +4448,7 @@ describe("SessionInspector Cloud reviews", () => {
         "org-1",
         "sess-1",
         {
-          reviewerHarness: "cursor",
+          reviewerHarness: "codex",
         },
       ),
     );

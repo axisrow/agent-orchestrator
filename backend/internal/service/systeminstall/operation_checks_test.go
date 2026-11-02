@@ -46,8 +46,7 @@ func TestOfficialChannelFitsOnlyMatchingLayouts(t *testing.T) {
 		{officialText, layoutNPM, false},
 		{officialGitHub, layoutHomebrew, false},
 		{officialNPM, layoutNPM, true},
-		{officialPyPI, layoutUV, true},
-		{officialPyPI, layoutPipx, true},
+		{officialNPM, layoutUV, false},
 		{officialJSON, layoutVersionManager, false},
 	} {
 		if got := officialChannelFits(tt.kind, tt.layout); got != tt.want {
@@ -175,18 +174,6 @@ func TestUpdateOutcomeRejectsUnverifiedOrPartialUpdates(t *testing.T) {
 	}
 }
 
-func TestUpdateOutcomeReadsBuildSuffixedVersions(t *testing.T) {
-	baseline := &installedBaseline{path: "/Users/test/.muse/bin/muse", version: "1.4.2-R5017.1", latest: "1.4.3-R5018.1", scheme: versionSchemeFor(TargetMuse)}
-	failure, note := updateOutcome(baseline, VerifyResult{ResolvedPath: baseline.path, Output: "1.4.3-R5018.1 (released 2026-10-07T10:00:00.000Z, 0d ago)"})
-	if failure != "" || !strings.Contains(note, "Updated 1.4.2-R5017.1 to 1.4.3-R5018.1") {
-		t.Fatalf("failure=%q note=%q", failure, note)
-	}
-	failure, _ = updateOutcome(baseline, VerifyResult{ResolvedPath: baseline.path, Output: "1.4.2-R5017.1"})
-	if failure == "" {
-		t.Fatal("a Muse update that left the old build running did not fail")
-	}
-}
-
 func TestConfirmInstalledOwnerRefusesBinaryItCannotLocate(t *testing.T) {
 	for name, verify := range map[string]func(context.Context, Target) (VerifyResult, error){
 		"resolve failed": func(context.Context, Target) (VerifyResult, error) {
@@ -212,9 +199,9 @@ func TestConfirmInstalledOwnerRefusesBinaryItCannotLocate(t *testing.T) {
 func TestConfirmInstalledOwnerRefusesVendorUpdateOfSystemPackage(t *testing.T) {
 	s := newTestService("linux", "bash")
 	s.verifier = harnessVerifierFunc(func(context.Context, Target) (VerifyResult, error) {
-		return VerifyResult{ResolvedPath: "/nix/store/abc123-opencode-1.18.34/bin/opencode", Output: "1.18.34"}, nil
+		return VerifyResult{ResolvedPath: "/nix/store/abc123-opencode-v2-2.0.0/bin/opencode-v2", Output: "2.0.0"}, nil
 	})
-	if _, err := s.confirmInstalledOwner(context.Background(), TargetOpencode, Plan{Method: "official-installer", Target: TargetOpencode}); !errors.Is(err, ErrInstallOwner) {
+	if _, err := s.confirmInstalledOwner(context.Background(), TargetOpencodeV2, Plan{Method: "official-installer", Target: TargetOpencodeV2}); !errors.Is(err, ErrInstallOwner) {
 		t.Fatalf("err = %v, want ErrInstallOwner for a Nix-managed binary", err)
 	}
 }
@@ -274,36 +261,20 @@ func TestRefusedReinstallKeepsTheLastJobRecord(t *testing.T) {
 	s := newTestService("darwin", "bash")
 	s.jobStore = store
 	finished := time.Now().UTC()
-	last := Job{Target: TargetCursor, Status: StatusSucceeded, Method: "official-installer", StartedAt: &finished, FinishedAt: &finished, UpdatedAt: &finished}
-	s.jobs[TargetCursor] = &last
-	job, err := s.StartAgentOperation(context.Background(), TargetCursor, "", AgentOperationReinstall, "")
+	last := Job{Target: TargetOMP, Status: StatusSucceeded, Method: "official-installer", StartedAt: &finished, FinishedAt: &finished, UpdatedAt: &finished}
+	s.jobs[TargetOMP] = &last
+	job, err := s.StartAgentOperation(context.Background(), TargetOMP, "", AgentOperationReinstall, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if job.Status != StatusUnsupported || job.Error == "" {
 		t.Fatalf("job = %+v, want an unsupported refusal", job)
 	}
-	current, err := s.Status(context.Background(), TargetCursor)
+	current, err := s.Status(context.Background(), TargetOMP)
 	if err != nil || current.Status != StatusSucceeded {
 		t.Fatalf("status after refusal = %+v err=%v, want the last succeeded job", current, err)
 	}
-	if _, ok, _ := store.GetAgentInstallJob(context.Background(), string(TargetCursor)); ok {
+	if _, ok, _ := store.GetAgentInstallJob(context.Background(), string(TargetOMP)); ok {
 		t.Fatal("the refusal was persisted")
-	}
-}
-
-func TestConfirmInstalledOwnerRefusesABrokenCopyAnotherMethodInstalled(t *testing.T) {
-	s := newTestService("darwin", "uv", "pipx")
-	// AO last updated Vibe through uv; the copy sessions now resolve is a
-	// broken pipx install the user added since.
-	s.jobs[TargetVibe] = &Job{Target: TargetVibe, Status: StatusSucceeded, Method: "uv"}
-	s.verifier = harnessVerifierFunc(func(context.Context, Target) (VerifyResult, error) {
-		return VerifyResult{ResolvedPath: "/Users/test/.local/pipx/venvs/mistral-vibe/bin/vibe"}, errors.New("exec format error")
-	})
-	s.ownsInstallation = func(_ context.Context, _ string, method, _ string, _ bool) (bool, error) {
-		return method == "pipx", nil
-	}
-	if _, err := s.confirmInstalledOwner(context.Background(), TargetVibe, Plan{Target: TargetVibe, Method: "uv", Package: "mistral-vibe"}); !errors.Is(err, ErrInstallOwner) {
-		t.Fatalf("err = %v, want ErrInstallOwner for a copy uv does not own", err)
 	}
 }

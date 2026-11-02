@@ -802,11 +802,11 @@ func TestSessionSetReviewerHarnessPersistsPerSession(t *testing.T) {
 	st.sessions["mer-1"] = domain.SessionRecord{ID: "mer-1", ProjectID: "mer", Kind: domain.KindWorker}
 	st.sessions["mer-2"] = domain.SessionRecord{ID: "mer-2", ProjectID: "mer", Kind: domain.KindWorker}
 
-	sess, err := (&Service{store: st}).SetReviewerHarness(context.Background(), "mer-1", domain.ReviewerOpenCode, domain.AgentConfig{})
+	sess, err := (&Service{store: st}).SetReviewerHarness(context.Background(), "mer-1", domain.ReviewerOpenCodeV2, domain.AgentConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sess.ReviewerHarness != domain.ReviewerOpenCode || st.sessions["mer-1"].ReviewerHarness != domain.ReviewerOpenCode {
+	if sess.ReviewerHarness != domain.ReviewerOpenCodeV2 || st.sessions["mer-1"].ReviewerHarness != domain.ReviewerOpenCodeV2 {
 		t.Fatalf("reviewer harness was not persisted: session=%+v stored=%+v", sess, st.sessions["mer-1"])
 	}
 	if got := st.sessions["mer-2"].ReviewerHarness; got != "" {

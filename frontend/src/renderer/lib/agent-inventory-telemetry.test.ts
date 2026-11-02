@@ -29,9 +29,9 @@ describe("agent inventory", () => {
 	// Sorted so the same set of agents always produces the same value and can be
 	// grouped in analysis rather than fragmenting by ordering.
 	it("reports authorized agent ids sorted and stable", () => {
-		const a = buildAgentInventory(catalog([agentReadiness("codex"), agentReadiness("claude-code"), agentReadiness("cursor")]));
-		const b = buildAgentInventory(catalog([agentReadiness("cursor"), agentReadiness("codex"), agentReadiness("claude-code")]));
-		expect(a.authorized_agents).toBe("claude-code,codex,cursor");
+		const a = buildAgentInventory(catalog([agentReadiness("codex"), agentReadiness("claude-code"), agentReadiness("opencode")]));
+		const b = buildAgentInventory(catalog([agentReadiness("opencode"), agentReadiness("codex"), agentReadiness("claude-code")]));
+		expect(a.authorized_agents).toBe("claude-code,codex,opencode");
 		expect(a.authorized_agents).toBe(b.authorized_agents);
 	});
 

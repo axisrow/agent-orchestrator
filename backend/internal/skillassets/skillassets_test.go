@@ -124,8 +124,11 @@ func TestEmbeddedSpawnGuidanceListsOpenCodeV2(t *testing.T) {
 		t.Fatalf("read embedded spawn guidance: %v", err)
 	}
 	text := string(body)
-	if !strings.Contains(text, "`opencode`, `opencode-v2`") {
-		t.Fatalf("spawn guidance does not distinguish OpenCode 1 and 2:\n%s", text)
+	if !strings.Contains(text, "`opencode-v2`") {
+		t.Fatalf("spawn guidance does not list OpenCode 2:\n%s", text)
+	}
+	if strings.Contains(text, "`opencode`") {
+		t.Fatalf("spawn guidance still lists removed OpenCode 1:\n%s", text)
 	}
 }
 

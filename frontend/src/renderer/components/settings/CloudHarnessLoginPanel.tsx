@@ -44,15 +44,6 @@ const CLOUD_LOGIN_METHODS: Record<CloudHarness, readonly LoginMethod[]> = {
 		{ value: BROWSER_LOGIN, kind: "browser", provider: "ChatGPT" },
 		{ value: "api_key", kind: "apiKey", provider: "OpenAI", help: OPENAI_KEY_HELP },
 	],
-	cursor: [
-		{ value: "api_key", kind: "apiKey", provider: "Cursor", help: { site: "cursor.com/dashboard", url: "https://cursor.com/dashboard?tab=integrations" } },
-	],
-	opencode: [
-		{ value: "opencode_api_key", kind: "apiKey", provider: "OpenCode", help: { site: "opencode.ai/auth", url: "https://opencode.ai/auth" } },
-		{ value: "anthropic_api_key", kind: "apiKey", provider: "Anthropic", help: ANTHROPIC_KEY_HELP },
-		{ value: "openai_api_key", kind: "apiKey", provider: "OpenAI", help: OPENAI_KEY_HELP },
-		{ value: "openrouter_api_key", kind: "apiKey", provider: "OpenRouter", help: { site: "openrouter.ai/keys", url: "https://openrouter.ai/keys" } },
-	],
 };
 
 // Logs one harness in for cloud sessions, expanded inline under its row on the

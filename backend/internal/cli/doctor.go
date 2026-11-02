@@ -84,16 +84,14 @@ const (
 )
 
 type harnessProbe struct {
-	Name                  string
-	BinaryName            string
-	VersionArg            string
-	ExpectedVersionPrefix string
+	Name       string
+	BinaryName string
+	VersionArg string
 }
 
 type harnessProbeSpec struct {
-	BinaryName            string
-	VersionArg            string
-	ExpectedVersionPrefix string
+	BinaryName string
+	VersionArg string
 }
 
 // harnessProbeSpecs overrides per-harness probe settings for agent harnesses whose
@@ -102,23 +100,11 @@ type harnessProbeSpec struct {
 var harnessProbeSpecs = map[string]harnessProbeSpec{
 	"claude-code": {BinaryName: "claude", VersionArg: "--version"},
 	"codex":       {BinaryName: "codex", VersionArg: "--version"},
-	"opencode":    {BinaryName: "opencode", VersionArg: "--version"},
-	"muse":        {BinaryName: "muse", VersionArg: "--version", ExpectedVersionPrefix: "Muse Code "},
-	"aider":       {BinaryName: "aider", VersionArg: "--version"},
+	"opencode-v2": {BinaryName: "opencode-v2", VersionArg: "--version"},
 	"goose":       {BinaryName: "goose", VersionArg: "--version"},
-	"grok":        {BinaryName: "grok", VersionArg: "--version"},
-	"devin":       {BinaryName: "devin", VersionArg: "--version"},
 	"kimi":        {BinaryName: "kimi", VersionArg: "--version"},
-	"kiro":        {BinaryName: "kiro-cli", VersionArg: "--version"},
-	"kilocode":    {BinaryName: "kilocode", VersionArg: "--version"},
 	"omp":         {BinaryName: "omp", VersionArg: "--version"},
-	"codewhale":   {BinaryName: "codewhale", VersionArg: "--version"},
-	"cursor":      {BinaryName: "cursor-agent"},
-	"continue":    {BinaryName: "cn"},
-	// Command Code's binary is `cmd` on Unix and `cmdc` on Windows, where `cmd`
-	// is the built-in shell; the full name resolves on every platform.
-	"memcode":      {BinaryName: "memcode", VersionArg: "--version"},
-	"command-code": {BinaryName: "command-code", VersionArg: "--version"},
+	"memcode":     {BinaryName: "memcode", VersionArg: "--version"},
 }
 
 func newDoctorCommand(ctx *commandContext) *cobra.Command {
@@ -245,10 +231,9 @@ func (c *commandContext) runDoctor(ctx context.Context) []doctorCheck {
 			binaryName = id
 		}
 		checks = append(checks, c.checkHarness(ctx, harnessProbe{
-			Name:                  id,
-			BinaryName:            binaryName,
-			VersionArg:            spec.VersionArg,
-			ExpectedVersionPrefix: spec.ExpectedVersionPrefix,
+			Name:       id,
+			BinaryName: binaryName,
+			VersionArg: spec.VersionArg,
 		}))
 	}
 	checks = append(checks, c.checkCodexLaunchFlags(ctx), c.checkGitHubToken(ctx), c.checkGitLabToken(ctx))
@@ -649,12 +634,6 @@ func (c *commandContext) checkHarness(ctx context.Context, harness harnessProbe)
 	version := firstOutputLine(out)
 	if version == "" {
 		version = "version output was empty"
-	}
-	if harness.ExpectedVersionPrefix != "" && !strings.HasPrefix(version, harness.ExpectedVersionPrefix) {
-		return doctorCheck{
-			Level: doctorWarn, Section: doctorSectionAgents, Name: harness.Name,
-			Message: fmt.Sprintf("%s resolves to %s, but its version output %q does not identify the expected CLI (%q prefix)", harness.BinaryName, path, version, harness.ExpectedVersionPrefix),
-		}
 	}
 	return doctorCheck{Level: doctorPass, Section: doctorSectionAgents, Name: harness.Name, Message: fmt.Sprintf("%s resolves to %s (%s)", harness.BinaryName, path, version)}
 }

@@ -649,7 +649,7 @@ func TestCollectorIgnoresIneligibleHooks(t *testing.T) {
 	}{
 		{"terminated session", "process-exited", domain.HarnessClaudeCode, domain.ActivityIdle, true, true},
 		{"terminal recovery without source", "process-exited", domain.HarnessClaudeCode, domain.ActivityExited, false, false},
-		{"unsupported harness", "post-tool-use", domain.HarnessAider, domain.ActivityIdle, false, false},
+		{"unsupported harness", "post-tool-use", domain.HarnessGoose, domain.ActivityIdle, false, false},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -1137,7 +1137,7 @@ func TestCollectorBackfillsOnlyNonTerminatedSupportedSessions(t *testing.T) {
 	store := collectorTestStore(t)
 	active := collectorTestSession(t, store, domain.HarnessClaudeCode, "active-native", false)
 	_ = collectorTestSession(t, store, domain.HarnessClaudeCode, "terminated-native", true)
-	_ = collectorTestSession(t, store, domain.HarnessAider, "unsupported-native", false)
+	_ = collectorTestSession(t, store, domain.HarnessGoose, "unsupported-native", false)
 	root := filepath.Join(t.TempDir(), "projects")
 	path := filepath.Join(root, "workspace", "active-native.jsonl")
 	mustNoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
@@ -2032,7 +2032,7 @@ func TestSourceKindForHarness(t *testing.T) {
 		{harness: domain.HarnessClaudeCode, want: domain.UsageSourceClaudeMain, ok: true},
 		{harness: domain.HarnessCodex, want: domain.UsageSourceCodexRollout, ok: true},
 		{harness: domain.HarnessKimi, want: domain.UsageSourceKimiWire, ok: true},
-		{harness: domain.HarnessAider, ok: false},
+		{harness: domain.HarnessGoose, ok: false},
 	}
 	for _, tt := range tests {
 		got, ok := sourceKindForHarness(tt.harness)

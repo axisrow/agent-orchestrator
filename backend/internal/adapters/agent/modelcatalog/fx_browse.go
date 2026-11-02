@@ -16,6 +16,9 @@ import (
 
 var fxProviderName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*$`)
 
+// signInCheckTimeout bounds the fx status probe.
+const signInCheckTimeout = 5 * time.Second
+
 type fxCatalogRunner func(context.Context, string, []string, string, map[string]string) ([]byte, error)
 
 func fxSettingsPath(env map[string]string) string {

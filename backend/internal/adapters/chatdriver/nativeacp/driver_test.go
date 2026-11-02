@@ -38,7 +38,7 @@ func TestBindingLaunchesExactUserInstalledBinary(t *testing.T) {
 	type contextKey struct{}
 	launchCtx := context.WithValue(context.Background(), contextKey{}, "launch-context")
 	cfg := buildConfig(fakePlugin{binary: userBinary, status: ports.AgentAuthStatusAuthorized}, Config{
-		Harness: domain.HarnessOpenCode,
+		Harness: domain.HarnessOpenCodeV2,
 		Configure: func(ctx context.Context, in acpdriver.LaunchConfig) ([]string, map[string]string, error) {
 			if ctx.Value(contextKey{}) != "launch-context" {
 				t.Fatal("Configure did not receive the launch context")
@@ -123,7 +123,7 @@ func TestBindingMapsPluginDiscoveryAndAuth(t *testing.T) {
 
 	t.Run("inconclusive auth is not logged out", func(t *testing.T) {
 		cfg := buildConfig(fakePlugin{binary: "/user/opencode", authErr: errors.New("probe timed out")}, Config{
-			Harness: domain.HarnessOpenCode, Configure: func(context.Context, acpdriver.LaunchConfig) ([]string, map[string]string, error) {
+			Harness: domain.HarnessOpenCodeV2, Configure: func(context.Context, acpdriver.LaunchConfig) ([]string, map[string]string, error) {
 				return []string{"acp"}, nil, nil
 			},
 		}, nil)
@@ -138,7 +138,7 @@ func TestBindingReusesPluginRuntimeEnvironment(t *testing.T) {
 		binary: "/user/provider", status: ports.AgentAuthStatusAuthorized,
 	}}
 	cfg := buildConfig(plugin, Config{
-		Harness: domain.HarnessCursor,
+		Harness: domain.HarnessAgy,
 		Configure: func(context.Context, acpdriver.LaunchConfig) ([]string, map[string]string, error) {
 			return []string{"acp"}, nil, nil
 		},

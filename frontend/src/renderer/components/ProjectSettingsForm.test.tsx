@@ -154,12 +154,12 @@ const agentCatalogResponse = {
 		agents: [
 			agentReadiness("claude-code", "Claude Code"),
 			agentReadiness("codex", "Codex"),
-			agentReadiness("copilot", "GitHub Copilot"),
-			agentReadiness("cursor", "Cursor"),
+			agentReadiness("amp", "Amp"),
+			agentReadiness("qwen", "Qwen"),
 			agentReadiness("goose", "Goose"),
-			agentReadiness("kilocode", "Kilo Code"),
-			agentReadiness("kiro", "Kiro", { authentication: "unknown" }),
-			agentReadiness("opencode", "OpenCode"),
+			agentReadiness("droid", "Droid"),
+			agentReadiness("autohand", "Autohand", { authentication: "unknown" }),
+			agentReadiness("opencode-v2", "OpenCode 2"),
 			agentReadiness("pi", "Pi"),
 		],
 	},
@@ -257,8 +257,8 @@ describe("ProjectSettingsForm", () => {
 				agents: [
 					agentReadiness("claude-code", "Claude Code", { authentication: "unauthorized" }),
 					agentReadiness("codex", "Codex", { authentication: "unauthorized" }),
-					agentReadiness("cursor", "Cursor"),
-					agentReadiness("opencode", "OpenCode"),
+					agentReadiness("qwen", "Qwen"),
+					agentReadiness("opencode-v2", "OpenCode 2"),
 				],
 			},
 			error: undefined,
@@ -268,8 +268,8 @@ describe("ProjectSettingsForm", () => {
 		const trigger = await screen.findByRole("button", { name: field });
 		await userEvent.click(trigger);
 		expect((await screen.findAllByRole("menuitem")).map((option) => option.textContent)).toEqual([
-			"Cursor",
-			"OpenCode",
+			"OpenCode 2",
+			"Qwen",
 			"Manage agents…",
 		]);
 		await userEvent.click(screen.getByRole("menuitem", { name: "Manage agents…" }));
@@ -758,7 +758,7 @@ describe("ProjectSettingsForm", () => {
 		expect(orchestratorAgent).toHaveTextContent(/^claude[- ]code$/i);
 		expect(permissionMode).toHaveTextContent("Auto");
 
-		await chooseOption(workerAgent, "OpenCode");
+		await chooseOption(workerAgent, "OpenCode 2");
 		await chooseOption(orchestratorAgent, "Goose");
 		await chooseCustomModel("Worker model", "openai/gpt-5.4");
 		await chooseCustomModel("Orchestrator model", "anthropic/claude-sonnet");
@@ -779,7 +779,7 @@ describe("ProjectSettingsForm", () => {
 					reviewers: [{ harness: "claude-code", agentConfig: { model: "claude-opus-4-5", permissions: "auto" } }],
 					// Agents changes applied
 					worker: {
-						agent: "opencode",
+						agent: "opencode-v2",
 						agentConfig: { model: "openai/gpt-5.4", permissions: "auto" },
 					},
 					orchestrator: {
@@ -1021,7 +1021,7 @@ describe("ProjectSettingsForm", () => {
 			if (path === "/api/v1/agents/{agent}/models") {
 				return {
 					data: {
-						agentId: "opencode",
+						agentId: "opencode-v2",
 						selectionMode: "catalog",
 						models: [],
 						customModelEntry: "configured",
@@ -1043,7 +1043,7 @@ describe("ProjectSettingsForm", () => {
 						path: "/repo/project-one",
 						repo: "",
 						defaultBranch: "main",
-						config: { worker: { agent: "opencode" }, orchestrator: { agent: "opencode" } },
+						config: { worker: { agent: "opencode-v2" }, orchestrator: { agent: "opencode-v2" } },
 					},
 				},
 				error: undefined,
@@ -1055,7 +1055,7 @@ describe("ProjectSettingsForm", () => {
 		const workerModel = await screen.findByRole("button", { name: "Worker model" });
 		expect(screen.queryByRole("textbox", { name: "Worker model" })).not.toBeInTheDocument();
 		await userEvent.click(workerModel);
-		expect(screen.getByText("Configure the model in opencode, then refresh.")).toBeInTheDocument();
+		expect(screen.getByText("Configure the model in opencode-v2, then refresh.")).toBeInTheDocument();
 	});
 
 
@@ -1181,8 +1181,8 @@ describe("ProjectSettingsForm", () => {
 		expect(reviewer).toHaveTextContent("Codex");
 		expect(screen.getByRole("button", { name: "Reviewer model" })).toHaveTextContent("GPT-5 Mini");
 
-		await chooseOption(reviewer, "OpenCode");
-		expect(reviewer).toHaveTextContent("OpenCode");
+		await chooseOption(reviewer, "OpenCode 2");
+		expect(reviewer).toHaveTextContent("OpenCode 2");
 
 		submitSettings();
 
@@ -1193,7 +1193,7 @@ describe("ProjectSettingsForm", () => {
 				config: expect.objectContaining({
 					reviewers: [
 						expect.objectContaining({
-							harness: "opencode",
+							harness: "opencode-v2",
 							agentConfig: undefined,
 						}),
 					],
@@ -1434,7 +1434,7 @@ describe("ProjectSettingsForm", () => {
 		expect(screen.getByRole("button", { name: "Orchestrator agent" })).toBeDisabled();
 	});
 
-	it("offers ready Pi reviewers and hides Kiro until authorized", async () => {
+	it("offers ready Pi reviewers and hides Autohand until authorized", async () => {
 		mockProject({
 			id: "proj-1",
 			name: "Project One",
@@ -1452,12 +1452,12 @@ describe("ProjectSettingsForm", () => {
 		const reviewer = await screen.findByRole("button", { name: "Reviewer agent" });
 		await userEvent.click(reviewer);
 		const labels = (await screen.findAllByRole("menuitem")).map((option) => option.textContent);
-		expect(labels).not.toContain("KiroAuth unknown");
+		expect(labels).not.toContain("AutohandAuth unknown");
 		expect(labels).toContain("Pi");
 	});
 
-	it("offers Muse Code as a reviewer", async () => {
-		const muse = agentReadiness("muse", "Muse Code");
+	it("offers Kimi as a reviewer", async () => {
+		const kimi = agentReadiness("kimi", "Kimi");
 		mockProject({
 			id: "proj-1",
 			name: "Project One",
@@ -1466,7 +1466,7 @@ describe("ProjectSettingsForm", () => {
 			repo: "",
 			defaultBranch: "main",
 			config: {
-				worker: { agent: "muse" },
+				worker: { agent: "kimi" },
 				orchestrator: { agent: "claude-code" },
 			},
 		});
@@ -1474,7 +1474,7 @@ describe("ProjectSettingsForm", () => {
 			if (path === "/api/v1/agents/readiness") {
 				return {
 					data: {
-						agents: [...agentCatalogResponse.data.agents, muse],
+						agents: [...agentCatalogResponse.data.agents, kimi],
 					},
 					error: undefined,
 				};
@@ -1490,7 +1490,7 @@ describe("ProjectSettingsForm", () => {
 						repo: "",
 						defaultBranch: "main",
 						config: {
-							worker: { agent: "muse" },
+							worker: { agent: "kimi" },
 							orchestrator: { agent: "claude-code" },
 						},
 					},
@@ -1504,7 +1504,7 @@ describe("ProjectSettingsForm", () => {
 		const reviewer = await screen.findByRole("button", { name: "Reviewer agent" });
 		await userEvent.click(reviewer);
 
-		expect(await screen.findByRole("menuitem", { name: /Muse Code/ })).toBeInTheDocument();
+		expect(await screen.findByRole("menuitem", { name: /Kimi/ })).toBeInTheDocument();
 	});
 
 	it("orders reviewers using the default agent priority", async () => {
@@ -1531,10 +1531,9 @@ describe("ProjectSettingsForm", () => {
 		expect(reviewerLabels).toEqual([
 			"Codex",
 			"Claude Code",
-			"Cursor",
-			"OpenCode",
-			"GitHub Copilot",
-			"Kilo Code",
+			"OpenCode 2",
+			"Amp",
+			"Droid",
 			"Pi",
 			"Manage agents…",
 		]);
@@ -1550,24 +1549,19 @@ describe("ProjectSettingsForm", () => {
 			defaultBranch: "main",
 			config: { worker: { agent: "codex" }, orchestrator: { agent: "claude-code" } },
 		};
-		const devin = agentReadiness("devin", "Devin");
 		const droid = agentReadiness("droid", "Droid");
 		const kimi = agentReadiness("kimi", "Kimi");
-		const aider = agentReadiness("aider", "Aider");
 		const amp = agentReadiness("amp", "Amp");
-		const experimental = [
-			agentReadiness("agy", "Agy"),
-			agentReadiness("auggie", "Auggie"),
-			agentReadiness("autohand", "Autohand"),
-			agentReadiness("cline", "Cline"),
-			agentReadiness("crush", "Crush"),
-			agentReadiness("grok", "Grok"),
-		];
+		const agy = agentReadiness("agy", "Agy");
+		const autohand = agentReadiness("autohand", "Autohand");
 		getMock.mockImplementation(async (path: string) => {
 			if (path === "/api/v1/agents/readiness") {
 				return {
 					data: {
-						agents: [...agentCatalogResponse.data.agents, devin, droid, kimi, aider, amp, ...experimental],
+						agents: [
+							...agentCatalogResponse.data.agents.filter((agent) => agent.id !== "autohand"),
+							droid, kimi, amp, agy, autohand,
+						],
 					},
 					error: undefined,
 				};
@@ -1582,25 +1576,19 @@ describe("ProjectSettingsForm", () => {
 		const options = await screen.findAllByRole("menuitem");
 		const labels = options.map((option) => option.textContent);
 		expect(labels).toContain("Agy");
-		expect(labels).toContain("Devin");
 		expect(labels).toContain("Droid");
 		expect(labels).toContain("Kimi");
-		expect(labels).toContain("Aider");
 		expect(labels).toContain("Amp");
-		expect(labels).toContain("Auggie");
 		expect(labels).toContain("Autohand");
-		expect(labels).toContain("Cline");
-		expect(labels).toContain("Crush");
-		expect(labels).toContain("Grok");
 	});
 
 	it("warns when an experimental reviewer is selected", async () => {
-		const kimchi = agentReadiness("kimchi", "Kimchi");
+		const kimi = agentReadiness("kimi", "Kimi");
 		getMock.mockImplementation(async (path: string) => {
 			if (path === "/api/v1/agents/readiness") {
 				return {
 					data: {
-						agents: [...agentCatalogResponse.data.agents, kimchi],
+						agents: [...agentCatalogResponse.data.agents, kimi],
 					},
 					error: undefined,
 				};
@@ -1623,7 +1611,7 @@ describe("ProjectSettingsForm", () => {
 		});
 
 		renderSettings("proj-1", undefined, "agents");
-		await chooseOption(await screen.findByRole("button", { name: "Reviewer agent" }), "Kimchi");
+		await chooseOption(await screen.findByRole("button", { name: "Reviewer agent" }), "Kimi");
 		expect(screen.getByRole("status")).toHaveTextContent("Experimental host-trusted reviewer");
 	});
 
@@ -1649,19 +1637,19 @@ describe("ProjectSettingsForm", () => {
 		expect(options.map((option) => option.textContent)).toEqual([
 			"Claude Code",
 			"Codex",
-			"Cursor",
-			"OpenCode",
-			"GitHub Copilot",
+			"OpenCode 2",
+			"Amp",
+			"Droid",
 			"Goose",
-			"Kilo Code",
 			"Pi",
-			"KiroAuth unknown",
+			"Qwen",
+			"AutohandAuth unknown",
 			"Manage agents…",
 		]);
 		expect(options[8]).not.toHaveAttribute("aria-disabled", "true");
 	});
 
-	it("shows Copilot as a reviewer option and saves it in the reviewers payload", async () => {
+	it("shows Pi as a reviewer option and saves it in the reviewers payload", async () => {
 		mockProject({
 			id: "proj-1",
 			name: "Project One",
@@ -1679,9 +1667,9 @@ describe("ProjectSettingsForm", () => {
 
 		const reviewer = await screen.findByRole("button", { name: "Reviewer agent" });
 		await userEvent.click(reviewer);
-		const copilot = await screen.findByRole("menuitem", { name: "GitHub Copilot" });
-		expect(copilot).not.toHaveAttribute("aria-disabled", "true");
-		await userEvent.click(copilot);
+		const pi = await screen.findByRole("menuitem", { name: "Pi" });
+		expect(pi).not.toHaveAttribute("aria-disabled", "true");
+		await userEvent.click(pi);
 		submitSettings();
 
 		await waitFor(() => expect(putMock).toHaveBeenCalledTimes(1));
@@ -1689,7 +1677,7 @@ describe("ProjectSettingsForm", () => {
 			"/api/v1/projects/{id}",
 			expect.objectContaining({
 				body: expect.objectContaining({
-					config: expect.objectContaining({ reviewers: [{ harness: "copilot" }] }),
+					config: expect.objectContaining({ reviewers: [{ harness: "pi" }] }),
 				}),
 			}),
 		);
@@ -1784,12 +1772,12 @@ describe("ProjectSettingsForm", () => {
 		expect(await screen.findByRole("button", { name: "Reviewer approval" })).toHaveTextContent("Accept edits");
 	});
 
-	it("hides the Copilot reviewer when its binary is missing", async () => {
+	it("hides the Kimi reviewer when its binary is missing", async () => {
 		getMock.mockImplementation(async (path: string) => {
 			if (path === "/api/v1/agents/readiness") {
 				return {
 					data: {
-						agents: [agentReadiness("copilot", "GitHub Copilot", { installation: "not_installed", authentication: "unknown" })],
+						agents: [agentReadiness("kimi", "Kimi", { installation: "not_installed", authentication: "unknown" })],
 					},
 					error: undefined,
 				};
@@ -1817,19 +1805,19 @@ describe("ProjectSettingsForm", () => {
 		renderSettings("proj-1", undefined, "agents");
 
 		await userEvent.click(await screen.findByRole("button", { name: "Reviewer agent" }));
-		const copilot = (await screen.findAllByRole("menuitem")).find((option) =>
-			option.textContent?.includes("GitHub Copilot"),
+		const kimi = (await screen.findAllByRole("menuitem")).find((option) =>
+			option.textContent?.includes("Kimi"),
 		);
-		expect(copilot).toBeUndefined();
+		expect(kimi).toBeUndefined();
 		expect(screen.getByRole("menuitem", { name: "Manage agents…" })).toBeInTheDocument();
 	});
 
-	it("hides an installed Copilot reviewer until authorization is known", async () => {
+	it("hides an installed Kimi reviewer until authorization is known", async () => {
 		getMock.mockImplementation(async (path: string) => {
 			if (path === "/api/v1/agents/readiness") {
 				return {
 					data: {
-						agents: [agentReadiness("copilot", "GitHub Copilot", { authentication: "unknown" })],
+						agents: [agentReadiness("kimi", "Kimi", { authentication: "unknown" })],
 					},
 					error: undefined,
 				};
@@ -1857,14 +1845,14 @@ describe("ProjectSettingsForm", () => {
 		renderSettings("proj-1", undefined, "agents");
 
 		await userEvent.click(await screen.findByRole("button", { name: "Reviewer agent" }));
-		const copilot = (await screen.findAllByRole("menuitem")).find((option) =>
-			option.textContent?.includes("GitHub Copilot"),
+		const kimi = (await screen.findAllByRole("menuitem")).find((option) =>
+			option.textContent?.includes("Kimi"),
 		);
-		expect(copilot).toBeUndefined();
+		expect(kimi).toBeUndefined();
 		expect(screen.getByRole("menuitem", { name: "Manage agents…" })).toBeInTheDocument();
 	});
 
-	it("offers Kilo Code as a configured reviewer", async () => {
+	it("offers Amp as a configured reviewer", async () => {
 		mockProject({
 			id: "proj-1",
 			name: "Project One",
@@ -1882,7 +1870,7 @@ describe("ProjectSettingsForm", () => {
 
 		const reviewer = await screen.findByRole("button", { name: "Reviewer agent" });
 		await userEvent.click(reviewer);
-		expect(await screen.findByRole("menuitem", { name: "Kilo Code" })).toBeEnabled();
+		expect(await screen.findByRole("menuitem", { name: "Amp" })).toBeEnabled();
 	});
 
 	it("offers the experimental Agy reviewer", async () => {

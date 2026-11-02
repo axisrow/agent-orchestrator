@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/opencode"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 )
 
@@ -24,9 +23,10 @@ func TestGetAgentHooksInstallsV2AndRemovesOnlyManagedV1(t *testing.T) {
 	userPlugin := filepath.Join(workspace, ".opencode", "plugins", "user.ts")
 	writeV2TestFile(t, userPlugin, "export default { id: 'user' }\n", 0o600)
 
-	if err := opencode.New().GetAgentHooks(ctx, ports.WorkspaceHookConfig{WorkspacePath: workspace}); err != nil {
-		t.Fatalf("install v1 setup: %v", err)
-	}
+	// A sentinel-marked legacy v1 plugin, as the removed v1 installer used to
+	// leave behind; the v2 install must replace it.
+	v1Plugin := filepath.Join(workspace, ".opencode", "plugins", "ao-activity.ts")
+	writeV2TestFile(t, v1Plugin, "// agent-orchestrator: managed opencode activity plugin\nexport {}\n", 0o600)
 	if err := New().GetAgentHooks(ctx, ports.WorkspaceHookConfig{WorkspacePath: workspace}); err != nil {
 		t.Fatalf("install v2: %v", err)
 	}

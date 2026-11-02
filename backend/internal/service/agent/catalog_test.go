@@ -1068,20 +1068,20 @@ func TestRefreshUsesNormalResolutionInsteadOfStartupPresenceShortcut(t *testing.
 	}
 }
 
-func TestDefaultCatalogDisplaysPrimeAgent(t *testing.T) {
+func TestDefaultCatalogDisplaysDroid(t *testing.T) {
 	got, err := New().List(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, info := range got.Supported {
-		if info.ID == "prime-agent" {
-			if info.Label != "Prime Agent" {
-				t.Fatalf("prime-agent label = %q, want Prime Agent", info.Label)
+		if info.ID == "droid" {
+			if info.Label != "Droid" {
+				t.Fatalf("droid label = %q, want Droid", info.Label)
 			}
 			return
 		}
 	}
-	t.Fatal("default catalog does not contain prime-agent")
+	t.Fatal("default catalog does not contain droid")
 }
 
 func TestDefaultCatalogDisplaysFX(t *testing.T) {
@@ -1835,8 +1835,8 @@ func TestModelsUsesCapabilityAwareFallbackWhenDiscoveryCannotRun(t *testing.T) {
 		wantAllowInput bool
 	}{
 		{agent: "qwen", wantEntryMode: ports.CustomModelEntryDirect, wantSelection: ports.ModelSelectionText, wantAllowInput: true},
-		{agent: "opencode", wantEntryMode: ports.CustomModelEntryDirect, wantSelection: ports.ModelSelectionText, wantAllowInput: true},
-		{agent: "grok", wantEntryMode: ports.CustomModelEntryDirect, wantSelection: ports.ModelSelectionText, wantAllowInput: true},
+		{agent: "opencode-v2", wantEntryMode: ports.CustomModelEntryDirect, wantSelection: ports.ModelSelectionText, wantAllowInput: true},
+		{agent: "goose", wantEntryMode: ports.CustomModelEntryDirect, wantSelection: ports.ModelSelectionText, wantAllowInput: true},
 	} {
 		t.Run(tc.agent, func(t *testing.T) {
 			emptyHome := t.TempDir()
@@ -1867,8 +1867,8 @@ func TestModelsNormalizesCustomEntryPolicyInOldCache(t *testing.T) {
 		wantAllowInput bool
 	}{
 		{agent: "codex", wantEntryMode: ports.CustomModelEntryDirect, wantAllowInput: true},
-		{agent: "opencode", wantEntryMode: ports.CustomModelEntryDirect, wantAllowInput: true},
-		{agent: "grok", wantEntryMode: ports.CustomModelEntryDirect, wantAllowInput: true},
+		{agent: "opencode-v2", wantEntryMode: ports.CustomModelEntryDirect, wantAllowInput: true},
+		{agent: "goose", wantEntryMode: ports.CustomModelEntryDirect, wantAllowInput: true},
 	} {
 		t.Run(tc.agent, func(t *testing.T) {
 			oldCatalog := map[string]any{

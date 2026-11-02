@@ -12,25 +12,12 @@ export type ReviewerHarnessId = NonNullable<components["schemas"]["TriggerReview
 
 const REVIEWER_HARNESS_IDS = [
 	"agy",
-	"aider",
 	"amp",
-	"auggie",
 	"autohand",
 	"claude-code",
 	"codex",
-	"cline",
-	"copilot",
-	"crush",
-	"cursor",
-	"devin",
 	"droid",
-	"grok",
-	"kilocode",
-	"kiro",
 	"kimi",
-	"kimchi",
-	"muse",
-	"opencode",
 	"opencode-v2",
 	"pi",
 ] as const satisfies readonly ReviewerHarnessId[];
@@ -44,9 +31,6 @@ export const KNOWN_REVIEWER_HARNESS_IDS: ReadonlySet<string> = new Set(REVIEWER_
 export const WORKER_DEFAULT_REVIEWERS: Readonly<Partial<Record<string, ReviewerHarnessId>>> = {
 	"claude-code": "claude-code",
 	codex: "codex",
-	opencode: "opencode",
-	muse: "muse",
-	kimchi: "kimchi",
 };
 
 export function toReviewerHarnessId(value?: string): ReviewerHarnessId | undefined {

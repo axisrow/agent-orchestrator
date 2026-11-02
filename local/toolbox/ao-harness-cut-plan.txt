@@ -1,0 +1,20 @@
+# План резки харнесов форка — приказ владельца 2026-11-02/03 (выполнен)
+# Keep (финал, с поправкой владельца 2026-11-03): claude-code, codex, opencode-v2,
+#   pi, omp, AGY (владелец: «agy я просил не трогать» — восстановлен из 62afa9f083)
+#   + системные tmux, gh, cloudflared.
+# OpenCode v1 — удалён целиком (высечение из общей с v2 базы по символам).
+# Срезаны (workflow cut-dead-harnesses wf_0702de5f-4d4, 12 агентов):
+#   cursor, aider, copilot, grok, crush, cline, devin, kiro, kilocode, vibe, muse,
+#   auggie, gemini, continue, kimchi, prime-agent, unreal-agent, codewhale,
+#   mimo-code, deepseek-harness, openhands, command-code — все 4 слоя
+#   (systeminstall, adapters+wiring+domain, frontend+i18n+docs, v1-высечение).
+# Коммитов агенты не делали: проверка и коммит — за главным агентом сессии.
+# Осознанно НЕ тронуты (отдельные решения):
+#   - packages/mobile (владельцу не нужен, но резка пакета — отдельная операция)
+#   - облачные контракты packages/cloud-client + cloud-cp/types.ts (API апстрима)
+#   - legacy-миграции sqlite (CHECK-списки в db.go/миграциях — живая машина)
+# Известные средовые красные (НЕ от резки, падали и до неё):
+#   - TestDoctorLoginShell* в internal/cli (env-лик ~/.profile)
+#   - TestV2ResolvesAgainBetweenAttempts, TestWrongOpenCodeMajorIsRejected...
+#     (живой opencode v2.0.32 в /opt/homebrew/bin перебивает фикстуру)
+# Откат всего: git; backup-тег синка backup/pre-sync-20261102-2045 (до батча).

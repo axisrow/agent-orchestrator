@@ -12,28 +12,21 @@ import (
 //
 // Registration is the whole capability gate — a harness with no driver here cannot
 // run chat mode — so the shipped set is a release decision, not an implementation
-// detail. Codex uses its native app-server; Claude, Cursor, OpenCode, Droid,
-// Kimi, Kimchi, Pi, OMP, Qwen, and Agy (through Google's Antigravity ACP server)
-// use the reusable ACP transport; Unreal Agent is
-// embedded behind the persistent host. Every remaining
-// harness is deliberately TUI-only.
+// detail. Codex uses its native app-server; Claude, OpenCode v2, Droid, Kimi, Pi,
+// OMP, Qwen, and Agy (through Google's Antigravity ACP server) use the reusable
+// ACP transport. Every remaining harness is deliberately TUI-only.
 func TestShippedChatDrivers(t *testing.T) {
 	r := Build(nil, nil)
 
 	for _, harness := range []domain.AgentHarness{
 		domain.HarnessCodex,
 		domain.HarnessClaudeCode,
-		domain.HarnessOpenCode,
 		domain.HarnessOpenCodeV2,
 		domain.HarnessDroid,
 		domain.HarnessKimi,
-		domain.HarnessKimchi,
 		domain.HarnessPi,
-		domain.HarnessCursor,
 		domain.HarnessOMP,
 		domain.HarnessQwen,
-		domain.HarnessUnreal,
-		domain.HarnessCopilot,
 		domain.HarnessAgy,
 	} {
 		if !r.SupportsChat(harness) {
@@ -47,7 +40,8 @@ func TestShippedChatDrivers(t *testing.T) {
 	// Every other harness stays TUI-only, and asking for chat must be refused with a
 	// typed answer rather than quietly producing a terminal session.
 	for _, harness := range []domain.AgentHarness{
-		domain.HarnessAider,
+		domain.HarnessFX,
+		domain.HarnessMemcode,
 		"definitely-not-an-agent",
 	} {
 		if _, err := r.Driver(harness); err == nil {

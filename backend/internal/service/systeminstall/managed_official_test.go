@@ -34,13 +34,13 @@ func TestOfficialManagedRecipesInstallInsideTheRelease(t *testing.T) {
 		env  map[string]string
 		args []string
 	}{
-		TargetOpencode: {env: map[string]string{"VERSION": "1.19.3"}, args: []string{"--no-modify-path"}},
-		TargetOMP:      {env: map[string]string{"PI_INSTALL_DIR": dir + "/bin"}, args: []string{"--binary", "--ref", "v1.19.3"}},
+		TargetOMP: {env: map[string]string{"PI_INSTALL_DIR": dir + "/bin"}, args: []string{"--binary", "--ref", "v1.19.3"}},
 		TargetCodex: {env: map[string]string{
 			"CODEX_HOME": dir + "/codex-home", "CODEX_INSTALL_DIR": dir + "/bin",
 			"CODEX_RELEASE": "1.19.3", "CODEX_NON_INTERACTIVE": "1",
 		}},
 		TargetOpencodeV2: {env: map[string]string{"VERSION": "1.19.3"}, args: []string{"--no-modify-path"}},
+		TargetAgy:        {args: []string{"--dir", dir + "/bin"}},
 	} {
 		t.Run(string(target), func(t *testing.T) {
 			recipe, ok := officialManagedRecipes[target]
@@ -72,77 +72,6 @@ func TestOfficialManagedRecipesInstallInsideTheRelease(t *testing.T) {
 			}
 		})
 	}
-}
-
-// An OpenCode installed with its official installer updates while a session
-// runs it: the installer runs into a release of AO's own, and the user's copy
-// and the running session's files are left alone.
-func TestOfficialInstallerUpdatesBesideARunningSession(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("managed launchers are symlinks on Unix")
-	}
-	root := t.TempDir()
-	s := newTestService("darwin", "bash")
-	s.managedRoot = root
-	s.releases = &releaseStoreStub{}
-	s.sessions = sessionListerStub{sessions: []domain.SessionRecord{{ID: "oc-1", Harness: domain.HarnessOpenCode}}}
-	userCopy := "/Users/me/.opencode/bin/opencode"
-	launcher := filepath.Join(root, "bin", "opencode")
-	s.verifier = harnessVerifierFunc(func(context.Context, Target) (VerifyResult, error) {
-		if target, err := filepath.EvalSymlinks(launcher); err == nil {
-			return VerifyResult{ResolvedPath: launcher, Output: strings.TrimSpace(readFile(target))}, nil
-		}
-		return VerifyResult{ResolvedPath: userCopy, Output: "1.19.2"}, nil
-	})
-	var mu sync.Mutex
-	var scripts []ports.InstallScriptCommand
-	s.installScripts = installScriptRunnerFunc(func(_ context.Context, command ports.InstallScriptCommand, _, _ io.Writer) (ports.InstallScriptResult, error) {
-		mu.Lock()
-		scripts = append(scripts, command)
-		mu.Unlock()
-		// Like opencode.ai/install: $HOME/.opencode/bin/opencode at $VERSION.
-		bin := filepath.Join(envValue(command.Env, "HOME"), ".opencode", "bin")
-		if err := os.MkdirAll(bin, 0o755); err != nil {
-			return ports.InstallScriptResult{}, err
-		}
-		return ports.InstallScriptResult{}, os.WriteFile(filepath.Join(bin, "opencode"), []byte(envValue(command.Env, "VERSION")+"\n"), 0o755)
-	})
-	s.commands = commandRunnerFunc(func(_ context.Context, argv []string, stdout, _ io.Writer) error {
-		if len(argv) == 2 && argv[1] == "--version" {
-			_, err := io.WriteString(stdout, strings.TrimSpace(readFile(argv[0]))+"\n")
-			return err
-		}
-		return nil
-	})
-	s.mu.Lock()
-	s.updateAdvisories = map[Target]UpdateAdvisory{TargetOpencode: {
-		AgentID: string(TargetOpencode), Status: UpdateStatusBehindLatest, LatestVersion: "1.19.3",
-		MaintenanceMethod: "official-installer", CheckedAt: time.Now(),
-	}}
-	s.mu.Unlock()
-
-	if _, err := s.StartAgentOperation(context.Background(), TargetOpencode, "official-installer", AgentOperationUpdate, ""); err != nil {
-		t.Fatalf("update with a session running = %v, want it to install beside the session", err)
-	}
-	s.workers.Wait()
-	job, _ := s.Status(context.Background(), TargetOpencode)
-	if job.Status != StatusSucceeded {
-		t.Fatalf("job = %+v", job)
-	}
-	if len(scripts) != 1 {
-		t.Fatalf("installer ran %d times", len(scripts))
-	}
-	release := filepath.Join(root, string(TargetOpencode), "versions", "v1")
-	if home := envValue(scripts[0].Env, "HOME"); !strings.HasPrefix(home, release+string(filepath.Separator)) {
-		t.Fatalf("installer HOME = %q, want inside %s", home, release)
-	}
-	if !scripts[0].Isolated {
-		t.Fatal("the installer inherits the daemon's environment, want only the recipe's")
-	}
-	if got := envValue(scripts[0].Env, "VERSION"); got != "1.19.3" {
-		t.Fatalf("installer VERSION = %q, want the advisory's release", got)
-	}
-	assertResolvesInto(t, launcher, release)
 }
 
 // assertResolvesInto fails unless launcher resolves to a file inside release.
@@ -320,20 +249,20 @@ func TestManagedOfficialReleaseStaysUpdatable(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("managed launchers are symlinks on Unix")
 	}
-	f := newManagedOfficialFixture(t, TargetOpencode, "/Users/me/.opencode/bin/opencode", "opencode, version 1.19.2", "1.19.3",
+	f := newManagedOfficialFixture(t, TargetOpencodeV2, "/Users/me/.opencode/bin/opencode-v2", "opencode, version 1.19.2", "1.19.3",
 		func(env []string) string { return "opencode, version " + envValue(env, "VERSION") })
 	ctx := context.Background()
 	for i, latest := range []string{"1.19.3", "1.19.4"} {
 		f.setLatest(latest)
-		advisory, err := f.s.UpdateAdvisory(ctx, TargetOpencode, true)
+		advisory, err := f.s.UpdateAdvisory(ctx, TargetOpencodeV2, true)
 		if err != nil || advisory.Status != UpdateStatusBehindLatest || advisory.MaintenanceMethod != "official-installer" || advisory.LatestVersion != latest {
 			t.Fatalf("update %d: advisory = %+v, %v; want official-installer behind %s", i+1, advisory, err, latest)
 		}
-		if _, err := f.s.StartAgentOperation(ctx, TargetOpencode, "", AgentOperationUpdate, ""); err != nil {
+		if _, err := f.s.StartAgentOperation(ctx, TargetOpencodeV2, "", AgentOperationUpdate, ""); err != nil {
 			t.Fatalf("update %d: %v", i+1, err)
 		}
 		f.s.workers.Wait()
-		if job, _ := f.s.Status(ctx, TargetOpencode); job.Status != StatusSucceeded {
+		if job, _ := f.s.Status(ctx, TargetOpencodeV2); job.Status != StatusSucceeded {
 			t.Fatalf("update %d: job = %+v", i+1, job)
 		}
 	}
@@ -344,8 +273,8 @@ func TestManagedOfficialReleaseStaysUpdatable(t *testing.T) {
 	if !slices.Equal(pins, []string{"1.19.3", "1.19.4"}) {
 		t.Fatalf("installer pins = %q, want one per update", pins)
 	}
-	assertResolvesInto(t, f.launcher, filepath.Join(f.root, string(TargetOpencode), "versions", "v2"))
-	if advisory, err := f.s.UpdateAdvisory(ctx, TargetOpencode, true); err != nil || advisory.Status != UpdateStatusCurrent || advisory.MaintenanceMethod != "official-installer" {
+	assertResolvesInto(t, f.launcher, filepath.Join(f.root, string(TargetOpencodeV2), "versions", "v2"))
+	if advisory, err := f.s.UpdateAdvisory(ctx, TargetOpencodeV2, true); err != nil || advisory.Status != UpdateStatusCurrent || advisory.MaintenanceMethod != "official-installer" {
 		t.Fatalf("advisory after the second update = %+v, %v", advisory, err)
 	}
 }
@@ -363,6 +292,7 @@ func TestOfficialInstallsOfferTheirManagedRecipe(t *testing.T) {
 		userCopy string
 	}{
 		{TargetOpencodeV2, "/Users/me/.opencode/bin/opencode-v2"},
+		{TargetAgy, "/Users/me/.local/bin/agy"},
 	} {
 		t.Run(string(tt.target), func(t *testing.T) {
 			f := newManagedOfficialFixture(t, tt.target, tt.userCopy, "0.4.0", "0.5.0", func([]string) string { return "0.5.0" })

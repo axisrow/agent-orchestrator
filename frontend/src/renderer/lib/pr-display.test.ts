@@ -1042,7 +1042,7 @@ describe("prSummaryParts", () => {
 					hasUnresolvedHumanComments: false,
 					unresolvedBy: [
 						{
-							reviewerId: "copilot",
+							reviewerId: "codex",
 							count: 0,
 							reviewUrl: "https://github.com/acme/repo/pull/7#pullrequestreview-2",
 							isBot: true,
@@ -1054,9 +1054,9 @@ describe("prSummaryParts", () => {
 		);
 
 		expect(parts.find((part) => part.key === "review")?.links[0]).toMatchObject({
-			label: "copilot bot",
+			label: "codex bot",
 			href: "https://github.com/acme/repo/pull/7#pullrequestreview-2",
-			title: "Open requested-changes review from copilot bot",
+			title: "Open requested-changes review from codex bot",
 		});
 	});
 

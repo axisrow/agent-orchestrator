@@ -7,7 +7,7 @@ import type { CloudCpProviderConnection } from "./cloud-cp";
  * validAgentProvider (cloud/internal/httpapi/provider_handlers.go). Unlike
  * local's full AGENT_OPTIONS list, cloud has no "install" step, so any
  * unlisted agent would just be a dead end. */
-export const CLOUD_AGENT_PROVIDERS = ["claude-code", "codex", "cursor", "opencode"] as const;
+export const CLOUD_AGENT_PROVIDERS = ["claude-code", "codex"] as const;
 
 /** A cloud session has no local daemon project, yet its opencode model picker
  * must reflect the models the *pushed* credential can run — opencode lists a

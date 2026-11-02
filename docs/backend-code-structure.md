@@ -608,9 +608,7 @@ graph TD
 
     Agent --> Codex[codex]
     Agent --> Claude[claude-code]
-    Agent --> Cursor[cursor]
-    Agent --> Aider[aider]
-    Agent -->|... 20+| More[more agents]
+    Agent -->|...| More[more agents]
 
 ```
 

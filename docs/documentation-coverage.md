@@ -36,7 +36,7 @@ conversation-authentication section and the reviewed heading. It corrected
 Cloud terminal wake and lease behavior, live relay input, and read/operate
 permissions against the handlers and storage methods. Public instructions now
 use the Cloud harness login controls, distinguish CLI startup and diagnostics
-from daemon-backed commands, and explain the embedded Unreal Agent exception.
+from daemon-backed commands.
 The old `shipped-terminal-harnesses` anchor remains available.
 
 The production docs build and its TypeScript check passed again. All 1,499
@@ -54,7 +54,7 @@ that every server route is represented.
 
 ## Local reader preview
 
-The final wording pass makes the built-in Unreal Agent exception consistent in
+The final wording pass keeps harness naming consistent in
 Installation, Quickstart, and Built-in capabilities. Connect Mobile starts with
 pairing, puts protocol details below the steps, and explains the iPhone Tailscale
 limitation before setup advice. Cloud archive and restore instructions are

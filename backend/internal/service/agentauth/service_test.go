@@ -27,7 +27,7 @@ func TestStartRejectsUnstartablePlans(t *testing.T) {
 	}{
 		{name: "unknown target", agentID: "not-a-harness", code: "AGENT_AUTH_TARGET_UNKNOWN"},
 		{name: "unavailable command", agentID: "codex", code: "AGENT_AUTH_UNAVAILABLE"},
-		{name: "documentation setup", agentID: "aider", code: "AGENT_AUTH_DOCUMENTATION_ONLY"},
+		{name: "documentation setup", agentID: "memcode", code: "AGENT_AUTH_DOCUMENTATION_ONLY"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -62,19 +62,19 @@ func TestStartOpensFXNativeLogin(t *testing.T) {
 	}
 }
 
-func TestStartOpensDevinNativeLogin(t *testing.T) {
+func TestStartOpensAmpNativeLogin(t *testing.T) {
 	t.Parallel()
 
 	opener := &recordingTerminalOpener{}
-	svc := New(foundExecutable("devin"), opener)
+	svc := New(foundExecutable("amp"), opener)
 
-	_, err := svc.Start(context.Background(), "devin")
+	_, err := svc.Start(context.Background(), "amp")
 	if err != nil {
-		t.Fatalf("Start(devin): %v", err)
+		t.Fatalf("Start(amp): %v", err)
 	}
 	want := shellterm.OpenCommandTerminalInput{
-		Argv:  []string{"/test/bin/devin", "auth", "login"},
-		Title: "Log in to Devin",
+		Argv:  []string{"/test/bin/amp", "login"},
+		Title: "Log in to Amp",
 	}
 	if !reflect.DeepEqual(opener.input, want) {
 		t.Fatalf("OpenCommandTerminal input = %#v, want %#v", opener.input, want)
@@ -209,31 +209,22 @@ func TestPiReadyStatesMatchRenderedPiScreens(t *testing.T) {
 	}
 }
 
-func TestStartOpensKimchiPTYAndAutomaticallyRunsLogin(t *testing.T) {
+func TestStartOpensAutohandNativeLogin(t *testing.T) {
 	t.Parallel()
 
 	opener := &recordingTerminalOpener{}
-	svc := New(foundExecutable("kimchi"), opener)
+	svc := New(foundExecutable("autohand"), opener)
 
-	got, err := svc.Start(context.Background(), "kimchi")
+	_, err := svc.Start(context.Background(), "autohand")
 	if err != nil {
-		t.Fatalf("Start(kimchi): %v", err)
+		t.Fatalf("Start(autohand): %v", err)
 	}
-	wantStates := []shellterm.InitialInputReadyState{
-		{Text: "Select authentication method:", SkipInput: true},
-		{Text: "/ for commands"},
+	want := shellterm.OpenCommandTerminalInput{
+		Argv:  []string{"/test/bin/autohand", "login"},
+		Title: "Log in to Autohand",
 	}
-	wantInput := shellterm.OpenCommandTerminalInput{
-		Argv:                    []string{"/test/bin/kimchi"},
-		Title:                   "Log in to Kimchi",
-		InitialInput:            "/login",
-		InitialInputReadyStates: wantStates,
-	}
-	if !reflect.DeepEqual(opener.input, wantInput) {
-		t.Fatalf("OpenCommandTerminal input = %#v, want %#v", opener.input, wantInput)
-	}
-	if got.TerminalInput != "" {
-		t.Fatalf("TerminalInput = %q, want empty because Kimchi login is automatic inside the PTY", got.TerminalInput)
+	if !reflect.DeepEqual(opener.input, want) {
+		t.Fatalf("OpenCommandTerminal input = %#v, want %#v", opener.input, want)
 	}
 }
 
@@ -276,15 +267,15 @@ func TestStartPrefersAdapterResolvedBinaryOverGenericPATHMatch(t *testing.T) {
 	t.Parallel()
 
 	opener := &recordingTerminalOpener{}
-	resolver := managedExecutableResolver{agentID: "muse", path: "/validated/meta/muse"}
-	svc := NewWithAgentResolver(foundExecutable("muse"), resolver, opener, "")
+	resolver := managedExecutableResolver{agentID: "amp", path: "/validated/ampcode/amp"}
+	svc := NewWithAgentResolver(foundExecutable("amp"), resolver, opener, "")
 
-	_, err := svc.Start(context.Background(), "muse")
+	_, err := svc.Start(context.Background(), "amp")
 	if err != nil {
-		t.Fatalf("Start(muse): %v", err)
+		t.Fatalf("Start(amp): %v", err)
 	}
-	if got := opener.input.Argv; !reflect.DeepEqual(got, []string{"/validated/meta/muse", "login"}) {
-		t.Fatalf("terminal argv = %#v, want adapter-validated Muse binary", got)
+	if got := opener.input.Argv; !reflect.DeepEqual(got, []string{"/validated/ampcode/amp", "login"}) {
+		t.Fatalf("terminal argv = %#v, want adapter-validated Amp binary", got)
 	}
 }
 
@@ -325,49 +316,6 @@ func TestStartPreparesKimiAuthWorkspaceWithSeededTrust(t *testing.T) {
 	}
 	if !strings.Contains(string(data), `"root":"`+wantDir+`"`) {
 		t.Fatalf("trust record = %s, want root %q", data, wantDir)
-	}
-}
-
-func TestStartPreparesCopilotAuthWorkspaceWithSeededTrust(t *testing.T) {
-	// Not parallel: isolates HOME/COPILOT_HOME so the copilot adapter's trust
-	// seed lands in a throwaway home instead of the developer's real one.
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("COPILOT_HOME", "")
-
-	dataDir := t.TempDir()
-	opener := &recordingTerminalOpener{}
-	svc := NewWithAgentResolver(foundExecutable("copilot"), nil, opener, dataDir)
-
-	if _, err := svc.Start(context.Background(), "copilot"); err != nil {
-		t.Fatalf("Start(copilot): %v", err)
-	}
-	wantDir := filepath.Join(dataDir, "auth-workspace", "copilot")
-	if opener.input.WorkingDir != wantDir {
-		t.Fatalf("terminal working dir = %q, want %q", opener.input.WorkingDir, wantDir)
-	}
-	if got := opener.input.Argv; !reflect.DeepEqual(got, []string{"/test/bin/copilot"}) {
-		t.Fatalf("terminal argv = %#v, want copilot TUI launch", got)
-	}
-	if opener.input.InitialInput != "/login" {
-		t.Fatalf("initial input = %q, want automatic /login injection", opener.input.InitialInput)
-	}
-	if got := opener.input.InitialInputReadyStates; !reflect.DeepEqual(got, []shellterm.InitialInputReadyState{{Text: "/ commands"}}) {
-		t.Fatalf("initial input ready states = %#v, want Copilot composer footer", got)
-	}
-	if !opener.input.SendInitialInputOnReadyTimeout {
-		t.Fatal("Copilot login does not fall back to /login after a slow startup")
-	}
-	data, err := os.ReadFile(filepath.Join(home, ".copilot", "config.json"))
-	if err != nil {
-		t.Fatalf("read copilot config: %v", err)
-	}
-	realDir, err := filepath.EvalSymlinks(wantDir)
-	if err != nil {
-		t.Fatalf("resolve auth workspace: %v", err)
-	}
-	if !strings.Contains(string(data), `"`+realDir+`"`) {
-		t.Fatalf("copilot config = %s, want trusted folder %q", data, realDir)
 	}
 }
 
@@ -415,7 +363,7 @@ func TestLogoutUsesAdapterExecutableAndNeverLoginLauncher(t *testing.T) {
 	}{
 		{"claude-code", []string{"auth", "logout"}},
 		{"codex", []string{"logout"}},
-		{"cursor", []string{"logout"}},
+		{"amp", []string{"logout"}},
 		{"opencode", []string{"auth", "logout"}},
 	} {
 		t.Run(tc.agent, func(t *testing.T) {
@@ -440,7 +388,7 @@ func TestLogoutUsesAdapterExecutableAndNeverLoginLauncher(t *testing.T) {
 func TestLogoutRejectsUnknownUnsupportedAndMissingExecutable(t *testing.T) {
 	for _, tc := range []struct{ agent, code string }{
 		{"not-a-harness", "AGENT_AUTH_TARGET_UNKNOWN"},
-		{"aider", "AGENT_LOGOUT_UNSUPPORTED"},
+		{"goose", "AGENT_LOGOUT_UNSUPPORTED"},
 		{"codex", "AGENT_AUTH_UNAVAILABLE"},
 	} {
 		t.Run(tc.agent, func(t *testing.T) {

@@ -72,60 +72,6 @@ func managerOwnsBinary(commands ports.CommandRunner) func(context.Context, strin
 				return nodeShimTargetsPackage(binaryPath, packageRoot)
 			}
 			return false, nil
-		case "uv":
-			if packageLayout(binaryPath) != layoutUV {
-				return false, nil
-			}
-			output, err := runProbe(ctx, commands, localProbeTimeout, true, []string{"uv", "tool", "list", "--show-paths", "--color", "never"})
-			if err != nil {
-				return false, err
-			}
-			return toolListContains(output, pkg, binaryPath), nil
-		case "pipx":
-			if packageLayout(binaryPath) != layoutPipx {
-				return false, nil
-			}
-			output, err := runProbe(ctx, commands, localProbeTimeout, false, []string{"pipx", "list", "--json"})
-			if err != nil {
-				return false, err
-			}
-			var inventory struct {
-				Venvs map[string]struct {
-					Metadata struct {
-						MainPackage struct {
-							Package  string            `json:"package"`
-							AppPaths []json.RawMessage `json:"app_paths"`
-						} `json:"main_package"`
-					} `json:"metadata"`
-				} `json:"venvs"`
-			}
-			if err := json.Unmarshal([]byte(output), &inventory); err != nil {
-				return false, err
-			}
-			for _, venv := range inventory.Venvs {
-				main := venv.Metadata.MainPackage
-				if main.Package != pkg {
-					continue
-				}
-				for _, raw := range main.AppPaths {
-					var appPath string
-					if json.Unmarshal(raw, &appPath) != nil {
-						// pipx serializes pathlib.Path using this tagged object.
-						var tagged struct {
-							Type string `json:"__type__"`
-							Path string `json:"__Path__"`
-						}
-						if json.Unmarshal(raw, &tagged) != nil || tagged.Type != "Path" {
-							continue
-						}
-						appPath = tagged.Path
-					}
-					if sameExecutable(appPath, binaryPath) {
-						return true, nil
-					}
-				}
-			}
-			return false, nil
 		case "winget":
 			if !wingetPackageContains(binaryPath, pkg) {
 				return false, nil
@@ -314,37 +260,6 @@ func normalizeManagerPath(path string) string {
 	return strings.ToLower(strings.ReplaceAll(filepath.ToSlash(filepath.Clean(path)), `\`, "/"))
 }
 
-func toolListContains(output, pkg, binaryPath string) bool {
-	selected := false
-	for _, line := range strings.Split(output, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" {
-			continue
-		}
-		if !strings.HasPrefix(trimmed, "- ") {
-			fields := strings.Fields(trimmed)
-			selected = len(fields) >= 2 && fields[0] == pkg
-			continue
-		}
-		if selected {
-			start := strings.Index(trimmed, " (")
-			if start >= 0 && strings.HasSuffix(trimmed, ")") && sameExecutable(trimmed[start+2:len(trimmed)-1], binaryPath) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func sameExecutable(left, right string) bool {
-	if !filepath.IsAbs(left) || !filepath.IsAbs(right) {
-		return false
-	}
-	l, leftErr := os.Stat(left)
-	r, rightErr := os.Stat(right)
-	return leftErr == nil && rightErr == nil && !l.IsDir() && !r.IsDir() && os.SameFile(l, r)
-}
-
 func wingetPackageContains(binaryPath, pkg string) bool {
 	resolved, err := filepath.EvalSymlinks(binaryPath)
 	if err != nil {
@@ -387,7 +302,7 @@ func advisoryPackageSources(plans []Plan, preferred, layout string) []Plan {
 			continue
 		}
 		switch plan.Method {
-		case "npm", "homebrew", "winget", "bun", "uv", "pipx":
+		case "npm", "homebrew", "winget", "bun":
 		default:
 			continue
 		}

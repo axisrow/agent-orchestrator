@@ -30,7 +30,7 @@ it("deduplicates concurrent spawns for one host and project", async () => {
 it("resumes an exited orchestrator on its owning host", async () => {
 	const orchestrator: WorkspaceSession = {
 		hostId: "box-a", id: "orch-a", workspaceId: "shared", workspaceName: "Todo App",
-		title: "Orchestrator", provider: "opencode", kind: "orchestrator", status: "working",
+		title: "Orchestrator", provider: "opencode-v2", kind: "orchestrator", status: "working",
 		updatedAt: "2026-09-28T00:00:00Z", prs: [], activity: { state: "exited", lastActivityAt: "2026-09-28T00:00:00Z" },
 	};
 	mocks.post.mockResolvedValue({ data: { resumeMode: "native" } });

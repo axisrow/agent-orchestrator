@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("./useCloudCp", () => ({ useCloudCp: () => ({ client: { getSession: mocks.getSession } }) }));
 vi.mock("./useCloudGate", () => ({ useCloudGate: () => ({ cloudEnabled: true }) }));
-vi.mock("./useSettings", () => ({ useSettings: () => ({ settings: { chatHarnesses: ["claude-code", "codex", "gemini", "cursor"] } }) }));
+vi.mock("./useSettings", () => ({ useSettings: () => ({ settings: { chatHarnesses: ["claude-code", "codex", "opencode-v2", "pi"] } }) }));
 vi.mock("./useSessionInterfaceTransition", async (importOriginal) => ({
 	...await importOriginal<typeof import("./useSessionInterfaceTransition")>(),
 	useSessionInterfaceTransition: (sessionId: string, context: unknown) => {
@@ -77,7 +77,7 @@ describe("useSessionInterfaceSwitch Cloud handoff", () => {
 		mocks.settling = false;
 	});
 
-	it.each(["codex", "claude-code", "cursor"] as const)("preserves %s model and effort when leaving Cloud Chat", async (provider) => {
+	it.each(["codex", "claude-code", "opencode-v2"] as const)("preserves %s model and effort when leaving Cloud Chat", async (provider) => {
 		mocks.status = { supported: true, targetMode: "tui" };
 		localStorage.setItem(`cloud-chat-settings:org-1:session-1:${provider}`, JSON.stringify({
 			model: "selected-model", reasoningEffort: "high",
@@ -121,7 +121,7 @@ describe("useSessionInterfaceSwitch Cloud handoff", () => {
 	// The fork retired the local Chat entry (chatEntryDisabled), so the
 	// refusal-recovery path below is exercised through a Cloud session, where
 	// the switch to Chat still exists.
-	it.each(["claude-code", "codex", "gemini", "cursor"] as const)("shows the terminal again when the daemon refuses a %s switch to Chat", async (provider) => {
+	it.each(["claude-code", "codex", "opencode-v2", "pi"] as const)("shows the terminal again when the daemon refuses a %s switch to Chat", async (provider) => {
 		mocks.status = { supported: true, targetMode: "chat" };
 		mocks.start.mockRejectedValueOnce(new Error("handoff refused"));
 		const { result } = renderHook(() => useSessionInterfaceSwitch("session-1", {

@@ -10,10 +10,8 @@ import (
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/claudecode"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/codex"
-	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/crush"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/droid"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/memcode"
-	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/muse"
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 )
@@ -121,7 +119,7 @@ func TestPollKeepsGenuineLongCodexTurnActive(t *testing.T) {
 	}
 }
 
-func TestPollContinuouslyReconcilesMuse(t *testing.T) {
+func TestPollContinuouslyReconcilesMemcode(t *testing.T) {
 	now := time.Unix(500, 0).UTC()
 	tests := []struct {
 		name    string
@@ -130,13 +128,13 @@ func TestPollContinuouslyReconcilesMuse(t *testing.T) {
 		want    domain.ActivityState
 		event   string
 	}{
-		{"fresh active to waiting", domain.ActivityActive, "◆ Request user input AO Muse Fix  1m 02s)\n", domain.ActivityWaitingInput, "terminal-waiting-input"},
-		{"waiting to active", domain.ActivityWaitingInput, "◇ Finishing up (25s · esc to interrupt)\n", domain.ActivityActive, "terminal-active"},
-		{"idle to waiting", domain.ActivityIdle, "Enter to select · ↑/↓ to move · Tab for an optional note · Esc to interrupt\n", domain.ActivityWaitingInput, "terminal-waiting-input"},
+		{"fresh active to blocked", domain.ActivityActive, "Do you want to proceed?\n❯ 1. Yes\nmemcode · ~/demo\n", domain.ActivityBlocked, "terminal-blocked"},
+		{"blocked to active", domain.ActivityBlocked, "⠋ Thinking… (esc to interrupt)\n", domain.ActivityActive, "permission-resolved"},
+		{"idle to blocked", domain.ActivityIdle, "Do you want to proceed?\n❯ 1. Yes\nmemcode · ~/demo\n", domain.ActivityBlocked, "terminal-blocked"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			session := activeSession(now, domain.HarnessMuse)
+			session := activeSession(now, domain.HarnessMemcode)
 			session.Activity = domain.Activity{State: tt.current, LastActivityAt: now.Add(-time.Second)}
 			session.UpdatedAt = now.Add(-time.Second)
 			sink := &fakeSink{}
@@ -144,7 +142,7 @@ func TestPollContinuouslyReconcilesMuse(t *testing.T) {
 				fakeSessions{rows: []domain.SessionRecord{session}},
 				sink,
 				&fakeRuntime{output: tt.output},
-				fakeAgents{domain.HarnessMuse: muse.New()},
+				fakeAgents{domain.HarnessMemcode: memcode.New()},
 				Config{Clock: func() time.Time { return now }, Logger: testLogger()},
 			)
 
@@ -158,18 +156,18 @@ func TestPollContinuouslyReconcilesMuse(t *testing.T) {
 	}
 }
 
-func TestPollReconcilesWaitingCrushAfterUserResponds(t *testing.T) {
+func TestPollReconcilesWaitingMemcodeAfterTurnEnds(t *testing.T) {
 	for _, tt := range []struct {
 		name   string
 		output string
 		want   domain.ActivityState
 	}{
-		{name: "resumed active", output: "> Working!\n", want: domain.ActivityActive},
-		{name: "resumed idle", output: "> Ready?\n", want: domain.ActivityIdle},
+		{name: "resumed active", output: "⠋ Thinking… (esc to interrupt)\n", want: domain.ActivityActive},
+		{name: "resumed idle", output: "○ idle\n→  Ask memcode…   ·   $ = shell\nmemcode · ~/demo\n", want: domain.ActivityIdle},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			now := time.Unix(500, 0).UTC()
-			session := activeSession(now, domain.HarnessCrush)
+			session := activeSession(now, domain.HarnessMemcode)
 			session.Activity = domain.Activity{State: domain.ActivityWaitingInput, LastActivityAt: now.Add(-time.Second)}
 			session.UpdatedAt = now.Add(-time.Second)
 			sink := &fakeSink{}
@@ -177,7 +175,7 @@ func TestPollReconcilesWaitingCrushAfterUserResponds(t *testing.T) {
 				fakeSessions{rows: []domain.SessionRecord{session}},
 				sink,
 				&fakeRuntime{output: tt.output},
-				fakeAgents{domain.HarnessCrush: crush.New()},
+				fakeAgents{domain.HarnessMemcode: memcode.New()},
 				Config{Clock: func() time.Time { return now }, Logger: testLogger()},
 			)
 

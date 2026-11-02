@@ -8,10 +8,7 @@ import (
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/claudecode"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/codex"
-	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/cursor"
-	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/gemini"
-	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/grok"
-	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/opencode"
+	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/opencodev2"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/pi"
 	agentregistry "github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/registry"
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
@@ -120,8 +117,7 @@ func TestTerminalRestartAfterInputThatChangedNothing(t *testing.T) {
 func TestTerminalRefreshCapabilities(t *testing.T) {
 	for harness, agent := range map[domain.AgentHarness]ports.Agent{
 		domain.HarnessClaudeCode: claudecode.New(), domain.HarnessCodex: codex.New(),
-		domain.HarnessOpenCode: opencode.New(), domain.HarnessPi: pi.New(), domain.HarnessGrok: grok.New(),
-		domain.HarnessCursor: cursor.New(), domain.HarnessGemini: gemini.New(),
+		domain.HarnessOpenCodeV2: opencodev2.New(), domain.HarnessPi: pi.New(),
 	} {
 		t.Run(string(harness), func(t *testing.T) {
 			mgr, _, _ := newChatManager(&recordingLauncher{})
@@ -396,7 +392,7 @@ func TestTerminalRefreshSupportMatrix(t *testing.T) {
 	for _, harness := range domain.AllHarnesses {
 		supported[string(harness)] = true
 	}
-	for _, name := range []string{"aider", "continue", "deepseek-harness", "memcode", "unreal-agent"} {
+	for _, name := range []string{"memcode"} {
 		supported[name] = false
 	}
 	for _, adapter := range agentregistry.Constructors() {

@@ -504,7 +504,7 @@ type SpawnSessionRequest struct {
 	ParentSessionID domain.SessionID       `json:"parentSessionId,omitempty"`
 	TrackerProvider domain.TrackerProvider `json:"trackerProvider,omitempty" enum:"github,gitlab"`
 	Kind            domain.SessionKind     `json:"kind,omitempty" enum:"worker,orchestrator"`
-	Harness         domain.AgentHarness    `json:"harness,omitempty" enum:"claude-code,codex,aider,opencode,opencode-v2,grok,droid,amp,agy,crush,cursor,qwen,gemini,copilot,goose,auggie,continue,devin,cline,kimi,muse,kiro,kilocode,vibe,pi,kimchi,omp,fx,prime-agent,autohand,unreal-agent,codewhale,mimo-code,deepseek-harness,openhands,command-code,memcode"`
+	Harness         domain.AgentHarness    `json:"harness,omitempty" enum:"claude-code,codex,opencode-v2,droid,amp,agy,qwen,goose,kimi,pi,autohand,omp,fx,memcode"`
 	Branch          string                 `json:"branch,omitempty"`
 	// Mode picks the conversation controller: chat talks to the agent over a
 	// structured connection, tui opens the agent's native terminal interface.
@@ -883,7 +883,7 @@ type RenameSessionRequest struct {
 // SetSessionReviewerRequest sets the durable reviewer preference for a session.
 // Empty clears the preference and falls back to project configuration.
 type SetSessionReviewerRequest struct {
-	Harness     domain.ReviewerHarness `json:"harness,omitempty" enum:"claude-code,codex,copilot,cursor,kilocode,opencode,opencode-v2,kiro,pi,agy,devin,droid,kimi,kimchi,muse,amp,aider,grok,crush,auggie,cline,autohand"`
+	Harness     domain.ReviewerHarness `json:"harness,omitempty" enum:"claude-code,codex,opencode-v2,pi,agy,droid,kimi,amp,autohand"`
 	AgentConfig domain.AgentConfig     `json:"agentConfig,omitempty"`
 }
 
@@ -1204,7 +1204,7 @@ type DelegateTaskRequest struct {
 	ClientRequestID string              `json:"clientRequestId,omitempty" maxLength:"128"`
 	ProjectID       domain.ProjectID    `json:"projectId"`
 	Brief           string              `json:"brief" maxLength:"16384"`
-	Agent           domain.AgentHarness `json:"agent,omitempty" enum:"claude-code,codex,aider,opencode,opencode-v2,grok,droid,amp,agy,crush,cursor,qwen,gemini,copilot,goose,auggie,continue,devin,cline,kimi,muse,kiro,kilocode,vibe,pi,kimchi,omp,fx,prime-agent,autohand,unreal-agent,codewhale,mimo-code,deepseek-harness,openhands,command-code,memcode,fake"`
+	Agent           domain.AgentHarness `json:"agent,omitempty" enum:"claude-code,codex,opencode-v2,droid,amp,agy,qwen,goose,kimi,pi,autohand,omp,fx,memcode,fake"`
 	Model           string              `json:"model,omitempty" maxLength:"256"`
 	// Effort is an explicit, provider-advertised model tuning override. Nil
 	// inherits the project default; an empty string selects the provider default.
@@ -1524,29 +1524,6 @@ type SetActivityResponse struct {
 	OK        bool             `json:"ok"`
 	SessionID domain.SessionID `json:"sessionId"`
 	State     string           `json:"state"`
-}
-
-// CodewhaleLifecycleWebhookRequest is Codewhale v0.10's lifecycle webhook
-// envelope. The thread id is process-local correlation, not the durable saved
-// conversation UUID used for restore.
-type CodewhaleLifecycleWebhookRequest struct {
-	At    time.Time               `json:"at,omitempty"`
-	Event CodewhaleLifecycleEvent `json:"event"`
-}
-
-// CodewhaleLifecycleEvent is the provider-owned RuntimeEventEnvelope nested in
-// a lifecycle webhook delivery.
-type CodewhaleLifecycleEvent struct {
-	SchemaVersion int       `json:"schema_version"`
-	Sequence      uint64    `json:"seq"`
-	Event         string    `json:"event"`
-	Kind          string    `json:"kind" enum:"session.started,turn.started,turn.completed,turn.failed,turn.interrupted,turn.stalled,session.ended,subagent.spawned,subagent.completed"`
-	ThreadID      string    `json:"thread_id"`
-	TurnID        string    `json:"turn_id,omitempty"`
-	ItemID        *string   `json:"item_id,omitempty"`
-	Timestamp     time.Time `json:"timestamp,omitempty"`
-	CreatedAt     time.Time `json:"created_at,omitempty"`
-	Payload       any       `json:"payload,omitempty"`
 }
 
 // SetReviewActivityRequest is the body of POST /api/v1/reviews/{reviewSessionID}/activity.
@@ -2049,7 +2026,7 @@ type GitHubAuthRequirementResponse = systemcheck.Requirement
 
 // InstallTargetParam is the {target} path parameter for /system/install routes.
 type InstallTargetParam struct {
-	Target string `path:"target" enum:"tmux,gh,claude,codex,opencode,opencode-v2,copilot,cloudflared" description:"Install target identifier: tmux, gh, claude, codex, opencode, opencode-v2, copilot, or cloudflared."`
+	Target string `path:"target" enum:"tmux,gh,claude,claude-code,codex,opencode-v2,pi,agy,omp,cloudflared" description:"Install target identifier: tmux, gh, claude, claude-code, codex, opencode-v2, pi, agy, omp, or cloudflared."`
 }
 
 // StartInstallResponse is the body of POST /api/v1/system/install/{target} (202).
@@ -3510,7 +3487,7 @@ type GatewayConfigQuery struct {
 // it for this pass only, without editing project config, so one session's choice
 // cannot change what another session in the project runs.
 type TriggerReviewRequest struct {
-	Harness       domain.ReviewerHarness       `json:"harness,omitempty" enum:"claude-code,codex,copilot,cursor,kilocode,opencode,opencode-v2,kiro,pi,agy,devin,droid,kimi,kimchi,muse,amp,aider,grok,crush,auggie,cline,autohand"`
+	Harness       domain.ReviewerHarness       `json:"harness,omitempty" enum:"claude-code,codex,opencode-v2,pi,agy,droid,kimi,amp,autohand"`
 	AgentConfig   domain.AgentConfig           `json:"agentConfig,omitempty"`
 	InterfaceMode domain.ReviewerInterfaceMode `json:"interfaceMode,omitempty" enum:"chat,tui"`
 	PRURL         string                       `json:"prUrl,omitempty" description:"Restrict the pass to this pull request, attaching it to the session first if AO does not track it yet (never from another active session). Omit to review every eligible PR on the session."`

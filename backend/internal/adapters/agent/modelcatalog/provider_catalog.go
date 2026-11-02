@@ -24,7 +24,7 @@ const providerCatalogReadLimit = 32 << 20
 // provider cache for agentID.
 func hasLocalProviderCatalog(agentID string) bool {
 	switch agentID {
-	case "opencode", "kilocode", "mimo-code", "omp", "pi", "kimchi", "prime-agent":
+	case "omp", "pi":
 		return true
 	}
 	return false
@@ -33,13 +33,9 @@ func hasLocalProviderCatalog(agentID string) bool {
 func localProviderCatalog(ctx context.Context, agentID, binary, workingDir string, env map[string]string) ports.AgentModelCatalog {
 	var result ports.AgentModelCatalog
 	switch agentID {
-	case "opencode", "kilocode", "mimo-code":
-		if raw, err := readProviderCatalog(providerCachePath(agentID, env)); err == nil {
-			result = parseProviderSnapshot(raw)
-		}
 	case "omp":
 		result = ompProviderCatalog(ctx, filepath.Join(piCatalogDir(agentID, env), "models.db"))
-	case "pi", "kimchi":
+	case "pi":
 		dir := piCatalogDir(agentID, env)
 		if raw, err := readProviderCatalog(filepath.Join(dir, "models-store.json")); err == nil {
 			result = parseProviderSnapshot(raw)
@@ -55,27 +51,9 @@ func localProviderCatalog(ctx context.Context, agentID, binary, workingDir strin
 				result.Providers = append(result.Providers, custom.Providers...)
 			}
 		}
-		if agentID == "pi" {
-			result.Models = append(result.Models, piInstalledModels(ctx, binary, workingDir, env)...)
-		}
-	case "prime-agent":
-		// Prime Agent keeps no provider cache; its installed pi-ai fork lists
-		// every built-in provider's models.
-		result.Models = piInstalledModels(ctx, binary, workingDir, env)
+		result.Models = append(result.Models, piInstalledModels(ctx, binary, workingDir, env)...)
 	}
 	return result
-}
-
-func providerCachePath(agentID string, env map[string]string) string {
-	name := map[string]string{"opencode": "opencode", "kilocode": "kilo", "mimo-code": "mimocode"}[agentID]
-	if name == "" {
-		return ""
-	}
-	root := envValue(env, "XDG_CACHE_HOME")
-	if root == "" {
-		root = filepath.Join(catalogHome(env), ".cache")
-	}
-	return filepath.Join(root, name, "models.json")
 }
 
 func catalogHome(env map[string]string) string {
@@ -87,12 +65,6 @@ func catalogHome(env map[string]string) string {
 }
 
 func piCatalogDir(agentID string, env map[string]string) string {
-	// Kimchi runs its embedded Pi runtime from its own harness directory and
-	// overrides PI_CODING_AGENT_DIR to point there, so Pi's directory and that
-	// variable say nothing about Kimchi's providers.
-	if agentID == "kimchi" {
-		return filepath.Join(catalogHome(env), ".config", "kimchi", "harness")
-	}
 	if dir := envValue(env, "PI_CODING_AGENT_DIR"); dir != "" {
 		return dir
 	}
@@ -220,7 +192,7 @@ const {readFileSync, existsSync} = await import('node:fs');
 let dir = dirname(process.argv[1]);
 while (!existsSync(join(dir, 'package.json')) && dirname(dir) !== dir) dir = dirname(dir);
 const owner = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
-const owners = new Set(['@earendil-works/pi-coding-agent', '@mariozechner/pi-coding-agent', 'prime-agent']);
+const owners = new Set(['@earendil-works/pi-coding-agent', '@mariozechner/pi-coding-agent']);
 const scope = !owners.has(owner.name) ? undefined
  : owner.dependencies?.['@earendil-works/pi-ai'] ? '@earendil-works'
  : owner.dependencies?.['@mariozechner/pi-ai'] ? '@mariozechner' : undefined;
@@ -239,8 +211,7 @@ try {
  }
 }
 const pkg = JSON.parse(readFileSync(join(dirname(entry), '..', 'package.json'), 'utf8'));
-// Prime Agent ships its pi-ai fork as "prime-agent-ai" under the pi-ai name.
-if (pkg.name !== scope + '/pi-ai' && !(owner.name === 'prime-agent' && pkg.name === 'prime-agent-ai')) process.exit(1);
+if (pkg.name !== scope + '/pi-ai') process.exit(1);
 const {MODELS} = await import(pathToFileURL(join(dirname(entry), 'models.generated.js')).href);
 const models = Object.values(MODELS).flatMap(group => Object.values(group)).map(m =>
  ({id: m.id, name: m.name, provider: m.provider, contextWindow: m.contextWindow, input: m.input}));
@@ -267,9 +238,7 @@ func piInstalledModels(ctx context.Context, binary, workingDir string, env map[s
 func providerCatalogFingerprint(agentID string, env map[string]string) string {
 	var paths []string
 	switch agentID {
-	case "opencode", "kilocode", "mimo-code":
-		paths = []string{providerCachePath(agentID, env)}
-	case "pi", "kimchi":
+	case "pi":
 		dir := piCatalogDir(agentID, env)
 		paths = []string{filepath.Join(dir, "models-store.json"), filepath.Join(dir, "models.json")}
 	case "omp":

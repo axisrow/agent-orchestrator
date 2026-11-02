@@ -692,7 +692,7 @@ describe("provider catalog controller epochs", () => {
 });
 
 describe("useConversation snapshot mapping", () => {
-	it("passes a typed DeepSeek key failure from the API to the timeline snapshot", async () => {
+	it("passes a typed provider-key failure from the API to the timeline snapshot", async () => {
 		getMock.mockResolvedValue({
 			data: {
 				...WIRE,

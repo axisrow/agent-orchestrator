@@ -22,14 +22,11 @@ func Encode(harness domain.AgentHarness, providerID string) string {
 }
 
 // Decode verifies the durable harness identity and returns the provider's raw
-// conversation ID. Existing OpenCode 1 rows predate the envelope and remain
-// valid only for the v1 harness.
+// conversation ID. Untagged rows (pre-envelope OpenCode 1 conversations) no
+// longer resolve: the v1 harness has been removed.
 func Decode(expected domain.AgentHarness, stored string) (string, error) {
 	value, tagged := strings.CutPrefix(stored, prefix)
 	if !tagged {
-		if expected == domain.HarnessOpenCode && stored != "" {
-			return stored, nil
-		}
 		return "", fmt.Errorf("%w: provider conversation has no %s harness identity", ports.ErrChatResumeFailed, expected)
 	}
 	harness, providerID, found := strings.Cut(value, ":")

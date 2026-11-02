@@ -49,7 +49,7 @@ func TestOpenCodeModeSurvivesControllerRestart(t *testing.T) {
 		"ao-auto":         domain.PermissionModeAuto,
 		"ao-bypass":       domain.PermissionModeBypassPermissions,
 	}
-	for _, harness := range []domain.AgentHarness{domain.HarnessOpenCode, domain.HarnessOpenCodeV2} {
+	for _, harness := range []domain.AgentHarness{domain.HarnessOpenCodeV2} {
 		for _, mode := range []string{"plan", "build", "ao-plan-project-1", "ao-default", "ao-accept-edits", "ao-auto", "ao-bypass"} {
 			t.Run(string(harness)+"/"+mode, func(t *testing.T) {
 				ctx := context.Background()
@@ -128,7 +128,7 @@ func TestOpenCodeModeRestoreFailureDoesNotPublishController(t *testing.T) {
 			conv.providerConversationID = "opencode-thread"
 			svc := chatsvc.New(chatsvc.Options{Store: st, Sessions: st, Drivers: fakeRegistry{driver: fakeDriver{conv: conv}}, Log: slog.New(slog.DiscardHandler), NewID: uuid.NewString})
 			t.Cleanup(func() { _ = svc.Stop(ctx, testSession) })
-			_, err = svc.Start(ctx, chatsvc.StartConfig{SessionID: testSession, ProjectID: testProject, Harness: domain.HarnessOpenCode, WorkspacePath: t.TempDir(), ProviderConversationID: "opencode-thread"})
+			_, err = svc.Start(ctx, chatsvc.StartConfig{SessionID: testSession, ProjectID: testProject, Harness: domain.HarnessOpenCodeV2, WorkspacePath: t.TempDir(), ProviderConversationID: "opencode-thread"})
 			if err == nil {
 				t.Fatal("expected mode restoration error")
 			}

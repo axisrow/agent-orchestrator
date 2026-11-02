@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	_ "modernc.org/sqlite" // read OMP's native credential store
@@ -18,7 +17,7 @@ import (
 // configuredProviders is advisory evidence, never an auth verdict or a filter.
 // Missing/unsupported stores and unresolved key commands leave status unknown.
 func configuredProviders(ctx context.Context, agentID string, env map[string]string) []string {
-	if agentID != "opencode" && agentID != "opencode-v2" && agentID != "kilocode" && agentID != "mimo-code" && agentID != "pi" && agentID != "omp" {
+	if agentID != "opencode" && agentID != "opencode-v2" && agentID != "pi" && agentID != "omp" {
 		return nil
 	}
 	value := func(name string) string {
@@ -73,19 +72,15 @@ func configuredProviders(ctx context.Context, agentID string, env map[string]str
 			}
 			authPath = filepath.Join(dir, "auth.json")
 		}
-	case "opencode", "kilocode", "mimo-code":
-		name := map[string]string{"opencode": "opencode", "kilocode": "kilo", "mimo-code": "mimocode"}[agentID]
-		dir := ""
-		if agentID == "opencode" {
-			dir = value("OPENCODE_DATA_DIR")
-		}
+	case "opencode":
+		dir := value("OPENCODE_DATA_DIR")
 		if dir == "" {
 			dataHome := value("XDG_DATA_HOME")
 			if dataHome == "" && home != "" {
 				dataHome = filepath.Join(home, ".local", "share")
 			}
 			if dataHome != "" {
-				dir = filepath.Join(dataHome, name)
+				dir = filepath.Join(dataHome, "opencode")
 			}
 		}
 		if dir != "" {
@@ -140,15 +135,6 @@ func configuredProviders(ctx context.Context, agentID string, env map[string]str
 			}
 		}
 	}
-	// The native models.dev catalog declares each provider's credential variables.
-	// This covers providers beyond AO's small fallback map without guessing names.
-	for provider, names := range providerEnvNames(providerCachePath(agentID, env)) {
-		for _, key := range names {
-			if key != "" && value(key) != "" {
-				found[provider] = true
-			}
-		}
-	}
 	providers := make([]string, 0, len(found))
 	for provider := range found {
 		providers = append(providers, provider)
@@ -198,58 +184,4 @@ func credentialPresence(value string) string {
 		return ""
 	}
 	return value
-}
-
-type providerEnvEntry struct {
-	size    int64
-	modTime time.Time
-	names   map[string][]string
-}
-
-var providerEnvCache struct {
-	sync.Mutex
-	entries map[string]providerEnvEntry
-}
-
-// providerEnvNames returns the credential variables a models.dev cache
-// declares for each provider. The cache can be tens of megabytes and catalog
-// fingerprints consult it on every cached read, so a parse is kept until the
-// file's size or modification time changes.
-func providerEnvNames(path string) map[string][]string {
-	if path == "" {
-		return nil
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return nil
-	}
-	providerEnvCache.Lock()
-	cached, ok := providerEnvCache.entries[path]
-	providerEnvCache.Unlock()
-	if ok && cached.size == info.Size() && cached.modTime.Equal(info.ModTime()) {
-		return cached.names
-	}
-	raw, err := readProviderCatalog(path)
-	if err != nil {
-		return nil
-	}
-	var entries map[string]struct {
-		Env []string `json:"env"`
-	}
-	if json.Unmarshal(raw, &entries) != nil {
-		return nil
-	}
-	names := make(map[string][]string, len(entries))
-	for provider, entry := range entries {
-		if len(entry.Env) > 0 {
-			names[provider] = entry.Env
-		}
-	}
-	providerEnvCache.Lock()
-	if providerEnvCache.entries == nil {
-		providerEnvCache.entries = make(map[string]providerEnvEntry)
-	}
-	providerEnvCache.entries[path] = providerEnvEntry{size: info.Size(), modTime: info.ModTime(), names: names}
-	providerEnvCache.Unlock()
-	return names
 }

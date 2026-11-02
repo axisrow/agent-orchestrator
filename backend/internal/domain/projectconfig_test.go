@@ -41,28 +41,16 @@ func TestProjectConfigValidate(t *testing.T) {
 		{"agent rules file bare dot", ProjectConfig{AgentRulesFile: "."}, true},
 		{"good reviewers", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: ReviewerClaudeCode}}}, false},
 		{"good codex reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: ReviewerCodex}}}, false},
-		{"good copilot reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: ReviewerCopilot}}}, false},
-		{"good cursor reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: ReviewerCursor}}}, false},
-		{"good Kilo Code reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: ReviewerKiloCode}}}, false},
-		{"good kimchi reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: ReviewerKimchi}}}, false},
-		{"good opencode reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: ReviewerOpenCode}}}, false},
-		{"good kiro reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: ReviewerKiro}}}, false},
+		{"good opencode reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: ReviewerOpenCodeV2}}}, false},
 		{"good pi reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: ReviewerPi}}}, false},
 		{"good experimental agy reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: ReviewerAgy}}}, false},
 		{"unsupported continue reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: "continue"}}}, true},
 		{"unsupported goose reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: "goose"}}}, true},
-		{"unsupported vibe reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: "vibe"}}}, true},
-		{"good experimental Devin reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: ReviewerDevin}}}, false},
+		{"unsupported copilot reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: "copilot"}}}, true},
 		{"good experimental Droid reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: ReviewerDroid}}}, false},
 		{"good experimental Kimi reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: ReviewerKimi}}}, false},
-		{"good Muse reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: ReviewerMuse}}}, false},
 		{"unknown reviewer harness", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: "nope"}}}, true},
 		{"good interactive Amp reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: ReviewerAmp}}}, false},
-		{"good interactive Aider reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: ReviewerAider}}}, false},
-		{"good experimental Grok reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: ReviewerGrok}}}, false},
-		{"good experimental Crush reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: ReviewerCrush}}}, false},
-		{"good experimental Auggie reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: ReviewerAuggie}}}, false},
-		{"good experimental Cline reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: ReviewerCline}}}, false},
 		{"good experimental Autohand reviewer", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: ReviewerAutohand}}}, false},
 		{"empty reviewer harness", ProjectConfig{Reviewers: []ReviewerConfig{{Harness: ""}}}, true},
 		{"tracker intake assignee rule", ProjectConfig{TrackerIntake: TrackerIntakeConfig{Enabled: true, Assignee: "alice"}}, false},
@@ -185,7 +173,7 @@ func TestInferTrackerProvider(t *testing.T) {
 func TestResolveReviewerHarness(t *testing.T) {
 	// A configured reviewer always wins, regardless of the worker harness.
 	cfg := ProjectConfig{Reviewers: []ReviewerConfig{{Harness: ReviewerClaudeCode}}}
-	if got := cfg.ResolveReviewerHarness(HarnessAider); got != ReviewerClaudeCode {
+	if got := cfg.ResolveReviewerHarness(HarnessCodex); got != ReviewerClaudeCode {
 		t.Fatalf("configured reviewer = %q, want claude-code", got)
 	}
 
@@ -197,26 +185,14 @@ func TestResolveReviewerHarness(t *testing.T) {
 	if got := (ProjectConfig{}).ResolveReviewerHarness(HarnessCodex); got != ReviewerCodex {
 		t.Fatalf("codex worker = %q, want reviewer codex", got)
 	}
-	if got := (ProjectConfig{}).ResolveReviewerHarness(HarnessOpenCode); got != ReviewerOpenCode {
-		t.Fatalf("opencode worker = %q, want reviewer opencode", got)
-	}
-	if got := (ProjectConfig{}).ResolveReviewerHarness(HarnessMuse); got != ReviewerMuse {
-		t.Fatalf("muse worker = %q, want reviewer muse", got)
-	}
-	if got := (ProjectConfig{}).ResolveReviewerHarness(HarnessKimchi); got != ReviewerKimchi {
-		t.Fatalf("kimchi worker = %q, want reviewer kimchi", got)
-	}
 
-	// A worker harness that is not itself a reviewer (e.g. crush, aider) falls
-	// back to claude-code.
-	if got := (ProjectConfig{}).ResolveReviewerHarness(HarnessCrush); got != FallbackReviewerHarness {
-		t.Fatalf("crush worker = %q, want %q", got, FallbackReviewerHarness)
+	// A worker harness that is not itself a reviewer falls back to claude-code.
+	if got := (ProjectConfig{}).ResolveReviewerHarness(HarnessGoose); got != FallbackReviewerHarness {
+		t.Fatalf("goose worker = %q, want %q", got, FallbackReviewerHarness)
 	}
 	for _, worker := range []AgentHarness{
-		HarnessCopilot, HarnessCursor, HarnessKilocode, HarnessKiro, HarnessPi,
-		HarnessAider, HarnessAmp, HarnessQwen, HarnessAgy, HarnessContinue,
-		HarnessGoose, HarnessVibe, HarnessDevin, HarnessDroid, HarnessKimi,
-		HarnessGrok, HarnessCrush, HarnessAuggie, HarnessCline, HarnessAutohand,
+		HarnessOpenCodeV2, HarnessPi, HarnessAmp, HarnessQwen, HarnessAgy,
+		HarnessGoose, HarnessDroid, HarnessKimi, HarnessAutohand,
 	} {
 		if got := (ProjectConfig{}).ResolveReviewerHarness(worker); got != FallbackReviewerHarness {
 			t.Errorf("%s worker = %q, want explicit-selection fallback %q", worker, got, FallbackReviewerHarness)

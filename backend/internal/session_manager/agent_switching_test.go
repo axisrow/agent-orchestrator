@@ -2319,9 +2319,9 @@ func TestSwitchAgentRejectsCursorAndKimiBeforeMutation(t *testing.T) {
 		source domain.AgentHarness
 		target domain.AgentHarness
 	}{
-		{name: "cursor target", source: domain.HarnessClaudeCode, target: domain.HarnessCursor},
+		{name: "agy target", source: domain.HarnessClaudeCode, target: domain.HarnessAgy},
 		{name: "kimi target", source: domain.HarnessClaudeCode, target: domain.HarnessKimi},
-		{name: "cursor source", source: domain.HarnessCursor, target: domain.HarnessCodex},
+		{name: "agy source", source: domain.HarnessAgy, target: domain.HarnessCodex},
 		{name: "kimi source", source: domain.HarnessKimi, target: domain.HarnessCodex},
 	}
 	for _, tt := range tests {

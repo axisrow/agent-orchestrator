@@ -2477,7 +2477,7 @@ function ReviewPanel({
 										<SelectValue placeholder={t("inspector.selectReviewerAgent")} />
 									</SelectTrigger>
 									<SelectContent align="end">
-										{["claude-code", "codex", "cursor"].map((harness) => (
+										{["claude-code", "codex"].map((harness) => (
 											<SelectItem key={harness} value={harness}>
 												{agentLabel(harness)}
 												{cloudReviewerHarnesses.includes(harness) ? "" : " · Connect credential"}

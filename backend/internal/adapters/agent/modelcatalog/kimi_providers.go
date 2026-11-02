@@ -3,12 +3,22 @@ package modelcatalog
 import (
 	"encoding/json"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/pelletier/go-toml/v2"
 )
 
 func init() { browseProviderCredentials["kimi"] = kimiConfiguredProviders }
+
+func sortedProviderSet(found map[string]bool) []string {
+	providers := make([]string, 0, len(found))
+	for provider := range found {
+		providers = append(providers, provider)
+	}
+	sort.Strings(providers)
+	return providers
+}
 
 type kimiProviderConfig struct {
 	Providers map[string]struct {

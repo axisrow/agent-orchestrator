@@ -4138,10 +4138,10 @@ describe("SessionView", () => {
 	});
 
 	it("keeps the session actions menu for a harness in the Chat list, without the retired Chat entry", async () => {
-		settingsState.chatHarnesses = ["claude-code", "codex", "opencode"];
+		settingsState.chatHarnesses = ["claude-code", "codex", "opencode-v2"];
 		interfaceTransitionState.status = { supported: true, targetMode: "chat" };
 		const session = workerSession("sess-1");
-		session.provider = "opencode";
+		session.provider = "opencode-v2";
 		session.mode = "tui";
 
 		render(<SessionView sessionId="sess-1" />);

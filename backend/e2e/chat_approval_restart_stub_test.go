@@ -99,7 +99,7 @@ func TestPendingACPApprovalSurvivesDaemonSIGKILL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	shim := "#!/bin/sh\ncase \"$1\" in\n  acp) exec \"$AO_E2E_TEST_BINARY\" -test.run='^TestFakeApprovalACP$' ;;\n  auth) printf '0 credentials\\n' ;;\n  --version) printf '1.0.0\\n' ;;\n  *) exit 2 ;;\nesac\n"
+	shim := "#!/bin/sh\ncase \"$1\" in\n  acp) exec \"$AO_E2E_TEST_BINARY\" -test.run='^TestFakeApprovalACP$' ;;\n  auth) printf '0 credentials\\n' ;;\n  --version) printf '2.0.0\\n' ;;\n  *) exit 2 ;;\nesac\n"
 	if err := os.WriteFile(filepath.Join(binDir, "opencode"), []byte(shim), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestPendingACPApprovalSurvivesDaemonSIGKILL(t *testing.T) {
 	project := seedProject(t, d, "fake-approval-restart")
 	setPermissions(t, d, project, "default")
 	session := spawn(t, d, map[string]any{
-		"projectId": project, "kind": "worker", "harness": "opencode", "mode": "chat",
+		"projectId": project, "kind": "worker", "harness": "opencode-v2", "mode": "chat",
 		"prompt": "Request approval, then finish.",
 	}).Session.ID
 	before := d.awaitConversation(session, 30*time.Second, "pending approval before restart", func(s snapshot) bool {
@@ -186,7 +186,7 @@ func TestFirstTaskStartupRetryAfterDaemonSIGKILL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	shim := "#!/bin/sh\ncase \"$1\" in\n  acp) exec \"$AO_E2E_TEST_BINARY\" -test.run='^TestFakeApprovalACP$' ;;\n  auth) printf '0 credentials\\n' ;;\n  --version) printf '1.0.0\\n' ;;\n  *) exit 2 ;;\nesac\n"
+	shim := "#!/bin/sh\ncase \"$1\" in\n  acp) exec \"$AO_E2E_TEST_BINARY\" -test.run='^TestFakeApprovalACP$' ;;\n  auth) printf '0 credentials\\n' ;;\n  --version) printf '2.0.0\\n' ;;\n  *) exit 2 ;;\nesac\n"
 	if err := os.WriteFile(filepath.Join(binDir, "opencode"), []byte(shim), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +208,7 @@ func TestFirstTaskStartupRetryAfterDaemonSIGKILL(t *testing.T) {
 		"config": map[string]any{"postCreate": []string{postCreate}},
 	}, nil)
 	req := map[string]any{
-		"projectId": project, "kind": "worker", "harness": "opencode", "mode": "chat",
+		"projectId": project, "kind": "worker", "harness": "opencode-v2", "mode": "chat",
 		"prompt": "Request approval, then finish.", "clientRequestId": "first-task-retry",
 	}
 	done := make(chan struct{})

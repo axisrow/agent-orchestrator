@@ -7,10 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"testing"
-
-	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 )
 
 func TestProviderSnapshotIncludesUnconfiguredAndEmptyProviders(t *testing.T) {
@@ -34,39 +31,6 @@ func TestProviderSnapshotIncludesUnconfiguredAndEmptyProviders(t *testing.T) {
 	}
 	if len(catalog.ConfiguredProviders) != 0 {
 		t.Fatal("catalog presence must not imply credentials")
-	}
-}
-
-func TestLocalProviderCatalogReadsEachHarnessOwnCache(t *testing.T) {
-	for _, agentID := range []string{"opencode", "kilocode", "mimo-code"} {
-		t.Run(agentID, func(t *testing.T) {
-			env := providerTestEnv(t)
-			env["XDG_CACHE_HOME"] = t.TempDir()
-			path := providerCachePath(agentID, env)
-			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-				t.Fatal(err)
-			}
-			before := providerCatalogFingerprint(agentID, env)
-			raw := `{"unc":{"env":["TEST_PROVIDER_KEY"],"models":{"org/model":{"name":"Model"}}},"empty":{"models":{}}}`
-			if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			env["TEST_PROVIDER_KEY"] = ""
-			catalog := localProviderCatalog(context.Background(), agentID, "", "", env)
-			if len(catalog.Models) != 1 || catalog.Models[0].ID != "unc/org/model" || len(catalog.Providers) != 2 {
-				t.Fatalf("catalog = %#v", catalog)
-			}
-			if len(configuredProviders(context.Background(), agentID, env)) != 0 {
-				t.Fatal("unconfigured provider marked configured")
-			}
-			env["TEST_PROVIDER_KEY"] = "present"
-			if got := configuredProviders(context.Background(), agentID, env); !reflect.DeepEqual(got, []string{"unc"}) {
-				t.Fatalf("configured = %v", got)
-			}
-			if before == providerCatalogFingerprint(agentID, env) {
-				t.Fatal("cache change did not invalidate catalog")
-			}
-		})
 	}
 }
 
@@ -94,7 +58,7 @@ func TestOMPProviderCacheUsesModelProviderNotAccountCacheKey(t *testing.T) {
 func TestProviderCatalogMissingOrInvalidCacheKeepsDiscoveryUsable(t *testing.T) {
 	env := providerTestEnv(t)
 	env["XDG_CACHE_HOME"] = t.TempDir()
-	for _, agentID := range []string{"opencode", "kilocode", "mimo-code", "omp", "pi", "kimchi", "opencode-v2", "crush"} {
+	for _, agentID := range []string{"omp", "pi", "opencode-v2", "crush"} {
 		got := localProviderCatalog(context.Background(), agentID, "", "", env)
 		if len(got.Models) != 0 || len(got.Providers) != 0 {
 			t.Fatalf("%s: %#v", agentID, got)
@@ -108,25 +72,12 @@ func TestProviderCatalogMissingOrInvalidCacheKeepsDiscoveryUsable(t *testing.T) 
 func TestPiCustomProvidersVisibleWithoutCredentials(t *testing.T) {
 	env := providerTestEnv(t)
 	raw := `{"providers":{"local":{"models":[{"id":"org/model","name":"Local"}]},"empty":{"models":[]}}}`
-	// Kimchi keeps its Pi runtime in its own harness directory, whatever
-	// PI_CODING_AGENT_DIR says.
-	kimchiDir := filepath.Join(env["HOME"], ".config", "kimchi", "harness")
-	if err := os.MkdirAll(kimchiDir, 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(env["PI_CODING_AGENT_DIR"], "models.json"), []byte(raw), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	for _, dir := range []string{env["PI_CODING_AGENT_DIR"], kimchiDir} {
-		if err := os.WriteFile(filepath.Join(dir, "models.json"), []byte(raw), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if got := localProviderCatalog(context.Background(), "kimchi", "", "", map[string]string{"HOME": t.TempDir(), "PI_CODING_AGENT_DIR": env["PI_CODING_AGENT_DIR"]}); len(got.Providers) != 0 {
-		t.Fatalf("kimchi read Pi's directory: %#v", got)
-	}
-	for _, agentID := range []string{"pi", "kimchi"} {
-		got := localProviderCatalog(context.Background(), agentID, "", "", env)
-		if len(got.Providers) != 2 || len(got.Models) != 1 || got.Models[0].ID != "local/org/model" {
-			t.Fatalf("%s: %#v", agentID, got)
-		}
+	got := localProviderCatalog(context.Background(), "pi", "", "", env)
+	if len(got.Providers) != 2 || len(got.Models) != 1 || got.Models[0].ID != "local/org/model" {
+		t.Fatalf("pi: %#v", got)
 	}
 }
 
@@ -134,7 +85,7 @@ func TestCatalogPlaceholderNeverMarksProviderConfigured(t *testing.T) {
 	env := providerTestEnv(t)
 	env["XDG_CACHE_HOME"] = t.TempDir()
 	env["ANTHROPIC_API_KEY"] = modelDiscoveryPresenceValue
-	if got := configuredProviders(context.Background(), "opencode", env); len(got) != 0 {
+	if got := configuredProviders(context.Background(), "opencode-v2", env); len(got) != 0 {
 		t.Fatalf("placeholder configured: %v", got)
 	}
 }
@@ -177,80 +128,32 @@ func TestPiInstalledCatalogUsesItsOwnPackageWithoutCredentials(t *testing.T) {
 	}
 }
 
-func TestSharedCatalogIncludesNativeCacheButCredentialScopeDoesNot(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("fake CLI is a shell script")
-	}
-	env := providerTestEnv(t)
-	env["ANTHROPIC_API_KEY"] = "test-key"
-	env["XDG_CACHE_HOME"] = t.TempDir()
-	path := providerCachePath("opencode", env)
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(`{"unc":{"models":{"org/model":{"name":"Model"}}}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	binary := filepath.Join(t.TempDir(), "opencode")
-	if err := os.WriteFile(binary, []byte("#!/bin/sh\nprintf 'anthropic/claude-sonnet\\n'\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	request := ports.AgentModelDiscoveryRequest{AgentID: "opencode", Binary: binary, WorkingDir: t.TempDir(), Env: env}
-	task, err := (Discoverer{}).Discover(context.Background(), request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(task.Models) != 2 {
-		t.Fatalf("shared catalog = %#v, want native output and the cached provider", task.Models)
-	}
-	if !reflect.DeepEqual(task.ConfiguredProviders, []string{"anthropic"}) {
-		t.Fatalf("shared catalog configured providers = %v", task.ConfiguredProviders)
-	}
-	sharedFingerprint := (Discoverer{}).CatalogFingerprint(context.Background(), request)
-	request.CredentialType = "anthropic_api_key"
-	scoped, err := (Discoverer{}).Discover(context.Background(), request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(scoped.Models) != 1 || scoped.Models[0].ID != "anthropic/claude-sonnet" {
-		t.Fatalf("credential catalog = %#v, want no local-cache expansion", scoped.Models)
-	}
-	if sharedFingerprint == (Discoverer{}).CatalogFingerprint(context.Background(), request) {
-		t.Fatal("credential and shared catalogs have the same fingerprint")
-	}
-}
-
-func TestPiInstalledCatalogReadsImportOnlyPiAIAndPrimeAgentFork(t *testing.T) {
+func TestPiInstalledCatalogReadsImportOnlyPiAI(t *testing.T) {
 	if _, err := exec.LookPath("node"); err != nil {
 		t.Skip("node unavailable")
 	}
 	// Current pi-ai exports only an "import" condition, which require-style
-	// resolution rejects; Prime Agent ships its fork as "prime-agent-ai".
+	// resolution rejects; resolution falls back to the Node layout path.
 	importOnly := `"type":"module","exports":{".":{"types":"./dist/index.d.ts","import":"./dist/index.js"}}`
-	for owner, aiName := range map[string]string{
-		"@earendil-works/pi-coding-agent": "@earendil-works/pi-ai",
-		"prime-agent":                     "prime-agent-ai",
-	} {
-		root := t.TempDir()
-		files := map[string]string{
-			"pkg/package.json":       `{"name":"` + owner + `","dependencies":{"@earendil-works/pi-ai":"1"}}`,
-			"pkg/dist/bundle/cli.js": "",
-			"pkg/node_modules/@earendil-works/pi-ai/package.json":             `{"name":"` + aiName + `",` + importOnly + `}`,
-			"pkg/node_modules/@earendil-works/pi-ai/dist/index.js":            "throw new Error('do not initialize the SDK');",
-			"pkg/node_modules/@earendil-works/pi-ai/dist/models.generated.js": `export const MODELS = {zai:{m:{id:"glm-5",name:"GLM-5",provider:"zai"}},radius:{}};`,
+	root := t.TempDir()
+	files := map[string]string{
+		"pkg/package.json":       `{"name":"@earendil-works/pi-coding-agent","dependencies":{"@earendil-works/pi-ai":"1"}}`,
+		"pkg/dist/bundle/cli.js": "",
+		"pkg/node_modules/@earendil-works/pi-ai/package.json":             `{"name":"@earendil-works/pi-ai",` + importOnly + `}`,
+		"pkg/node_modules/@earendil-works/pi-ai/dist/index.js":            "throw new Error('do not initialize the SDK');",
+		"pkg/node_modules/@earendil-works/pi-ai/dist/models.generated.js": `export const MODELS = {zai:{m:{id:"glm-5",name:"GLM-5",provider:"zai"}},radius:{}};`,
+	}
+	for name, contents := range files {
+		path := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
 		}
-		for name, contents := range files {
-			path := filepath.Join(root, name)
-			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
-				t.Fatal(err)
-			}
+		if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
 		}
-		models := piInstalledModels(context.Background(), filepath.Join(root, "pkg/dist/bundle/cli.js"), root, nil)
-		if len(models) != 1 || models[0].ID != "zai/glm-5" {
-			t.Fatalf("%s models = %#v", owner, models)
-		}
+	}
+	models := piInstalledModels(context.Background(), filepath.Join(root, "pkg/dist/bundle/cli.js"), root, nil)
+	if len(models) != 1 || models[0].ID != "zai/glm-5" {
+		t.Fatalf("models = %#v", models)
 	}
 }

@@ -272,7 +272,7 @@ func (s *Service) computeUpdateAdvisory(ctx context.Context, target Target) (Upd
 		}
 		return advisory, nil
 	}
-	scheme := versionSchemeFor(target)
+	scheme := versionSemver
 	current, ok := scheme.find(verified.Output)
 	if !ok {
 		advisory.Reason = UpdateReasonVersionUnparseable
@@ -303,7 +303,7 @@ func (s *Service) computeUpdateAdvisory(ctx context.Context, target Target) (Upd
 		if !ok {
 			return advisory, nil
 		}
-		if !officialChannelFits(official.kind, layout) && (!npmInstallerTargets[target] || layout != layoutNPM) {
+		if !officialChannelFits(official.kind, layout) {
 			advisory.Reason = UpdateReasonOwnershipUnconfirmed
 			return advisory, nil
 		}
@@ -360,19 +360,17 @@ func vendorMaintainable(target Target, resolvedPath string) bool {
 }
 
 // vendorLayout reports whether a binary in layout belongs to the vendor
-// installer: outside every package tool, or in npm's layout for installers
-// that install their own release tarball through npm.
+// installer: outside every package tool's directory layout.
 func vendorLayout(target Target, layout string) bool {
-	return layout == "" || npmInstallerTargets[target] && layout == layoutNPM
+	return layout == ""
 }
 
 // refreshDerivedOwner reads the owner from the binary's own location when no
 // listed method owns it, and keeps it only once the package manager confirms
-// the package installed that binary. A derived npm owner is never kept for a
-// harness whose vendor installer uses npm with a tarball the registry lacks.
+// the package installed that binary.
 func (s *Service) refreshDerivedOwner(ctx context.Context, planner requestPlanner, target Target, binaryPath string, source *Plan) {
 	owner, ok := deriveOwnerFromPath(binaryPath)
-	if !ok || owner.method == "npm" && npmInstallerTargets[target] {
+	if !ok {
 		s.setDerivedOwner(target, nil)
 		return
 	}

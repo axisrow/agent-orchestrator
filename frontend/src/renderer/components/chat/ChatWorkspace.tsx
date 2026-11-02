@@ -4008,7 +4008,6 @@ export function Timeline({
 							>
 								<TurnGroup
 									group={group}
-									harness={snapshot.harness}
 									startup={showStartup && group.turnId === openingTurnId ? startup : undefined}
 									onSelectAnnotation={selectAnnotation}
 									activityDisclosureOverrides={activityDisclosureOverrides}
@@ -4218,7 +4217,6 @@ export function Timeline({
  */
 const TurnGroup = memo(function TurnGroup({
 	group,
-	harness,
 	activityDisclosureOverrides,
 	onActivityDisclosureChange,
 	sessionId,
@@ -4254,7 +4252,6 @@ const TurnGroup = memo(function TurnGroup({
 	onSelectAnnotation,
 }: {
 	group: TimelineGroup;
-	harness: string;
 	activityDisclosureOverrides: Readonly<Record<string, boolean>>;
 	onActivityDisclosureChange: (key: string, open: boolean) => void;
 	sessionId: string;
@@ -4494,10 +4491,6 @@ const TurnGroup = memo(function TurnGroup({
 				<TurnOutcome
 					state={group.outcome.state}
 					error={group.outcome.error}
-					failureCode={group.outcome.failureCode}
-					onConfigure={harness === "deepseek-harness" && group.outcome.failureCode === "provider_key_missing"
-						? () => useUiStore.getState().openGlobalSettings("harness", { focusAgentId: harness, harnessView: "local", preserveProject: true, startLogin: true })
-						: undefined}
 					retry={group.outcome.state === "failed" ? retry : undefined}
 				/>
 			) : null}

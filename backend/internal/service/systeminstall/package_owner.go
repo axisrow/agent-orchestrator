@@ -17,13 +17,6 @@ type derivedOwner struct {
 	cask   bool
 }
 
-// npmInstallerTargets install through npm from a vendor release tarball that
-// the npm registry does not carry. Their npm layout belongs to the vendor
-// installer, which updates through the harness's own command.
-var npmInstallerTargets = map[Target]bool{
-	TargetPrimeAgent: true,
-}
-
 // deriveOwnerFromPath names the package manager and package whose layout holds
 // binaryPath. Shims are followed to the file they launch. The result is only a
 // claim: callers must confirm it with the manager before acting on it.
@@ -49,10 +42,6 @@ func deriveOwnerFromPath(binaryPath string) (derivedOwner, bool) {
 		return derivedOwner{method: "homebrew", pkg: homebrewTappedName(match), cask: match.cask}, true
 	case layoutNPM:
 		return derivedOwner{method: "npm", pkg: match.pkg}, true
-	case layoutUV:
-		return derivedOwner{method: "uv", pkg: match.pkg}, true
-	case layoutPipx:
-		return derivedOwner{method: "pipx", pkg: match.pkg}, true
 	default:
 		return derivedOwner{}, false
 	}
@@ -106,10 +95,6 @@ func (s requestPlanner) derivedOwnerPlan(target Target, owner derivedOwner) (Pla
 		return s.planBrew(target, owner.pkg), true
 	case "npm":
 		return s.planNPM(target, owner.pkg), true
-	case "uv":
-		return s.planUV(target, owner.pkg), true
-	case "pipx":
-		return s.planPipx(target, owner.pkg), true
 	default:
 		return Plan{}, false
 	}

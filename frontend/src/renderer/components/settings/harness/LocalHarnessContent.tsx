@@ -154,7 +154,9 @@ export function LocalHarnessContent({ focusAgentId, hostId, search, onDetailChan
 	const [lastUpdatedAt, setLastUpdatedAt] = useState<Partial<Record<AgentId, string>>>({});
 
 	const plans = useMemo(() => new Map(installers.data?.map((plan) => [plan.agentId, plan]) ?? []), [installers.data]);
-	const jobMap = useMemo(() => new Map(jobs.data?.map((job) => [job.target, job]) ?? []), [jobs.data]);
+	// Keyed loosely: harness ids queried here (AgentId) are a wider vocabulary
+	// than install targets, and a harness without a target simply never hits.
+	const jobMap = useMemo(() => new Map<string, components["schemas"]["InstallJob"]>(jobs.data?.map((job) => [job.target as string, job]) ?? []), [jobs.data]);
 	const agentAuthPlans = useMemo(() => new Map(authPlans.data?.map((plan) => [plan.agentId, plan]) ?? []), [authPlans.data]);
 	const readinessAgents = useMemo(() => new Map(agents.data?.agents.map((agent) => [agent.id, agent]) ?? []), [agents.data]);
 	const installed = useMemo(() => installedAgentIds(agents.data), [agents.data]);
@@ -626,10 +628,9 @@ export function LocalHarnessContent({ focusAgentId, hostId, search, onDetailChan
 				cliSignedIn = await refreshCliLogin(workflow.agentId);
 				return cliSignedIn === signingIn;
 			}
-			// MiMo can confirm a stored provider key locally without validating it upstream.
 			return !signingIn
 				? candidate?.agent?.authStatus === "unauthorized"
-				: candidate?.agent?.authStatus === "authorized" || (workflow.agentId === "mimo-code" && candidate?.agent?.authStatus === "configured");
+				: candidate?.agent?.authStatus === "authorized";
 		};
 		let result = await checkAuth(workflow.agentId, { fresh: true });
 		let done = await completed(result);

@@ -8,10 +8,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
-	"github.com/pelletier/go-toml/v2"
 	"gopkg.in/yaml.v3"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
@@ -23,7 +21,7 @@ type configParser func([]byte) ([]ports.AgentModelInfo, error)
 
 func hasConfigDiscoverySource(agentID string) bool {
 	switch agentID {
-	case "qwen", "continue", "goose", "vibe", "cline", "autohand":
+	case "qwen", "goose", "autohand":
 		return true
 	default:
 		return false
@@ -70,14 +68,8 @@ func configModelParser(agentID string) configParser {
 	switch agentID {
 	case "qwen":
 		return parseQwenModels
-	case "continue":
-		return parseContinueModels
 	case "goose":
 		return parseGooseModels
-	case "vibe":
-		return parseVibeModels
-	case "cline":
-		return parseClineModels
 	case "autohand":
 		return parseAutoHandModels
 	default:
@@ -96,40 +88,11 @@ func modelConfigPaths(agentID, workingDir string, env map[string]string) []strin
 		if workingDir != "" {
 			paths = append(paths, filepath.Join(workingDir, ".qwen", "settings.json"))
 		}
-	case "continue":
-		if root := continueHomeDir(func(name string) string { return envValue(env, name) }); root != "" {
-			paths = append(paths, filepath.Join(root, "config.yaml"))
-		}
 	case "goose":
 		if root := strings.TrimSpace(env["GOOSE_PATH_ROOT"]); root != "" {
 			paths = append(paths, filepath.Join(root, "config", "config.yaml"))
 		} else if home != "" {
 			paths = append(paths, filepath.Join(home, ".config", "goose", "config.yaml"))
-		}
-	case "deepseek-harness":
-		// DeepSeek Harness's catalog comes from a live `dsh --profile acp`
-		// session, and the profile decides the model route, so the profile's own
-		// files are the configuration discovery consults. Without them the
-		// fingerprint would be the dsh binary alone, and a route changed in the
-		// web setup flow would leave the day's cached choices in place —
-		// including choices the new session rejects.
-		if root := deepseekProfileDir(home, env); root != "" {
-			for _, name := range [...]string{"cordis.yml", "cordis.patch.yml", "package.json"} {
-				paths = append(paths, filepath.Join(root, name))
-			}
-		}
-	case "vibe":
-		if root := strings.TrimSpace(env["VIBE_HOME"]); root != "" {
-			paths = append(paths, filepath.Join(root, "config.toml"))
-		} else if home != "" {
-			paths = append(paths, filepath.Join(home, ".vibe", "config.toml"))
-		}
-		if workingDir != "" {
-			paths = append(paths, filepath.Join(workingDir, ".vibe", "config.toml"))
-		}
-	case "cline":
-		if home != "" {
-			paths = append(paths, filepath.Join(home, ".cline", "data", "settings", "providers.json"))
 		}
 	case "autohand":
 		if home != "" {
@@ -157,19 +120,6 @@ func qwenConfigHome(home string, env map[string]string) string {
 		return filepath.Join(home, strings.TrimPrefix(root, "~/"))
 	}
 	return root
-}
-
-// deepseekProfileDir resolves the ACP profile directory, honouring DSH_HOME the
-// way DeepSeek Harness itself does (its home-paths package falls back to ~/.dsh).
-func deepseekProfileDir(home string, env map[string]string) string {
-	root := strings.TrimSpace(env["DSH_HOME"])
-	if root == "" {
-		if home == "" {
-			return ""
-		}
-		root = filepath.Join(home, ".dsh")
-	}
-	return filepath.Join(root, "profiles", "acp")
 }
 
 func readModelConfig(path string) ([]byte, error) {
@@ -283,40 +233,6 @@ func parseAutoHandModels(raw []byte) ([]ports.AgentModelInfo, error) {
 	}}, nil
 }
 
-func parseContinueModels(raw []byte) ([]ports.AgentModelInfo, error) {
-	var config struct {
-		Models []struct {
-			Name     string `yaml:"name"`
-			Provider string `yaml:"provider"`
-			Model    string `yaml:"model"`
-		} `yaml:"models"`
-		Defaults map[string]string `yaml:"defaults"`
-	}
-	if err := yaml.Unmarshal(raw, &config); err != nil {
-		return nil, err
-	}
-	defaults := make(map[string]bool, len(config.Defaults))
-	for _, value := range config.Defaults {
-		defaults[strings.ToLower(strings.TrimSpace(value))] = true
-	}
-	models := make([]ports.AgentModelInfo, 0, len(config.Models))
-	for _, item := range config.Models {
-		id := strings.TrimSpace(item.Model)
-		if id == "" {
-			continue
-		}
-		label := strings.TrimSpace(item.Name)
-		if label == "" {
-			label = id
-		}
-		models = append(models, ports.AgentModelInfo{
-			ID: id, Label: label, Provider: strings.TrimSpace(item.Provider),
-			IsDefault: defaults[strings.ToLower(id)] || defaults[strings.ToLower(label)],
-		})
-	}
-	return normalize(models), nil
-}
-
 func parseGooseModels(raw []byte) ([]ports.AgentModelInfo, error) {
 	var config struct {
 		ActiveProvider string `yaml:"active_provider"`
@@ -353,87 +269,3 @@ func parseGooseModels(raw []byte) ([]ports.AgentModelInfo, error) {
 	return normalize(models), nil
 }
 
-func parseVibeModels(raw []byte) ([]ports.AgentModelInfo, error) {
-	var config struct {
-		ActiveModel string `toml:"active_model"`
-		Models      []struct {
-			Name     string `toml:"name"`
-			Provider string `toml:"provider"`
-			Alias    string `toml:"alias"`
-		} `toml:"models"`
-	}
-	if err := toml.Unmarshal(raw, &config); err != nil {
-		return nil, err
-	}
-	models := make([]ports.AgentModelInfo, 0, len(config.Models))
-	for _, item := range config.Models {
-		id := strings.TrimSpace(item.Alias)
-		if id == "" {
-			id = strings.TrimSpace(item.Name)
-		}
-		if id == "" {
-			continue
-		}
-		label := strings.TrimSpace(item.Name)
-		if label == "" {
-			label = id
-		}
-		models = append(models, ports.AgentModelInfo{
-			ID: id, Label: label, Provider: strings.TrimSpace(item.Provider),
-			IsDefault: id == strings.TrimSpace(config.ActiveModel),
-		})
-	}
-	return normalize(models), nil
-}
-
-func parseClineModels(raw []byte) ([]ports.AgentModelInfo, error) {
-	var config struct {
-		LastUsedProvider string                     `json:"lastUsedProvider"`
-		Providers        map[string]json.RawMessage `json:"providers"`
-	}
-	if err := json.Unmarshal(raw, &config); err != nil {
-		return nil, err
-	}
-	var models []ports.AgentModelInfo
-	for provider, rawProvider := range config.Providers {
-		var value any
-		if err := json.Unmarshal(rawProvider, &value); err != nil {
-			return nil, err
-		}
-		ids := configuredModelIDs(value)
-		for _, id := range ids {
-			models = append(models, ports.AgentModelInfo{
-				ID: id, Label: id, Provider: provider,
-				IsDefault: provider == config.LastUsedProvider,
-			})
-		}
-	}
-	return normalize(models), nil
-}
-
-func configuredModelIDs(value any) []string {
-	var ids []string
-	var walk func(any)
-	walk = func(current any) {
-		switch node := current.(type) {
-		case []any:
-			for _, child := range node {
-				walk(child)
-			}
-		case map[string]any:
-			for key, child := range node {
-				lower := strings.ToLower(key)
-				if text, ok := child.(string); ok && (lower == "model" || lower == "modelid" || lower == "apimodelid") {
-					if id := strings.TrimSpace(text); looksLikeModelID(id) {
-						ids = append(ids, id)
-					}
-					continue
-				}
-				walk(child)
-			}
-		}
-	}
-	walk(value)
-	sort.Strings(ids)
-	return ids
-}

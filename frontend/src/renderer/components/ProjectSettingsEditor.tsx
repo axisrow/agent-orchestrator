@@ -231,9 +231,7 @@ export function ProjectSettingsEditor({ initialValues, section, capabilities, de
 							allowCustomFallback={capabilities.runtimeDefaults} followCatalogDefaults={!capabilities.runtimeDefaults}
 							supportedEfforts={capabilities.runtimeDefaults ? agent === "codex" ? ["low", "medium", "high", "xhigh", "max"] : agent === "claude-code" ? ["low", "medium", "high", "max"] : undefined : undefined}
 							emptyLabel={capabilities.runtimeDefaults && agent === "" ? t("settings.cloudProject.sessionModel") : undefined}
-							independentMode={capabilities.runtimeDefaults && agent === "cursor"}
 							onModelChange={(value) => updateConfig(fields.model, value)} onModeChange={(value) => updateConfig(fields.mode, value)} onEffortChange={(value) => updateConfig(fields.effort, value)} onValidityChange={(valid) => setValidity((current) => current[role] === valid ? current : { ...current, [role]: valid })} />
-							{capabilities.runtimeDefaults && agent === "cursor" && <SettingsOptionMenu aria-label={t(`settings.models.${role}Mode`)} value={draft[fields.mode]} triggerClassName="w-full justify-between" options={[{ value: "", label: t("settings.cloudProject.agentMode") }, { value: "plan", label: t("settings.cloudProject.plan") }, { value: "ask", label: t("settings.cloudProject.ask") }]} onChange={(value) => updateConfig(fields.mode, value)} />}
 						</div>} provider={renderProvider ? renderProvider({ role, draft, value: draft[fields.provider], onChange: (value) => setDraft((current) => ({ ...current, [fields.provider]: value, ...(value !== current[fields.provider] ? { [fields.model]: "", [fields.mode]: "", [fields.effort]: "" } : {}) })) }) : undefined} />;
 				})}
 				<div className={capabilities.reviewer ? "grid grid-cols-3 gap-3 border-t border-border/60 pt-4" : "grid grid-cols-2 gap-3 border-t border-border/60 pt-4"}>

@@ -283,11 +283,11 @@ func TestEvaluateSessionReviewerHarnessPrecedence(t *testing.T) {
 		worker   domain.AgentHarness
 		expected domain.ReviewerHarness
 	}{
-		{name: "session wins", session: domain.ReviewerOpenCode, project: domain.ReviewerClaudeCode, worker: domain.AgentHarness("codex"), expected: domain.ReviewerOpenCode},
-		{name: "project fallback", project: domain.ReviewerOpenCode, worker: domain.AgentHarness("codex"), expected: domain.ReviewerOpenCode},
+		{name: "session wins", session: domain.ReviewerOpenCodeV2, project: domain.ReviewerClaudeCode, worker: domain.AgentHarness("codex"), expected: domain.ReviewerOpenCodeV2},
+		{name: "project fallback", project: domain.ReviewerOpenCodeV2, worker: domain.AgentHarness("codex"), expected: domain.ReviewerOpenCodeV2},
 		{name: "safe worker inheritance", worker: domain.HarnessCodex, expected: domain.ReviewerCodex},
 		{name: "known reviewer outside safe inheritance set", worker: domain.HarnessKimi, expected: domain.ReviewerClaudeCode},
-		{name: "non-reviewer worker fallback", worker: domain.HarnessAider, expected: domain.ReviewerClaudeCode},
+		{name: "non-reviewer worker fallback", worker: domain.HarnessGoose, expected: domain.ReviewerClaudeCode},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

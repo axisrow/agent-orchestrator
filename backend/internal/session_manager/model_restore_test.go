@@ -20,7 +20,7 @@ import (
 // skipped by this fork's fixes-only sync, while the #7144 fix that carries
 // this file cherry-picked cleanly except for that reference.
 func TestSessionModelSurvivesRestore(t *testing.T) {
-	for _, harness := range []domain.AgentHarness{domain.HarnessClaudeCode, domain.HarnessCodex, domain.HarnessCommandCode} {
+	for _, harness := range []domain.AgentHarness{domain.HarnessClaudeCode, domain.HarnessCodex} {
 		t.Run(string(harness), func(t *testing.T) {
 			testSessionModelSurvivesRestore(t, harness)
 		})

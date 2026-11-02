@@ -2,8 +2,6 @@ package systeminstall
 
 import (
 	"context"
-	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -40,8 +38,6 @@ func TestDeriveOwnerFromPathReadsEachManagersLayout(t *testing.T) {
 		{"scoped npm package", writeFileAt(t, filepath.Join(root, "node", "lib", "node_modules", "@earendil-works", "pi-coding-agent", "dist", "cli.js"), ""), derivedOwner{method: "npm", pkg: "@earendil-works/pi-coding-agent"}, true},
 		{"npm package", writeFileAt(t, filepath.Join(root, "node", "lib", "node_modules", "prime-agent", "dist", "cli.js"), ""), derivedOwner{method: "npm", pkg: "prime-agent"}, true},
 		{"Windows npm shim", shim, derivedOwner{method: "npm", pkg: "@google/gemini-cli"}, true},
-		{"uv tool", writeFileAt(t, filepath.Join(root, ".local", "share", "uv", "tools", "aider-chat", "bin", "aider"), ""), derivedOwner{method: "uv", pkg: "aider-chat"}, true},
-		{"pipx venv", writeFileAt(t, filepath.Join(root, ".local", "pipx", "venvs", "mistral-vibe", "bin", "vibe"), ""), derivedOwner{method: "pipx", pkg: "mistral-vibe"}, true},
 		{"pnpm keeps node_modules too", writeFileAt(t, filepath.Join(root, "pnpm", "global", "5", "node_modules", "@openai", "codex", "bin", "codex.js"), ""), derivedOwner{}, false},
 		{"version manager shim", writeFileAt(t, filepath.Join(root, ".asdf", "shims", "codex"), "#!/bin/sh\n"), derivedOwner{}, false},
 		{"vendor directory", writeFileAt(t, filepath.Join(root, ".grok", "downloads", "grok-1.0.13"), ""), derivedOwner{}, false},
@@ -69,7 +65,7 @@ func TestUpdateAdvisoryMaintainsConfirmedOwnerMissingFromHarnessMethods(t *testi
 		t.Fatal("a package-owned binary was compared with the vendor channel")
 		return "", nil
 	}
-	advisory, err := s.UpdateAdvisory(context.Background(), TargetGrok, false)
+	advisory, err := s.UpdateAdvisory(context.Background(), TargetOMP, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,20 +77,20 @@ func TestUpdateAdvisoryMaintainsConfirmedOwnerMissingFromHarnessMethods(t *testi
 		t.Fatal(err)
 	}
 	for _, plan := range plans {
-		if plan.AgentID != string(TargetGrok) {
+		if plan.AgentID != string(TargetOMP) {
 			continue
 		}
 		for _, method := range plan.Methods {
 			if method.ID == "homebrew" {
 				if !method.UpdateAvailable || method.UpdateCommand != "brew update; brew upgrade grok-cli" {
-					t.Fatalf("Grok homebrew method = %+v", method)
+					t.Fatalf("OMP homebrew method = %+v", method)
 				}
 				return
 			}
 		}
-		t.Fatalf("Grok methods %+v do not list the confirmed Homebrew owner", plan.Methods)
+		t.Fatalf("OMP methods %+v do not list the confirmed Homebrew owner", plan.Methods)
 	}
-	t.Fatal("Grok plan missing")
+	t.Fatal("OMP plan missing")
 }
 
 func TestUpdateAdvisoryIgnoresDerivedOwnerTheManagerDoesNotConfirm(t *testing.T) {
@@ -106,14 +102,14 @@ func TestUpdateAdvisoryIgnoresDerivedOwnerTheManagerDoesNotConfirm(t *testing.T)
 	s.ownsInstallation = func(context.Context, string, string, string, bool) (bool, error) { return false, nil }
 	s.managedVersion = fixedManagedVersion("1.53.0", nil)
 	s.officialVersion = func(context.Context, Target) (string, error) { return "1.53.0", nil }
-	advisory, err := s.UpdateAdvisory(context.Background(), TargetGrok, false)
+	advisory, err := s.UpdateAdvisory(context.Background(), TargetOMP, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if advisory.MaintenanceMethod != "" || advisory.Source == "homebrew" {
 		t.Fatalf("unconfirmed path claim became a maintenance method: %+v", advisory)
 	}
-	if _, ok := s.derivedOwnerFor(TargetGrok); ok {
+	if _, ok := s.derivedOwnerFor(TargetOMP); ok {
 		t.Fatal("unconfirmed owner was kept")
 	}
 }
@@ -121,31 +117,31 @@ func TestUpdateAdvisoryIgnoresDerivedOwnerTheManagerDoesNotConfirm(t *testing.T)
 // A listed formula matches a Cellar path by name alone; when the receipt names
 // another tap, the release check and the upgrade must follow that tap.
 func TestUpdateAdvisoryFollowsReceiptTapOverListedFormulaOfTheSameName(t *testing.T) {
-	cellar := filepath.Join(t.TempDir(), "homebrew", "Cellar", "opencode", "1.18.34")
-	binary := writeFileAt(t, filepath.Join(cellar, "bin", "opencode"), "")
+	cellar := filepath.Join(t.TempDir(), "homebrew", "Cellar", "opencode-v2", "2.1.0")
+	binary := writeFileAt(t, filepath.Join(cellar, "bin", "opencode-v2"), "")
 	writeFileAt(t, filepath.Join(cellar, "INSTALL_RECEIPT.json"), `{"source":{"tap":"my-org/tools"}}`)
 	s := newTestService("darwin", "brew", "bash", "npm")
 	s.verifier = harnessVerifierFunc(func(context.Context, Target) (VerifyResult, error) {
-		return VerifyResult{ResolvedPath: binary, Output: "1.18.34"}, nil
+		return VerifyResult{ResolvedPath: binary, Output: "2.1.0"}, nil
 	})
 	// Homebrew's own check is by Cellar name, so it confirms both taps.
 	s.ownsInstallation = func(_ context.Context, _ string, method, pkg string, _ bool) (bool, error) {
-		return method == "homebrew" && filepath.Base(pkg) == "opencode", nil
+		return method == "homebrew" && filepath.Base(pkg) == "opencode-v2", nil
 	}
 	var queried []string
 	s.managedVersion = func(_ context.Context, plan Plan) (string, error) {
 		queried = append(queried, plan.Package)
-		return "1.19.0", nil
+		return "2.2.0", nil
 	}
-	advisory, err := s.UpdateAdvisory(context.Background(), TargetOpencode, false)
+	advisory, err := s.UpdateAdvisory(context.Background(), TargetOpencodeV2, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if advisory.MaintenanceMethod != "homebrew" || len(queried) != 1 || queried[0] != "my-org/tools/opencode" {
-		t.Fatalf("advisory = %+v, queried %v; want my-org/tools/opencode", advisory, queried)
+	if advisory.MaintenanceMethod != "homebrew" || len(queried) != 1 || queried[0] != "my-org/tools/opencode-v2" {
+		t.Fatalf("advisory = %+v, queried %v; want my-org/tools/opencode-v2", advisory, queried)
 	}
-	owner, ok := s.derivedOwnerFor(TargetOpencode)
-	if !ok || owner.pkg != "my-org/tools/opencode" {
+	owner, ok := s.derivedOwnerFor(TargetOpencodeV2)
+	if !ok || owner.pkg != "my-org/tools/opencode-v2" {
 		t.Fatalf("derived owner = %+v, %t", owner, ok)
 	}
 	plans, err := s.AgentPlans(context.Background())
@@ -153,50 +149,18 @@ func TestUpdateAdvisoryFollowsReceiptTapOverListedFormulaOfTheSameName(t *testin
 		t.Fatal(err)
 	}
 	for _, plan := range plans {
-		if plan.AgentID != string(TargetOpencode) {
+		if plan.AgentID != string(TargetOpencodeV2) {
 			continue
 		}
 		for _, method := range plan.Methods {
 			if method.ID == "homebrew" {
-				if !strings.Contains(method.UpdateCommand, "brew upgrade my-org/tools/opencode") {
-					t.Fatalf("OpenCode homebrew update = %q, want the receipt's tap", method.UpdateCommand)
+				if !strings.Contains(method.UpdateCommand, "brew upgrade my-org/tools/opencode-v2") {
+					t.Fatalf("OpenCode v2 homebrew update = %q, want the receipt's tap", method.UpdateCommand)
 				}
 				return
 			}
 		}
-		t.Fatalf("OpenCode methods %+v have no Homebrew method", plan.Methods)
+		t.Fatalf("OpenCode v2 methods %+v have no Homebrew method", plan.Methods)
 	}
 	t.Fatal("OpenCode plan missing")
-}
-
-func TestNPMInstallerHarnessUpdatesThroughVendorCommand(t *testing.T) {
-	prefix := filepath.Join(t.TempDir(), ".nvm", "versions", "node", "v24.18.1")
-	entry := writeNPMPackage(t, filepath.Join(prefix, "lib", "node_modules"), "prime-agent")
-	bin := filepath.Join(prefix, "bin", "prime-agent")
-	linkBinary(t, bin, entry)
-	s := newTestService("darwin", "sh", "npm")
-	s.verifier = harnessVerifierFunc(func(context.Context, Target) (VerifyResult, error) {
-		return VerifyResult{ResolvedPath: bin, Output: "0.9.1"}, nil
-	})
-	s.ownsInstallation = func(_ context.Context, path, method, pkg string, cask bool) (bool, error) {
-		return managerOwnsBinary(commandRunnerFunc(func(context.Context, []string, io.Writer, io.Writer) error { return errors.New("no npm") }))(context.Background(), path, method, pkg, cask)
-	}
-	s.managedVersion = func(context.Context, Plan) (string, error) {
-		t.Fatal("Prime Agent's tarball install was looked up in the npm registry")
-		return "", nil
-	}
-	s.officialVersion = func(context.Context, Target) (string, error) { return "0.9.8", nil }
-	advisory, err := s.UpdateAdvisory(context.Background(), TargetPrimeAgent, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if advisory.Status != UpdateStatusBehindLatest || advisory.Source != officialReleaseSource || advisory.MaintenanceMethod != "official-installer" {
-		t.Fatalf("advisory = %+v", advisory)
-	}
-	if !s.methodOwnsBinary(context.Background(), Plan{Target: TargetPrimeAgent, Method: "official-installer"}, bin) {
-		t.Fatal("Prime Agent's installer was refused ownership of its own npm layout")
-	}
-	if s.methodOwnsBinary(context.Background(), Plan{Target: TargetGrok, Method: "official-installer"}, bin) {
-		t.Fatal("another harness's installer claimed an npm layout")
-	}
 }

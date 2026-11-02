@@ -14,9 +14,7 @@ import (
 func TestRegistryMatchesDomainVocabulary(t *testing.T) {
 	registered := map[domain.ReviewerHarness]bool{}
 	oneShotReviewers := map[domain.ReviewerHarness]bool{
-		domain.ReviewerAider:  true,
-		domain.ReviewerAuggie: true,
-		domain.ReviewerDroid:  true,
+		domain.ReviewerDroid: true,
 	}
 	for _, a := range Constructors() {
 		h := a.Harness()
@@ -36,21 +34,21 @@ func TestRegistryMatchesDomainVocabulary(t *testing.T) {
 			t.Errorf("reviewer harness %q cancel spec: %v", h, err)
 		} else {
 			switch h {
-			case domain.ReviewerCodex, domain.ReviewerKiro, domain.ReviewerPi, domain.ReviewerMuse:
+			case domain.ReviewerCodex, domain.ReviewerPi:
 				if spec.Mode != ports.ReviewCancelInput {
 					t.Errorf("reviewer harness %q cancel mode = %q, want %q", h, spec.Mode, ports.ReviewCancelInput)
 				}
 				if spec.Input != "\x1b" || len(spec.Inputs) != 0 {
 					t.Errorf("reviewer harness %q cancel input = %q inputs=%#v, want single escape", h, spec.Input, spec.Inputs)
 				}
-			case domain.ReviewerClaudeCode, domain.ReviewerOpenCode, domain.ReviewerOpenCodeV2:
+			case domain.ReviewerClaudeCode, domain.ReviewerOpenCodeV2:
 				if spec.Mode != ports.ReviewCancelInput {
 					t.Errorf("reviewer harness %q cancel mode = %q, want %q", h, spec.Mode, ports.ReviewCancelInput)
 				}
 				if len(spec.Inputs) != 2 || spec.Inputs[0] != "\x1b" || spec.Inputs[1] != "\x1b" {
 					t.Errorf("reviewer harness %q cancel inputs = %#v, want double escape", h, spec.Inputs)
 				}
-			case domain.ReviewerAgy, domain.ReviewerDevin, domain.ReviewerDroid:
+			case domain.ReviewerAgy, domain.ReviewerDroid:
 				if spec.Mode != ports.ReviewCancelInterrupt {
 					t.Errorf("reviewer harness %q cancel mode = %q, want %q", h, spec.Mode, ports.ReviewCancelInterrupt)
 				}
@@ -93,7 +91,7 @@ func TestNewResolverResolvesShippedReviewers(t *testing.T) {
 	if _, ok := resolver.Reviewer("nope"); ok {
 		t.Error("resolver returned an adapter for an unknown harness")
 	}
-	for _, removed := range []domain.ReviewerHarness{"continue", "goose", "vibe", "qwen"} {
+	for _, removed := range []domain.ReviewerHarness{"continue", "goose", "vibe", "qwen", "copilot", "cursor"} {
 		if _, ok := resolver.Reviewer(removed); ok {
 			t.Errorf("resolver returned removed reviewer %q", removed)
 		}
@@ -116,7 +114,7 @@ func TestResolverInvalidatesOneReviewersBinary(t *testing.T) {
 	}}
 
 	resolver.InvalidateBinaryResolution(domain.HarnessCodex)
-	resolver.InvalidateBinaryResolution(domain.HarnessAider)
+	resolver.InvalidateBinaryResolution(domain.HarnessGoose)
 
 	if codex.invalidated != 1 || claude.invalidated != 0 {
 		t.Fatalf("invalidations codex=%d claude=%d, want 1 and 0", codex.invalidated, claude.invalidated)
@@ -126,8 +124,7 @@ func TestResolverInvalidatesOneReviewersBinary(t *testing.T) {
 // Every reviewer built on a caching worker plugin forwards the invalidation.
 func TestCachingReviewersForwardBinaryInvalidation(t *testing.T) {
 	for _, harness := range []domain.ReviewerHarness{
-		domain.ReviewerClaudeCode, domain.ReviewerCodex, domain.ReviewerCopilot, domain.ReviewerCursor,
-		domain.ReviewerKimchi, domain.ReviewerOpenCode, domain.ReviewerKiloCode, domain.ReviewerOpenCodeV2,
+		domain.ReviewerClaudeCode, domain.ReviewerCodex, domain.ReviewerOpenCodeV2,
 	} {
 		resolver, err := NewResolver()
 		if err != nil {

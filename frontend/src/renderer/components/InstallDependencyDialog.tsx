@@ -25,7 +25,7 @@ type InstallJob = components["schemas"]["InstallJob"];
 // narrow compatibility extension while older generated clients are in use;
 // it becomes part of InstallJob when the accompanying API schema regenerates.
 type InstallJobWithNotice = InstallJob & { notice?: string };
-type InstallTarget = "tmux" | "gh" | "claude" | "codex" | "opencode" | "opencode-v2" | "copilot";
+type InstallTarget = "tmux" | "gh" | "claude" | "codex" | "opencode-v2";
 type AgentInstallTarget = Exclude<InstallTarget, "tmux" | "gh">;
 
 // Labels are the CLIs' own product names — not translated, same treatment as
@@ -34,17 +34,13 @@ type AgentInstallTarget = Exclude<InstallTarget, "tmux" | "gh">;
 const AGENT_INSTALL_OPTIONS: Array<{ target: AgentInstallTarget; label: string }> = [
 	{ target: "claude", label: "Claude Code" },
 	{ target: "codex", label: "Codex" },
-	{ target: "opencode", label: "opencode" },
 	{ target: "opencode-v2", label: "OpenCode 2" },
-	{ target: "copilot", label: "Copilot CLI" },
 ];
 
 const AGENT_INSTALL_DESCRIPTION_KEYS: Record<AgentInstallTarget, MessageKey> = {
 	claude: "startup.agentDescClaude",
 	codex: "startup.agentDescCodex",
-	opencode: "startup.agentDescOpencode",
 	"opencode-v2": "startup.agentDescOpencode",
-	copilot: "startup.agentDescCopilot",
 };
 
 const POLL_INTERVAL_MS = 1_000;

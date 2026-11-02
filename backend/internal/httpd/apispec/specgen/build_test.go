@@ -94,24 +94,24 @@ func TestBuild_InstallJobTargetRemainsAnEnum(t *testing.T) {
 		t.Fatalf("parse generated OpenAPI: %v", err)
 	}
 	targets := doc.Components.Schemas["InstallJob"].Properties["target"].Enum
-	for _, target := range []string{"tmux", "cloudflared", "cursor", "prime-agent"} {
+	for _, target := range []string{"tmux", "cloudflared", "claude-code", "agy"} {
 		if !slices.Contains(targets, target) {
 			t.Fatalf("InstallJob.target enum = %v, missing %q", targets, target)
 		}
 	}
 }
 
-func TestBuild_SpawnHarnessEnumIncludesPrimeAgent(t *testing.T) {
+func TestBuild_SpawnHarnessEnumIncludesCodex(t *testing.T) {
 	got, err := specgen.Build()
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
-	if !strings.Contains(string(got), "          - prime-agent\n") {
-		t.Fatal("SpawnSessionRequest harness enum does not contain prime-agent")
+	if !strings.Contains(string(got), "          - codex\n") {
+		t.Fatal("SpawnSessionRequest harness enum does not contain codex")
 	}
 }
 
-func TestBuild_DelegateAgentEnumIncludesPrimeAgent(t *testing.T) {
+func TestBuild_DelegateAgentEnumIncludesCodex(t *testing.T) {
 	got, err := specgen.Build()
 	if err != nil {
 		t.Fatalf("Build: %v", err)
@@ -129,8 +129,8 @@ func TestBuild_DelegateAgentEnumIncludesPrimeAgent(t *testing.T) {
 		t.Fatalf("parse generated OpenAPI: %v", err)
 	}
 	agents := doc.Components.Schemas["DelegateTaskRequest"].Properties["agent"].Enum
-	if !slices.Contains(agents, "prime-agent") {
-		t.Fatalf("DelegateTaskRequest agent enum = %v, want prime-agent", agents)
+	if !slices.Contains(agents, "codex") {
+		t.Fatalf("DelegateTaskRequest agent enum = %v, want codex", agents)
 	}
 }
 
@@ -144,8 +144,8 @@ func TestBuild_OpenCodeV2HarnessContracts(t *testing.T) {
 		if !slices.Contains(values, "opencode-v2") {
 			t.Errorf("%s.%s enum = %v, missing opencode-v2", schema, field, values)
 		}
-		if !slices.Contains(values, "opencode") {
-			t.Errorf("%s.%s enum = %v, missing existing opencode", schema, field, values)
+		if slices.Contains(values, "opencode") {
+			t.Errorf("%s.%s enum = %v, still lists the removed opencode v1 harness", schema, field, values)
 		}
 	}
 	for schema, field := range map[string]string{
@@ -157,8 +157,8 @@ func TestBuild_OpenCodeV2HarnessContracts(t *testing.T) {
 		if !slices.Contains(values, "opencode-v2") {
 			t.Errorf("%s.%s enum = %v, missing opencode-v2", schema, field, values)
 		}
-		if !slices.Contains(values, "opencode") {
-			t.Errorf("%s.%s enum = %v, missing existing opencode reviewer", schema, field, values)
+		if slices.Contains(values, "opencode") {
+			t.Errorf("%s.%s enum = %v, still lists the removed opencode v1 reviewer", schema, field, values)
 		}
 	}
 }
@@ -321,7 +321,7 @@ func TestBuild_OMPIsPubliclySpawnable(t *testing.T) {
 func TestBuild_FXPublicHarnessContracts(t *testing.T) {
 	doc := buildSchemas(t)
 	for schema, field := range map[string]string{
-		"SpawnSessionRequest": "harness", "DelegateTaskRequest": "agent", "InstallJob": "target",
+		"SpawnSessionRequest": "harness", "DelegateTaskRequest": "agent",
 	} {
 		if values := doc.Components.Schemas[schema].Properties[field].Enum; !slices.Contains(values, "fx") {
 			t.Errorf("%s.%s enum = %v, want fx", schema, field, values)
@@ -337,15 +337,15 @@ func TestBuild_OMPIsPubliclyDelegatable(t *testing.T) {
 	}
 }
 
-func TestBuild_CodewhaleIsPubliclySpawnableAndDelegatable(t *testing.T) {
+func TestBuild_OpenCodeV2IsPubliclySpawnableAndDelegatable(t *testing.T) {
 	doc := buildSchemas(t)
 	harnesses := doc.Components.Schemas["SpawnSessionRequest"].Properties["harness"].Enum
-	if !slices.Contains(harnesses, "codewhale") {
-		t.Fatalf("SpawnSessionRequest harness enum = %v, want codewhale", harnesses)
+	if !slices.Contains(harnesses, "opencode-v2") {
+		t.Fatalf("SpawnSessionRequest harness enum = %v, want opencode-v2", harnesses)
 	}
 	agents := doc.Components.Schemas["DelegateTaskRequest"].Properties["agent"].Enum
-	if !slices.Contains(agents, "codewhale") {
-		t.Fatalf("DelegateTaskRequest agent enum = %v, want codewhale", agents)
+	if !slices.Contains(agents, "opencode-v2") {
+		t.Fatalf("DelegateTaskRequest agent enum = %v, want opencode-v2", agents)
 	}
 }
 

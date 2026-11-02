@@ -346,7 +346,7 @@ describe("SessionChatSurface link routing", () => {
 	});
 
 	it("keeps OpenCode approvals writable when its provider supplies Build/Plan mode", () => {
-		conversationState.snapshot = { capabilities: ["config_options"], harness: "opencode" };
+		conversationState.snapshot = { capabilities: ["config_options"], harness: "opencode-v2" };
 		configState.options = [{
 			id: "mode",
 			name: "Mode",
@@ -357,13 +357,13 @@ describe("SessionChatSurface link routing", () => {
 		}];
 		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
 
-		render(<Wrapper client={queryClient}><SessionChatSurface session={{ ...session, provider: "opencode" }} /></Wrapper>);
+		render(<Wrapper client={queryClient}><SessionChatSurface session={{ ...session, provider: "opencode-v2" }} /></Wrapper>);
 
 		expect(screen.getByTestId("turn-settings-available")).toHaveTextContent("true");
 	});
 
 	it("leaves switched-off models out of a provider's model option, keeping its current value", async () => {
-		conversationState.snapshot = { capabilities: ["config_options"], harness: "opencode" };
+		conversationState.snapshot = { capabilities: ["config_options"], harness: "opencode-v2" };
 		configState.loaded = true;
 		configState.options = [
 			{
@@ -376,11 +376,11 @@ describe("SessionChatSurface link routing", () => {
 			},
 		];
 		getMock.mockImplementation(async (path: string) => path === "/api/v1/settings"
-			? { data: { defaultSessionMode: "chat", chatHarnesses: [], harnessDefaults: { opencode: { disabledModels: ["model-b", "model-c"] } } }, error: undefined, response: { status: 200 } }
+			? { data: { defaultSessionMode: "chat", chatHarnesses: [], harnessDefaults: { "opencode-v2": { disabledModels: ["model-b", "model-c"] } } }, error: undefined, response: { status: 200 } }
 			: { data: { switches: agentSwitchState.data }, error: undefined, response: { status: 200 } });
 		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
 
-		render(<Wrapper client={queryClient}><SessionChatSurface session={{ ...session, provider: "opencode" }} /></Wrapper>);
+		render(<Wrapper client={queryClient}><SessionChatSurface session={{ ...session, provider: "opencode-v2" }} /></Wrapper>);
 
 		await waitFor(() => expect(screen.getByTestId("config-option-model")).toHaveTextContent("model-a,model-c"));
 		expect(screen.getByTestId("config-option-mode")).toHaveTextContent("build,plan");

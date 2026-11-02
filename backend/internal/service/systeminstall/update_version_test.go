@@ -13,7 +13,7 @@ func TestFindUpdateVersionAcceptsSupportedForms(t *testing.T) {
 	}{
 		{name: "two components", input: "tool v1.2\n", wantDisplay: "1.2", wantCore: [4]uint64{1, 2}},
 		{name: "three components", input: "tool 1.2.3", wantDisplay: "1.2.3", wantCore: [4]uint64{1, 2, 3}},
-		{name: "copilot sentence", input: "GitHub Copilot CLI 1.0.91.\nRun 'copilot update' to check for updates.", wantDisplay: "1.0.91", wantCore: [4]uint64{1, 0, 91}},
+		{name: "sentence with trailing text", input: "CLI 1.0.91.\nRun 'cli update' to check for updates.", wantDisplay: "1.0.91", wantCore: [4]uint64{1, 0, 91}},
 		{name: "sentence at end", input: "CLI 1.2.3.", wantDisplay: "1.2.3", wantCore: [4]uint64{1, 2, 3}},
 		{name: "four components", input: "release=1.2.3.4", wantDisplay: "1.2.3.4", wantCore: [4]uint64{1, 2, 3, 4}},
 		{name: "prerelease and build", input: "cli 1.2.3-beta.2+build.7", wantDisplay: "1.2.3-beta.2+build.7", wantCore: [4]uint64{1, 2, 3}, wantPre: []string{"beta", "2"}, wantBuild: "build.7"},
@@ -86,70 +86,5 @@ func TestCompareUpdateVersionsRequiresCompatibleChannels(t *testing.T) {
 				t.Fatalf("compare(%q, %q) = (%d, %t), want (%d, %t)", tt.installed, tt.latest, order, versionsComparable, tt.wantOrder, tt.wantComparable)
 			}
 		})
-	}
-}
-
-func TestBuildSuffixSchemeReadsVendorBuildsAsBuilds(t *testing.T) {
-	for _, tt := range []struct {
-		target    Target
-		output    string
-		wantCore  [4]uint64
-		wantBuild string
-	}{
-		{target: TargetCursor, output: "2026.10.01-e373342\n", wantCore: [4]uint64{2026, 10, 1}, wantBuild: "e373342"},
-		{target: TargetMuse, output: "Muse Code 1.4.3 (1.4.3-R5018.1)\n", wantCore: [4]uint64{1, 4, 3}, wantBuild: "R5018.1"},
-	} {
-		t.Run(string(tt.target), func(t *testing.T) {
-			scheme := versionSchemeFor(tt.target)
-			got, ok := scheme.find(tt.output)
-			if !ok {
-				t.Fatalf("find(%q) did not find a version", tt.output)
-			}
-			if got.core != tt.wantCore || got.build != tt.wantBuild || len(got.prerelease) != 0 {
-				t.Fatalf("version = %+v, want core=%v build=%q and no prerelease", got, tt.wantCore, tt.wantBuild)
-			}
-		})
-	}
-	if _, ok := versionSemver.find("Muse Code 1.4.3 (1.4.3-R5018.1)"); ok {
-		t.Fatal("semver scheme accepted a release and a different prerelease as one version")
-	}
-	if _, ok := versionBuildSuffix.find("tool 1.4.3-R1 (1.4.3-R2)"); ok {
-		t.Fatal("build-suffix scheme accepted two different builds as one version")
-	}
-}
-
-func TestBuildSuffixSchemeOrdersByCoreOnly(t *testing.T) {
-	for _, tt := range []struct {
-		name, installed, latest string
-		want                    int
-		comparable              bool
-	}{
-		{name: "newer amp timestamp", installed: "0.0.1791033893-g28ae98", latest: "0.0.1791388870-g4d32fb", want: -1, comparable: true},
-		{name: "newer cursor date", installed: "2026.09.26-dd393fe", latest: "2026.10.01-e373342", want: -1, comparable: true},
-		{name: "same build", installed: "2026.10.01-e373342", latest: "2026.10.01-e373342", want: 0, comparable: true},
-		{name: "same-day rebuild", installed: "2026.10.01-e373342", latest: "2026.10.01-a1b2c3d", comparable: false},
-		{name: "new muse build number", installed: "1.4.3-R5018.1", latest: "1.4.3-R5019.0", comparable: false},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			installed, ok := versionBuildSuffix.parse(tt.installed)
-			if !ok {
-				t.Fatalf("parse(%q) failed", tt.installed)
-			}
-			latest, ok := versionBuildSuffix.parse(tt.latest)
-			if !ok {
-				t.Fatalf("parse(%q) failed", tt.latest)
-			}
-			got, canCompare := versionBuildSuffix.compare(installed, latest)
-			if canCompare != tt.comparable || canCompare && got != tt.want {
-				t.Fatalf("compare = %d, %t; want %d, %t", got, canCompare, tt.want, tt.comparable)
-			}
-		})
-	}
-}
-
-func TestBuildSuffixSchemeAcceptsHashedRegistryRelease(t *testing.T) {
-	result, ok := managedResult("0.0.1791388870-g4d32fb", versionSchemeFor(TargetCursor))
-	if !ok || result != "0.0.1791388870-g4d32fb" {
-		t.Fatalf("result = %+v, %t", result, ok)
 	}
 }

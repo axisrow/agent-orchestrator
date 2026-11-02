@@ -19,9 +19,8 @@ const MODELS_PAGE_SIZE = 10;
 // Multi-provider catalogs can be browsed before credentials are configured.
 // Account-scoped harnesses retain their sign-in gate.
 export const MULTI_PROVIDER_HARNESSES = new Set<string>([
-	"opencode", "opencode-v2", "kilocode", "pi", "omp", "kimchi", "prime-agent",
-	"crush", "mimo-code", "command-code", "aider", "kimi", "codewhale",
-	"continue", "goose", "vibe", "cline", "autohand", "qwen", "fx",
+	"opencode-v2", "pi", "omp", "kimi", "goose", "autohand",
+	"qwen", "fx",
 ]);
 
 /** The harness catalog, browsed by provider. */

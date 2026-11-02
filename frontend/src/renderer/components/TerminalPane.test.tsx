@@ -406,24 +406,24 @@ function activeXterm(): HTMLElement {
 }
 
 describe("TerminalPane empty states", () => {
-	it("does not send Cursor theme protocol to a standalone shell owned by a Cursor session", () => {
-		const cursorSession = { ...worker, provider: "cursor" } satisfies WorkspaceSession;
+	it("does not send Cursor theme protocol to a standalone shell owned by an agent session", () => {
+		const agentSession = { ...worker, provider: "opencode-v2" } satisfies WorkspaceSession;
 		const shell = {
 			handleId: "shell-handle",
-			sessionId: cursorSession.id,
+			sessionId: agentSession.id,
 			workingDir: "/repo/my-app",
 			title: "Terminal 1",
 			createdAt: "2026-10-02T00:00:00Z",
 		} satisfies ShellTerminal;
 		const view = renderCachedPane({
-			session: cursorSession,
-			sessions: [cursorSession],
+			session: agentSession,
+			sessions: [agentSession],
 			shellTerminals: [shell],
 			terminalTarget: {
 				generation: shell.createdAt,
 				kind: "shell",
 				handleId: shell.handleId,
-				sessionId: cursorSession.id,
+				sessionId: agentSession.id,
 				title: shell.title,
 			},
 		});
@@ -1473,23 +1473,16 @@ describe("terminal restore", () => {
 });
 
 describe("providerScrollsByKeyboard", () => {
-	// opencode, its derivatives kilocode and MiMo Code, and grok use TUIs that scroll their own transcripts
-	// by keyboard and ignore SGR wheel reports, so they must opt into the
+	// The opencode TUI lineage scrolls its own transcript
+	// by keyboard and ignores SGR wheel reports, so it must opt into the
 	// PageUp/PageDown wheel routing (see XtermTerminal's paneScrollsByKeyboard).
 	it("is true for keyboard-scroll TUIs", () => {
-		expect(providerScrollsByKeyboard("opencode")).toBe(true);
 		expect(providerScrollsByKeyboard("opencode-v2")).toBe(true);
-		expect(providerScrollsByKeyboard("kilocode")).toBe(true);
-		expect(providerScrollsByKeyboard("grok")).toBe(true);
-		expect(providerScrollsByKeyboard("mimo-code")).toBe(true);
 	});
 
 	it("is false for mouse-report/native-scroll providers", () => {
 		expect(providerScrollsByKeyboard("codex")).toBe(false);
 		expect(providerScrollsByKeyboard("claude-code")).toBe(false);
-		// Muse writes its transcript to the normal buffer. PageUp is ignored by
-		// Muse, so wheel input must stay on the SGR -> tmux copy-mode path.
-		expect(providerScrollsByKeyboard("muse")).toBe(false);
 	});
 
 	it("is false when the provider is unknown", () => {

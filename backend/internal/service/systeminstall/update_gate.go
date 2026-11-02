@@ -89,7 +89,7 @@ func updateWhileRunningLevel(goos string, target Target, method string, cask boo
 			return UpdateWhileRunningSafe
 		}
 		return UpdateWhileRunningWarn
-	case "npm", "bun", "uv", "pipx":
+	case "npm", "bun":
 		return UpdateWhileRunningWarn
 	default:
 		return UpdateWhileRunningBlocked
@@ -105,15 +105,12 @@ func updateWhileRunningLevel(goos string, target Target, method string, cask boo
 // later, so it stays out.
 var singleBinaryCasks = map[Target]string{
 	TargetClaudeCode: "claude-code",
-	TargetCopilot:    "copilot-cli",
 }
 
 // versionedVendorInstalls keep every release in its own file or directory and
 // switch a launcher link, so an update never touches the running release.
 var versionedVendorInstalls = map[Target]bool{
 	TargetClaudeCode: true,
-	TargetCursor:     true,
-	TargetGrok:       true,
 }
 
 // effectiveUpdateLevel applies AO_UPDATE_WHILE_RUNNING and AO_UPDATE_WHEN_IDLE.

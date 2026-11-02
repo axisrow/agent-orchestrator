@@ -56,119 +56,6 @@ func TestNormalizeShowsConcreteNameForDefaultCatalogModel(t *testing.T) {
 	}
 }
 
-// Verbatim shape of `cmd --list-models` from Command Code v1.74.0, including the
-// banner, section headings, and the `(default)` marker.
-const commandCodeListModelsFixture = `Available models  ·  85 models
-
-Open Source
-
-deepseek/deepseek-v4-pro               hybrid-attention long-context reasoning
-deepseek/deepseek-v4-flash             fast hybrid-attention reasoning (default)
-minimaxai/minimax-m3                   600B sparse-MoE agentic coding with 1M context
-inclusionai/ling-3.1-flash:free        FREE hybrid-reasoning MoE for coding & tool-using agents
-
-Stealth
-
-stealth/space-bunny-alpha              FREE stealth model with 1M context
-
-Anthropic
-
-claude-sonnet-5-5                      best combo of speed & intelligence (recommended)
-`
-
-func TestParseCommandCodeModelsUsesIDAsLabel(t *testing.T) {
-	got, err := parseCommandCodeModels([]byte(commandCodeListModelsFixture))
-	if err != nil {
-		t.Fatalf("parseCommandCodeModels: %v", err)
-	}
-	byID := make(map[string]string, len(got))
-	for _, m := range got {
-		byID[m.ID] = m.Label
-	}
-	for id, wantLabel := range map[string]string{
-		"deepseek/deepseek-v4-pro":        "deepseek/deepseek-v4-pro",
-		"minimaxai/minimax-m3":            "minimaxai/minimax-m3",
-		"stealth/space-bunny-alpha":       "stealth/space-bunny-alpha",
-		"inclusionai/ling-3.1-flash:free": "inclusionai/ling-3.1-flash:free",
-		"claude-sonnet-5-5":               "claude-sonnet-5-5",
-	} {
-		label, ok := byID[id]
-		if !ok {
-			t.Errorf("missing model %q; parsed %v", id, byID)
-			continue
-		}
-		if label != wantLabel {
-			t.Errorf("model %q label = %q, want the id", id, label)
-		}
-	}
-}
-
-// The regression this fixes: the picker offered "balances intelligence and
-// cost" and similar descriptions as selectable models.
-func TestParseCommandCodeModelsNeverUsesDescriptionAsLabel(t *testing.T) {
-	got, err := parseCommandCodeModels([]byte(commandCodeListModelsFixture))
-	if err != nil {
-		t.Fatalf("parseCommandCodeModels: %v", err)
-	}
-	descriptions := []string{
-		"hybrid-attention long-context reasoning",
-		"fast hybrid-attention reasoning",
-		"600B sparse-MoE agentic coding with 1M context",
-		"best combo of speed & intelligence (recommended)",
-		"FREE stealth model with 1M context",
-	}
-	for _, m := range got {
-		for _, description := range descriptions {
-			if m.Label == description {
-				t.Errorf("model %q uses its description as the label", m.ID)
-			}
-		}
-	}
-}
-
-func TestParseCommandCodeModelsReadsDefaultMarker(t *testing.T) {
-	got, err := parseCommandCodeModels([]byte(commandCodeListModelsFixture))
-	if err != nil {
-		t.Fatalf("parseCommandCodeModels: %v", err)
-	}
-	var defaults []string
-	for _, m := range got {
-		if m.IsDefault {
-			defaults = append(defaults, m.ID)
-		}
-	}
-	if len(defaults) != 1 || defaults[0] != "deepseek/deepseek-v4-flash" {
-		t.Fatalf("default models = %v, want [deepseek/deepseek-v4-flash]", defaults)
-	}
-}
-
-// The banner and section headings must not become selectable models.
-func TestParseCommandCodeModelsSkipsBannerAndSections(t *testing.T) {
-	got, err := parseCommandCodeModels([]byte(commandCodeListModelsFixture))
-	if err != nil {
-		t.Fatalf("parseCommandCodeModels: %v", err)
-	}
-	if len(got) != 6 {
-		t.Fatalf("parsed %d models, want 6: %#v", len(got), got)
-	}
-	for _, m := range got {
-		switch m.ID {
-		case "Available", "models", "Open", "Source", "Stealth", "Anthropic":
-			t.Errorf("banner or section heading parsed as a model: %#v", m)
-		}
-	}
-}
-
-func TestParseCommandCodeModelsEmptyOutput(t *testing.T) {
-	got, err := parseCommandCodeModels([]byte("Available models  ·  0 models\n"))
-	if err != nil {
-		t.Fatalf("parseCommandCodeModels: %v", err)
-	}
-	if len(got) != 0 {
-		t.Fatalf("got %#v, want no models", got)
-	}
-}
-
 func environmentContains(env []string, wanted string) bool {
 	for _, item := range env {
 		if item == wanted {
@@ -210,29 +97,6 @@ func TestModelDiscoveryErrorSurfacesCommandOutput(t *testing.T) {
 	}
 }
 
-func TestOpenCodeCredentialPresenceUnlocksProvider(t *testing.T) {
-	base := map[string]string{"EXISTING": "1"}
-	got := withOpenCodeCredentialPresence(base, "anthropic_api_key")
-	if got["ANTHROPIC_API_KEY"] != modelDiscoveryPresenceValue {
-		t.Fatalf("ANTHROPIC_API_KEY = %q, want presence placeholder", got["ANTHROPIC_API_KEY"])
-	}
-	if got["EXISTING"] != "1" {
-		t.Fatalf("existing env not preserved: %v", got)
-	}
-	// The caller's map must not be mutated (it may be reused/cached).
-	if _, leaked := base["ANTHROPIC_API_KEY"]; leaked {
-		t.Fatalf("input env was mutated: %v", base)
-	}
-}
-
-func TestOpenCodeCredentialPresenceUnknownTypeIsNoop(t *testing.T) {
-	base := map[string]string{"EXISTING": "1"}
-	got := withOpenCodeCredentialPresence(base, "not_a_provider")
-	if len(got) != 1 || got["EXISTING"] != "1" {
-		t.Fatalf("unknown credential type must be a no-op, got %v", got)
-	}
-}
-
 func TestModelDiscoveryErrorTailBounded(t *testing.T) {
 	err := modelDiscoveryError(context.Background(), "opencode", errors.New("exit status 1"),
 		[]byte(strings.Repeat("x", discoveryErrorDetailMax*3)))
@@ -245,115 +109,11 @@ func TestModelDiscoveryErrorTailBounded(t *testing.T) {
 	}
 }
 
-func TestKiroDiscoveryRunsOnlyAfterAConfirmedSignIn(t *testing.T) {
-	const missingBinary = "ao-test-missing-kiro-cli"
-	type outcome int
-	const (
-		// ranModelCommand: the model command ran (and failed on the missing binary).
-		ranModelCommand outcome = iota
-		// skippedSignedOut: a clear signed-out answer skipped discovery.
-		skippedSignedOut
-		// failedCheck: an inconclusive check is an ordinary, retried failure.
-		failedCheck
-		// canceled: the caller's context ended during the check.
-		canceled
-	)
-	for _, tc := range []struct {
-		name      string
-		output    string
-		err       error
-		block     bool
-		cancel    bool
-		env       map[string]string
-		want      outcome
-		wantProbe bool
-	}{
-		{name: "signed out", output: `{"error":"Not logged in"}`, err: errors.New("exit status 1"), want: skippedSignedOut, wantProbe: true},
-		{name: "signed out with clean exit", output: "You are not logged in", want: skippedSignedOut, wantProbe: true},
-		{name: "unrecognized output with failed exit", output: "something went wrong", err: errors.New("exit status 2"), want: failedCheck, wantProbe: true},
-		{name: "probe could not run", err: errors.New("exec: permission denied"), want: failedCheck, wantProbe: true},
-		{name: "probe timed out", block: true, want: failedCheck, wantProbe: true},
-		{name: "caller canceled", block: true, cancel: true, want: canceled, wantProbe: true},
-		{name: "signed in", output: "Logged in with Google", want: ranModelCommand, wantProbe: true},
-		{name: "unrecognized output with clean exit", output: `{"accountType":"BuilderId","email":"dev@example.com"}`, want: ranModelCommand, wantProbe: true},
-		{name: "api key", env: map[string]string{"KIRO_API_KEY": "secret"}, want: ranModelCommand},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			previousProbe, previousTimeout := signInProbe, signInCheckTimeout
-			t.Cleanup(func() { signInProbe, signInCheckTimeout = previousProbe, previousTimeout })
-			signInCheckTimeout = 20 * time.Millisecond
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			probed := false
-			signInProbe = func(probeCtx context.Context, binary string, args []string, _ string, _ map[string]string) ([]byte, error) {
-				probed = true
-				if binary != missingBinary || !reflect.DeepEqual(args, []string{"whoami", "--format", "json"}) {
-					t.Fatalf("probe = %s %q, want the discovery binary running whoami --format json", binary, args)
-				}
-				if tc.cancel {
-					cancel()
-				}
-				if tc.block {
-					<-probeCtx.Done()
-					return nil, probeCtx.Err()
-				}
-				return []byte(tc.output), tc.err
-			}
-
-			_, err := (Discoverer{}).Discover(ctx, ports.AgentModelDiscoveryRequest{AgentID: "kiro", Binary: missingBinary, Env: tc.env})
-			if err == nil {
-				t.Fatal("Discover succeeded against a missing binary")
-			}
-			if probed != tc.wantProbe {
-				t.Fatalf("probed = %t, want %t", probed, tc.wantProbe)
-			}
-			skipped := errors.Is(err, ports.ErrAgentModelDiscoverySignInRequired)
-			checkFailed := strings.Contains(err.Error(), "kiro sign-in check")
-			switch tc.want {
-			case ranModelCommand:
-				if skipped || checkFailed {
-					t.Fatalf("Discover error = %v, want the model command to run", err)
-				}
-			case skippedSignedOut:
-				if !skipped {
-					t.Fatalf("Discover error = %v, want a sign-in skip", err)
-				}
-			case failedCheck:
-				if skipped || !checkFailed || errors.Is(err, context.Canceled) {
-					t.Fatalf("Discover error = %v, want an ordinary sign-in check failure", err)
-				}
-			case canceled:
-				if skipped || !errors.Is(err, context.Canceled) {
-					t.Fatalf("Discover error = %v, want the cancellation", err)
-				}
-			}
-		})
-	}
-}
-
-func TestDiscoveryWithoutASignInCheckNeverProbes(t *testing.T) {
-	previous := signInProbe
-	t.Cleanup(func() { signInProbe = previous })
-	signInProbe = func(context.Context, string, []string, string, map[string]string) ([]byte, error) {
-		t.Fatal("sign-in probe ran for a harness without a sign-in check")
-		return nil, nil
-	}
-	for agentID, spec := range commandSpecs {
-		if spec.signIn != nil {
-			continue
-		}
-		if _, err := (Discoverer{}).Discover(context.Background(), ports.AgentModelDiscoveryRequest{AgentID: agentID, Binary: "ao-test-missing-binary"}); errors.Is(err, ports.ErrAgentModelDiscoverySignInRequired) {
-			t.Fatalf("%s discovery was skipped for sign-in", agentID)
-		}
-	}
-}
-
-func TestOpenCodeDiscoveryUsesStableModelsCommandForEachMajor(t *testing.T) {
+func TestOpenCodeDiscoveryUsesStableModelsCommand(t *testing.T) {
 	// Must be the bare `models` subcommand. `--pure` is a global flag some
 	// opencode builds reject ("Unrecognized flag: --pure"), which would empty the
-	// picker; the stable contract for both verified majors is `opencode models`
-	// with no rejectable flag.
-	for _, agentID := range []string{"opencode", "opencode-v2"} {
+	// picker; the stable contract is `opencode models` with no rejectable flag.
+	for _, agentID := range []string{"opencode-v2"} {
 		spec, ok := commandSpecs[agentID]
 		if !ok {
 			t.Errorf("%s has no discovery command", agentID)
@@ -373,96 +133,14 @@ func TestOpenCodeDiscoveryUsesStableModelsCommandForEachMajor(t *testing.T) {
 	}
 }
 
-func TestMiMoCodeDiscoveryUsesNativeModelsCommand(t *testing.T) {
-	spec, ok := commandSpecs["mimo-code"]
-	if !ok {
-		t.Fatal("mimo-code has no discovery command")
-	}
-	if !reflect.DeepEqual(spec.args, []string{"models"}) {
-		t.Fatalf("mimo-code discovery args = %q, want [models]", spec.args)
-	}
-	base := Base("mimo-code")
-	if !base.AllowCustom || base.CustomModelEntry != ports.CustomModelEntryDirect {
-		t.Fatalf("mimo-code custom model policy = (%v, %q), want direct", base.AllowCustom, base.CustomModelEntry)
-	}
-}
-
-func TestParseMiMoModelsAcceptsInlineDetails(t *testing.T) {
-	got, err := parseMiMoModels([]byte("mimo/mimo-auto — window 1M, compacts at 900K\nxiaomi/mimo-v2.5 — window 1.05M\n"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got) != 2 || got[0].ID != "mimo/mimo-auto" || got[1].ID != "xiaomi/mimo-v2.5" || got[0].Provider != "mimo" || got[1].Provider != "xiaomi" {
-		t.Fatalf("models = %#v", got)
-	}
-}
-
-func TestAiderUsesDocumentedDiscoveryCommand(t *testing.T) {
-	spec := commandSpecs["aider"]
-	want := []string{"--no-check-update", "--no-git", "--no-gitignore", "--no-analytics", "--list-models", "."}
-	if strings.Join(spec.args, "\x00") != strings.Join(want, "\x00") {
-		t.Fatalf("aider discovery args = %q, want %q", spec.args, want)
-	}
-}
-
-func TestCodewhaleResolvedModelMarksCatalogDefault(t *testing.T) {
-	models := []ports.AgentModelInfo{
-		{ID: "deepseek-chat", Label: "DeepSeek Chat"},
-		{ID: "deepseek-flash", Label: "DeepSeek Flash"},
-	}
-	got := applyCodewhaleResolvedModel(models, []byte(
-		"requested: deepseek-flash\nresolved: deepseek-flash\nprovider: deepseek\nused_fallback: false\n"))
-	if len(got) != 2 {
-		t.Fatalf("models len = %d, want 2", len(got))
-	}
-	if !got[1].IsDefault || got[0].IsDefault {
-		t.Fatalf("default flags = [%v, %v], want [false, true]", got[0].IsDefault, got[1].IsDefault)
-	}
-}
-
-func TestCodewhaleResolvedModelOutsideCatalogIsAppended(t *testing.T) {
-	models := []ports.AgentModelInfo{{ID: "deepseek-chat", Label: "DeepSeek Chat"}}
-	got := applyCodewhaleResolvedModel(models, []byte(
-		"requested: deepseek-v4-pro\nresolved: deepseek-v4-pro\nprovider: deepseek\n"))
-	if len(got) != 2 {
-		t.Fatalf("models len = %d, want the resolved model appended", len(got))
-	}
-	appended := got[1]
-	if appended.ID != "deepseek-v4-pro" || !appended.IsDefault || appended.Provider != "deepseek" {
-		t.Fatalf("appended entry = %+v, want deepseek-v4-pro default from deepseek", appended)
-	}
-	if got[0].IsDefault {
-		t.Fatal("the unmatched catalog entry must not be marked default")
-	}
-}
-
-func TestCodewhaleResolveFailureLeavesCatalogUnchanged(t *testing.T) {
-	models := []ports.AgentModelInfo{{ID: "deepseek-chat", Label: "DeepSeek Chat"}}
-	for name, output := range map[string][]byte{
-		"empty":       nil,
-		"unparseable": []byte("provider: deepseek\nmodel: none\n"),
-	} {
-		t.Run(name, func(t *testing.T) {
-			got := applyCodewhaleResolvedModel(models, output)
-			if len(got) != 1 || got[0].IsDefault {
-				t.Fatalf("catalog changed on %s: %+v", name, got)
-			}
-		})
-	}
-}
-
 func TestOMPAndHelpBackedAgentsUseDocumentedDiscoveryCommands(t *testing.T) {
 	tests := []struct {
 		agent string
 		want  []string
 	}{
 		{agent: "omp", want: []string{"models", "--json"}},
-		{agent: "codewhale", want: []string{"models", "--json"}},
-		{agent: "copilot", want: []string{"help", "config"}},
 		{agent: "droid", want: []string{"exec", "--help"}},
-		{agent: "crush", want: []string{"models"}},
 		{agent: "fx", want: []string{"models", "--json"}},
-		{agent: "command-code", want: []string{"--list-models"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.agent, func(t *testing.T) {
@@ -527,16 +205,9 @@ func TestBaseClassifiesStaticTextAndModeAgents(t *testing.T) {
 		{agent: "claude-code", mode: ports.ModelSelectionCatalog},
 		{agent: "codex", mode: ports.ModelSelectionCatalog},
 		{agent: "amp", mode: ports.ModelSelectionModeList, count: 4},
-		{agent: "muse", mode: ports.ModelSelectionCatalog, count: 3},
-		{agent: "aider", mode: ports.ModelSelectionCatalog},
 		{agent: "autohand", mode: ports.ModelSelectionCatalog},
-		{agent: "kimchi", mode: ports.ModelSelectionCatalog},
-		{agent: "prime-agent", mode: ports.ModelSelectionCatalog},
 		{agent: "qwen", mode: ports.ModelSelectionCatalog},
-		{agent: "copilot", mode: ports.ModelSelectionCatalog},
 		{agent: "droid", mode: ports.ModelSelectionCatalog},
-		{agent: "continue", mode: ports.ModelSelectionCatalog},
-		{agent: "crush", mode: ports.ModelSelectionCatalog},
 		{agent: "omp", mode: ports.ModelSelectionCatalog},
 	}
 	for _, tc := range tests {
@@ -546,24 +217,6 @@ func TestBaseClassifiesStaticTextAndModeAgents(t *testing.T) {
 				t.Fatalf("Base(%q) = %#v", tc.agent, got)
 			}
 		})
-	}
-}
-
-func TestMuseReturnsStaticCatalogWithoutStartingAgent(t *testing.T) {
-	got, err := (Discoverer{}).Discover(context.Background(), ports.AgentModelDiscoveryRequest{
-		AgentID: "muse",
-		Binary:  "/missing/muse",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []ports.AgentModelInfo{
-		{ID: "muse-spark", Label: "Muse Spark", IsDefault: true},
-		{ID: "muse-spark-1.1", Label: "Muse Spark 1.1"},
-		{ID: "muse-spark-1.2", Label: "Muse Spark 1.2"},
-	}
-	if got.Source != "official-catalog" || !reflect.DeepEqual(got.Models, want) {
-		t.Fatalf("catalog = %#v, want models %#v", got, want)
 	}
 }
 
@@ -589,32 +242,6 @@ func TestMemcodeReturnsNativePickerLabelsWithoutStartingAgent(t *testing.T) {
 	}
 }
 
-func TestUnrealCatalogShowsEffectiveModelAndAllowsOverride(t *testing.T) {
-	t.Setenv("UNREAL_HARNESS_LLM_PROVIDER", "openai-codex")
-	t.Setenv("UNREAL_HARNESS_LLM_MODEL", "gpt-6-sol")
-	request := ports.AgentModelDiscoveryRequest{AgentID: "unreal-agent"}
-	got, err := (Discoverer{}).Discover(context.Background(), request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !got.AllowCustom || got.CustomModelEntry != ports.CustomModelEntryDirect ||
-		len(got.Models) != 1 || got.Models[0].ID != "gpt-6-sol" || !got.Models[0].IsDefault {
-		t.Fatalf("Unreal catalog = %#v", got)
-	}
-	before := (Discoverer{}).CatalogFingerprint(context.Background(), request)
-	request.Env = map[string]string{"UNREAL_HARNESS_LLM_MODEL": "custom-model"}
-	got, err = (Discoverer{}).Discover(context.Background(), request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got.Models) != 1 || got.Models[0].ID != "custom-model" || !got.Models[0].IsDefault {
-		t.Fatalf("project override catalog = %#v", got)
-	}
-	if before == (Discoverer{}).CatalogFingerprint(context.Background(), request) {
-		t.Fatal("Unreal model override did not invalidate catalog")
-	}
-}
-
 func TestClaudeWithoutDiscoveryDoesNotInventModels(t *testing.T) {
 	request := claudeRequest(t)
 	request.Binary = "/missing/claude"
@@ -636,32 +263,18 @@ func TestCustomModelEntryPolicy(t *testing.T) {
 	}{
 		{agent: "claude-code", wantEntryMode: "direct", wantSelection: ports.ModelSelectionCatalog},
 		{agent: "codex", wantEntryMode: "direct", wantSelection: ports.ModelSelectionCatalog},
-		{agent: "opencode", wantEntryMode: "direct", wantSelection: ports.ModelSelectionCatalog},
-		{agent: "grok", wantEntryMode: "direct", wantSelection: ports.ModelSelectionCatalog},
-		{agent: "cursor", wantEntryMode: "direct", wantSelection: ports.ModelSelectionCatalog},
+		{agent: "opencode-v2", wantEntryMode: "direct", wantSelection: ports.ModelSelectionCatalog},
 		{agent: "qwen", wantEntryMode: "direct", wantSelection: ports.ModelSelectionCatalog},
-		{agent: "copilot", wantEntryMode: "none", wantSelection: ports.ModelSelectionCatalog},
 		{agent: "kimi", wantEntryMode: "direct", wantSelection: ports.ModelSelectionCatalog},
-		{agent: "muse", wantEntryMode: "direct", wantSelection: ports.ModelSelectionCatalog},
 		{agent: "droid", wantEntryMode: "none", wantSelection: ports.ModelSelectionCatalog},
 		{agent: "amp", wantEntryMode: "none", wantSelection: ports.ModelSelectionModeList},
 		{agent: "agy", wantEntryMode: "none", wantSelection: ports.ModelSelectionCatalog},
-		{agent: "crush", wantEntryMode: "none", wantSelection: ports.ModelSelectionCatalog},
-		{agent: "aider", wantEntryMode: "direct", wantSelection: ports.ModelSelectionCatalog},
 		{agent: "goose", wantEntryMode: "direct", wantSelection: ports.ModelSelectionCatalog},
-		{agent: "auggie", wantEntryMode: "none", wantSelection: ports.ModelSelectionCatalog},
-		{agent: "continue", wantEntryMode: "configured", wantSelection: ports.ModelSelectionCatalog},
-		{agent: "devin", wantEntryMode: "direct", wantSelection: ports.ModelSelectionCatalog},
 		{agent: "omp", wantEntryMode: "none", wantSelection: ports.ModelSelectionCatalog},
-		{agent: "cline", wantEntryMode: "configured", wantSelection: ports.ModelSelectionCatalog},
-		{agent: "kiro", wantEntryMode: "none", wantSelection: ports.ModelSelectionCatalog},
-		{agent: "kilocode", wantEntryMode: "configured", wantSelection: ports.ModelSelectionCatalog},
-		{agent: "vibe", wantEntryMode: "configured", wantSelection: ports.ModelSelectionCatalog},
 		{agent: "pi", wantEntryMode: "configured", wantSelection: ports.ModelSelectionCatalog},
-		{agent: "kimchi", wantEntryMode: "configured", wantSelection: ports.ModelSelectionCatalog},
-		{agent: "prime-agent", wantEntryMode: "configured", wantSelection: ports.ModelSelectionCatalog},
 		{agent: "autohand", wantEntryMode: "direct", wantSelection: ports.ModelSelectionCatalog},
 		{agent: "fx", wantEntryMode: "direct", wantSelection: ports.ModelSelectionCatalog},
+		{agent: "memcode", wantEntryMode: "none", wantSelection: ports.ModelSelectionCatalog},
 	}
 
 	for _, tc := range tests {
@@ -688,18 +301,7 @@ func TestCustomModelEntryPolicy(t *testing.T) {
 	}
 }
 
-func TestPrimeAgentDiscoveryUsesDocumentedModelCommand(t *testing.T) {
-	spec := commandSpecs["prime-agent"]
-	want := []string{"model", "list"}
-	if !reflect.DeepEqual(spec.args, want) {
-		t.Fatalf("prime-agent discovery args = %q, want %q", spec.args, want)
-	}
-	if spec.parser == nil {
-		t.Fatal("prime-agent parser is nil")
-	}
-}
-
-func TestParsePrimeAgentModelsBuildsProviderQualifiedIDs(t *testing.T) {
+func TestParsePiModelsFromPrimeAgentStyleTableBuildsProviderQualifiedIDs(t *testing.T) {
 	got, err := parsePiModels([]byte(`provider   model                 context  max-out  thinking  images
 anthropic  claude-opus-4-8       200K     64K      yes       yes
 openai     gpt-5.6-sol           400K     128K     yes       yes
@@ -775,68 +377,6 @@ func TestCodexDiscoveryListsNewestModelsFirst(t *testing.T) {
 	}
 }
 
-func TestClineDiscoveryUsesACPModelOptions(t *testing.T) {
-	discoverer := Discoverer{ACPOptions: map[string]ACPOptionListFunc{"cline": func(context.Context, ports.AgentModelDiscoveryRequest) ([]ports.ChatConfigOption, error) {
-		return []ports.ChatConfigOption{
-			{
-				ID: "model", Name: "Model", Category: "model", Type: ports.ChatConfigOptionSelect,
-				Current: ports.ChatConfigOptionValue{Select: "anthropic/claude-sonnet-4-6"},
-				Choices: []ports.ChatConfigOptionChoice{
-					{Value: "anthropic/claude-sonnet-4-6", Name: "Claude Sonnet 4.6", Group: "anthropic", GroupName: "Anthropic"},
-					{Value: "openai/gpt-5.4", Name: "GPT-5.4", Group: "openai", GroupName: "OpenAI"},
-				},
-			},
-			{ID: "mode", Name: "Mode", Category: "mode", Type: ports.ChatConfigOptionSelect},
-		}, nil
-	}}}
-	got, err := discoverer.Discover(context.Background(), ports.AgentModelDiscoveryRequest{AgentID: "cline", Binary: "/bin/cline"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	// ACP groups name the model vendors; the shared catalog identifies Cline
-	// as the serving connection while preserving native IDs and the default.
-	want := []ports.AgentModelInfo{
-		{ID: "anthropic/claude-sonnet-4-6", Label: "Claude Sonnet 4.6", Provider: "cline", IsDefault: true},
-		{ID: "openai/gpt-5.4", Label: "GPT-5.4", Provider: "cline"},
-	}
-	if !reflect.DeepEqual(got.Models, want) || got.Source != "acp" {
-		t.Fatalf("catalog = %#v, want models %#v from ACP", got, want)
-	}
-}
-
-func TestDevinDiscoveryUsesACPModelOptions(t *testing.T) {
-	discoverer := Discoverer{ACPOptions: map[string]ACPOptionListFunc{"devin": func(context.Context, ports.AgentModelDiscoveryRequest) ([]ports.ChatConfigOption, error) {
-		return []ports.ChatConfigOption{
-			{
-				ID: "permissionMode", Name: "Permission Mode", Type: ports.ChatConfigOptionSelect,
-				Choices: []ports.ChatConfigOptionChoice{{Value: "accept-edits", Name: "Code"}},
-			},
-			{
-				ID: "model", Name: "Model", Category: "model", Type: ports.ChatConfigOptionSelect,
-				Current: ports.ChatConfigOptionValue{Select: "swe-1-6-slow"},
-				Choices: []ports.ChatConfigOptionChoice{
-					{Value: "swe-1-6-slow", Name: "SWE-1.6 Slow"},
-					{Value: "claude-sonnet-4-6", Name: "Claude Sonnet 4.6"},
-				},
-			},
-		}, nil
-	}}}
-	got, err := discoverer.Discover(context.Background(), ports.AgentModelDiscoveryRequest{AgentID: "devin", Binary: "devin"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []ports.AgentModelInfo{
-		{ID: "swe-1-6-slow", Label: "SWE-1.6 Slow", IsDefault: true},
-		{ID: "claude-sonnet-4-6", Label: "Claude Sonnet 4.6"},
-	}
-	if !reflect.DeepEqual(got.Models, want) || got.Source != "acp" {
-		t.Fatalf("catalog = %#v, want models %#v from ACP", got, want)
-	}
-	if got.SelectionMode != ports.ModelSelectionCatalog || got.CustomModelEntry != ports.CustomModelEntryDirect {
-		t.Fatalf("selectionMode = %q, customModelEntry = %q; want a catalog that still accepts direct entry", got.SelectionMode, got.CustomModelEntry)
-	}
-}
-
 func TestParseIDLinesAcceptsOnlyWholeModelIDs(t *testing.T) {
 	got := parseIDLines([]byte("\x1b[32mModels\x1b[0m\nanthropic/claude-sonnet\nopenai/gpt-5.4\nTip: use --model <id>\nopenai/gpt-5.4 duplicate\n"))
 	if len(got) != 2 || got[0].ID != "anthropic/claude-sonnet" || got[1].ID != "openai/gpt-5.4" {
@@ -862,116 +402,6 @@ gpt-oss-120b-medium  GPT-OSS 120B (Medium)
 	}
 }
 
-// Command Code's `--list-models` prints `<id>  <description>`, where the
-// trailing text is marketing copy rather than a display name. This replaced an
-// earlier fixture that assumed `anthropic/claude-opus-4-1  Claude Opus 4.1`;
-// the real v1.74.0 output emits bare ids and descriptions, which is why the
-// picker was offering "balances intelligence and cost" as a model.
-func TestCommandCodeCatalogParsesTabularModelList(t *testing.T) {
-	got, err := commandSpecs["command-code"].parser([]byte(`Available models  ·  3 models
-
-Anthropic
-
-claude-sonnet-5-5   best combo of speed & intelligence (recommended)
-claude-opus-5-5    most intelligent Opus for agents and coding
-
-OpenAI
-
-gpt-6.1-sol        near-Astra performance for complex work at a lower cost
-
-Pass the full id, or just the short name after the last "/":
-cmd --model openai/gpt-5.4
-
-Docs:  https://commandcode.ai/docs/models
-`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []ports.AgentModelInfo{
-		{ID: "claude-opus-5-5", Label: "claude-opus-5-5", Provider: "anthropic"},
-		{ID: "claude-sonnet-5-5", Label: "claude-sonnet-5-5", Provider: "anthropic"},
-		{ID: "gpt-6.1-sol", Label: "gpt-6.1-sol", Provider: "openai"},
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("models = %#v, want %#v", got, want)
-	}
-}
-
-func TestParseGrokModelsIgnoresAuthAndDefaultStatus(t *testing.T) {
-	got, err := parseGrokModels([]byte(`You are not authenticated.
-
-Default model: grok-4.5
-
-Available models:
-  * grok-4.5 (default)
-`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got) != 1 || got[0].ID != "grok-4.5" || !got[0].IsDefault {
-		t.Fatalf("models = %#v", got)
-	}
-}
-
-func TestParseCursorModelsStopsBeforeTip(t *testing.T) {
-	got, err := parseCursorModels([]byte(`Available models
-
-auto - Auto (default)
-gpt-5.6-sol-high - GPT-5.6 Sol 1M High
-
-Tip: use --model <id> to switch.
-`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got) != 2 || got[0].ID != "auto" || got[0].Label != "Auto" || !got[0].IsDefault {
-		t.Fatalf("models = %#v", got)
-	}
-	if got[1].ID != "gpt-5.6-sol-high" || got[1].Label != "GPT-5.6 Sol 1M High" {
-		t.Fatalf("models = %#v", got)
-	}
-}
-
-func TestKimchiDiscoveryUsesListModelsFlag(t *testing.T) {
-	spec := commandSpecs["kimchi"]
-	if len(spec.args) != 1 || spec.args[0] != "--list-models" {
-		t.Fatalf("kimchi discovery args = %q, want [--list-models]", spec.args)
-	}
-	if spec.parser == nil {
-		t.Fatalf("kimchi parser is nil")
-	}
-}
-
-func TestParseKimchiModelsBuildsProviderQualifiedIDs(t *testing.T) {
-	got, err := parsePiModels([]byte(`provider              model                 context  max-out  thinking  images
-kimchi-dev            deepseek-v4-flash     1.0M     1.0M     yes       no
-kimchi-dev            glm-5.2-fp8           1.0M     1.0M     yes       no
-kimchi-dev/anthropic  claude-sonnet-5       1M       128K     yes       yes
-kimchi-dev/anthropic  claude-opus-4-8       1M       128K     yes       yes
-`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got) != 4 {
-		t.Fatalf("models = %#v, want 4", got)
-	}
-	want := map[string]bool{
-		"kimchi-dev/deepseek-v4-flash":         true,
-		"kimchi-dev/glm-5.2-fp8":               true,
-		"kimchi-dev/anthropic/claude-sonnet-5": true,
-		"kimchi-dev/anthropic/claude-opus-4-8": true,
-	}
-	for _, m := range got {
-		delete(want, m.ID)
-		if m.Provider == "" {
-			t.Fatalf("model %q has empty Provider", m.ID)
-		}
-	}
-	if len(want) != 0 {
-		t.Fatalf("models = %#v, missing %#v", got, want)
-	}
-}
-
 func TestParsePiModelsBuildsProviderQualifiedIDs(t *testing.T) {
 	got, err := parsePiModels([]byte(`provider   model                       context  max-out  thinking  images
 anthropic  claude-sonnet-4-6           1M       64K      yes       yes
@@ -981,19 +411,6 @@ openai     gpt-5.5                     272K     128K     yes       yes
 		t.Fatal(err)
 	}
 	if len(got) != 2 || got[0].ID != "anthropic/claude-sonnet-4-6" || got[1].ID != "openai/gpt-5.5" {
-		t.Fatalf("models = %#v", got)
-	}
-}
-
-func TestParsePiModelsSkipsKimchiNotices(t *testing.T) {
-	got, err := parsePiModels([]byte(`[model-roles] Warning: explorer model "kimchi-dev/deepseek-v4-flash" is not available.
-provider    model                context  max-out  thinking  images
-kimchi-dev  deepseek-v4.1-flash  1.0M     512K     yes       yes
-`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got) != 1 || got[0].ID != "kimchi-dev/deepseek-v4.1-flash" {
 		t.Fatalf("models = %#v", got)
 	}
 }
@@ -1023,17 +440,6 @@ func TestParseOMPModelsUsesSelectorAsLaunchID(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []ports.AgentModelInfo{{ID: "anthropic/claude-opus-5", Label: "Claude Opus 5", Provider: "anthropic"}}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("models = %#v, want %#v", got, want)
-	}
-}
-
-func TestParseCopilotConfigModels(t *testing.T) {
-	got, err := parseCopilotConfigModels([]byte("`model`: AI model to use.\n  - \"claude-fable-5\"\n  - \"gpt-5.6-sol\"\n`contextTier`: context tier.\n  - ignored\n"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []ports.AgentModelInfo{{ID: "claude-fable-5", Label: "claude-fable-5"}, {ID: "gpt-5.6-sol", Label: "gpt-5.6-sol"}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("models = %#v, want %#v", got, want)
 	}
@@ -1294,16 +700,14 @@ func TestCatalogFingerprintKeepsTheExecutableOnlyValueForConfiglessAgents(t *tes
 	}
 }
 
-// TestACPOnlyHarnessReportsDiscoveryFailure guards the difference between the
-// ACP harnesses. Cline keeps configured provider selections, so an ACP
-// failure falls back to those. DeepSeek Harness and Devin have no second
-// source, and the generic path answers with an empty catalog and no error —
-// which the caller stores as a successful discovery, parking the picker until
-// the next calendar day and skipping the retry ladder. The error has to
-// survive instead.
+// TestACPOnlyHarnessReportsDiscoveryFailure guards the ACP-only discovery
+// path: a harness whose catalog comes only through ACP has no fallback source,
+// and the generic path answers with an empty catalog and no error — which the
+// caller stores as a successful discovery, parking the picker until the next
+// calendar day and skipping the retry ladder. The error has to survive instead.
 func TestACPOnlyHarnessReportsDiscoveryFailure(t *testing.T) {
 	boom := errors.New("workspace path must be absolute")
-	for _, agentID := range []string{"deepseek-harness", "devin"} {
+	for _, agentID := range []string{"agy"} {
 		t.Run(agentID, func(t *testing.T) {
 			discoverer := Discoverer{ACPOptions: map[string]ACPOptionListFunc{
 				agentID: func(context.Context, ports.AgentModelDiscoveryRequest) ([]ports.ChatConfigOption, error) {
@@ -1320,57 +724,6 @@ func TestACPOnlyHarnessReportsDiscoveryFailure(t *testing.T) {
 				t.Fatalf("err = %v, want it to wrap %v", err, boom)
 			}
 		})
-	}
-}
-
-// TestCatalogFingerprintTracksTheDeepSeekProfile pins the invalidation the ACP
-// catalog depends on: the models come from a live `dsh --profile acp` session,
-// so a profile edit — a model route changed in the web setup flow — must not
-// leave the day's cached choices in place.
-func TestCatalogFingerprintTracksTheDeepSeekProfile(t *testing.T) {
-	home := t.TempDir()
-	profile := filepath.Join(home, "profiles", "acp")
-	if err := os.MkdirAll(profile, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	manifest := filepath.Join(profile, "cordis.patch.yml")
-	if err := os.WriteFile(manifest, []byte("llm:\n  route: deepseek-v4-flash\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	env := map[string]string{"DSH_HOME": home}
-
-	first := CatalogFingerprint(context.Background(), "deepseek-harness", "", "", env)
-	if first == "" {
-		t.Fatal("fingerprint is empty for a present profile")
-	}
-	if err := os.WriteFile(manifest, []byte("llm:\n  route: deepseek-v4-pro\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if second := CatalogFingerprint(context.Background(), "deepseek-harness", "", "", env); second == first {
-		t.Fatalf("fingerprint unchanged (%q) after the profile's model route changed", second)
-	}
-}
-
-func TestParseAiderModelsGroupsByLiteLLMProvider(t *testing.T) {
-	got, err := parseAiderModels([]byte("Models which match \".\":\n- openrouter/anthropic/claude-3.5-sonnet\n- gemini/gemini-2.5-pro\n- anthropic.claude-3-5-haiku-20241022-v1:0\n- us.amazon.nova-pro-v1:0\n- gpt-4o\n"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := map[string][2]string{
-		"openrouter/anthropic/claude-3.5-sonnet":   {"openrouter", "anthropic/claude-3.5-sonnet"},
-		"gemini/gemini-2.5-pro":                    {"gemini", "gemini-2.5-pro"},
-		"anthropic.claude-3-5-haiku-20241022-v1:0": {"bedrock", "anthropic.claude-3-5-haiku-20241022-v1:0"},
-		"us.amazon.nova-pro-v1:0":                  {"bedrock", "us.amazon.nova-pro-v1:0"},
-		"gpt-4o":                                   {"", "gpt-4o"},
-	}
-	if len(got) != len(want) {
-		t.Fatalf("models = %+v", got)
-	}
-	for _, model := range got {
-		expected, ok := want[model.ID]
-		if !ok || model.Provider != expected[0] || model.Label != expected[1] {
-			t.Fatalf("model %q = provider %q label %q, want %v", model.ID, model.Provider, model.Label, expected)
-		}
 	}
 }
 

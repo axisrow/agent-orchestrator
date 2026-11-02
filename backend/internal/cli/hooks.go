@@ -20,10 +20,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/activitydispatch"
-	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/cursor"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/memcode"
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
-	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 	"github.com/aoagents/agent-orchestrator/backend/internal/pricing"
 )
 
@@ -223,23 +221,18 @@ func normalizeHookPayload(payload []byte) []byte {
 	return bytes.TrimPrefix(payload, []byte("\xef\xbb\xbf"))
 }
 
-// hookAgentSessionIDForHarness is shared by worker and reviewer hooks. Cline
-// must not inherit generic task/conversation aliases when its parser rejects them.
+// hookAgentSessionIDForHarness is shared by worker and reviewer hooks.
 func hookAgentSessionIDForHarness(agent string, payload []byte) string {
-	if agent == "cline" {
-		id, _ := activitydispatch.AgentSessionID(agent, payload)
-		return id
-	}
 	if activitydispatch.SupportsHarness(domain.AgentHarness(agent)) {
 		return hookAgentSessionID(payload)
 	}
 	return ""
 }
 
-// hookAgentSessionID extracts the native resume handle shared by Agy, Copilot,
-// Codex, Claude Code, Cline, and other hook payloads. It is independent of
-// activity derivation because SessionStart is intentionally metadata-only for
-// harnesses where process startup is not proof that a turn is active.
+// hookAgentSessionID extracts the native resume handle shared by Agy, Codex,
+// Claude Code, and other hook payloads. It is independent of activity
+// derivation because SessionStart is intentionally metadata-only for harnesses
+// where process startup is not proof that a turn is active.
 func hookAgentSessionID(payload []byte) string {
 	payload = normalizeHookPayload(payload)
 	var p struct {
@@ -247,20 +240,12 @@ func hookAgentSessionID(payload []byte) string {
 		SessionIDCamel      string `json:"sessionId"`
 		ConversationID      string `json:"conversation_id"`
 		ConversationIDCamel string `json:"conversationId"`
-		// Current Cline CLI hooks distinguish the durable CLI session from the
-		// SDK's process-local task/conversation ID. --id resumes the root.
-		SessionContext struct {
-			RootSessionID string `json:"rootSessionId"`
-		} `json:"sessionContext"`
 		// Legacy hook producers expose only the task ID.
 		TaskIDCamel string `json:"taskId"`
 		TaskIDSnake string `json:"task_id"`
 	}
 	_ = json.Unmarshal(payload, &p)
-	id := strings.TrimSpace(p.SessionContext.RootSessionID)
-	if id == "" {
-		id = strings.TrimSpace(p.SessionID)
-	}
+	id := strings.TrimSpace(p.SessionID)
 	if id == "" {
 		id = strings.TrimSpace(p.SessionIDCamel)
 	}
@@ -454,10 +439,10 @@ func hookConversationFacts(agent domain.AgentHarness, event string, payload []by
 			userPrompt = observedPrompt
 			origin = domain.ConversationCheckpointOriginHuman
 		case "stop":
-			// Claude and Continue's Claude-compatible hooks report this field on
-			// Stop. Similar-looking fields from Codex do not carry the same
+			// Claude's Claude-compatible hooks report this field on Stop.
+			// Similar-looking fields from Codex do not carry the same
 			// main-turn guarantee and must not become hard replay checkpoints.
-			if agent == domain.HarnessClaudeCode || agent == domain.HarnessContinue {
+			if agent == domain.HarnessClaudeCode {
 				assistant = p.LastAssistantMessage
 			}
 		}
@@ -519,10 +504,6 @@ type sessionStartHookOutput struct {
 		HookEventName     string `json:"hookEventName"`
 		AdditionalContext string `json:"additionalContext"`
 	} `json:"hookSpecificOutput"`
-}
-
-type cursorPermissionHookOutput struct {
-	Permission string `json:"permission"`
 }
 
 // claudePermissionHookOutput is Claude Code's PermissionRequest decision: the
@@ -703,7 +684,7 @@ func (c *commandContext) runHook(ctx context.Context, agent, event string) error
 		return nil
 	}
 	var payload []byte
-	if hookReadsStdin(agent, event) {
+	{
 		var err error
 		payload, err = io.ReadAll(c.deps.In)
 		if err != nil {
@@ -717,9 +698,6 @@ func (c *commandContext) runHook(ctx context.Context, agent, event string) error
 		c.emitSessionStartContext(agent, event, sessionID)
 	}
 	c.emitArtifactNudge(agent, event, sessionID, payload)
-	if isCursorPermissionHook(agent, event) {
-		return c.runCursorPermissionHook(ctx, agent, event, sessionID, payload)
-	}
 
 	state, hasActivity := activitydispatch.Derive(agent, event, payload)
 	agentSessionID := hookAgentSessionIDForHarness(agent, payload)
@@ -756,19 +734,11 @@ func (c *commandContext) runHook(ctx context.Context, agent, event string) error
 	}
 
 	toolName, toolUseID := activityMeta(payload)
-	if domain.AgentHarness(agent) == domain.HarnessCursor && event == "post-tool-use-failure" {
-		if failureEvent, failureTool, ok := cursor.TerminalFailureCorrelation(payload); ok {
-			event = failureEvent
-			toolName = failureTool
-		}
-	}
 	conversation := hookConversationSnapshot{}
 	switch domain.AgentHarness(agent) {
-	case domain.HarnessClaudeCode, domain.HarnessCodex, domain.HarnessContinue:
+	case domain.HarnessClaudeCode, domain.HarnessCodex:
 		conversation = hookConversationFacts(domain.AgentHarness(agent), event, payload)
-	case domain.HarnessOpenCode, domain.HarnessGrok, domain.HarnessKilocode,
-		domain.HarnessOMP, domain.HarnessPi,
-		domain.HarnessAmp, domain.HarnessPrimeAgent:
+	case domain.HarnessOMP, domain.HarnessPi, domain.HarnessAmp:
 		conversation = hookSemanticAcceptanceFacts(event, payload)
 	}
 	path := "sessions/" + url.PathEscape(sessionID) + "/activity"
@@ -826,8 +796,8 @@ func (c *commandContext) runHook(ctx context.Context, agent, event string) error
 }
 
 // hookSemanticAcceptanceFacts extracts only AO's opaque delivery identity.
-// OpenCode and Grok expose accepted prompt text, but ordinary prompt content is
-// not part of their durable conversation-checkpoint contract.
+// OpenCode exposes accepted prompt text, but ordinary prompt content is
+// not part of its durable conversation-checkpoint contract.
 func hookSemanticAcceptanceFacts(event string, payload []byte) hookConversationSnapshot {
 	if event != "user-prompt-submit" {
 		return hookConversationSnapshot{}
@@ -868,49 +838,6 @@ func (c *commandContext) postActivityHook(ctx context.Context, path string, req 
 	}
 }
 
-func isCursorPermissionHook(agent, event string) bool {
-	if domain.AgentHarness(agent) != domain.HarnessCursor {
-		return false
-	}
-	switch event {
-	case "before-shell-execution", "before-mcp-execution":
-		return true
-	default:
-		return false
-	}
-}
-
-func (c *commandContext) runCursorPermissionHook(ctx context.Context, agent, event, sessionID string, payload []byte) error {
-	mode := ports.PermissionMode(strings.TrimSpace(os.Getenv(cursor.EnvPermissionMode)))
-	decision := cursor.EvaluatePermission(mode, event, payload)
-
-	launchID := validLaunchID(os.Getenv("AO_RUNTIME_LAUNCH_ID"))
-	if launchID == "" {
-		launchID = validLaunchID(hookLaunchID(payload))
-	}
-
-	path := "sessions/" + url.PathEscape(sessionID) + "/activity"
-	req := setActivityAPIRequest{
-		State:          string(decision.State),
-		Event:          event,
-		ToolName:       cursor.HookToolName(event, payload),
-		AgentSessionID: hookAgentSessionID(payload),
-		LaunchID:       launchID,
-	}
-	if err := c.postActivityHook(ctx, path, req); err != nil {
-		c.reportHookFailure(agent, event, sessionID, err)
-		if decision.Permission == "ask" {
-			return fmt.Errorf("persist blocked Cursor activity: %w", err)
-		}
-	}
-
-	out := cursorPermissionHookOutput{Permission: decision.Permission}
-	if err := json.NewEncoder(c.deps.Out).Encode(out); err != nil {
-		c.reportHookFailure(agent, event, sessionID, fmt.Errorf("write permission response: %w", err))
-	}
-	return nil
-}
-
 func isAgyModernHookEvent(agent, event string) bool {
 	if domain.AgentHarness(agent) != domain.HarnessAgy {
 		return false
@@ -925,7 +852,7 @@ func isAgyModernHookEvent(agent, event string) bool {
 
 func (c *commandContext) runReviewHook(ctx context.Context, agent, event, reviewSessionID string) error {
 	var payload []byte
-	if hookReadsStdin(agent, event) {
+	{
 		var err error
 		payload, err = io.ReadAll(c.deps.In)
 		if err != nil {
@@ -964,13 +891,6 @@ func (c *commandContext) runReviewHook(ctx context.Context, agent, event, review
 	return nil
 }
 
-// Aider's notification callback is synchronous and inherits the interactive
-// PTY stdin, but its activity transition carries no payload. Reading stdin
-// here would wait for the next user prompt and stall Aider's redraw.
-func hookReadsStdin(agent, event string) bool {
-	return agent != "aider" || event != "notification"
-}
-
 func validLaunchID(value string) string {
 	value = strings.TrimSpace(value)
 	if !sessionIDPattern.MatchString(value) {
@@ -979,26 +899,12 @@ func validLaunchID(value string) string {
 	return value
 }
 
-// openHandsContextHookOutput is OpenHands' hook result shape: it reads
-// additionalContext from the top level and ignores hookSpecificOutput.
-type openHandsContextHookOutput struct {
-	AdditionalContext string `json:"additionalContext"`
-}
-
 func shouldEmitSessionStartContext(agent, event string) bool {
-	if agent == "gemini" {
-		return event == "user-prompt-submit"
-	}
-	if agent == string(domain.HarnessOpenHands) {
-		// OpenHands ignores SessionStart hook output and has no system-prompt
-		// flag; UserPromptSubmit context is appended to each user message.
-		return event == "user-prompt-submit"
-	}
 	if event != "session-start" {
 		return false
 	}
 	switch agent {
-	case "agy", "command-code", "devin":
+	case "agy":
 		return true
 	default:
 		return false
@@ -1021,14 +927,9 @@ func (c *commandContext) emitSessionStartContext(agent, event, sessionID string)
 		return
 	}
 	var out any
-	if agent == string(domain.HarnessOpenHands) {
-		out = openHandsContextHookOutput{AdditionalContext: prompt}
-	} else {
+	{
 		var start sessionStartHookOutput
 		start.HookSpecificOutput.HookEventName = "SessionStart"
-		if agent == "gemini" {
-			start.HookSpecificOutput.HookEventName = "BeforeAgent"
-		}
 		start.HookSpecificOutput.AdditionalContext = prompt
 		out = start
 	}

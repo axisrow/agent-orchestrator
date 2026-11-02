@@ -1515,11 +1515,11 @@ func TestCancelTargetsRunningReviewerHarness(t *testing.T) {
 	store := &fakeStore{
 		review: &domain.Review{ID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerCodex, ReviewerHandleID: "codex-pane"},
 		reviews: map[domain.ReviewerHarness]domain.Review{
-			domain.ReviewerCodex:    {ID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerCodex, ReviewerHandleID: "codex-pane"},
-			domain.ReviewerOpenCode: {ID: "rev-open", SessionID: "mer-1", Harness: domain.ReviewerOpenCode, ReviewerHandleID: "opencode-pane"},
+			domain.ReviewerCodex:      {ID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerCodex, ReviewerHandleID: "codex-pane"},
+			domain.ReviewerOpenCodeV2: {ID: "rev-open", SessionID: "mer-1", Harness: domain.ReviewerOpenCodeV2, ReviewerHandleID: "opencode-pane"},
 		},
 		runs: []domain.ReviewRun{
-			{ID: "run-open", ReviewID: "rev-open", SessionID: "mer-1", Harness: domain.ReviewerOpenCode, PRURL: "https://github.com/o/r/pull/1", TargetSHA: "sha1", Status: domain.ReviewRunRunning},
+			{ID: "run-open", ReviewID: "rev-open", SessionID: "mer-1", Harness: domain.ReviewerOpenCodeV2, PRURL: "https://github.com/o/r/pull/1", TargetSHA: "sha1", Status: domain.ReviewRunRunning},
 			{ID: "run-codex", ReviewID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerCodex, PRURL: "https://github.com/o/r/pull/2", TargetSHA: "sha2", Status: domain.ReviewRunComplete, Verdict: domain.VerdictApproved},
 		},
 	}
@@ -1532,7 +1532,7 @@ func TestCancelTargetsRunningReviewerHarness(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Cancel: %v", err)
 	}
-	if launcher.cancelledHandle != "opencode-pane" || launcher.cancelledHarness != domain.ReviewerOpenCode {
+	if launcher.cancelledHandle != "opencode-pane" || launcher.cancelledHarness != domain.ReviewerOpenCodeV2 {
 		t.Fatalf("cancelled handle=%q harness=%q, want opencode pane", launcher.cancelledHandle, launcher.cancelledHarness)
 	}
 	if len(res.CancelledRuns) != 1 || res.CancelledRuns[0].ID != "run-open" {
@@ -1621,16 +1621,16 @@ func TestRestoreReviewerUsesSelectedHarnessSessionAndKillsOtherActivePane(t *tes
 	store := &fakeStore{
 		review: &domain.Review{ID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerCodex, ReviewerHandleID: "codex-pane", AgentSessionID: "codex-native"},
 		reviews: map[domain.ReviewerHarness]domain.Review{
-			domain.ReviewerCodex:    {ID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerCodex, ReviewerHandleID: "codex-pane", AgentSessionID: "codex-native"},
-			domain.ReviewerOpenCode: {ID: "rev-open", SessionID: "mer-1", ProjectID: "mer", Harness: domain.ReviewerOpenCode, AgentSessionID: "opencode-native"},
+			domain.ReviewerCodex:      {ID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerCodex, ReviewerHandleID: "codex-pane", AgentSessionID: "codex-native"},
+			domain.ReviewerOpenCodeV2: {ID: "rev-open", SessionID: "mer-1", ProjectID: "mer", Harness: domain.ReviewerOpenCodeV2, AgentSessionID: "opencode-native"},
 		},
 		runs: []domain.ReviewRun{
 			{ID: "codex-run", ReviewID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerCodex, PRURL: "https://github.com/o/r/pull/1", TargetSHA: "sha1", Status: domain.ReviewRunComplete, Verdict: domain.VerdictApproved},
-			{ID: "opencode-run", ReviewID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerOpenCode, PRURL: "https://github.com/o/r/pull/1", TargetSHA: "sha1", Status: domain.ReviewRunComplete, Verdict: domain.VerdictApproved},
+			{ID: "opencode-run", ReviewID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerOpenCodeV2, PRURL: "https://github.com/o/r/pull/1", TargetSHA: "sha1", Status: domain.ReviewRunComplete, Verdict: domain.VerdictApproved},
 		},
 	}
 	worker := liveWorker()
-	worker.ReviewerHarness = domain.ReviewerOpenCode
+	worker.ReviewerHarness = domain.ReviewerOpenCodeV2
 	launcher := &fakeLauncher{alive: true, handle: "opencode-pane", agentSessionID: "opencode-native"}
 	eng := newEngineForTest(store, fakeSessions{rec: worker, ok: true}, prAt("sha1"), fakeProjects{}, launcher)
 
@@ -1644,13 +1644,13 @@ func TestRestoreReviewerUsesSelectedHarnessSessionAndKillsOtherActivePane(t *tes
 	if !launcher.destroyed || launcher.destroyedHandle != "codex-pane" {
 		t.Fatalf("expected active codex pane to be destroyed: %+v", launcher)
 	}
-	if launcher.gotSpec.Harness != domain.ReviewerOpenCode || launcher.gotSpec.AgentSessionID != "opencode-native" {
+	if launcher.gotSpec.Harness != domain.ReviewerOpenCodeV2 || launcher.gotSpec.AgentSessionID != "opencode-native" {
 		t.Fatalf("restore spec = %+v", launcher.gotSpec)
 	}
 	if len(launcher.gotSpec.PreviousRuns) != 1 || launcher.gotSpec.PreviousRuns[0].ID != "opencode-run" {
 		t.Fatalf("previous runs = %+v, want only opencode history", launcher.gotSpec.PreviousRuns)
 	}
-	if store.review.Harness != domain.ReviewerOpenCode || store.review.ReviewerHandleID != "opencode-pane" || store.review.AgentSessionID != "opencode-native" {
+	if store.review.Harness != domain.ReviewerOpenCodeV2 || store.review.ReviewerHandleID != "opencode-pane" || store.review.AgentSessionID != "opencode-native" {
 		t.Fatalf("active review row = %+v, want restored opencode", store.review)
 	}
 }
@@ -1712,13 +1712,13 @@ func TestSwitchReviewerKeepsDefaultReviewerInheritanceWhenSavingConfig(t *testin
 	worker.ReviewerHarness = store.reviewerConfigUpdates[0].harness
 	worker.ReviewerConfig = store.reviewerConfigUpdates[0].config
 	eng.projects = fakeProjects{cfg: domain.ProjectConfig{Reviewers: []domain.ReviewerConfig{{
-		Harness: domain.ReviewerOpenCode,
+		Harness: domain.ReviewerOpenCodeV2,
 	}}}}
 	selected, selectedConfig, err := eng.reviewerSelection(context.Background(), worker)
 	if err != nil {
 		t.Fatalf("reviewerSelection after project change: %v", err)
 	}
-	if selected != domain.ReviewerOpenCode || selectedConfig.Model != "claude-3.7" {
+	if selected != domain.ReviewerOpenCodeV2 || selectedConfig.Model != "claude-3.7" {
 		t.Fatalf("selection after project reviewer change = (%q, %+v), want inherited opencode config", selected, selectedConfig)
 	}
 }
@@ -2729,11 +2729,11 @@ func TestTriggerRestoresWhenRecordedReviewerDead(t *testing.T) {
 
 func TestTriggerSpawnsFreshPassForNonReusableReviewer(t *testing.T) {
 	store := &fakeStore{
-		review: &domain.Review{ID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerAuggie, ReviewerHandleID: "review-mer-1"},
+		review: &domain.Review{ID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerDroid, ReviewerHandleID: "review-mer-1"},
 		runs:   []domain.ReviewRun{{ID: "run-0", SessionID: "mer-1", PRURL: "https://github.com/o/r/pull/1", TargetSHA: "sha0", Status: domain.ReviewRunComplete}},
 	}
 	launcher := &fakeLauncher{alive: true, handle: "review-mer-1", reusableSet: true, reusable: false}
-	projects := fakeProjects{cfg: domain.ProjectConfig{Reviewers: []domain.ReviewerConfig{{Harness: domain.ReviewerAuggie}}}}
+	projects := fakeProjects{cfg: domain.ProjectConfig{Reviewers: []domain.ReviewerConfig{{Harness: domain.ReviewerDroid}}}}
 	eng := newEngineForTest(store, fakeSessions{rec: liveWorker(), ok: true}, prAt("sha1"), projects, launcher)
 
 	res, err := trigger(context.Background(), eng, "mer-1", "", domain.AgentConfig{})
@@ -2744,10 +2744,10 @@ func TestTriggerSpawnsFreshPassForNonReusableReviewer(t *testing.T) {
 		t.Fatalf("expected a fresh review run for sha1, got %+v", res)
 	}
 	if !launcher.spawned || launcher.restored || launcher.notified || launcher.aliveChecked {
-		t.Fatalf("Auggie reviewer should spawn fresh without alive/restore/notify reuse: %+v", launcher)
+		t.Fatalf("Droid reviewer should spawn fresh without alive/restore/notify reuse: %+v", launcher)
 	}
-	if launcher.gotSpec.Harness != domain.ReviewerAuggie {
-		t.Fatalf("spawn harness = %q, want auggie", launcher.gotSpec.Harness)
+	if launcher.gotSpec.Harness != domain.ReviewerDroid {
+		t.Fatalf("spawn harness = %q, want droid", launcher.gotSpec.Harness)
 	}
 }
 
@@ -3314,14 +3314,14 @@ func TestTriggerUsesSessionReviewerHarnessBeforeProjectDefault(t *testing.T) {
 	projects := fakeProjects{cfg: domain.ProjectConfig{Reviewers: []domain.ReviewerConfig{{Harness: domain.ReviewerCodex}}}}
 	launcher := &fakeLauncher{handle: "review-mer-1"}
 	worker := liveWorker()
-	worker.ReviewerHarness = domain.ReviewerOpenCode
+	worker.ReviewerHarness = domain.ReviewerOpenCodeV2
 	eng := newEngineForTest(store, fakeSessions{rec: worker, ok: true}, prAt("sha1"), projects, launcher)
 
 	res, err := trigger(context.Background(), eng, "mer-1", "", domain.AgentConfig{})
 	if err != nil {
 		t.Fatalf("Trigger: %v", err)
 	}
-	if res.Run.Harness != domain.ReviewerOpenCode || launcher.gotSpec.Harness != domain.ReviewerOpenCode {
+	if res.Run.Harness != domain.ReviewerOpenCodeV2 || launcher.gotSpec.Harness != domain.ReviewerOpenCodeV2 {
 		t.Fatalf("session harness not used: run=%+v spec=%+v", res.Run, launcher.gotSpec)
 	}
 }
@@ -3358,9 +3358,9 @@ func TestListReturnsHandleAndRuns(t *testing.T) {
 
 func TestListMarksRunningReviewFailedWhenReviewerExited(t *testing.T) {
 	store := &fakeStore{
-		review: &domain.Review{ID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerAider, ReviewerHandleID: "review-mer-1", ReviewerActivityState: domain.ActivityActive},
+		review: &domain.Review{ID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerPi, ReviewerHandleID: "review-mer-1", ReviewerActivityState: domain.ActivityActive},
 		runs: []domain.ReviewRun{{
-			ID: "run-1", ReviewID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerAider,
+			ID: "run-1", ReviewID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerPi,
 			PRURL: "https://github.com/o/r/pull/1", TargetSHA: "sha1", Status: domain.ReviewRunRunning,
 		}},
 	}
@@ -3387,9 +3387,9 @@ func TestListMarksRunningReviewFailedWhenReviewerReportedExited(t *testing.T) {
 	// state=exited. That report is launch-fenced proof of death: the pass must
 	// go terminal without a liveness probe, or the PR card spins forever.
 	store := &fakeStore{
-		review: &domain.Review{ID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerAider, ReviewerHandleID: "review-mer-1", ReviewerActivityState: domain.ActivityExited},
+		review: &domain.Review{ID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerPi, ReviewerHandleID: "review-mer-1", ReviewerActivityState: domain.ActivityExited},
 		runs: []domain.ReviewRun{{
-			ID: "run-1", ReviewID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerAider,
+			ID: "run-1", ReviewID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerPi,
 			PRURL: "https://github.com/o/r/pull/1", TargetSHA: "sha1", Status: domain.ReviewRunRunning,
 		}},
 	}
@@ -3413,9 +3413,9 @@ func TestListMarksRunningReviewFailedWhenReviewerReportedExited(t *testing.T) {
 
 func TestTriggerAfterUserStopStartsNewRunningRun(t *testing.T) {
 	store := &fakeStore{
-		review: &domain.Review{ID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerAider, ReviewerHandleID: "review-mer-1", ReviewerActivityState: domain.ActivityExited},
+		review: &domain.Review{ID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerPi, ReviewerHandleID: "review-mer-1", ReviewerActivityState: domain.ActivityExited},
 		runs: []domain.ReviewRun{{
-			ID: "run-1", ReviewID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerAider,
+			ID: "run-1", ReviewID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerPi,
 			PRURL: "https://github.com/o/r/pull/1", TargetSHA: "sha1", Status: domain.ReviewRunRunning,
 		}},
 	}
@@ -3464,9 +3464,9 @@ func TestTriggerAfterUserStopStartsNewRunningRun(t *testing.T) {
 
 func TestListDoesNotTreatReviewerProbeFailureAsExit(t *testing.T) {
 	store := &fakeStore{
-		review: &domain.Review{ID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerAider, ReviewerHandleID: "review-mer-1", ReviewerActivityState: domain.ActivityActive},
+		review: &domain.Review{ID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerPi, ReviewerHandleID: "review-mer-1", ReviewerActivityState: domain.ActivityActive},
 		runs: []domain.ReviewRun{{
-			ID: "run-1", ReviewID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerAider,
+			ID: "run-1", ReviewID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerPi,
 			PRURL: "https://github.com/o/r/pull/1", TargetSHA: "sha1", Status: domain.ReviewRunRunning,
 		}},
 	}
@@ -3549,9 +3549,9 @@ func TestTriggerAfterOrphanSweepStartsNewRun(t *testing.T) {
 // running with nobody behind it.
 func orphanSweepStore() *fakeStore {
 	return &fakeStore{
-		review: &domain.Review{ID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerAider, ReviewerHandleID: "review-mer-1", ReviewerActivityState: domain.ActivityActive},
+		review: &domain.Review{ID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerPi, ReviewerHandleID: "review-mer-1", ReviewerActivityState: domain.ActivityActive},
 		runs: []domain.ReviewRun{{
-			ID: "run-1", ReviewID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerAider,
+			ID: "run-1", ReviewID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerPi,
 			PRURL: "https://github.com/o/r/pull/1", TargetSHA: "sha1", Status: domain.ReviewRunRunning,
 		}},
 	}
@@ -3635,11 +3635,11 @@ func TestRestoreReviewerFailsDeadLaunchRunningRuns(t *testing.T) {
 
 func TestListReturnsActiveOneShotOverrideHandle(t *testing.T) {
 	store := &fakeStore{
-		review: &domain.Review{ID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerOpenCode, ReviewerHandleID: "opencode-pane"},
+		review: &domain.Review{ID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerOpenCodeV2, ReviewerHandleID: "opencode-pane"},
 		runs: []domain.ReviewRun{{
 			ID:        "run-1",
 			SessionID: "mer-1",
-			Harness:   domain.ReviewerOpenCode,
+			Harness:   domain.ReviewerOpenCodeV2,
 			PRURL:     "https://github.com/o/r/pull/1",
 			TargetSHA: "sha1",
 			Status:    domain.ReviewRunRunning,
@@ -3653,7 +3653,7 @@ func TestListReturnsActiveOneShotOverrideHandle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if got.ReviewerHandleID != "opencode-pane" || got.ReviewerHarness != domain.ReviewerOpenCode {
+	if got.ReviewerHandleID != "opencode-pane" || got.ReviewerHarness != domain.ReviewerOpenCodeV2 {
 		t.Fatalf("list = %+v, want active opencode override handle", got)
 	}
 }

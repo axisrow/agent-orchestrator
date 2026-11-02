@@ -85,8 +85,8 @@ function delegateCalls() {
 const agentInventory = {
 	agents: [
 		agentReadiness("claude-code", "Claude Code"),
-		agentReadiness("cursor", "Cursor"),
-		agentReadiness("kiro", "Kiro", { authentication: "unknown" }),
+		agentReadiness("codex", "Codex"),
+		agentReadiness("qwen", "Qwen", { authentication: "unknown" }),
 	],
 };
 
@@ -365,12 +365,12 @@ describe("NewTaskDialog", () => {
 		await user.type(screen.getByLabelText("Task"), "B");
 
 		await user.click(screen.getByRole("button", { name: "Agent" }));
-		await user.click(await screen.findByRole("menuitem", { name: "Cursor" }));
+		await user.click(await screen.findByRole("menuitem", { name: "Codex" }));
 
 		await user.click(screen.getByRole("button", { name: "Create task" }));
 
 		await waitFor(() => expect(requestBody).not.toThrow());
-		expect(requestBody().agent).toBe("cursor");
+		expect(requestBody().agent).toBe("codex");
 	});
 
 	it("offers agents with unknown auth without changing the selection", async () => {
@@ -380,7 +380,7 @@ describe("NewTaskDialog", () => {
 
 		await user.click(screen.getByRole("button", { name: "Agent" }));
 		const options = await screen.findAllByRole("menuitem");
-		expect(options.map((option) => option.textContent)).toEqual(["Claude Code", "Cursor", "KiroAuth unknown", "Manage agents"]);
+		expect(options.map((option) => option.textContent)).toEqual(["Claude Code", "Codex", "QwenAuth unknown", "Manage agents"]);
 		await user.keyboard("{Escape}");
 
 		await user.type(screen.getByLabelText("Task"), "B");

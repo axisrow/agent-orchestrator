@@ -26,7 +26,6 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/modelcatalog"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/opencode"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agentaccount"
-	chatdriveracp "github.com/aoagents/agent-orchestrator/backend/internal/adapters/chatdriver/acp"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/chatdriver/codexappserver"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/chatdriver/persistenthost"
 	chatdriverregistry "github.com/aoagents/agent-orchestrator/backend/internal/adapters/chatdriver/registry"
@@ -575,29 +574,6 @@ func Run() error {
 		CodexModels: func(listCtx context.Context, request ports.AgentModelDiscoveryRequest) ([]ports.ChatModel, error) {
 			return codexModelDriver.DiscoverModels(listCtx, request.WorkingDir, request.Env)
 		},
-		ACPOptions: map[string]modelcatalog.ACPOptionListFunc{
-			"cline": func(listCtx context.Context, request ports.AgentModelDiscoveryRequest) ([]ports.ChatConfigOption, error) {
-				return chatdriveracp.DiscoverConfigOptions(listCtx, chatdriveracp.Launch{
-					Command: request.Binary,
-					Args:    []string{"--acp"},
-					Env:     request.Env,
-				}, request.WorkingDir, log)
-			},
-			"deepseek-harness": func(listCtx context.Context, request ports.AgentModelDiscoveryRequest) ([]ports.ChatConfigOption, error) {
-				return chatdriveracp.DiscoverConfigOptions(listCtx, chatdriveracp.Launch{
-					Command: request.Binary,
-					Args:    []string{"--profile", "acp"},
-					Env:     request.Env,
-				}, request.WorkingDir, log)
-			},
-			"devin": func(listCtx context.Context, request ports.AgentModelDiscoveryRequest) ([]ports.ChatConfigOption, error) {
-				return chatdriveracp.DiscoverConfigOptions(listCtx, chatdriveracp.Launch{
-					Command: request.Binary,
-					Args:    []string{"acp"},
-					Env:     request.Env,
-				}, request.WorkingDir, log)
-			},
-		},
 		// Claude's model IDs are provider-specific — first-party aliases,
 		// Bedrock ARNs-in-miniature, Vertex @-versions — so the list has to come
 		// from whichever provider is configured. On failure, the service retains
@@ -1132,11 +1108,6 @@ func Run() error {
 		App:         awakeHost.AppAlive,
 	}, log)
 	defer stopAwake()
-	var nativeSessions ports.AgentNativeSessionResolver
-	if codewhaleAgent, ok := agents.Agent(domain.HarnessCodewhale); ok {
-		nativeSessions, _ = codewhaleAgent.(ports.AgentNativeSessionResolver)
-	}
-
 	// Process footprint: a stateless scanner over the live process table. The
 	// live-session set comes straight from the DB with the same
 	// IsTerminated == false predicate the session manager's reconcile pass
@@ -1203,7 +1174,6 @@ func Run() error {
 		CDC:                store,
 		Events:             cdcPipe.Broadcaster,
 		Activity:           hookActivity,
-		NativeSessions:     nativeSessions,
 		UsageHooks:         usageCollector,
 		UsageSummary:       usagesvc.NewSummaryReader(store),
 		SessionMemory:      memoryReader,

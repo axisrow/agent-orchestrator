@@ -204,9 +204,9 @@ describe("CreateProjectAgentSheet", () => {
 			agents={[
 				agentReadiness("claude-code", "Claude Code", { freshness: "stale" }),
 				agentReadiness("codex", "Codex", { authentication: "unauthorized" }),
-				agentReadiness("aider", "Aider", { authentication: "not_applicable" }),
+				agentReadiness("qwen", "Qwen", { authentication: "not_applicable" }),
 				agentReadiness("fx", "fx", { authentication: "configured" }),
-				agentReadiness("cursor", "Cursor", { installation: "not_installed" }),
+				agentReadiness("goose", "Goose", { installation: "not_installed" }),
 				agentReadiness("opencode", "OpenCode", { authentication: "unknown" }),
 			]}
 		/>);
@@ -217,10 +217,10 @@ describe("CreateProjectAgentSheet", () => {
 		await userEvent.click(trigger);
 		const role = variant === "stacked" ? "option" : "menuitem";
 		expect(screen.getByRole(role, { name: /Claude Code/ })).toBeInTheDocument();
-		expect(screen.getByRole(role, { name: /Aider/ })).toBeInTheDocument();
+		expect(screen.getByRole(role, { name: /Qwen/ })).toBeInTheDocument();
 		expect(screen.getByRole(role, { name: /fx.*Unverified/ })).toBeInTheDocument();
 		expect(screen.getByRole(role, { name: /OpenCode.*Auth unknown/ })).not.toHaveAttribute("aria-disabled", "true");
-		for (const name of [/Codex/, /Cursor/]) expect(screen.queryByRole(role, { name })).not.toBeInTheDocument();
+		for (const name of [/Codex/, /Goose/]) expect(screen.queryByRole(role, { name })).not.toBeInTheDocument();
 		await userEvent.keyboard("{End}{Enter}");
 		await waitFor(() => expect(useUiStore.getState().settingsModal).toEqual({ scope: "global", section: "harness", focusAgentId: "codex" }));
 		expect(onChange).not.toHaveBeenCalled();

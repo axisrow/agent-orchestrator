@@ -140,11 +140,6 @@ func TestLiveClaimKeepsTheOldReleaseThroughAPrune(t *testing.T) {
 // until a successful replacement commits a different runtime launch.
 func TestFailedTerminalRefreshRetainsRelease(t *testing.T) {
 	for _, harness := range domain.AllHarnesses {
-		switch harness {
-		case domain.HarnessAider, domain.HarnessContinue, domain.HarnessDeepSeek, domain.HarnessUnreal:
-			continue
-		}
-
 		t.Run(string(harness), func(t *testing.T) {
 			ctx := context.Background()
 			s := newTestStore(t)

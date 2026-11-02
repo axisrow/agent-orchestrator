@@ -166,8 +166,6 @@ func officialChannelFits(kind officialSourceKind, layout string) bool {
 		return true
 	case layoutNPM:
 		return kind == officialNPM
-	case layoutUV, layoutPipx:
-		return kind == officialPyPI
 	default:
 		return false
 	}
@@ -191,7 +189,7 @@ func (s *Service) confirmInstalledOwner(ctx context.Context, target Target, plan
 		return nil, nil
 	}
 	verified, err := s.verifier.Verify(ctx, target)
-	scheme := versionSchemeFor(target)
+	scheme := versionSemver
 	var baseline *installedBaseline
 	switch {
 	case err != nil && verified.ResolvedPath != "":
@@ -233,7 +231,7 @@ func (s *Service) methodOwnsBinary(ctx context.Context, plan Plan, path string) 
 		return ok && record.Method == plan.Method
 	}
 	switch plan.Method {
-	case "npm", "homebrew", "bun", "uv", "pipx", "winget":
+	case "npm", "homebrew", "bun", "winget":
 		if s.ownsInstallation == nil || plan.Package == "" {
 			return false
 		}
@@ -288,8 +286,8 @@ func updateOutcome(baseline *installedBaseline, result VerifyResult) (failure, n
 	}
 	comparison, canCompare := baseline.scheme.compare(after, before)
 	if !canCompare && latestOK && after.display == latest.display {
-		// A same-version rebuild (e.g. Cursor's same-day build) has no order
-		// against the old build, but reaching the announced build is an update.
+		// Different prerelease channels have no order, but reaching the
+		// announced release is an update.
 		return "", strings.TrimSpace(fmt.Sprintf("Updated %s to %s. %s", before.display, after.display, note))
 	}
 	if !canCompare || comparison < 0 {

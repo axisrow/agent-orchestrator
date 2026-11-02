@@ -1546,57 +1546,7 @@ func (m *fakeMessenger) Send(_ context.Context, id domain.SessionID, msg string)
 	return m.err
 }
 
-func TestSend_WrapsCopilotOrchestratorMessageWithDelegationDirective(t *testing.T) {
-	st := newFakeStore()
-	st.sessions["mer-1"] = pastStartupGate(domain.SessionRecord{
-		ID:        "mer-1",
-		ProjectID: "mer",
-		Kind:      domain.KindOrchestrator,
-		Harness:   domain.HarnessCopilot,
-	})
-	msg := &fakeMessenger{}
-	m := New(Deps{Store: st, Messenger: msg})
-
-	if err := m.SendWithOptions(ctx, "mer-1", "make the button red", nil, ports.MessageDeliveryOptions{AuthoredByUser: true}); err != nil {
-		t.Fatal(err)
-	}
-	if len(msg.msgs) != 1 {
-		t.Fatalf("messages = %d, want 1", len(msg.msgs))
-	}
-	got := msg.msgs[0]
-	for _, want := range []string{
-		"AO ORCHESTRATOR DIRECTIVE",
-		"Do not implement code changes",
-		"ao spawn --project mer",
-		"After spawning or redirecting, report the worker session id and stop",
-		"USER MESSAGE:\nmake the button red",
-	} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("wrapped message missing %q:\n%s", want, got)
-		}
-	}
-}
-
-func TestSend_DoesNotWrapCopilotWorkerMessage(t *testing.T) {
-	st := newFakeStore()
-	st.sessions["mer-2"] = pastStartupGate(domain.SessionRecord{
-		ID:        "mer-2",
-		ProjectID: "mer",
-		Kind:      domain.KindWorker,
-		Harness:   domain.HarnessCopilot,
-	})
-	msg := &fakeMessenger{}
-	m := New(Deps{Store: st, Messenger: msg})
-
-	if err := m.SendWithOptions(ctx, "mer-2", "make the button red", nil, ports.MessageDeliveryOptions{AuthoredByUser: true}); err != nil {
-		t.Fatal(err)
-	}
-	if got := msg.msgs[0]; got != "make the button red" {
-		t.Fatalf("worker message = %q, want original", got)
-	}
-}
-
-func TestSend_DoesNotWrapNonCopilotOrchestratorMessage(t *testing.T) {
+func TestSend_DoesNotWrapOrchestratorMessage(t *testing.T) {
 	st := newFakeStore()
 	st.sessions["mer-1"] = pastStartupGate(domain.SessionRecord{
 		ID:        "mer-1",
@@ -1611,7 +1561,7 @@ func TestSend_DoesNotWrapNonCopilotOrchestratorMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := msg.msgs[0]; got != "make the button red" {
-		t.Fatalf("non-copilot orchestrator message = %q, want original", got)
+		t.Fatalf("orchestrator message = %q, want original", got)
 	}
 }
 
@@ -2131,7 +2081,7 @@ func TestSpawnModelPersisted(t *testing.T) {
 // orchestrator case is asserted explicitly rather than left implied.
 func TestSpawn_DropsRoleModelOnHarnessMismatch(t *testing.T) {
 	roleConfig := domain.RoleOverride{
-		Harness:     domain.HarnessOpenCode,
+		Harness:     domain.HarnessOpenCodeV2,
 		AgentConfig: domain.AgentConfig{Model: "custom/gpt-5.5", Permissions: domain.PermissionModeAuto},
 	}
 	for _, tc := range []struct {
@@ -6335,37 +6285,9 @@ func TestSpawnWorker_PromptFileFailureBlocksFileOnlyHarness(t *testing.T) {
 		LookPath:  lookPath,
 	})
 
-	_, _, _, err := m.Spawn(ctx, ports.SpawnConfig{ProjectID: "mer", Kind: domain.KindWorker, Harness: domain.HarnessAider, Prompt: "do it"})
+	_, _, _, err := m.Spawn(ctx, ports.SpawnConfig{ProjectID: "mer", Kind: domain.KindWorker, Harness: domain.HarnessAgy, Prompt: "do it"})
 	if err == nil {
 		t.Fatal("Spawn succeeded, want prompt-file error for file-only harness")
-	}
-	if !strings.Contains(err.Error(), "system prompt file") {
-		t.Fatalf("Spawn err = %v, want system prompt file error", err)
-	}
-	if _, ok := st.sessions["mer-1"]; ok {
-		t.Fatal("seed row still exists after prompt-file failure")
-	}
-}
-
-func TestSpawnWorker_PromptFileFailureBlocksCommandCode(t *testing.T) {
-	st := newFakeStore()
-	agent := &recordingAgent{}
-	dataDir := blockedDataDir(t)
-	lookPath := func(string) (string, error) { return "/bin/true", nil }
-	m := New(Deps{
-		Runtime:   &fakeRuntime{},
-		Agents:    singleAgent{agent: agent},
-		Workspace: &fakeWorkspace{},
-		Store:     st,
-		Messenger: &fakeMessenger{},
-		Lifecycle: &fakeLCM{store: st},
-		DataDir:   dataDir,
-		LookPath:  lookPath,
-	})
-
-	_, _, _, err := m.Spawn(ctx, ports.SpawnConfig{ProjectID: "mer", Kind: domain.KindWorker, Harness: domain.HarnessCommandCode, Prompt: "do it"})
-	if err == nil {
-		t.Fatal("Spawn succeeded, want prompt-file error for Command Code")
 	}
 	if !strings.Contains(err.Error(), "system prompt file") {
 		t.Fatalf("Spawn err = %v, want system prompt file error", err)
@@ -6860,7 +6782,7 @@ func TestRestore_FallsBackToInlineWhenPromptFileUnavailable(t *testing.T) {
 func TestRestore_PromptFileFailureBlocksFileOnlyHarness(t *testing.T) {
 	st := newFakeStore()
 	st.sessions["mer-1"] = domain.SessionRecord{
-		ID: "mer-1", ProjectID: "mer", Kind: domain.KindWorker, Harness: domain.HarnessAider, IsTerminated: true,
+		ID: "mer-1", ProjectID: "mer", Kind: domain.KindWorker, Harness: domain.HarnessAgy, IsTerminated: true,
 		Metadata: domain.SessionMetadata{WorkspacePath: "/ws/mer-1", Branch: "b", AgentSessionID: "agent-x", Prompt: "do it"},
 	}
 	agent := &recordingAgent{}
@@ -7037,7 +6959,7 @@ func TestRestore_CodexWithoutAgentSessionIDFallsBackToSavedPrompt(t *testing.T) 
 func TestRestore_OpenCodeWithoutAgentSessionIDFallsBackToSavedPrompt(t *testing.T) {
 	st := newFakeStore()
 	st.sessions["mer-1"] = domain.SessionRecord{
-		ID: "mer-1", ProjectID: "mer", Kind: domain.KindWorker, Harness: domain.HarnessOpenCode, IsTerminated: true,
+		ID: "mer-1", ProjectID: "mer", Kind: domain.KindWorker, Harness: domain.HarnessOpenCodeV2, IsTerminated: true,
 		Metadata: domain.SessionMetadata{WorkspacePath: "/ws/mer-1", Branch: "b", Prompt: "continue the task"},
 	}
 	rt := &fakeRuntime{}
@@ -7072,13 +6994,13 @@ func TestRestore_OpenCodeWithoutAgentSessionIDFallsBackToSavedPrompt(t *testing.
 	}
 }
 
-func TestRestore_AgyAndCopilotWithoutAgentSessionIDFallBackToSavedPrompt(t *testing.T) {
+func TestRestore_AgyAndGooseWithoutAgentSessionIDFallBackToSavedPrompt(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		harness domain.AgentHarness
 	}{
 		{name: "agy", harness: domain.HarnessAgy},
-		{name: "copilot", harness: domain.HarnessCopilot},
+		{name: "goose", harness: domain.HarnessGoose},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			st := newFakeStore()
@@ -7120,13 +7042,13 @@ func TestRestore_AgyAndCopilotWithoutAgentSessionIDFallBackToSavedPrompt(t *test
 	}
 }
 
-func TestRestore_AgyAndCopilotWithAgentSessionIDUseNativeResume(t *testing.T) {
+func TestRestore_AgyAndGooseWithAgentSessionIDUseNativeResume(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		harness domain.AgentHarness
 	}{
 		{name: "agy", harness: domain.HarnessAgy},
-		{name: "copilot", harness: domain.HarnessCopilot},
+		{name: "goose", harness: domain.HarnessGoose},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			st := newFakeStore()
@@ -7172,13 +7094,13 @@ func TestRestore_AgyAndCopilotWithAgentSessionIDUseNativeResume(t *testing.T) {
 	}
 }
 
-func TestRestore_AgyAndCopilotPromptlessWorkersWithoutAgentSessionIDNotResumable(t *testing.T) {
+func TestRestore_AgyAndGoosePromptlessWorkersWithoutAgentSessionIDNotResumable(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		harness domain.AgentHarness
 	}{
 		{name: "agy", harness: domain.HarnessAgy},
-		{name: "copilot", harness: domain.HarnessCopilot},
+		{name: "goose", harness: domain.HarnessGoose},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			st := newFakeStore()
@@ -10963,7 +10885,7 @@ func TestReconcileLive_ScratchChatReattachesPersistentController(t *testing.T) {
 	})
 	rec := domain.SessionRecord{
 		ID: "scratch-chat", ProjectID: "scratch", Kind: domain.KindWorker,
-		Harness: domain.HarnessCursor, Mode: domain.SessionModeChat,
+		Harness: domain.HarnessAgy, Mode: domain.SessionModeChat,
 		Metadata: domain.SessionMetadata{
 			WorkspacePath: "/ws/scratch-chat", ProviderConversationID: "cursor-thread",
 			ControllerGeneration: "generation-old",
@@ -11951,7 +11873,7 @@ func TestSend_ExitedAgentRejectsDelivery(t *testing.T) {
 func TestSend_TUIStartupPendingRejectsDelivery(t *testing.T) {
 	st := newFakeStore()
 	st.sessions["s1"] = domain.SessionRecord{
-		ID: "s1", Harness: domain.HarnessCursor, Mode: domain.SessionModeTUI,
+		ID: "s1", Harness: domain.HarnessAgy, Mode: domain.SessionModeTUI,
 		Activity: domain.Activity{State: domain.ActivityIdle},
 		Metadata: domain.SessionMetadata{RuntimeHandleID: "h1"},
 	}
@@ -11970,7 +11892,7 @@ func TestSend_TUIStartupPendingRejectsDelivery(t *testing.T) {
 func TestSend_HooklessTUIStartupAllowsDelivery(t *testing.T) {
 	st := newFakeStore()
 	st.sessions["s1"] = domain.SessionRecord{
-		ID: "s1", Harness: domain.HarnessAider, Mode: domain.SessionModeTUI,
+		ID: "s1", Harness: domain.HarnessGoose, Mode: domain.SessionModeTUI,
 		Activity: domain.Activity{State: domain.ActivityIdle},
 		Metadata: domain.SessionMetadata{RuntimeHandleID: "h1"},
 	}

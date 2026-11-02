@@ -2,7 +2,6 @@ package systeminstall
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -50,76 +49,14 @@ func TestShimOwnershipRequiresAnExecutableArgumentInsideExactPackage(t *testing.
 	}
 }
 
-func TestUVInventoryCorrelatesPackageSectionAndResolvedExecutable(t *testing.T) {
-	root := t.TempDir()
-	binary := filepath.Join(root, "vibe")
-	link := filepath.Join(root, "vibe-link")
-	if err := os.WriteFile(binary, []byte("cli"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(binary, link); err != nil {
-		t.Skipf("symlinks unavailable: %v", err)
-	}
-	for _, tt := range []struct {
-		name, output string
-		want         bool
-	}{
-		{"resolved symlink", "mistral-vibe v1.2.3\n- vibe (" + link + ")\n", true},
-		{"different tool section", "mistral-vibe v1.2.3\n- vibe (/missing)\nother-tool v2.0.0\n- vibe (" + binary + ")\n", false},
-		{"path suffix", "mistral-vibe v1.2.3\n- vibe (" + binary + "-extra)\n", false},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := toolListContains(tt.output, "mistral-vibe", binary); got != tt.want {
-				t.Fatalf("owned = %t, want %t", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestPipxInventoryRequiresTheListedExecutable(t *testing.T) {
-	root := t.TempDir()
-	paths := make([]string, 0, 2)
-	for _, pkg := range []string{"mistral-vibe", "other-tool"} {
-		bin := filepath.Join(root, "pipx", "venvs", pkg, "bin")
-		if err := os.MkdirAll(bin, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		path := filepath.Join(bin, "vibe")
-		if err := os.WriteFile(path, []byte("cli"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		paths = append(paths, path)
-	}
-	for _, tagged := range []bool{false, true} {
-		var pathValue any = paths[0]
-		if tagged {
-			pathValue = map[string]string{"__type__": "Path", "__Path__": paths[0]}
-		}
-		encoded, err := json.Marshal(pathValue)
-		if err != nil {
-			t.Fatal(err)
-		}
-		owner := managerOwnsBinary(commandRunnerFunc(func(_ context.Context, _ []string, stdout, _ io.Writer) error {
-			_, err := io.WriteString(stdout, `{"venvs":{"mistral-vibe":{"metadata":{"main_package":{"package":"mistral-vibe","app_paths":[`+string(encoded)+`]}}}}}`)
-			return err
-		}))
-		for i, path := range paths {
-			owned, err := owner(context.Background(), path, "pipx", "mistral-vibe", false)
-			if err != nil || owned != (i == 0) {
-				t.Fatalf("tagged=%t path=%s owned=%t err=%v", tagged, path, owned, err)
-			}
-		}
-	}
-}
-
 func TestWingetInventoryRequiresTheExactPackageDirectory(t *testing.T) {
 	root := t.TempDir()
 	for _, tt := range []struct {
 		directory string
 		want      bool
 	}{
-		{"GitHub.Copilot_Microsoft.Winget.Source_8wekyb3d8bbwe", true},
-		{"GitHub.CopilotPreview_Microsoft.Winget.Source_8wekyb3d8bbwe", false},
+		{"SST.Opencode_Microsoft.Winget.Source_8wekyb3d8bbwe", true},
+		{"SST.OpencodePreview_Microsoft.Winget.Source_8wekyb3d8bbwe", false},
 		{"Vendor.Other_Microsoft.Winget.Source_8wekyb3d8bbwe", false},
 	} {
 		t.Run(tt.directory, func(t *testing.T) {
@@ -127,15 +64,15 @@ func TestWingetInventoryRequiresTheExactPackageDirectory(t *testing.T) {
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				t.Fatal(err)
 			}
-			binary := filepath.Join(dir, "copilot.exe")
+			binary := filepath.Join(dir, "opencode.exe")
 			if err := os.WriteFile(binary, []byte("cli"), 0o755); err != nil {
 				t.Fatal(err)
 			}
 			owner := managerOwnsBinary(commandRunnerFunc(func(_ context.Context, _ []string, stdout, _ io.Writer) error {
-				_, err := io.WriteString(stdout, "GitHub Copilot  GitHub.Copilot  1.2.0  winget\n")
+				_, err := io.WriteString(stdout, "OpenCode  SST.opencode  1.2.0  winget\n")
 				return err
 			}))
-			owned, err := owner(context.Background(), binary, "winget", "GitHub.Copilot", false)
+			owned, err := owner(context.Background(), binary, "winget", "SST.opencode", false)
 			if err != nil || owned != tt.want {
 				t.Fatalf("owned=%t want=%t err=%v", owned, tt.want, err)
 			}
@@ -148,7 +85,7 @@ func TestNpmRegistryVersionReadsOnlyLatestDistTag(t *testing.T) {
 		name, tags, want string
 	}{
 		{"ignores prerelease tags", `{"latest":"1.9.0","next":"2.0.0-beta.3"}`, "1.9.0"},
-		// Some packages publish prereleases on latest (DeepSeek ships 0.2.0-rc.2 there).
+		// Some packages publish prereleases on latest.
 		{"prerelease on latest", `{"latest":"2.0.0-rc.2"}`, "2.0.0-rc.2"},
 		{"no latest tag", `{"next":"2.0.0-rc.3"}`, ""},
 	} {

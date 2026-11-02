@@ -30,13 +30,13 @@ import {
 	OptionMenuTrigger,
 } from "./ui/option-menu";
 
-const REVIEWER_AGENT_PRIORITY = ["claude-code", "codex", "cursor", "opencode", "opencode-v2", "muse", "aider"] as const;
+const REVIEWER_AGENT_PRIORITY = ["claude-code", "codex", "opencode-v2"] as const;
 const REVIEWER_AGENT_PRIORITY_RANK = new Map<string, number>(
 	REVIEWER_AGENT_PRIORITY.map((agent, index) => [agent, index]),
 );
 
-const HOST_TRUSTED_REVIEWERS = new Set(["agy", "devin", "droid", "kimchi", "kimi"]);
-const USER_APPROVED_REVIEWERS = new Set(["auggie", "autohand", "cline", "crush", "grok"]);
+const HOST_TRUSTED_REVIEWERS = new Set(["agy", "droid", "kimi"]);
+const USER_APPROVED_REVIEWERS = new Set(["autohand"]);
 
 type ReviewerAgentConfig = components["schemas"]["AgentConfig"];
 

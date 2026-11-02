@@ -19,7 +19,7 @@ import (
 
 // AO-managed versioned installs.
 //
-// npm, Bun, uv and pipx update a package by rewriting its directory in place,
+// npm and Bun update a package by rewriting its directory in place,
 // so a session still running the old release can fail on its next lazy load
 // (a JS chunk, a bundled helper such as ripgrep, a Python module), and on
 // Windows the rewrite fails outright while the release runs. AO therefore
@@ -46,7 +46,7 @@ type ManagedReleaseStore interface {
 }
 
 // managedMethods are the update methods AO installs side by side.
-var managedMethods = map[string]bool{"npm": true, "bun": true, "uv": true, "pipx": true}
+var managedMethods = map[string]bool{"npm": true, "bun": true}
 
 // managedRecord is <root>/<target>/managed.json.
 type managedRecord struct {
@@ -129,12 +129,10 @@ func (s *Service) readManagedRecord(target Target) (managedRecord, bool) {
 }
 
 // managedCLINames fixes the executable a managed install puts in bin/ for
-// targets whose resolved binary has another name. OpenCode v2 resolves its own
-// opencode-v2 launcher but installs bin/opencode, and the Copilot resolver
-// follows the npm loader to its platform binary (copilot-darwin-arm64).
+// targets whose resolved binary has another name: OpenCode v2 resolves its own
+// opencode-v2 launcher but installs bin/opencode.
 var managedCLINames = map[Target]string{
 	TargetOpencodeV2: "opencode",
-	TargetCopilot:    "copilot",
 }
 
 // managedCLIName is the executable name sessions launch, taken from the
@@ -167,12 +165,11 @@ const managedBinSearchDepth = 6
 
 // resolveManagedBinRel locates the CLI inside a fresh release directory. It
 // looks first where managedBinRel says method puts it. A package whose
-// executable comes from a dependency — @github/copilot declares only
-// bin/copilot, its Node loader, while the native binary belongs to an
-// @github/copilot-<os>-<arch> optional dependency — has that binary linked
-// only into the dependency's node_modules/.bin instead. The search follows
-// only node_modules and package (or @scope group) directories, so it stays
-// inside the release and bounded.
+// executable comes from a dependency — a package declaring only its Node
+// loader in bin/ while the native binary belongs to an optional dependency —
+// has that binary linked only into the dependency's node_modules/.bin
+// instead. The search follows only node_modules and package (or @scope
+// group) directories, so it stays inside the release and bounded.
 //
 // Restored from 60451de16d/9512842eeb: the official-installer refactor
 // (#6934) dropped the search for the package-manager methods, so every
@@ -275,20 +272,6 @@ func managedInstallCommand(method, pkg, pin, dir string) (argv, env []string) {
 			"BUN_INSTALL_GLOBAL_DIR=" + filepath.Join(dir, "install", "global"),
 			"BUN_INSTALL_BIN=" + filepath.Join(dir, "bin"),
 		}
-	case "uv":
-		spec := pkg
-		if pin != "" {
-			spec = pkg + "==" + pin
-		}
-		return []string{"uv", "tool", "install", "--force", spec},
-			[]string{"UV_TOOL_DIR=" + filepath.Join(dir, "tools"), "UV_TOOL_BIN_DIR=" + filepath.Join(dir, "bin")}
-	case "pipx":
-		spec := pkg
-		if pin != "" {
-			spec = pkg + "==" + pin
-		}
-		return []string{"pipx", "install", "--force", spec},
-			[]string{"PIPX_HOME=" + filepath.Join(dir, "pipx"), "PIPX_BIN_DIR=" + filepath.Join(dir, "bin")}
 	}
 	return nil, nil
 }
@@ -386,7 +369,7 @@ func (s *Service) runManagedInstall(ctx context.Context, plan Plan, baseline *in
 	if err != nil {
 		return err
 	}
-	scheme := versionSchemeFor(plan.Target)
+	scheme := versionSemver
 	if pin != "" {
 		installed, okInstalled := scheme.parse(version)
 		wanted, okWanted := scheme.parse(pin)
@@ -468,7 +451,7 @@ func (s *Service) probeManagedVersion(ctx context.Context, target Target, cli, b
 	if err := s.commands.Run(probeCtx, []string{binary, "--version"}, &output, &output); err != nil {
 		return "", installFailed(fmt.Sprintf("The new %s did not start.", cli), fmt.Errorf("the new copy did not start: %w", err))
 	}
-	version, ok := versionSchemeFor(target).find(output.String())
+	version, ok := versionSemver.find(output.String())
 	if !ok {
 		return "", installFailed(fmt.Sprintf("The new %s did not report its version.", cli), fmt.Errorf("the new copy reported no version: %q", strings.TrimSpace(output.String())))
 	}

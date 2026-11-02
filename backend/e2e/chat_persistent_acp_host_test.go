@@ -19,7 +19,7 @@ func TestOpenCodeACPTurnSurvivesDaemonSIGKILL(t *testing.T) {
 	if os.Getenv("AO_LIVE_OPENCODE_ACP") != "1" {
 		t.Skip("set AO_LIVE_OPENCODE_ACP=1 to run the real OpenCode restart E2E")
 	}
-	runACPTurnSurvivesDaemonRestart(t, "opencode", "opencode", "OPENCODE-DAEMON-SURVIVED", false)
+	runACPTurnSurvivesDaemonRestart(t, "opencode-v2", "opencode", "OPENCODE-DAEMON-SURVIVED", false)
 }
 
 func TestClaudeACPTurnSurvivesDaemonSIGKILL(t *testing.T) {
@@ -40,21 +40,7 @@ func TestOpenCodeACPTurnSurvivesGracefulDaemonRestart(t *testing.T) {
 	if os.Getenv("AO_LIVE_OPENCODE_ACP") != "1" {
 		t.Skip("set AO_LIVE_OPENCODE_ACP=1 to run the real OpenCode restart E2E")
 	}
-	runACPTurnSurvivesDaemonRestart(t, "opencode", "opencode", "OPENCODE-GRACEFUL-DAEMON-SURVIVED", true)
-}
-
-func TestCursorACPTurnSurvivesDaemonSIGKILL(t *testing.T) {
-	if os.Getenv("AO_LIVE_CURSOR_ACP") != "1" {
-		t.Skip("set AO_LIVE_CURSOR_ACP=1 to run the real Cursor restart E2E")
-	}
-	runACPTurnSurvivesDaemonRestart(t, "cursor", "cursor-agent", "CURSOR-DAEMON-SURVIVED", false)
-}
-
-func TestCursorACPTurnSurvivesGracefulDaemonRestart(t *testing.T) {
-	if os.Getenv("AO_LIVE_CURSOR_ACP") != "1" {
-		t.Skip("set AO_LIVE_CURSOR_ACP=1 to run the real Cursor restart E2E")
-	}
-	runACPTurnSurvivesDaemonRestart(t, "cursor", "cursor-agent", "CURSOR-GRACEFUL-DAEMON-SURVIVED", true)
+	runACPTurnSurvivesDaemonRestart(t, "opencode-v2", "opencode", "OPENCODE-GRACEFUL-DAEMON-SURVIVED", true)
 }
 
 func runACPTurnSurvivesDaemonRestart(t *testing.T, harness, binary, token string, graceful bool) {

@@ -122,10 +122,10 @@ describe("Cloud project settings", () => {
 	});
 
 	it("shows the agent each role runs with and never changes it", async () => {
-		project.config = { worker: { agent: "opencode" }, orchestrator: { agent: "cursor" } };
+		project.config = { worker: { agent: "opencode" }, orchestrator: { agent: "codex" } };
 		mount();
 		expect(await screen.findByRole("button", { name: "Worker agent" })).toHaveTextContent("OpenCode");
-		expect(screen.getByRole("button", { name: "Orchestrator agent" })).toHaveTextContent("Cursor");
+		expect(screen.getByRole("button", { name: "Orchestrator agent" })).toHaveTextContent("Codex");
 		// Without a project reviewer, Cloud reviews with the session's (worker) agent.
 		expect(screen.getByRole("button", { name: "Reviewer agent" })).toHaveTextContent("OpenCode");
 		for (const role of ["Worker", "Orchestrator", "Reviewer"]) {

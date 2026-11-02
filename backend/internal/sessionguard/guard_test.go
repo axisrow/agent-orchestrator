@@ -224,7 +224,7 @@ func TestGuard_TUIWithoutStartupCapabilityAllowsDelivery(t *testing.T) {
 	msgr := &fakeMessenger{}
 	rec := domain.SessionRecord{
 		ID:       "s1",
-		Harness:  domain.HarnessAider,
+		Harness:  domain.HarnessGoose,
 		Mode:     domain.SessionModeTUI,
 		Activity: domain.Activity{State: domain.ActivityIdle},
 	}

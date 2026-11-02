@@ -35,24 +35,19 @@ var openCodeManagedConfigDirs = func() []string {
 	}
 }
 
-// resolveOpenCodeModel returns the root model OpenCode will run for a session
+// resolveOpenCodeModel returns the root model OpenCode 2 will run for a session
 // launched from an AO worktree of workingDir's repository, or "" when that
 // cannot be determined.
 //
-// Both majors layer config lowest to highest as: global, OPENCODE_CONFIG,
-// project opencode.json(c) from the outermost directory inward, then
-// .opencode/opencode.json(c) the same way, then OPENCODE_CONFIG_CONTENT and
-// managed config. v1 stops the project search at the git root; v2 continues
-// to the filesystem root.
+// OpenCode 2 layers config lowest to highest as: global, OPENCODE_CONFIG,
+// project opencode.json(c) from the outermost directory inward to the
+// filesystem root, then .opencode/opencode.json(c) the same way, then
+// OPENCODE_CONFIG_DIR, OPENCODE_CONFIG_CONTENT and managed config.
 //
 // Only layers that are the same for every launched session are trusted:
-//   - project files inside the repository are never read, because the launch
-//     worktree's content is chosen per session (see repoMayHoldConfig); if the
-//     repository may hold one, or there is no git root to bound the search,
-//     the project layers are unknown;
-//   - v2 also reads the launch worktree's ancestors above its git root (for
-//     example <AO_DATA_DIR>/opencode.json), which discovery cannot see, so for
-//     v2 the project layers are always unknown;
+//   - v2 reads the launch worktree's ancestors above its git root (for example
+//     <AO_DATA_DIR>/opencode.json), which discovery cannot see, so the project
+//     layers are always unknown;
 //   - the user's OPENCODE_CONFIG is replaced by AO's own file at TUI launch
 //     but kept for ACP sessions, and OPENCODE_CONFIG_DIR's contents are not
 //     modeled, so both are uncertain.
@@ -61,8 +56,8 @@ var openCodeManagedConfigDirs = func() []string {
 // can only matter when no visible layer sets a model, which already resolves
 // to "".
 //
-// https://dev.opencode.ai/docs/config/ (v1), https://opencode.ai/v2/docs/config (v2)
-func resolveOpenCodeModel(major int, home, workingDir string, env map[string]string) string {
+// https://opencode.ai/v2/docs/config
+func resolveOpenCodeModel(home, workingDir string, env map[string]string) string {
 	var layers []openCodeLayer
 	if configHome := xdgDir(home, env, "XDG_CONFIG_HOME", ".config"); configHome != "" {
 		layers = append(layers, openCodeDirLayer(filepath.Join(configHome, "opencode"), true, "config.json", "opencode.json", "opencode.jsonc"))
@@ -70,9 +65,8 @@ func resolveOpenCodeModel(major int, home, workingDir string, env map[string]str
 	if custom := envValue(env, "OPENCODE_CONFIG"); custom != "" {
 		layers = append(layers, openCodeFileLayer(custom, false))
 	}
-	if openCodeProjectConfigUnknown(major, workingDir) {
-		layers = append(layers, openCodeLayer{unknown: true})
-	}
+	// Project config layers are always unknown for OpenCode 2 (see above).
+	layers = append(layers, openCodeLayer{unknown: true})
 	if configDir := envValue(env, "OPENCODE_CONFIG_DIR"); configDir != "" {
 		layers = append(layers, openCodeDirLayer(configDir, false, "opencode.json", "opencode.jsonc"))
 	}
@@ -96,21 +90,6 @@ func resolveOpenCodeModel(major int, home, workingDir string, env map[string]str
 		return layers[i].model
 	}
 	return ""
-}
-
-// openCodeProjectConfigUnknown reports whether project config may set the
-// model for a launched session without AO being able to see it.
-func openCodeProjectConfigUnknown(major int, workingDir string) bool {
-	if major >= 2 {
-		return true
-	}
-	if workingDir == "" {
-		return false
-	}
-	if _, _, ok := gitTopLevel(workingDir); !ok {
-		return true
-	}
-	return repoMayHoldConfig(workingDir, "opencode.json", "opencode.jsonc", ".opencode/opencode.json", ".opencode/opencode.jsonc")
 }
 
 // openCodeDirLayer reads the named config files in one directory. The order in

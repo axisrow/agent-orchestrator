@@ -164,8 +164,8 @@ func TestVerifierKeepsNonTimeoutProbeFailure(t *testing.T) {
 	}
 }
 
-// A freshly installed Cursor CLI took ~12s to answer its first --version on an
-// Intel Mac while macOS assessed the new binary (#5887). The default bound must
+// A freshly installed CLI may take ~12s to answer its first --version on an
+// Intel Mac while macOS assesses the new binary (#5887). The default bound must
 // let that first post-install verification succeed instead of killing it.
 func TestVerifierDefaultTimeoutAllowsSlowFirstLaunch(t *testing.T) {
 	t.Parallel()
@@ -173,21 +173,21 @@ func TestVerifierDefaultTimeoutAllowsSlowFirstLaunch(t *testing.T) {
 		runner := &recordingCommandRunner{run: func(ctx context.Context, _ []string, stdout, _ io.Writer) error {
 			select {
 			case <-time.After(12 * time.Second):
-				_, _ = io.WriteString(stdout, "2026.10.01-e373342\n")
+				_, _ = io.WriteString(stdout, "codex-cli 1.2.3\n")
 				return nil
 			case <-ctx.Done():
 				return errors.New("signal: killed")
 			}
 		}}
 		verifier := NewVerifier(verifierResolver{
-			domain.HarnessCursor: verifierAgent{path: "/home/test/.local/bin/cursor-agent", authCalls: &atomic.Int32{}},
+			domain.HarnessCodex: verifierAgent{path: "/home/test/.local/bin/codex", authCalls: &atomic.Int32{}},
 		}, runner)
 
-		result, err := verifier.Verify(t.Context(), TargetCursor)
+		result, err := verifier.Verify(t.Context(), TargetCodex)
 		if err != nil {
 			t.Fatalf("Verify: %v", err)
 		}
-		if result.ResolvedPath != "/home/test/.local/bin/cursor-agent" || result.Output != "2026.10.01-e373342\n" {
+		if result.ResolvedPath != "/home/test/.local/bin/codex" || result.Output != "codex-cli 1.2.3\n" {
 			t.Fatalf("result = %+v", result)
 		}
 	})

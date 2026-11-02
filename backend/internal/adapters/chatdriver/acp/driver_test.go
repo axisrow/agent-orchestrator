@@ -136,8 +136,8 @@ func TestPersistentACPDriverSurvivesRealProcessDetach(t *testing.T) {
 	// These are protocol contract tests, not claims of authenticated E2E for
 	// every vendor. Each runs the real detached host with a fake ACP process.
 	for _, harness := range []domain.AgentHarness{
-		domain.HarnessClaudeCode, domain.HarnessCursor, domain.HarnessOpenCode, domain.HarnessOpenCodeV2,
-		domain.HarnessDroid, domain.HarnessKimi, domain.HarnessKimchi,
+		domain.HarnessClaudeCode, domain.HarnessOpenCodeV2, domain.HarnessOpenCodeV2,
+		domain.HarnessDroid, domain.HarnessKimi,
 		domain.HarnessPi, domain.HarnessOMP,
 	} {
 		t.Run(string(harness), func(t *testing.T) { testACPProcessDetach(t, harness, 0) })
@@ -145,7 +145,7 @@ func TestPersistentACPDriverSurvivesRealProcessDetach(t *testing.T) {
 }
 
 func TestPersistentACPLargeReplaySurvivesRestarts(t *testing.T) {
-	testACPProcessDetach(t, domain.HarnessOpenCode, 6375)
+	testACPProcessDetach(t, domain.HarnessOpenCodeV2, 6375)
 }
 
 func testACPProcessDetach(t *testing.T, harness domain.AgentHarness, replayFrames int) {
@@ -1458,7 +1458,7 @@ func TestACPInterruptWaitsForProviderPromptCompletion(t *testing.T) {
 	completePrompt := make(chan struct{})
 	responseSent := make(chan error, 1)
 	driver := New(Config{
-		Harness: domain.HarnessOpenCode,
+		Harness: domain.HarnessOpenCodeV2,
 		Capabilities: ports.ChatCapabilities{
 			ports.ChatCapabilityStreaming: true,
 			ports.ChatCapabilityInterrupt: true,
@@ -1712,7 +1712,7 @@ func TestACPDriverReappliesLaunchContextWhenResuming(t *testing.T) {
 	agent := &fakeAgent{}
 	var got LaunchConfig
 	driver := New(Config{
-		Harness:      domain.HarnessOpenCode,
+		Harness:      domain.HarnessOpenCodeV2,
 		Capabilities: ports.ChatCapabilities{ports.ChatCapabilityStreaming: true},
 		Probe:        func(context.Context) error { return nil },
 		Launch: func(_ context.Context, cfg LaunchConfig) (Launch, error) {
@@ -1819,7 +1819,7 @@ func preambleText(prompt []acpsdk.ContentBlock) string {
 // standing context only as an embedded resource on the first prompt.
 func preambleConfig() Config {
 	return Config{
-		Harness:      domain.HarnessCommandCode,
+		Harness:      domain.HarnessAgy,
 		Capabilities: ports.ChatCapabilities{ports.ChatCapabilityStreaming: true},
 		Probe:        func(context.Context) error { return nil },
 		Launch:       func(context.Context, LaunchConfig) (Launch, error) { return Launch{Command: "fake"}, nil },
@@ -2418,7 +2418,7 @@ func TestConversationCapabilitiesTreatLoadSessionAsResume(t *testing.T) {
 func TestACPDriverUsesProviderPermissionPolicyBeforeParking(t *testing.T) {
 	agent := &fakeAgent{promptNoPermission: true}
 	driver := New(Config{
-		Harness:      domain.HarnessCursor,
+		Harness:      domain.HarnessAgy,
 		Capabilities: ports.ChatCapabilities{ports.ChatCapabilityApprovals: true},
 		Probe:        func(context.Context) error { return nil },
 		Launch:       func(context.Context, LaunchConfig) (Launch, error) { return Launch{Command: "fake"}, nil },
@@ -2476,7 +2476,7 @@ func TestACPDriverUsesProviderPermissionPolicyBeforeParking(t *testing.T) {
 func TestACPDriverKeepsPermissionPolicyWhenLaterTurnSettingFails(t *testing.T) {
 	agent := &fakeAgent{}
 	driver := New(Config{
-		Harness: domain.HarnessCursor,
+		Harness: domain.HarnessAgy,
 		Probe:   func(context.Context) error { return nil },
 		Launch:  func(context.Context, LaunchConfig) (Launch, error) { return Launch{Command: "fake"}, nil },
 		SessionOptions: func(settings ports.ChatTurnSettings) []SessionOption {
@@ -3602,46 +3602,6 @@ func TestACPDriverConsumesLegacyKimiSelectorsOnSDK0135(t *testing.T) {
 	}
 }
 
-func TestACPDriverResolvesCLIModelToAdvertisedParameterizedLegacyChoice(t *testing.T) {
-	agent := &legacyKimiAgent{
-		currentModel: "auto",
-		availableModels: []legacyModelInfo{
-			{ModelID: "auto", Name: "Auto"},
-			{ModelID: "composer-2.5[fast=false]", Name: "Composer 2.5"},
-			{ModelID: "composer-2.5[fast=true]", Name: "Composer 2.5 Fast"},
-		},
-		rejectUnknownModel: true,
-	}
-	driver := New(Config{
-		Harness:      domain.HarnessCursor,
-		Capabilities: ports.ChatCapabilities{ports.ChatCapabilityStreaming: true},
-		Probe:        func(context.Context) error { return nil },
-		Launch:       func(context.Context, LaunchConfig) (Launch, error) { return Launch{Command: "fake"}, nil },
-		SessionOptions: func(settings ports.ChatTurnSettings) []SessionOption {
-			if settings.Model == "" {
-				return nil
-			}
-			return []SessionOption{{ID: "model", Value: settings.Model}}
-		},
-	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	driver.useTestProcess(fakeLegacyKimiSpawn(agent))
-
-	conv, err := driver.Start(context.Background(), ports.ChatStartConfig{
-		WorkspacePath: t.TempDir(), Model: "composer-2.5",
-	})
-	if err != nil {
-		t.Fatalf("Start with CLI model alias: %v", err)
-	}
-	defer conv.Close()
-
-	agent.mu.Lock()
-	model, calls := agent.model, agent.modelCalls
-	agent.mu.Unlock()
-	if model != "composer-2.5[fast=false]" || calls != 1 {
-		t.Fatalf("legacy model setter = %q across %d calls, want advertised non-fast value", model, calls)
-	}
-}
-
 func TestACPDriverRejectsNonFastAliasWhenOnlyFastParameterizedChoiceIsAdvertised(t *testing.T) {
 	agent := &legacyKimiAgent{
 		currentModel: "auto",
@@ -3652,7 +3612,7 @@ func TestACPDriverRejectsNonFastAliasWhenOnlyFastParameterizedChoiceIsAdvertised
 		rejectUnknownModel: true,
 	}
 	driver := New(Config{
-		Harness:      domain.HarnessCursor,
+		Harness:      domain.HarnessAgy,
 		Capabilities: ports.ChatCapabilities{ports.ChatCapabilityStreaming: true},
 		Probe:        func(context.Context) error { return nil },
 		Launch:       func(context.Context, LaunchConfig) (Launch, error) { return Launch{Command: "fake"}, nil },
@@ -3679,139 +3639,6 @@ func TestACPDriverRejectsNonFastAliasWhenOnlyFastParameterizedChoiceIsAdvertised
 	}
 }
 
-func TestResolveLegacyModelChoiceDerivesParameterizedCursorAliases(t *testing.T) {
-	tests := []struct {
-		name      string
-		requested string
-		choice    string
-	}{
-		{
-			name:      "fast",
-			requested: "composer-2.5-fast",
-			choice:    "composer-2.5[fast=true]",
-		},
-		{
-			name:      "reasoning",
-			requested: "gpt-5.5-medium",
-			choice:    "gpt-5.5[context=272k,reasoning=medium,fast=false]",
-		},
-		{
-			name:      "reasoning and fast",
-			requested: "gpt-5.5-high-fast",
-			choice:    "gpt-5.5[context=272k,reasoning=high,fast=true]",
-		},
-		{
-			name:      "effort",
-			requested: "gemini-3.6-flash-high",
-			choice:    "gemini-3.6-flash[effort=high]",
-		},
-		{
-			name:      "reasoning effort",
-			requested: "gpt-5.5-low",
-			choice:    "gpt-5.5[reasoning_effort=low,fast=false]",
-		},
-		{
-			name:      "thinking with effort",
-			requested: "claude-opus-5-thinking-high",
-			choice:    "claude-opus-5[thinking=true,context=300k,effort=high,fast=false]",
-		},
-		{
-			name:      "thinking after effort",
-			requested: "claude-4.6-sonnet-medium-thinking",
-			choice:    "claude-4.6-sonnet[thinking=true,context=1m,effort=medium,fast=false]",
-		},
-		{
-			name:      "thinking without effort",
-			requested: "claude-4.5-sonnet-thinking",
-			choice:    "claude-4.5-sonnet[thinking=true,context=200k]",
-		},
-		{
-			name:      "cursor-prefixed grok",
-			requested: "cursor-grok-4.6-high-fast",
-			choice:    "grok-4.6[effort=high,fast=true]",
-		},
-		{
-			name:      "auto",
-			requested: "auto",
-			choice:    "default[]",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			choices := []ports.ChatConfigOptionChoice{{Value: tt.choice}}
-			got, ok := resolveLegacyModelChoice(choices, tt.requested)
-			if !ok || got != tt.choice {
-				t.Fatalf("resolveLegacyModelChoice(%q) = %q, %v; want %q, true", tt.requested, got, ok, tt.choice)
-			}
-		})
-	}
-}
-
-func TestResolveLegacyModelChoiceRejectsDroppedParameterizedSemantics(t *testing.T) {
-	tests := []struct {
-		name      string
-		requested string
-		choice    string
-	}{
-		{
-			name:      "thinking variant is not non-thinking alias",
-			requested: "claude-opus-5-high",
-			choice:    "claude-opus-5[thinking=true,context=300k,effort=high,fast=false]",
-		},
-		{
-			name:      "thinking without effort has no known alias",
-			requested: "claude-opus-5",
-			choice:    "claude-opus-5[thinking=true,context=300k,fast=false]",
-		},
-		{
-			name:      "unknown semantic parameter",
-			requested: "future-model",
-			choice:    "future-model[quality=high,fast=false]",
-		},
-		{
-			name:      "conflicting effort parameters",
-			requested: "gpt-5.5-high",
-			choice:    "gpt-5.5[reasoning=high,reasoning_effort=medium]",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			choices := []ports.ChatConfigOptionChoice{{Value: tt.choice}}
-			if got, ok := resolveLegacyModelChoice(choices, tt.requested); ok {
-				t.Fatalf("resolveLegacyModelChoice(%q) = %q, true; want rejection", tt.requested, got)
-			}
-		})
-	}
-}
-
-func TestResolveLegacyModelChoiceDistinguishesThinkingVariants(t *testing.T) {
-	choices := []ports.ChatConfigOptionChoice{
-		{Value: "claude-opus-5[thinking=false,context=300k,effort=high,fast=false]"},
-		{Value: "claude-opus-5[thinking=true,context=300k,effort=high,fast=false]"},
-	}
-	tests := []struct {
-		requested string
-		want      string
-	}{
-		{
-			requested: "claude-opus-5-high",
-			want:      choices[0].Value,
-		},
-		{
-			requested: "claude-opus-5-thinking-high",
-			want:      choices[1].Value,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.requested, func(t *testing.T) {
-			got, ok := resolveLegacyModelChoice(choices, tt.requested)
-			if !ok || got != tt.want {
-				t.Fatalf("resolveLegacyModelChoice(%q) = %q, %v; want %q, true", tt.requested, got, ok, tt.want)
-			}
-		})
-	}
-}
-
 func TestACPDriverRejectsLegacyModelAliasWithoutAdvertisedModelCatalog(t *testing.T) {
 	agent := &legacyKimiAgent{
 		currentModel: "auto",
@@ -3822,7 +3649,7 @@ func TestACPDriverRejectsLegacyModelAliasWithoutAdvertisedModelCatalog(t *testin
 		rejectUnknownModel: true,
 	}
 	driver := New(Config{
-		Harness:      domain.HarnessCursor,
+		Harness:      domain.HarnessAgy,
 		Capabilities: ports.ChatCapabilities{ports.ChatCapabilityStreaming: true},
 		Probe:        func(context.Context) error { return nil },
 		Launch:       func(context.Context, LaunchConfig) (Launch, error) { return Launch{Command: "fake"}, nil },
@@ -3860,7 +3687,7 @@ func TestACPDriverRejectsAmbiguousLegacyModelAlias(t *testing.T) {
 		rejectUnknownModel: true,
 	}
 	driver := New(Config{
-		Harness:      domain.HarnessCursor,
+		Harness:      domain.HarnessAgy,
 		Capabilities: ports.ChatCapabilities{ports.ChatCapabilityStreaming: true},
 		Probe:        func(context.Context) error { return nil },
 		Launch:       func(context.Context, LaunchConfig) (Launch, error) { return Launch{Command: "fake"}, nil },
@@ -4032,7 +3859,7 @@ func TestACPDriverMapsAdvertisedSteeringOntoAO(t *testing.T) {
 func TestACPSteerMethodNotFoundIsDefiniteRefusal(t *testing.T) {
 	agent := &fakeAgent{steering: true, steerMethodNotFound: true}
 	driver := New(Config{
-		Harness:      domain.HarnessOpenCode,
+		Harness:      domain.HarnessOpenCodeV2,
 		Capabilities: ports.ChatCapabilities{ports.ChatCapabilityStreaming: true},
 		Probe:        func(context.Context) error { return nil },
 		Launch: func(context.Context, LaunchConfig) (Launch, error) {
@@ -4070,7 +3897,7 @@ func TestACPSteerTransportFailureIsNotARefusal(t *testing.T) {
 		steerExtensionErr: &acpsdk.RequestError{Code: -32603, Message: "Internal error"},
 	}
 	driver := New(Config{
-		Harness:      domain.HarnessOpenCode,
+		Harness:      domain.HarnessOpenCodeV2,
 		Capabilities: ports.ChatCapabilities{ports.ChatCapabilityStreaming: true},
 		Probe:        func(context.Context) error { return nil },
 		Launch: func(context.Context, LaunchConfig) (Launch, error) {
@@ -4123,9 +3950,9 @@ func TestDiscoverConfigOptionsReadsSessionCatalogWithoutPrompt(t *testing.T) {
 		selectConfigOption("model", "Model", "model", "sonnet", "sonnet", "opus"),
 	}}
 	driver := New(Config{
-		Harness: domain.HarnessCline,
+		Harness: domain.HarnessAgy,
 		Launch: func(context.Context, LaunchConfig) (Launch, error) {
-			return Launch{Command: "cline", Args: []string{"--acp"}}, nil
+			return Launch{Command: "agy", Args: []string{"--acp"}}, nil
 		},
 	}, slog.New(slog.DiscardHandler))
 	driver.useTestProcess(fakeSpawn(agent))
@@ -4948,7 +4775,7 @@ func TestACPDriverAppliesLaunchSessionOptionsOnStartAndResume(t *testing.T) {
 	}
 	agent := &fakeAgent{newConfig: catalog, setConfig: catalog}
 	driver := New(Config{
-		Harness:      domain.HarnessCopilot,
+		Harness:      domain.HarnessOpenCodeV2,
 		Capabilities: ports.ChatCapabilities{ports.ChatCapabilityStreaming: true, ports.ChatCapabilityResume: true},
 		Probe:        func(context.Context) error { return nil },
 		Launch:       func(context.Context, LaunchConfig) (Launch, error) { return Launch{Command: "fake"}, nil },
@@ -4997,7 +4824,7 @@ func TestACPDriverPreservesCatalogAcrossLaunchOptionsWithoutReturnedCatalog(t *t
 	}
 	agent := &fakeAgent{newConfig: catalog}
 	driver := New(Config{
-		Harness:      domain.HarnessCopilot,
+		Harness:      domain.HarnessOpenCodeV2,
 		Capabilities: ports.ChatCapabilities{ports.ChatCapabilityStreaming: true},
 		Probe:        func(context.Context) error { return nil },
 		Launch:       func(context.Context, LaunchConfig) (Launch, error) { return Launch{Command: "fake"}, nil },
@@ -5045,7 +4872,7 @@ func TestACPDriverSetConfigOptionReturnsNilWhenAgentOmitsCatalog(t *testing.T) {
 	}
 	agent := &fakeAgent{newConfig: catalog}
 	driver := New(Config{
-		Harness:      domain.HarnessCopilot,
+		Harness:      domain.HarnessOpenCodeV2,
 		Capabilities: ports.ChatCapabilities{ports.ChatCapabilityStreaming: true},
 		Probe:        func(context.Context) error { return nil },
 		Launch:       func(context.Context, LaunchConfig) (Launch, error) { return Launch{Command: "fake"}, nil },
@@ -5091,7 +4918,7 @@ func TestACPDriverRequireAdvertisedOptionsRejectsUnadvertised(t *testing.T) {
 	}
 	newDriver := func(agent *fakeAgent) *Driver {
 		driver := New(Config{
-			Harness:      domain.HarnessCopilot,
+			Harness:      domain.HarnessOpenCodeV2,
 			Capabilities: ports.ChatCapabilities{ports.ChatCapabilityStreaming: true},
 			Probe:        func(context.Context) error { return nil },
 			Launch:       func(context.Context, LaunchConfig) (Launch, error) { return Launch{Command: "fake"}, nil },
@@ -5152,7 +4979,7 @@ func TestACPRefreshHistoryClosesSessionBeforeReload(t *testing.T) {
 			},
 		}
 		driver := New(Config{
-			Harness:                  domain.HarnessCopilot,
+			Harness:                  domain.HarnessOpenCodeV2,
 			Capabilities:             ports.ChatCapabilities{ports.ChatCapabilityStreaming: true, ports.ChatCapabilityResume: true},
 			Probe:                    func(context.Context) error { return nil },
 			Launch:                   func(context.Context, LaunchConfig) (Launch, error) { return Launch{Command: "fake"}, nil },
@@ -5200,7 +5027,7 @@ func TestACPHistoryReplaySplitsIDLessPromptsAfterAnswers(t *testing.T) {
 		},
 	}
 	driver := New(Config{
-		Harness:      domain.HarnessCopilot,
+		Harness:      domain.HarnessOpenCodeV2,
 		Capabilities: ports.ChatCapabilities{ports.ChatCapabilityStreaming: true, ports.ChatCapabilityResume: true},
 		Probe:        func(context.Context) error { return nil },
 		Launch:       func(context.Context, LaunchConfig) (Launch, error) { return Launch{Command: "fake"}, nil },

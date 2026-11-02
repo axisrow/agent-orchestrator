@@ -18,7 +18,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/authprobe"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/opencodev2"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 	aoprocess "github.com/aoagents/agent-orchestrator/backend/internal/process"
@@ -41,71 +40,14 @@ const (
 type commandSpec struct {
 	args   []string
 	parser func([]byte) ([]ports.AgentModelInfo, error)
-	// signIn is set for CLIs whose model-list command opens an interactive
-	// browser sign-in when signed out. Discovery only runs once it confirms a
-	// login, so background refreshes never open that sign-in page.
-	signIn *signInCheck
 	// retryEmpty reruns a listing that exits cleanly with no output once.
 	// OpenCode 2 prints nothing the first time it runs in a new folder.
 	retryEmpty bool
 }
 
-// signInCheck confirms a login before a sign-in-prompting model command runs.
-type signInCheck struct {
-	// args is the CLI's non-interactive auth status command.
-	args []string
-	// envKeys are credentials that authorize the CLI without an interactive login.
-	envKeys []string
-}
-
-// kiroSignIn uses Kiro's documented auth status command; `chat --list-models`
-// opens the browser sign-in page when Kiro is signed out.
-var kiroSignIn = &signInCheck{args: []string{"whoami", "--format", "json"}, envKeys: []string{"KIRO_API_KEY"}}
-
-// signInCheckTimeout bounds the status probe; tests shorten it.
-var signInCheckTimeout = 5 * time.Second
-
-// signInProbe runs the status command; tests replace it.
-var signInProbe = func(ctx context.Context, binary string, args []string, workingDir string, env map[string]string) ([]byte, error) {
-	return modelCommand(ctx, binary, args, workingDir, env).CombinedOutput()
-}
-
-// check returns nil when the model command may run. A clear signed-out answer
-// returns ErrAgentModelDiscoverySignInRequired. A cancellation returns the
-// context error, and an inconclusive probe (timeout, or a failed exit without
-// recognizable status text) returns an ordinary discovery error so the caller
-// records and retries it. The model command never runs unless check returns nil.
-func (c *signInCheck) check(ctx context.Context, agentID, binary, workingDir string, env map[string]string) error {
-	for _, key := range c.envKeys {
-		if strings.TrimSpace(env[key]) != "" || strings.TrimSpace(os.Getenv(key)) != "" {
-			return nil
-		}
-	}
-	probeCtx, cancel := context.WithTimeout(ctx, signInCheckTimeout)
-	defer cancel()
-	output, err := signInProbe(probeCtx, binary, c.args, workingDir, env)
-	if ctxErr := ctx.Err(); ctxErr != nil {
-		return fmt.Errorf("%s sign-in check canceled: %w", agentID, ctxErr)
-	}
-	if probeCtx.Err() != nil {
-		return fmt.Errorf("%s sign-in check timed out after %s", agentID, signInCheckTimeout)
-	}
-	switch authprobe.StatusFromText(string(output)) {
-	case ports.AgentAuthStatusAuthorized:
-		return nil
-	case ports.AgentAuthStatusUnauthorized:
-		return fmt.Errorf("%s model discovery: %w", agentID, ports.ErrAgentModelDiscoverySignInRequired)
-	}
-	if err != nil {
-		return fmt.Errorf("%s sign-in check failed: %w", agentID, err)
-	}
-	return nil
-}
-
 var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;]*[[:alpha:]]`)
 
 var commandSpecs = map[string]commandSpec{
-	"aider": {args: []string{"--no-check-update", "--no-git", "--no-gitignore", "--no-analytics", "--list-models", "."}, parser: parseAiderModels},
 	// `models` alone, never `--pure models`: `--pure` (skip external plugins) is
 	// a global flag whose acceptance varies across opencode builds — a binary that
 	// does not take it globally aborts with "Unrecognized flag: --pure in command
@@ -113,28 +55,13 @@ var commandSpecs = map[string]commandSpec{
 	// contract every opencode ships; dropping the flag lists an identical catalog
 	// (and still honors the provider-presence env used for cloud scoping) without
 	// betting on a flag that can be rejected.
-	"opencode":    {args: []string{"models"}, parser: parseProviderIDLines},
 	"opencode-v2": {args: []string{"models"}, parser: parseProviderIDLines, retryEmpty: true},
-	"grok":        {args: []string{"models"}, parser: parseGrokModels},
-	"cursor":      {args: []string{"models"}, parser: parseCursorModels},
 	"agy":         {args: []string{"models"}, parser: parseAgyModels},
-	"kilocode":    {args: []string{"models"}, parser: parseProviderIDLines},
 	"pi":          {args: []string{"--list-models"}, parser: parsePiModels},
-	"kimchi":      {args: []string{"--list-models"}, parser: parsePiModels},
-	"prime-agent": {args: []string{"model", "list"}, parser: parsePiModels},
 	"kimi":        {args: []string{"provider", "list", "--json"}, parser: parseJSONModels},
-	"auggie":      {args: []string{"models", "list", "--json"}, parser: parseJSONModels},
-	"kiro":        {args: []string{"chat", "--list-models", "--format", "json"}, parser: parseJSONModels, signIn: kiroSignIn},
 	"omp":         {args: []string{"models", "--json"}, parser: parseJSONModels},
-	"codewhale":   {args: []string{"models", "--json"}, parser: parseJSONModels},
-	"copilot":     {args: []string{"help", "config"}, parser: parseCopilotConfigModels},
 	"droid":       {args: []string{"exec", "--help"}, parser: parseDroidHelpModels},
-	"crush":       {args: []string{"models"}, parser: parseProviderIDLines},
 	"fx":          {args: []string{"models", "--json"}, parser: parseFXModels},
-	"mimo-code":   {args: []string{"models"}, parser: parseMiMoModels},
-	// `cmd --list-models` prints `provider/model` followed by a marketing
-	// description, not a display name — see parseCommandCodeModels.
-	"command-code": {args: []string{"--list-models"}, parser: parseCommandCodeModels},
 }
 
 // Accepts reports whether model may launch agentID. It rejects a model only
@@ -161,12 +88,6 @@ func Base(agentID string) ports.AgentModelCatalog {
 	now := time.Now().UTC()
 	entryMode := customModelEntryMode(agentID)
 	switch agentID {
-	case "muse":
-		return catalog(agentID, "official-catalog", entryMode, now,
-			model("muse-spark", "Muse Spark", true),
-			model("muse-spark-1.1", "Muse Spark 1.1", false),
-			model("muse-spark-1.2", "Muse Spark 1.2", false),
-		)
 	case "memcode":
 		// Memcode v0.38.1 embeds these pinnable labels in models.json. The
 		// interactive /model picker accepts the labels, not the provider IDs.
@@ -236,10 +157,10 @@ func Manual(agentID string) ports.AgentModelCatalog {
 // availability remain agent-owned and are never listed here.
 func customModelEntryMode(agentID string) ports.CustomModelEntryMode {
 	switch agentID {
-	case "claude-code", "codex", "opencode", "opencode-v2", "grok", "cursor", "qwen", "gemini",
-		"kimi", "muse", "aider", "goose", "autohand", "fx", "unreal-agent", "codewhale", "mimo-code", "deepseek-harness", "openhands", "devin":
+	case "claude-code", "codex", "opencode-v2", "qwen",
+		"kimi", "goose", "autohand", "fx":
 		return ports.CustomModelEntryDirect
-	case "continue", "cline", "kilocode", "vibe", "pi", "kimchi", "prime-agent":
+	case "pi":
 		return ports.CustomModelEntryConfigured
 	default:
 		return ports.CustomModelEntryNone
@@ -292,7 +213,7 @@ func (d Discoverer) discover(ctx context.Context, request ports.AgentModelDiscov
 	if request.AgentID == "claude-code" {
 		return discoverClaudeCatalog(ctx, request, d.ClaudeModels)
 	}
-	if request.AgentID == "muse" || request.AgentID == "memcode" {
+	if request.AgentID == "memcode" {
 		return Base(request.AgentID), nil
 	}
 	if request.AgentID == "codex" {
@@ -318,10 +239,6 @@ func (d Discoverer) discover(ctx context.Context, request ports.AgentModelDiscov
 			return catalog, err
 		}
 	}
-	if request.AgentID == "opencode" && request.CredentialType != "" {
-		return discoverCommandCatalog(ctx, request.AgentID, request.Binary, request.WorkingDir,
-			withOpenCodeCredentialPresence(request.Env, request.CredentialType), false)
-	}
 	env := request.Env
 	if request.AgentID == "opencode-v2" {
 		dataHome, err := opencodev2.DataHome(ctx)
@@ -337,39 +254,12 @@ func (d Discoverer) discover(ctx context.Context, request ports.AgentModelDiscov
 	return discoverCommandCatalog(ctx, request.AgentID, request.Binary, request.WorkingDir, env, request.CredentialType == "")
 }
 
-// opencodeCredentialEnv maps an opencode cloud credential type to the env var
-// whose presence makes `opencode models` include that provider's catalog.
-// opencode lists a provider's models when the variable is SET, without
-// validating it, so a placeholder surfaces exactly what a cloud session holding
-// the real credential can run — without the secret ever leaving the control
-// plane.
-var opencodeCredentialEnv = map[string]string{
-	"opencode_api_key":   "OPENCODE_API_KEY",
-	"anthropic_api_key":  "ANTHROPIC_API_KEY",
-	"openai_api_key":     "OPENAI_API_KEY",
-	"openrouter_api_key": "OPENROUTER_API_KEY",
-}
-
-// modelDiscoveryPresenceValue is a non-secret placeholder written to a provider
-// key solely so opencode includes that provider when listing models. It is never
-// a real credential and never leaves the local, read-only `opencode models` run.
+// modelDiscoveryPresenceValue is a non-secret placeholder historically written
+// to a provider key so the opencode catalog included that provider when listing
+// models. Discovery no longer writes it; the value stays reserved so cached
+// catalogs and stored fingerprints never mistake a placeholder for a real
+// credential.
 const modelDiscoveryPresenceValue = "ao-model-discovery-presence"
-
-// withOpenCodeCredentialPresence returns env with the credential type's provider
-// key marked present, copied so the caller's map is left untouched. An unknown
-// credential type is a no-op.
-func withOpenCodeCredentialPresence(env map[string]string, credentialType string) map[string]string {
-	envVar, ok := opencodeCredentialEnv[credentialType]
-	if !ok {
-		return env
-	}
-	next := make(map[string]string, len(env)+1)
-	for key, value := range env {
-		next[key] = value
-	}
-	next[envVar] = modelDiscoveryPresenceValue
-	return next
-}
 
 // discoverClaudeCatalog reports only provider-discovered models. Errors leave
 // the shared service to retain the matching cached catalog or allow manual
@@ -492,9 +382,6 @@ func (Discoverer) Manual(agentID string) ports.AgentModelCatalog { return Manual
 // Credential-scoped cloud discovery excludes the device-local catalogs.
 func discoverCommandCatalog(ctx context.Context, agentID, binary, workingDir string, env map[string]string, includeLocal bool) (ports.AgentModelCatalog, error) {
 	base := Base(agentID)
-	if agentID == "unreal-agent" {
-		return discoverUnrealCatalog(env), nil
-	}
 	if hasConfigDiscoverySource(agentID) {
 		return discoverConfigCatalog(agentID, workingDir, env)
 	}
@@ -504,11 +391,6 @@ func discoverCommandCatalog(ctx context.Context, agentID, binary, workingDir str
 	}
 	if strings.TrimSpace(binary) == "" {
 		return base, errors.New("agent binary is not installed")
-	}
-	if spec.signIn != nil {
-		if err := spec.signIn.check(ctx, agentID, binary, workingDir, env); err != nil {
-			return base, err
-		}
 	}
 	runCtx, cancel := context.WithTimeout(ctx, commandTimeout)
 	defer cancel()
@@ -538,92 +420,10 @@ func discoverCommandCatalog(ctx context.Context, agentID, binary, workingDir str
 		return base, fmt.Errorf("%s model discovery returned no models", agentID)
 	}
 	models = applyConfiguredDefault(models, configuredDefaultModel(agentID, workingDir, env))
-	if agentID == "codewhale" {
-		models = markCodewhaleResolvedDefault(ctx, binary, workingDir, env, models)
-	}
 	base.Models = models
 	base.Source = "cli"
 	base.FetchedAt = time.Now().UTC()
 	return base, nil
-}
-
-var codewhaleResolvedModelPattern = regexp.MustCompile(`(?mi)^resolved:\s*(\S+)`)
-var codewhaleResolvedProviderPattern = regexp.MustCompile(`(?mi)^provider:\s*(\S+)`)
-
-// markCodewhaleResolvedDefault marks Codewhale's runtime-effective model as
-// the catalog default by asking `codewhale model resolve`, which reads the
-// same provider and model configuration a launched session would use. The
-// result keeps the picker from reporting "model not reported": a resolved id
-// is matched case-insensitively against the catalog, and a configured model
-// the catalog does not list is appended the way Claude's configured model is.
-// A failed or empty resolve is best-effort and leaves the catalog unchanged.
-func markCodewhaleResolvedDefault(ctx context.Context, binary, workingDir string, env map[string]string, models []ports.AgentModelInfo) []ports.AgentModelInfo {
-	if err := ctx.Err(); err != nil {
-		return models
-	}
-	runCtx, cancel := context.WithTimeout(ctx, commandTimeout)
-	defer cancel()
-	output, err := modelCommand(runCtx, binary, []string{"model", "resolve"}, workingDir, env).CombinedOutput()
-	if err != nil {
-		return models
-	}
-	return applyCodewhaleResolvedModel(models, output)
-}
-
-// applyCodewhaleResolvedModel marks the resolved model in the catalog.
-func applyCodewhaleResolvedModel(models []ports.AgentModelInfo, resolveOutput []byte) []ports.AgentModelInfo {
-	match := codewhaleResolvedModelPattern.FindSubmatch(resolveOutput)
-	if len(match) < 2 {
-		return models
-	}
-	resolved := strings.TrimSpace(string(match[1]))
-	if resolved == "" {
-		return models
-	}
-	found := false
-	for i := range models {
-		if strings.EqualFold(models[i].ID, resolved) {
-			models[i].IsDefault = true
-			found = true
-		}
-	}
-	if !found {
-		entry := ports.AgentModelInfo{ID: resolved, Label: resolved, IsDefault: true}
-		if provider := codewhaleResolvedProviderPattern.FindSubmatch(resolveOutput); len(provider) >= 2 {
-			entry.Provider = strings.TrimSpace(string(provider[1]))
-		}
-		models = append(models, entry)
-	}
-	return models
-}
-
-func discoverUnrealCatalog(env map[string]string) ports.AgentModelCatalog {
-	base := Base("unreal-agent")
-	base.SelectionMode = ports.ModelSelectionCatalog
-	base.Source = "config"
-	_, selected := unrealConfiguredModel(env)
-	if selected != "" {
-		base.Models = []ports.AgentModelInfo{model(selected, selected, true)}
-	}
-	return base
-}
-
-func unrealConfiguredModel(env map[string]string) (provider, selected string) {
-	value := func(key string) string {
-		if configured, ok := env[key]; ok {
-			return strings.TrimSpace(configured)
-		}
-		return strings.TrimSpace(os.Getenv(key))
-	}
-	provider = value("UNREAL_HARNESS_LLM_PROVIDER")
-	if provider == "" {
-		provider = "openai"
-	}
-	selected = value("UNREAL_HARNESS_LLM_MODEL")
-	if selected == "" && provider == "openai" {
-		selected = "gpt-6-astra"
-	}
-	return provider, selected
 }
 
 func discoverCodexCatalog(ctx context.Context, request ports.AgentModelDiscoveryRequest, list CodexModelListFunc) (ports.AgentModelCatalog, error) {
@@ -775,9 +575,8 @@ func discoverACPOptionCatalog(
 func hasDiscoverySource(agentID string) bool {
 	switch agentID {
 	// Harnesses whose catalog comes from a daemon-injected surface rather than a
-	// command spec: Codex's app-server, Claude's provider probe, and the ACP
-	// configuration catalog for Cline, DeepSeek Harness, and Devin.
-	case "claude-code", "codex", "deepseek-harness", "devin":
+	// command spec: Codex's app-server and Claude's provider probe.
+	case "claude-code", "codex":
 		return true
 	}
 	if hasConfigDiscoverySource(agentID) {
@@ -899,11 +698,8 @@ func CatalogFingerprint(ctx context.Context, agentID, binary, workingDir string,
 	// Refresh pre-provider catalogs after upgrading and when observed credential
 	// presence changes. The fingerprint includes names only, never key material.
 	switch agentID {
-	case "opencode", "opencode-v2", "pi", "omp", "kimchi", "prime-agent", "kimi", "auggie", "kiro", "codewhale", "kilocode", "crush", "mimo-code", "command-code":
+	case "opencode-v2", "pi", "omp", "kimi":
 		config += ";providers-v2=" + strings.Join(configuredProviders(ctx, agentID, env), ",") + providerCatalogFingerprint(agentID, env)
-	case "aider":
-		// Catalogs cached before Aider models carried their LiteLLM provider.
-		config += ";providers-v1"
 	}
 	if config == "" {
 		// Keep the executable-only fingerprint byte-identical to what earlier
@@ -920,18 +716,8 @@ func CatalogFingerprint(ctx context.Context, agentID, binary, workingDir string,
 // discoveryConfigInputs returns the configuration an agent's discovery consults,
 // or "" when the catalog depends on the binary alone.
 func discoveryConfigInputs(ctx context.Context, agentID, workingDir string, env map[string]string) string {
-	if agentID == "unreal-agent" {
-		provider, selected := unrealConfiguredModel(env)
-		return "provider=" + provider + ";model=" + selected
-	}
 	if agentID == "claude-code" {
 		return "config=" + claudeCodeDiscoveryFingerprint(ctx, workingDir, env)
-	}
-	if agentID == "deepseek-harness" {
-		// Not routed through configDiscoveryFingerprint: the profile is what the
-		// ACP session reads, not a catalog AO parses itself, so the harness has
-		// no config discovery source to declare.
-		return "config=" + fingerprintConfigPaths(modelConfigPaths(agentID, workingDir, env))
 	}
 	if config := configDiscoveryFingerprint(agentID, workingDir, env); config != "" {
 		return "config=" + config
@@ -1003,23 +789,6 @@ func splitProviderID(item *ports.AgentModelInfo) bool {
 	return true
 }
 
-// Bedrock's own model IDs, which LiteLLM lists without a provider prefix:
-// vendor.model, optionally behind a cross-region inference prefix.
-var bedrockModelIDPattern = regexp.MustCompile(`^(?:(?:us|eu|apac|au|jp|ca|global|us-gov)\.)?(?:ai21|amazon|anthropic|cohere|deepseek|meta|minimax|mistral|moonshot|nvidia|openai|qwen|twelvelabs|writer)\.[a-z0-9]`)
-
-// Aider lists LiteLLM model names, whose prefix before the first slash is the
-// LiteLLM provider. Bare names name no provider, except Bedrock's vendor.model
-// IDs; the rest stay unassigned rather than guessed from the model name.
-func parseAiderModels(output []byte) ([]ports.AgentModelInfo, error) {
-	models, _ := parseProviderIDLines(output)
-	for i := range models {
-		if models[i].Provider == "" && bedrockModelIDPattern.MatchString(models[i].ID) {
-			models[i].Provider = "bedrock"
-		}
-	}
-	return models, nil
-}
-
 func parseIDLines(output []byte) []ports.AgentModelInfo {
 	text := ansiPattern.ReplaceAllString(string(output), "")
 	var models []ports.AgentModelInfo
@@ -1036,20 +805,6 @@ func parseIDLines(output []byte) []ports.AgentModelInfo {
 		models = append(models, ports.AgentModelInfo{ID: id, Label: id})
 	}
 	return normalize(models)
-}
-
-func parseMiMoModels(output []byte) ([]ports.AgentModelInfo, error) {
-	text := ansiPattern.ReplaceAllString(string(output), "")
-	var models []ports.AgentModelInfo
-	for _, line := range strings.Split(text, "\n") {
-		id, _, found := strings.Cut(strings.TrimSpace(line), " — ")
-		item := ports.AgentModelInfo{ID: id}
-		if !found || !looksLikeModelID(id) || !splitProviderID(&item) {
-			continue
-		}
-		models = append(models, item)
-	}
-	return normalize(models), nil
 }
 
 func parseAgyModels(output []byte) ([]ports.AgentModelInfo, error) {
@@ -1070,109 +825,6 @@ func parseAgyModels(output []byte) ([]ports.AgentModelInfo, error) {
 			label = id
 		}
 		models = append(models, ports.AgentModelInfo{ID: id, Label: label})
-	}
-	return normalize(models), nil
-}
-
-// parseCommandCodeModels parses `cmd --list-models`, whose rows look like
-//
-//	deepseek/deepseek-v4-pro    hybrid-attention long-context reasoning
-//	deepseek/deepseek-v4-flash  fast hybrid-attention reasoning (default)
-//
-// The trailing text is a description, not a display name. parseAgyModels reads
-// everything after the id as the label, which is right for Agy's format but
-// wrong here: the Command Code picker then offered "balances intelligence and
-// cost" and "600B sparse-MoE agentic coding with 1M context" as if they were
-// models the user could select.
-//
-// Command Code's `--list-models` publishes no friendly name, so the id is the
-// only label that cannot misdescribe a model — and it is exactly the value
-// `--model` accepts. Chat mode is unaffected: its ACP catalog carries real
-// names ("Claude Sonnet 5.5") alongside descriptions.
-func parseCommandCodeModels(output []byte) ([]ports.AgentModelInfo, error) {
-	text := ansiPattern.ReplaceAllString(string(output), "")
-	var models []ports.AgentModelInfo
-	var sectionProvider string
-	for _, rawLine := range strings.Split(text, "\n") {
-		line := strings.TrimSpace(rawLine)
-		// These are provider headings in the native table, not model-name guesses.
-		switch line {
-		case "Anthropic":
-			sectionProvider = "anthropic"
-			continue
-		case "OpenAI":
-			sectionProvider = "openai"
-			continue
-		case "Open Source":
-			sectionProvider = ""
-			continue
-		}
-		if strings.HasPrefix(line, "Pass the full id") || strings.HasPrefix(line, "Docs:") {
-			break
-		}
-		fields := strings.Fields(line)
-		if len(fields) == 0 {
-			continue
-		}
-		id := strings.Trim(fields[0], "`\"'[](),:")
-		// Native model IDs contain a separator; headings do not.
-		// This also rejects the banner and the section headings ("Available
-		// models", "Open Source", "Anthropic"), which would otherwise parse as
-		// one-word ids.
-		if !looksLikeModelID(id) || !strings.ContainsAny(id, "-./:_") {
-			// An unrecognized section must not inherit the preceding provider.
-			if len(fields) == 1 {
-				sectionProvider = ""
-			}
-			continue
-		}
-		provider := sectionProvider
-		if prefix, name, ok := strings.Cut(id, "/"); ok && prefix != "" && name != "" {
-			provider = prefix
-		}
-		models = append(models, ports.AgentModelInfo{
-			ID:       id,
-			Label:    id,
-			Provider: provider,
-			// normalize() strips a trailing "(default)" from Label, but the
-			// label is the id here, so the marker has to be read from the row.
-			IsDefault: strings.Contains(strings.ToLower(line), "(default)"),
-		})
-	}
-	return normalize(models), nil
-}
-
-func parseGrokModels(output []byte) ([]ports.AgentModelInfo, error) {
-	return parseSectionModels(string(output), "Available models:", "")
-}
-
-func parseCursorModels(output []byte) ([]ports.AgentModelInfo, error) {
-	return parseSectionModels(string(output), "Available models", "Tip:")
-}
-
-func parseCopilotConfigModels(output []byte) ([]ports.AgentModelInfo, error) {
-	text := ansiPattern.ReplaceAllString(string(output), "")
-	inModels := false
-	var models []ports.AgentModelInfo
-	for _, rawLine := range strings.Split(text, "\n") {
-		line := strings.TrimSpace(rawLine)
-		if !inModels {
-			if strings.HasPrefix(line, "`model`:") {
-				inModels = true
-			}
-			continue
-		}
-		if strings.HasPrefix(line, "`contextTier`:") {
-			break
-		}
-		if !strings.HasPrefix(line, "-") {
-			continue
-		}
-		id := strings.TrimSpace(strings.TrimPrefix(line, "-"))
-		id = strings.Trim(id, "`\"'")
-		if looksLikeModelID(id) {
-			models = append(models, ports.AgentModelInfo{ID: id, Label: id})
-		}
 	}
 	return normalize(models), nil
 }

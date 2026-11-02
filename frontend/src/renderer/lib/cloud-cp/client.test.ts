@@ -139,7 +139,7 @@ describe("cloud control-plane session lifecycle", () => {
 	it("inspects and installs only through typed cloud harness routes", async () => {
 		const fetchMock = vi.fn(
 			async () =>
-				new Response(JSON.stringify({ harness: "cursor", status: "ready" }), {
+				new Response(JSON.stringify({ harness: "claude-code", status: "ready" }), {
 					status: 200,
 					headers: { "Content-Type": "application/json" },
 				}),
@@ -150,10 +150,10 @@ describe("cloud control-plane session lifecycle", () => {
 			fetchImpl: fetchMock as typeof fetch,
 		});
 
-		await client.installSessionReviewerHarness("org/1", "session/1", "cursor");
+		await client.installSessionReviewerHarness("org/1", "session/1", "claude-code");
 
 		expect(fetchMock).toHaveBeenCalledWith(
-			"https://cloud.example.test/api/cloud/v1/orgs/org%2F1/sessions/session%2F1/reviewer-harnesses/cursor/install",
+			"https://cloud.example.test/api/cloud/v1/orgs/org%2F1/sessions/session%2F1/reviewer-harnesses/claude-code/install",
 			expect.objectContaining({ method: "POST" }),
 		);
 	});

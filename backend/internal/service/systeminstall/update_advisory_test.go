@@ -55,11 +55,11 @@ func TestOfficialReleaseExposesVendorMaintenanceOnlyOutsidePackageTools(t *testi
 	}{
 		{"native Claude", TargetClaudeCode, ".local/share/claude/versions/2.1.291", "Claude Code 2.1.291", "official-installer"},
 		{"Claude anywhere outside package tools", TargetClaudeCode, "opt/bin/claude", "Claude Code 2.1.291", "official-installer"},
-		{"Grok download", TargetGrok, ".grok/downloads/grok-1.0.13-macos-aarch64", "grok 1.0.13", "official-installer"},
+		{"OMP download", TargetOMP, ".omp/downloads/omp-1.0.13-macos-aarch64", "omp 1.0.13", "official-installer"},
 		{"Pi managed launcher", TargetPi, ".pi/agent/bin/pi", "0.84.4", "official-installer"},
 		{"inside Homebrew", TargetClaudeCode, "opt/homebrew/Cellar/claude/.local/share/claude/versions/2.1.291", "Claude Code 2.1.291", ""},
-		{"behind a version manager", TargetGrok, ".asdf/shims/grok", "grok 1.0.13", ""},
-		{"no self-update command", TargetMuse, ".local/bin/muse", "Muse Code 1.4.2 (1.4.2-R4900.1)", ""},
+		{"behind a version manager", TargetOMP, ".asdf/shims/omp", "omp 1.0.13", ""},
+		{"no self-update command", TargetAgy, ".local/bin/agy", "agy 1.4.2", ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), filepath.FromSlash(tt.path))
@@ -210,7 +210,7 @@ func TestUpdateAdvisoryRunsAtMostTwoChecksAtOnce(t *testing.T) {
 		return VerifyResult{ResolvedPath: "/opt/bin/harness", Output: "1.0.0"}, nil
 	})
 	s.officialVersion = func(context.Context, Target) (string, error) { return "1.0.0", nil }
-	targets := []Target{TargetCodex, TargetClaudeCode, TargetGrok, TargetPi, TargetMuse, TargetGemini}
+	targets := []Target{TargetCodex, TargetClaudeCode, TargetOMP, TargetPi, TargetAgy}
 	done := make(chan error, len(targets))
 	for _, target := range targets {
 		go func() {

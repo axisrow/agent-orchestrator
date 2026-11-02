@@ -170,7 +170,9 @@ func TestSessionCreateAllowsPrimeAgentHarness(t *testing.T) {
 	ctx := context.Background()
 	seedProject(t, s, "mer")
 	rec := sampleRecord("mer")
-	rec.Harness = domain.HarnessPrimeAgent
+	// prime-agent is no longer a selectable harness, but the sessions.harness
+	// CHECK still admits it so historical rows keep loading.
+	rec.Harness = domain.AgentHarness("prime-agent")
 	if _, err := s.CreateSession(ctx, rec); err != nil {
 		t.Fatalf("create prime-agent-harness session: %v", err)
 	}
@@ -648,13 +650,13 @@ func TestRecordSessionLatestUserPromptIsNarrowAndMonotonic(t *testing.T) {
 }
 
 // Regression: the sessions.harness CHECK must allow the 'kimchi' harness (added
-// in migration 0054) so Kimchi sessions can be created.
+// in migration 0054) so historical Kimchi sessions keep loading.
 func TestSessionCreateAllowsKimchiHarness(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 	seedProject(t, s, "mer")
 	rec := sampleRecord("mer")
-	rec.Harness = domain.HarnessKimchi
+	rec.Harness = domain.AgentHarness("kimchi")
 	if _, err := s.CreateSession(ctx, rec); err != nil {
 		t.Fatalf("create kimchi-harness session: %v", err)
 	}

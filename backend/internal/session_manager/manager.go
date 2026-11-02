@@ -1163,18 +1163,6 @@ func (m *Manager) spawn(ctx context.Context, cfg ports.SpawnConfig, timings *spa
 	if _, ok := m.agents.Agent(cfg.Harness); !ok {
 		return domain.SessionRecord{}, 0, 0, fmt.Errorf("spawn: %w: %q", ErrUnknownHarness, cfg.Harness)
 	}
-	// Unreal Agent has no terminal interface or interactive approval channel.
-	// Selecting the harness therefore supplies its only valid launch defaults;
-	// an explicit caller-supplied mode or permission remains authoritative and
-	// is rejected normally when the harness cannot honor it.
-	if cfg.Harness == domain.HarnessUnreal {
-		if !cfg.RequestedMode.Valid() {
-			cfg.RequestedMode = domain.SessionModeChat
-		}
-		if cfg.AgentConfig.Permissions == "" {
-			cfg.AgentConfig.Permissions = ports.PermissionModeBypassPermissions
-		}
-	}
 
 	// Resolve the effective agent config (project base + role override + spawn
 	// override) and validate the model before any durable state is created. A
@@ -1792,22 +1780,15 @@ func (m *Manager) resolveAgentConfig(ctx context.Context, cfg ports.SpawnConfig,
 	if cfg.EffortOverride {
 		resolved.Effort = requested.Effort
 	}
-	if cfg.Harness != domain.HarnessCodex && cfg.Harness != domain.HarnessClaudeCode && cfg.Harness != domain.HarnessCommandCode {
+	if cfg.Harness != domain.HarnessCodex && cfg.Harness != domain.HarnessClaudeCode {
 		// Only a flagged explicit override (the spawn API and delegation mark
 		// request-carried effort) fails loudly: the caller asked for something
 		// the harness cannot honor. Unflagged or inherited effort still clears
 		// silently so role/project defaults keep working for every harness.
 		if cfg.EffortOverride && strings.TrimSpace(requested.Effort) != "" {
-			return ports.AgentConfig{}, fmt.Errorf("%w for harness %q: effort is only supported for codex, claude-code, and command-code agents", ports.ErrUnsupportedEffort, cfg.Harness)
+			return ports.AgentConfig{}, fmt.Errorf("%w for harness %q: effort is only supported for codex and claude-code agents", ports.ErrUnsupportedEffort, cfg.Harness)
 		}
 		resolved.Effort = ""
-		return resolved, nil
-	}
-	if cfg.Harness == domain.HarnessCommandCode {
-		// Command Code's `cmd --list-models` catalog advertises no per-model
-		// effort levels, so there is nothing to validate against: forward the
-		// raw level (empty keeps the adapter default) and let `cmd --effort`
-		// reject unknown values at launch.
 		return resolved, nil
 	}
 	modelID := strings.TrimSpace(resolved.Model)
@@ -5315,10 +5296,6 @@ func (m *Manager) send(ctx context.Context, id domain.SessionID, message, client
 		}
 		message = domain.WrapSessionDelivery(deliveryID, message)
 	}
-	message, err := m.prepareOutboundMessage(ctx, id, message)
-	if err != nil {
-		return err
-	}
 	if options.InteractionAt.IsZero() {
 		options.InteractionAt = m.clock()
 	}
@@ -5443,39 +5420,6 @@ func (m *Manager) supersedePendingReports(ctx context.Context, id domain.Session
 	if n > 0 {
 		m.logger.Info("send: pending worker reports superseded by a new prompt", "sessionID", id, "reports", n)
 	}
-}
-
-func (m *Manager) prepareOutboundMessage(ctx context.Context, id domain.SessionID, message string) (string, error) {
-	rec, ok, err := m.store.GetSession(ctx, id)
-	if err != nil {
-		return "", fmt.Errorf("send %s: session: %w", id, err)
-	}
-	if !ok {
-		return message, nil
-	}
-	if rec.Harness != domain.HarnessCopilot || rec.Kind != domain.KindOrchestrator {
-		return message, nil
-	}
-	return copilotOrchestratorMessage(rec.ProjectID, message), nil
-}
-
-func copilotOrchestratorMessage(projectID domain.ProjectID, message string) string {
-	project := strings.TrimSpace(string(projectID))
-	if project == "" {
-		project = "<project>"
-	}
-	return fmt.Sprintf(`AO ORCHESTRATOR DIRECTIVE
-
-You are acting as the AO orchestrator for project %s. Do not implement code changes, edit files, run implementation tests, or complete the user's task yourself.
-
-Your next action for any implementation, fix, UI change, test, PR, or code-review task must be to spawn or redirect a worker session. Use:
-
-ao spawn --project %s --name "<label, max 100 chars>" --prompt "<clear worker task>"
-
-If a suitable worker already exists, use ao send to redirect that worker instead. After spawning or redirecting, report the worker session id and stop. Do not do the worker's task in this orchestrator session.
-
-USER MESSAGE:
-%s`, project, project, message)
 }
 
 // harnessNudgeSafe reports whether the session's harness is safe to nudge with
@@ -6406,15 +6350,7 @@ func (m *Manager) prepareSystemPromptFile(id domain.SessionID, harness domain.Ag
 
 func systemPromptFileRequired(harness domain.AgentHarness) bool {
 	switch harness {
-	case domain.HarnessGemini, domain.HarnessAider,
-		domain.HarnessAgy,
-		domain.HarnessAuggie,
-		domain.HarnessCommandCode,
-		domain.HarnessKiro,
-		domain.HarnessOpenCode,
-		domain.HarnessCopilot,
-		domain.HarnessVibe,
-		domain.HarnessOpenHands:
+	case domain.HarnessAgy:
 		return true
 	default:
 		return false

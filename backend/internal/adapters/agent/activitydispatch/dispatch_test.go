@@ -22,13 +22,13 @@ func TestDeriverTokensAreKnownHarnesses(t *testing.T) {
 }
 
 func TestSupportsHarness(t *testing.T) {
-	for _, h := range []domain.AgentHarness{domain.HarnessCodex, domain.HarnessClaudeCode, domain.HarnessGrok, domain.HarnessMuse, domain.HarnessOpenCode, domain.HarnessOpenCodeV2, domain.HarnessKimi, domain.HarnessVibe, domain.HarnessPrimeAgent, domain.HarnessAmp, domain.HarnessPi, domain.HarnessAuggie, domain.HarnessContinue, domain.HarnessAider, domain.HarnessOMP, domain.HarnessCommandCode} {
+	for _, h := range []domain.AgentHarness{domain.HarnessCodex, domain.HarnessClaudeCode, domain.HarnessOpenCodeV2, domain.HarnessKimi, domain.HarnessAmp, domain.HarnessPi, domain.HarnessOMP, domain.HarnessAgy, domain.HarnessDroid, domain.HarnessMemcode} {
 		if !SupportsHarness(h) {
 			t.Errorf("SupportsHarness(%q) = false, want true", h)
 		}
 	}
 	// Harnesses with no callback pipeline must read as unsupported.
-	for _, h := range []domain.AgentHarness{domain.HarnessCrush, domain.AgentHarness("")} {
+	for _, h := range []domain.AgentHarness{domain.HarnessFX, domain.AgentHarness("")} {
 		if SupportsHarness(h) {
 			t.Errorf("SupportsHarness(%q) = true, want false", h)
 		}
@@ -49,7 +49,7 @@ func TestOMPDispatchesManagedExtensionActivity(t *testing.T) {
 	}
 }
 
-func TestAmpPiAndAuggieDispatchActivity(t *testing.T) {
+func TestAmpAndPiDispatchActivity(t *testing.T) {
 	tests := []struct {
 		agent   string
 		event   string
@@ -58,7 +58,6 @@ func TestAmpPiAndAuggieDispatchActivity(t *testing.T) {
 	}{
 		{agent: "amp", event: "thread-state", payload: `{"state":"awaiting-approval"}`, want: domain.ActivityWaitingInput},
 		{agent: "pi", event: "user-prompt-submit", payload: `{}`, want: domain.ActivityActive},
-		{agent: "auggie", event: "stop", payload: `{"agent_stop_cause":"error"}`, want: domain.ActivityWaitingInput},
 	}
 
 	for _, tt := range tests {
@@ -77,11 +76,8 @@ func TestSignalCoverageForHarness(t *testing.T) {
 		want    SignalCoverage
 	}{
 		{domain.HarnessClaudeCode, SignalCoverageComplete},
-		{domain.HarnessContinue, SignalCoveragePartial},
-		{domain.HarnessAider, SignalCoveragePartial},
-		{domain.HarnessCommandCode, SignalCoveragePartial},
 		{domain.HarnessMemcode, SignalCoveragePartial},
-		{domain.HarnessCrush, SignalCoverageNone},
+		{domain.HarnessFX, SignalCoverageNone},
 	}
 
 	for _, tt := range tests {
@@ -93,150 +89,11 @@ func TestSignalCoverageForHarness(t *testing.T) {
 	}
 }
 
-func TestCommandCodeDispatchesAvailableLifecycleSignals(t *testing.T) {
-	for _, tc := range []struct {
-		event string
-		want  domain.ActivityState
-	}{
-		{event: "pre-tool-use", want: domain.ActivityActive},
-		{event: "post-tool-use", want: domain.ActivityActive},
-		{event: "stop", want: domain.ActivityIdle},
-	} {
-		t.Run(tc.event, func(t *testing.T) {
-			got, ok := Derive("command-code", tc.event, []byte(`{"session_id":"native-1"}`))
-			if !ok || got != tc.want {
-				t.Fatalf("Derive(command-code, %q) = (%q, %v), want (%q, true)", tc.event, got, ok, tc.want)
-			}
-		})
-	}
-}
-
-// SessionStart fires on resume and clear as well as startup, and a native
-// restore delivers no prompt, so it must report no activity. A restored session
-// at an empty prompt would otherwise read as working until the user's next turn.
-func TestCommandCodeSessionStartCarriesMetadataOnly(t *testing.T) {
-	got, ok := Derive("command-code", "session-start", []byte(`{"session_id":"native-1"}`))
-	if ok {
-		t.Fatalf("Derive(command-code, session-start) = (%q, true), want no activity signal", got)
-	}
-}
-
 func TestFullySupportsHarnessRequiresCompleteCoverage(t *testing.T) {
 	if !FullySupportsHarness(domain.HarnessClaudeCode) {
 		t.Fatal("FullySupportsHarness(claude-code) = false, want true")
 	}
-	if FullySupportsHarness(domain.HarnessContinue) {
-		t.Fatal("FullySupportsHarness(continue) = true, want false for version-dependent hooks")
-	}
-	if FullySupportsHarness(domain.HarnessAider) {
-		t.Fatal("FullySupportsHarness(aider) = true, want false for completion-only signals")
-	}
-}
-
-func TestAiderDerivesCompletionNotification(t *testing.T) {
-	got, ok := Derive("aider", "notification", nil)
-	if !ok || got != domain.ActivityWaitingInput {
-		t.Fatalf("Derive(aider, notification) = (%q, %v), want (%q, true)", got, ok, domain.ActivityWaitingInput)
-	}
-}
-
-func TestContinueDerivesClaudeCompatibleNeedsInput(t *testing.T) {
-	got, ok := Derive("continue", "notification", []byte(`{"notification_type":"agent_needs_input"}`))
-	if !ok || got != domain.ActivityWaitingInput {
-		t.Fatalf("Derive(continue, notification) = (%q, %v), want (%q, true)", got, ok, domain.ActivityWaitingInput)
-	}
-}
-
-func TestPrimeAgentDerivesManagedExtensionActivity(t *testing.T) {
-	tests := []struct {
-		name    string
-		event   string
-		payload string
-		want    domain.ActivityState
-		wantOK  bool
-	}{
-		{"promptless startup", "session-start", `{"reason":"startup"}`, domain.ActivityIdle, true},
-		{"prompt submit", "user-prompt-submit", `{"prompt":"fix it"}`, domain.ActivityActive, true},
-		{"agent end", "stop", `{}`, domain.ActivityIdle, true},
-		{"quit", "session-end", `{"reason":"quit"}`, domain.ActivityExited, true},
-		{"internal reset", "session-end", `{"reason":"reload"}`, "", false},
-		{"malformed shutdown", "session-end", `{`, "", false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, ok := Derive("prime-agent", tt.event, []byte(tt.payload))
-			if ok != tt.wantOK || got != tt.want {
-				t.Fatalf("Derive(prime-agent, %q) = (%q, %v), want (%q, %v)", tt.event, got, ok, tt.want, tt.wantOK)
-			}
-		})
-	}
-}
-
-func TestCursorDerivesManagedHookActivity(t *testing.T) {
-	tests := []struct {
-		event string
-		want  domain.ActivityState
-	}{
-		{"session-start", domain.ActivityActive},
-		{"user-prompt-submit", domain.ActivityActive},
-		{"stop", domain.ActivityIdle},
-		{"after-shell-execution", domain.ActivityActive},
-	}
-	for _, tt := range tests {
-		t.Run(tt.event, func(t *testing.T) {
-			got, ok := Derive("cursor", tt.event, []byte(`{}`))
-			if !ok || got != tt.want {
-				t.Fatalf("Derive(cursor, %q) = (%q, %v), want (%q, true)", tt.event, got, ok, tt.want)
-			}
-		})
-	}
-	if got, ok := Derive("cursor", "before-shell-execution", []byte(`{}`)); ok {
-		t.Fatalf("Derive(cursor, before-shell-execution) = (%q, true), want no activity from deriver", got)
-	}
-}
-
-func TestMuseDerivesManagedHookActivity(t *testing.T) {
-	tests := []struct {
-		event string
-		want  domain.ActivityState
-	}{
-		{"user-prompt-submit", domain.ActivityActive},
-		{"permission-request", domain.ActivityBlocked},
-		{"stop", domain.ActivityIdle},
-	}
-	for _, tt := range tests {
-		t.Run(tt.event, func(t *testing.T) {
-			got, ok := Derive("muse", tt.event, []byte(`{}`))
-			if !ok || got != tt.want {
-				t.Fatalf("Derive(muse, %q) = (%q, %v), want (%q, true)", tt.event, got, ok, tt.want)
-			}
-		})
-	}
-	if got, ok := Derive("muse", "session-start", []byte(`{}`)); ok {
-		t.Fatalf("Derive(muse, session-start) = (%q, true), want metadata-only", got)
-	}
-}
-
-func TestGrokDerivesClaudeCompatibleActivity(t *testing.T) {
-	tests := []struct {
-		name    string
-		event   string
-		payload string
-		want    domain.ActivityState
-	}{
-		{"permission request", "permission-request", `{}`, domain.ActivityBlocked},
-		{"idle notification", "notification", `{"notification_type":"idle_prompt"}`, domain.ActivityIdle},
-		{"session end", "session-end", `{}`, domain.ActivityExited},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, ok := Derive("grok", tt.event, []byte(tt.payload))
-			if !ok {
-				t.Fatalf("Derive(grok, %q) ok=false, want true", tt.event)
-			}
-			if got != tt.want {
-				t.Fatalf("Derive(grok, %q) = %q, want %q", tt.event, got, tt.want)
-			}
-		})
+	if FullySupportsHarness(domain.HarnessMemcode) {
+		t.Fatal("FullySupportsHarness(memcode) = true, want false for partial signals")
 	}
 }

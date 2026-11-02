@@ -742,18 +742,18 @@ it("opens the returned reviewer Chat when a remote review is triggered", async (
 		const request = input instanceof Request ? input : new Request(input);
 		const path = new URL(request.url).pathname;
 		if (path.endsWith("/projects")) return Response.json({ projects: [{ id: "project-1", name: "Todo", path: "/remote" }] });
-		if (path.endsWith("/sessions")) return Response.json({ sessions: [{ id: "session-1", projectId: "project-1", harness: "opencode", status: "working", mode: "chat", prs: [{ url: prUrl, number: 7, state: "open", ci: "passing", review: "none", mergeability: "mergeable", reviewComments: false, updatedAt: "2026-09-28T00:00:00Z" }] }] });
+		if (path.endsWith("/sessions")) return Response.json({ sessions: [{ id: "session-1", projectId: "project-1", harness: "opencode-v2", status: "working", mode: "chat", prs: [{ url: prUrl, number: 7, state: "open", ci: "passing", review: "none", mergeability: "mergeable", reviewComments: false, updatedAt: "2026-09-28T00:00:00Z" }] }] });
 		if (path.endsWith("/sessions/session-1/reviews") && request.method === "GET") return Response.json(reviews);
 		if (path.endsWith("/sessions/session-1/reviews/trigger")) {
 			mutations.push(request.url);
 			reviews = {
-				reviewerHandleId: "", reviewerSurface: { mode: "chat", reviewId: "review-1", harness: "opencode" }, runs: [],
-				reviews: [{ prNumber: 7, prUrl, status: "running", targetSha: "head", title: "PR 7", latestRun: { id: "run-1", reviewId: "review-1", sessionId: "session-1", prUrl, targetSha: "head", harness: "opencode", status: "running", createdAt: "2026-09-28T00:00:00Z", triggerSource: "manual", autoInjectReview: true, githubReviewId: "", body: "", verdict: "" } }],
+				reviewerHandleId: "", reviewerSurface: { mode: "chat", reviewId: "review-1", harness: "opencode-v2" }, runs: [],
+				reviews: [{ prNumber: 7, prUrl, status: "running", targetSha: "head", title: "PR 7", latestRun: { id: "run-1", reviewId: "review-1", sessionId: "session-1", prUrl, targetSha: "head", harness: "opencode-v2", status: "running", createdAt: "2026-09-28T00:00:00Z", triggerSource: "manual", autoInjectReview: true, githubReviewId: "", body: "", verdict: "" } }],
 			};
 			return Response.json(reviews, { status: 201 });
 		}
-		if (path.endsWith("/projects/project-1")) return Response.json({ project: { config: { reviewers: [{ harness: "opencode" }] } } });
-		if (path.endsWith("/agents/readiness") || path.endsWith("/agents/readiness/ensure")) return Response.json({ agents: [agentReadiness("opencode")] });
+		if (path.endsWith("/projects/project-1")) return Response.json({ project: { config: { reviewers: [{ harness: "opencode-v2" }] } } });
+		if (path.endsWith("/agents/readiness") || path.endsWith("/agents/readiness/ensure")) return Response.json({ agents: [agentReadiness("opencode-v2")] });
 		if (path.endsWith("/reviews/review-1/conversation")) return Response.json(conversationBody({ sessionId: "review-1", messages: [{ id: "review-msg", role: "assistant", text: "Reviewer is on Box B", sequence: 1 }] }));
 		if (path.endsWith("/sessions/session-1/conversation")) return Response.json(conversationBody());
 		return Response.json({});
@@ -801,8 +801,8 @@ it("opens a shell tab on Box B without attaching a local or Box A terminal", asy
 		const request = input instanceof Request ? input : new Request(input);
 		const path = new URL(request.url).pathname;
 		if (path.endsWith("/projects")) return Response.json({ projects: [{ id: "project-1", name: "Todo", path: "/remote" }] });
-		if (path.endsWith("/sessions")) return Response.json({ sessions: [{ id: "session-1", projectId: "project-1", harness: "opencode", status: "working", mode: "chat", prs: [] }] });
-		if (path.endsWith("/sessions/session-1/conversation")) return Response.json(conversationBody({ harness: "opencode" }));
+		if (path.endsWith("/sessions")) return Response.json({ sessions: [{ id: "session-1", projectId: "project-1", harness: "opencode-v2", status: "working", mode: "chat", prs: [] }] });
+		if (path.endsWith("/sessions/session-1/conversation")) return Response.json(conversationBody({ harness: "opencode-v2" }));
 		if (path.endsWith("/shell-terminals") && request.method === "GET") return Response.json({ shellTerminals: shellPosts.length ? [openedShell] : [] });
 		if (path.endsWith("/shell-terminals") && request.method === "POST") {
 			shellPosts.push(request.url);
@@ -863,7 +863,7 @@ it("hides Chat switching for a remote harness outside that host's Chat list", as
 	vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
 		const path = new URL(input instanceof Request ? input.url : String(input)).pathname;
 		if (path.endsWith("/projects")) return Response.json({ projects: [{ id: "project-1", name: "Remote", path: "/remote" }] });
-		if (path.endsWith("/sessions")) return Response.json({ sessions: [{ id: "session-1", projectId: "project-1", harness: "opencode", status: "idle", mode: "tui", prs: [] }] });
+		if (path.endsWith("/sessions")) return Response.json({ sessions: [{ id: "session-1", projectId: "project-1", harness: "opencode-v2", status: "idle", mode: "tui", prs: [] }] });
 		if (path.endsWith("/settings")) return Response.json({ chatHarnesses: ["claude-code", "codex"] });
 		if (path.endsWith("/interface-transition")) return Response.json({ supported: false, targetMode: "chat", reasonCode: "SESSION_TERMINATED" });
 		return Response.json({});

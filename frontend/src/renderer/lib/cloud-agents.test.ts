@@ -65,8 +65,8 @@ describe("connectedCredentialType", () => {
 });
 
 describe("cloudAgentInfos", () => {
-	it("offers Claude Code, Codex, Cursor, and OpenCode on cloud", () => {
-		expect(cloudAgentInfos([]).map((agent) => agent.id)).toEqual(["claude-code", "codex", "cursor", "opencode"]);
+	it("offers Claude Code and Codex on cloud", () => {
+		expect(cloudAgentInfos([]).map((agent) => agent.id)).toEqual(["claude-code", "codex"]);
 	});
 
 	it("marks an agent ready only when its connection is valid", () => {
@@ -78,8 +78,6 @@ describe("cloudAgentInfos", () => {
 		expect(agents.map((agent) => [agent.id, agent.effectiveReadiness])).toEqual([
 			["claude-code", "ready"],
 			["codex", "not_ready"],
-			["cursor", "not_ready"],
-			["opencode", "not_ready"],
 		]);
 	});
 });

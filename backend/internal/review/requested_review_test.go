@@ -320,11 +320,11 @@ func TestRestoreReviewerKeepsALiveParallelReviewerAndCancelsADeadOne(t *testing.
 			store := &fakeStore{
 				reviews: map[domain.ReviewerHarness]domain.Review{
 					domain.ReviewerClaudeCode: {ID: "rev-claude-code", SessionID: "mer-1", Harness: domain.ReviewerClaudeCode},
-					domain.ReviewerOpenCode:   {ID: "rev-opencode", SessionID: "mer-1", Harness: domain.ReviewerOpenCode, ReviewerHandleID: tc.handle},
+					domain.ReviewerOpenCodeV2: {ID: "rev-opencode", SessionID: "mer-1", Harness: domain.ReviewerOpenCodeV2, ReviewerHandleID: tc.handle},
 				},
 				runs: []domain.ReviewRun{
 					requestedRun("run-claude", domain.ReviewerClaudeCode, domain.ReviewRunComplete, domain.VerdictApproved, 1),
-					requestedRun("run-opencode", domain.ReviewerOpenCode, domain.ReviewRunRunning, domain.VerdictNone, 2),
+					requestedRun("run-opencode", domain.ReviewerOpenCodeV2, domain.ReviewRunRunning, domain.VerdictNone, 2),
 				},
 			}
 			launcher := &fakeLauncher{alive: true, handle: "claude-pane"}

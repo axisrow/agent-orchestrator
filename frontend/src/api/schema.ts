@@ -2081,23 +2081,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/sessions/{sessionId}/activity/codewhale": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Record a Codewhale lifecycle outbox event */
-        post: operations["setCodewhaleSessionActivity"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/sessions/{sessionId}/agent-browser/*": {
         parameters: {
             query?: never;
@@ -4684,26 +4667,6 @@ export interface components {
             projectId?: null | string;
             remoteUrl: string;
         };
-        CodewhaleLifecycleEvent: {
-            /** Format: date-time */
-            created_at?: string;
-            event: string;
-            item_id?: null | string;
-            /** @enum {string} */
-            kind: "session.started" | "turn.started" | "turn.completed" | "turn.failed" | "turn.interrupted" | "turn.stalled" | "session.ended" | "subagent.spawned" | "subagent.completed";
-            payload?: unknown;
-            schema_version: number;
-            seq: number;
-            thread_id: string;
-            /** Format: date-time */
-            timestamp?: string;
-            turn_id?: string;
-        };
-        CodewhaleLifecycleWebhookRequest: {
-            /** Format: date-time */
-            at?: string;
-            event: components["schemas"]["CodewhaleLifecycleEvent"];
-        };
         CodexAccountCapabilitiesResponse: {
             globalSwitch: components["schemas"]["CodexCapabilityObservationResponse"];
             nativeLogin: components["schemas"]["CodexCapabilityObservationResponse"];
@@ -5014,7 +4977,7 @@ export interface components {
             reviewOnly?: boolean;
             reviewerConfig?: components["schemas"]["AgentConfig"];
             /** @enum {string} */
-            reviewerHarness?: "claude-code" | "codex" | "copilot" | "cursor" | "kilocode" | "opencode" | "opencode-v2" | "kiro" | "pi" | "agy" | "devin" | "droid" | "kimi" | "kimchi" | "muse" | "amp" | "aider" | "grok" | "crush" | "auggie" | "cline" | "autohand";
+            reviewerHarness?: "claude-code" | "codex" | "opencode-v2" | "pi" | "agy" | "droid" | "kimi" | "amp" | "autohand";
             /** @enum {string} */
             scmStatus?: "pr_open" | "draft" | "ci_failed" | "review_pending" | "changes_requested" | "commented" | "approved" | "mergeable" | "merged";
             staleBinary?: components["schemas"]["SessionStaleBinary"];
@@ -5395,7 +5358,7 @@ export interface components {
         };
         DelegateTaskRequest: {
             /** @enum {string} */
-            agent?: "claude-code" | "codex" | "aider" | "opencode" | "opencode-v2" | "grok" | "droid" | "amp" | "agy" | "crush" | "cursor" | "qwen" | "gemini" | "copilot" | "goose" | "auggie" | "continue" | "devin" | "cline" | "kimi" | "muse" | "kiro" | "kilocode" | "vibe" | "pi" | "kimchi" | "omp" | "fx" | "prime-agent" | "autohand" | "unreal-agent" | "codewhale" | "mimo-code" | "deepseek-harness" | "openhands" | "command-code" | "memcode" | "fake";
+            agent?: "claude-code" | "codex" | "opencode-v2" | "droid" | "amp" | "agy" | "qwen" | "goose" | "kimi" | "pi" | "autohand" | "omp" | "fx" | "memcode" | "fake";
             /** @enum {string} */
             approvalMode?: "default" | "accept-edits" | "auto" | "bypass-permissions";
             attachments?: components["schemas"]["AttachmentInput"][];
@@ -5675,7 +5638,7 @@ export interface components {
              * @description Fixed install target this job ran (or is running) for.
              * @enum {string}
              */
-            target: "tmux" | "gh" | "claude" | "claude-code" | "codex" | "cursor" | "opencode" | "opencode-v2" | "aider" | "copilot" | "grok" | "kimi" | "pi" | "amp" | "auggie" | "droid" | "crush" | "cline" | "goose" | "qwen" | "gemini" | "continue" | "devin" | "kiro" | "kilocode" | "vibe" | "muse" | "agy" | "autohand" | "kimchi" | "prime-agent" | "omp" | "fx" | "unreal-agent" | "codewhale" | "mimo-code" | "deepseek-harness" | "openhands" | "command-code" | "memcode" | "cloudflared";
+            target: "tmux" | "gh" | "claude" | "claude-code" | "codex" | "opencode" | "opencode-v2" | "pi" | "agy" | "omp" | "cloudflared";
             /** Format: date-time */
             updatedAt?: null | string;
             /** @description While waiting_for_idle, the sessions the update still waits for and why. */
@@ -6845,7 +6808,7 @@ export interface components {
         SetSessionReviewerRequest: {
             agentConfig?: components["schemas"]["AgentConfig"];
             /** @enum {string} */
-            harness?: "claude-code" | "codex" | "copilot" | "cursor" | "kilocode" | "opencode" | "opencode-v2" | "kiro" | "pi" | "agy" | "devin" | "droid" | "kimi" | "kimchi" | "muse" | "amp" | "aider" | "grok" | "crush" | "auggie" | "cline" | "autohand";
+            harness?: "claude-code" | "codex" | "opencode-v2" | "pi" | "agy" | "droid" | "kimi" | "amp" | "autohand";
         };
         SetUserConfigInput: {
             agentConfig: components["schemas"]["AgentConfig"];
@@ -6906,7 +6869,7 @@ export interface components {
             displayName?: string;
             effort?: string;
             /** @enum {string} */
-            harness?: "claude-code" | "codex" | "aider" | "opencode" | "opencode-v2" | "grok" | "droid" | "amp" | "agy" | "crush" | "cursor" | "qwen" | "gemini" | "copilot" | "goose" | "auggie" | "continue" | "devin" | "cline" | "kimi" | "muse" | "kiro" | "kilocode" | "vibe" | "pi" | "kimchi" | "omp" | "fx" | "prime-agent" | "autohand" | "unreal-agent" | "codewhale" | "mimo-code" | "deepseek-harness" | "openhands" | "command-code" | "memcode";
+            harness?: "claude-code" | "codex" | "opencode-v2" | "droid" | "amp" | "agy" | "qwen" | "goose" | "kimi" | "pi" | "autohand" | "omp" | "fx" | "memcode";
             issueId?: string;
             /** @enum {string} */
             kind?: "worker" | "orchestrator";
@@ -7136,7 +7099,7 @@ export interface components {
             /** @description Turn on the worker session's review auto-inject once a pass has started, so the reviewer's PR review comments reach the worker. */
             enableAutoInject?: boolean;
             /** @enum {string} */
-            harness?: "claude-code" | "codex" | "copilot" | "cursor" | "kilocode" | "opencode" | "opencode-v2" | "kiro" | "pi" | "agy" | "devin" | "droid" | "kimi" | "kimchi" | "muse" | "amp" | "aider" | "grok" | "crush" | "auggie" | "cline" | "autohand";
+            harness?: "claude-code" | "codex" | "opencode-v2" | "pi" | "agy" | "droid" | "kimi" | "amp" | "autohand";
             /** @enum {string} */
             interfaceMode?: "chat" | "tui";
             /** @description Restrict the pass to this pull request, attaching it to the session first if AO does not track it yet (never from another active session). Omit to review every eligible PR on the session. */
@@ -14544,78 +14507,6 @@ export interface operations {
             };
         };
     };
-    setCodewhaleSessionActivity: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Session identifier, e.g. project-1. */
-                sessionId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CodewhaleLifecycleWebhookRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SetActivityResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["APIError"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["APIError"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["APIError"];
-                };
-            };
-            /** @description Not Implemented */
-            501: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["APIError"];
-                };
-            };
-            /** @description Service Unavailable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["APIError"];
-                };
-            };
-        };
-    };
     getSessionAgentBrowser: {
         parameters: {
             query?: never;
@@ -21663,8 +21554,8 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Install target identifier: tmux, gh, claude, codex, opencode, opencode-v2, copilot, or cloudflared. */
-                target: "tmux" | "gh" | "claude" | "codex" | "opencode" | "opencode-v2" | "copilot" | "cloudflared";
+                /** @description Install target identifier: tmux, gh, claude, claude-code, codex, opencode-v2, pi, agy, omp, or cloudflared. */
+                target: "tmux" | "gh" | "claude" | "claude-code" | "codex" | "opencode-v2" | "pi" | "agy" | "omp" | "cloudflared";
             };
             cookie?: never;
         };
@@ -21713,8 +21604,8 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Install target identifier: tmux, gh, claude, codex, opencode, opencode-v2, copilot, or cloudflared. */
-                target: "tmux" | "gh" | "claude" | "codex" | "opencode" | "opencode-v2" | "copilot" | "cloudflared";
+                /** @description Install target identifier: tmux, gh, claude, claude-code, codex, opencode-v2, pi, agy, omp, or cloudflared. */
+                target: "tmux" | "gh" | "claude" | "claude-code" | "codex" | "opencode-v2" | "pi" | "agy" | "omp" | "cloudflared";
             };
             cookie?: never;
         };

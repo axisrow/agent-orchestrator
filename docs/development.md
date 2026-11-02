@@ -14,7 +14,7 @@ How to set up, build, run, and test Agent Orchestrator locally.
 Additional runtime dependencies for the daemon:
 
 - **git** (for worktree creation and agent integration)
-- **A running agent CLI** (Claude Code, Codex, Aider, etc.). See [the installation
+- **A running agent CLI** (Claude Code, Codex, OpenCode, etc.). See [the installation
   guide](https://docs.orchestrator.inc/installation).
 
 For source terminal runs on macOS, install/configure tmux; packaged builds

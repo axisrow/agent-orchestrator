@@ -135,18 +135,6 @@ describe("CloudHarnessLoginPanel", () => {
 		expect(bridgeMocks.openExternal).toHaveBeenCalledWith("https://platform.openai.com/api-keys");
 	});
 
-	it("lets OpenCode connect a key for any of its providers", async () => {
-		cloudMocks.putUserAgentConnection.mockResolvedValue({ providerConnection: { validationState: "valid" } });
-		const user = userEvent.setup();
-		renderPanel("opencode");
-		expect(screen.getByPlaceholderText("Paste your OpenCode API key")).toBeInTheDocument();
-		await user.click(screen.getByRole("button", { name: "OpenRouter API key" }));
-		await user.type(screen.getByPlaceholderText("Paste your OpenRouter API key"), "or-key");
-		await user.click(screen.getByRole("button", { name: "Connect" }));
-
-		expect(cloudMocks.putUserAgentConnection).toHaveBeenCalledWith("opencode", { credentialType: "openrouter_api_key", secret: "or-key" });
-	});
-
 	it("translates method names and placeholders whole, inserting only the provider brand", async () => {
 		await appI18n.changeLanguage("de");
 		const user = userEvent.setup();
@@ -155,17 +143,5 @@ describe("CloudHarnessLoginPanel", () => {
 		expect(screen.getByPlaceholderText("Füge dein Setup-Token ein")).toBeInTheDocument();
 		await user.click(screen.getByRole("button", { name: "Anthropic-API-Schlüssel" }));
 		expect(screen.getByPlaceholderText("Füge deinen Anthropic-API-Schlüssel ein")).toBeInTheDocument();
-	});
-
-	it("saves a pasted Cursor API key as the user's personal connection", async () => {
-		cloudMocks.putUserAgentConnection.mockResolvedValue({ providerConnection: { validationState: "valid" } });
-		const user = userEvent.setup();
-		const { onClose } = renderPanel("cursor");
-		expect(screen.queryByText("Or use")).toBeNull();
-		await user.type(screen.getByPlaceholderText("Paste your Cursor API key"), " cursor-key ");
-		await user.click(screen.getByRole("button", { name: "Connect" }));
-
-		expect(cloudMocks.putUserAgentConnection).toHaveBeenCalledWith("cursor", { credentialType: "api_key", secret: "cursor-key" });
-		await waitFor(() => expect(onClose).toHaveBeenCalled());
 	});
 });

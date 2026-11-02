@@ -461,7 +461,7 @@ func TestSubmitPersistsThenAppliesThenStampsDelivered(t *testing.T) {
 func TestApplyReviewActivitySignalPersistsNativeReviewerSessionID(t *testing.T) {
 	st := &fakeStore{
 		reviewOK: true,
-		review:   domain.Review{ID: "review-1", SessionID: "worker-1", Harness: domain.ReviewerOpenCode, AgentSessionID: "old-native"},
+		review:   domain.Review{ID: "review-1", SessionID: "worker-1", Harness: domain.ReviewerOpenCodeV2, AgentSessionID: "old-native"},
 	}
 	svc := New(nil, st)
 
@@ -482,7 +482,7 @@ func TestApplyReviewActivitySignalPersistsNativeReviewerSessionID(t *testing.T) 
 func TestApplyReviewActivitySignalPersistsReviewerActivityState(t *testing.T) {
 	st := &fakeStore{
 		reviewOK: true,
-		review:   domain.Review{ID: "review-1", SessionID: "worker-1", Harness: domain.ReviewerOpenCode},
+		review:   domain.Review{ID: "review-1", SessionID: "worker-1", Harness: domain.ReviewerOpenCodeV2},
 	}
 	svc := New(nil, st)
 
@@ -503,7 +503,7 @@ func TestApplyReviewActivitySignalIgnoresStaleLaunchGeneration(t *testing.T) {
 		review: domain.Review{
 			ID:                    "review-1",
 			SessionID:             "worker-1",
-			Harness:               domain.ReviewerOpenCode,
+			Harness:               domain.ReviewerOpenCodeV2,
 			ReviewerLaunchID:      "launch-current",
 			ReviewerActivityState: domain.ActivityActive,
 		},
@@ -531,7 +531,7 @@ func TestApplyReviewActivitySignalIgnoresMissingLaunchIDAfterGenerationClaimed(t
 		review: domain.Review{
 			ID:                    "review-1",
 			SessionID:             "worker-1",
-			Harness:               domain.ReviewerOpenCode,
+			Harness:               domain.ReviewerOpenCodeV2,
 			ReviewerLaunchID:      "launch-current",
 			ReviewerActivityState: domain.ActivityActive,
 			AgentSessionID:        "native-current",

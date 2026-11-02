@@ -1505,10 +1505,10 @@ describe("Sidebar", () => {
 			data: {
 				agents: [
 					agentReadiness("goose", "Goose"),
-					agentReadiness("devin", "Devin"),
-					agentReadiness("aider", "Aider"),
-					agentReadiness("opencode", "OpenCode"),
-					agentReadiness("cursor", "Cursor"),
+					agentReadiness("amp", "Amp"),
+					agentReadiness("qwen", "Qwen"),
+					agentReadiness("codex", "Codex"),
+					agentReadiness("opencode-v2", "OpenCode 2"),
 				],
 			},
 			error: undefined,
@@ -1518,16 +1518,16 @@ describe("Sidebar", () => {
 		await user.click(screen.getByLabelText("New project"));
 		await user.click(screen.getByRole("button", { name: /^Open a local folder$/i }));
 		expect(await screen.findByRole("dialog", { name: "Set up project" })).toBeInTheDocument();
-		expect(screen.getByRole("combobox", { name: "Worker agent" })).toHaveTextContent(/cursor/i);
-		expect(screen.getByRole("combobox", { name: "Orchestrator agent" })).toHaveTextContent(/cursor/i);
+		expect(screen.getByRole("combobox", { name: "Worker agent" })).toHaveTextContent(/codex/i);
+		expect(screen.getByRole("combobox", { name: "Orchestrator agent" })).toHaveTextContent(/codex/i);
 
 		await user.click(screen.getByRole("combobox", { name: "Worker agent" }));
 		expect((await screen.findAllByRole("option")).map((option) => option.textContent)).toEqual([
-			"Cursor",
-			"OpenCode",
-			"Aider",
-			"Devin",
+			"Codex",
+			"OpenCode 2",
+			"Amp",
 			"Goose",
+			"Qwen",
 			"Manage agents…",
 		]);
 		await user.keyboard("{Escape}");
@@ -1536,8 +1536,8 @@ describe("Sidebar", () => {
 		await waitFor(() =>
 			expect(onCreateProject).toHaveBeenCalledWith(
 				expect.objectContaining({
-					workerAgent: "cursor",
-					orchestratorAgent: "cursor",
+					workerAgent: "codex",
+					orchestratorAgent: "codex",
 				}),
 			),
 		);
@@ -1961,8 +1961,8 @@ describe("Sidebar", () => {
 			data: {
 				agents: [
 					agentReadiness("claude-code", "Claude Code"),
-					agentReadiness("cursor", "Cursor", { authentication: "unauthorized" }),
-					agentReadiness("aider", "Aider", { installation: "not_installed", authentication: "unknown" }),
+					agentReadiness("opencode", "OpenCode", { authentication: "unauthorized" }),
+					agentReadiness("qwen", "Qwen", { installation: "not_installed", authentication: "unknown" }),
 				],
 			},
 			error: undefined,

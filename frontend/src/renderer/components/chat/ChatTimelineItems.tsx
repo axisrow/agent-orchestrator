@@ -352,14 +352,10 @@ export function ContinuedMarker() {
 export function TurnOutcome({
 	state,
 	error,
-	failureCode,
-	onConfigure,
 	retry,
 }: {
 	state: "recovered" | "interrupted" | "failed";
 	error?: string;
-	failureCode?: "provider_key_missing";
-	onConfigure?: () => void;
 	retry?: TurnOutcomeRetryControl;
 }) {
 	const copy = {
@@ -395,25 +391,13 @@ export function TurnOutcome({
 		</>
 	) : undefined;
 	if (state === "failed") {
-		const needsDeepSeekKey = failureCode === "provider_key_missing" && onConfigure;
 		return (
 			<div className="flex min-w-0 flex-col gap-2 py-3">
 				<div className="flex items-baseline justify-between gap-3 text-sm font-medium text-destructive">
-					<span>{needsDeepSeekKey ? "DeepSeek needs an API key for this model route" : copy.label}</span>
+					<span>{copy.label}</span>
 					{action}
 				</div>
-				{needsDeepSeekKey ? (
-					<>
-						<p className="text-sm text-foreground">Set up the key in DeepSeek Harness, then retry this turn.</p>
-						<button type="button" onClick={onConfigure} className="w-fit rounded px-2 py-1 text-sm text-primary hover:bg-interactive-hover">Set up DeepSeek</button>
-						{error ? (
-							<details className="text-sm text-muted-foreground">
-								<summary className="cursor-pointer">Technical details</summary>
-								<div className="whitespace-pre-wrap wrap-anywhere pt-1">{linkifiedProviderErrorText(error)}</div>
-							</details>
-						) : null}
-					</>
-				) : error ? <div className="whitespace-pre-wrap wrap-anywhere text-sm leading-relaxed text-foreground">{linkifiedProviderErrorText(error)}</div> : null}
+				{error ? <div className="whitespace-pre-wrap wrap-anywhere text-sm leading-relaxed text-foreground">{linkifiedProviderErrorText(error)}</div> : null}
 			</div>
 		);
 	}

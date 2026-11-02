@@ -2,7 +2,6 @@ package systeminstall
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -113,27 +112,6 @@ func TestManagerOwnsBinaryRecognizesSupportedManagerPackages(t *testing.T) {
 			},
 			wantArgv: []string{"bun", "pm", "bin", "-g"},
 			output:   func(root, _ string) string { return filepath.Join(root, ".bun", "bin") + "\n" },
-		},
-		{
-			name: "uv", method: "uv", pkg: "mistral-vibe",
-			path: func(root string) string {
-				return filepath.Join(root, ".local", "share", "uv", "tools", "mistral-vibe", "bin", "vibe")
-			},
-			wantArgv: []string{"uv", "tool", "list", "--show-paths", "--color", "never"},
-			output: func(_ string, binary string) string {
-				return "mistral-vibe v1.2.3\n- vibe (" + binary + ")\n"
-			},
-		},
-		{
-			name: "pipx", method: "pipx", pkg: "mistral-vibe",
-			path: func(root string) string {
-				return filepath.Join(root, ".local", "pipx", "venvs", "mistral-vibe", "bin", "vibe")
-			},
-			wantArgv: []string{"pipx", "list", "--json"},
-			output: func(_, binary string) string {
-				pathJSON, _ := json.Marshal(binary)
-				return `{"venvs":{"mistral-vibe":{"metadata":{"main_package":{"package":"mistral-vibe","app_paths":[{"__type__":"Path","__Path__":` + string(pathJSON) + `}],"package_version":"1.2.3"}}}}}`
-			},
 		},
 		{
 			name: "winget", method: "winget", pkg: "GitHub.Copilot",
@@ -377,8 +355,8 @@ func TestManagerOwnsBinaryAcceptsNPMPrefixOtherThanDaemons(t *testing.T) {
 }
 
 func TestVendorUpdateRunsFromTheBinarySessionsRun(t *testing.T) {
-	plan := targetInstalledCopy("linux", Plan{Method: "official-installer", Command: []string{"grok", "update"}}, TargetGrok, "/home/u/.grok/downloads/grok-1.0.13")
-	if want := []string{"/home/u/.grok/downloads/grok-1.0.13", "update"}; !slices.Equal(plan.Command, want) {
+	plan := targetInstalledCopy("linux", Plan{Method: "official-installer", Command: []string{"omp", "update"}}, TargetOMP, "/home/u/.omp/downloads/omp-1.0.13")
+	if want := []string{"/home/u/.omp/downloads/omp-1.0.13", "update"}; !slices.Equal(plan.Command, want) {
 		t.Fatalf("command = %v, want %v", plan.Command, want)
 	}
 }

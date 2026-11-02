@@ -43,37 +43,15 @@ type Target string
 
 // The exhaustive set of installable targets. No other value is ever accepted.
 const (
-	TargetTmux        Target = "tmux"
-	TargetGH          Target = "gh"
-	TargetClaude      Target = "claude"
-	TargetClaudeCode  Target = "claude-code"
-	TargetCodex       Target = "codex"
-	TargetCursor      Target = "cursor"
-	TargetOpencode    Target = "opencode"
-	TargetOpencodeV2  Target = "opencode-v2"
-	TargetAider       Target = "aider"
-	TargetCopilot     Target = "copilot"
-	TargetGrok        Target = "grok"
-	TargetPi          Target = "pi"
-	TargetAuggie      Target = "auggie"
-	TargetCrush       Target = "crush"
-	TargetCline       Target = "cline"
-	TargetGemini      Target = "gemini"
-	TargetContinue    Target = "continue"
-	TargetDevin       Target = "devin"
-	TargetKiro        Target = "kiro"
-	TargetKilocode    Target = "kilocode"
-	TargetVibe        Target = "vibe"
-	TargetMuse        Target = "muse"
-	TargetKimchi      Target = "kimchi"
-	TargetPrimeAgent  Target = "prime-agent"
-	TargetOMP         Target = "omp"
-	TargetUnreal      Target = "unreal-agent"
-	TargetCodewhale   Target = "codewhale"
-	TargetMiMoCode    Target = "mimo-code"
-	TargetDeepSeek    Target = "deepseek-harness"
-	TargetOpenHands   Target = "openhands"
-	TargetCommandCode Target = "command-code"
+	TargetTmux       Target = "tmux"
+	TargetGH         Target = "gh"
+	TargetClaude     Target = "claude"
+	TargetClaudeCode Target = "claude-code"
+	TargetCodex      Target = "codex"
+	TargetOpencodeV2 Target = "opencode-v2"
+	TargetPi         Target = "pi"
+	TargetAgy        Target = "agy"
+	TargetOMP        Target = "omp"
 	// TargetCloudflared is the optional connector that makes a paired phone
 	// reachable from outside the local network.
 	TargetCloudflared Target = "cloudflared"
@@ -81,13 +59,8 @@ const (
 
 // agentTargets is the stable settings-page order.
 var agentTargets = []Target{
-	TargetClaudeCode, TargetCodex, TargetCursor, TargetOpencode, TargetOpencodeV2, TargetAider,
-	TargetCopilot, TargetGrok, TargetPi, TargetAuggie,
-	TargetCrush, TargetCline, TargetGemini,
-	TargetContinue, TargetDevin, TargetKiro, TargetKilocode, TargetVibe,
-	TargetMuse, TargetKimchi, TargetPrimeAgent,
-	TargetOMP, TargetUnreal, TargetCodewhale, TargetMiMoCode, TargetDeepSeek, TargetOpenHands,
-	TargetCommandCode,
+	TargetClaudeCode, TargetCodex, TargetOpencodeV2, TargetPi,
+	TargetAgy, TargetOMP,
 }
 
 var agentTargetSet = func() map[Target]bool {
@@ -102,7 +75,7 @@ var agentTargetSet = func() map[Target]bool {
 // Agent-only targets use /agents/{agent}/install instead.
 var systemTargetSet = map[Target]bool{
 	TargetTmux: true, TargetGH: true, TargetClaude: true, TargetCloudflared: true,
-	TargetCodex: true, TargetOpencode: true, TargetOpencodeV2: true, TargetCopilot: true,
+	TargetCodex: true, TargetOpencodeV2: true,
 }
 
 // knownTargets is the exhaustive allowlist backing Valid.
@@ -201,8 +174,6 @@ type Plan struct {
 	// run holds each one's harness gate throughout, so its launches wait and
 	// its own install, reinstall or update is refused meanwhile.
 	alsoChanges []Target
-	// homebrewV1Prefix defers the v1 linked-state check until its gate is held.
-	homebrewV1Prefix string
 
 	// daemonRuntimeRejected and daemonPrefixRejected mark an npm plan rejected
 	// only for the daemon's own Node/npm or global prefix. An install runs
@@ -312,11 +283,9 @@ const otherHarnessHoldWait = 10 * time.Second
 // consuming the daemon's entire shutdown drain budget behind a blocked DB.
 const defaultPersistenceTimeout = 2 * time.Second
 
-var devinInstalledLine = regexp.MustCompile(`Installed devin v\S+ to [^\r\n]+/devin\.`)
-
 // Job is the tracked state of one harness operation for a Target.
 type Job struct {
-	Target              Target `json:"target" enum:"tmux,gh,claude,claude-code,codex,cursor,opencode,opencode-v2,aider,copilot,grok,pi,auggie,crush,cline,gemini,continue,devin,kiro,kilocode,vibe,muse,kimchi,prime-agent,omp,unreal-agent,codewhale,mimo-code,deepseek-harness,openhands,command-code,cloudflared" description:"Fixed install target this job ran (or is running) for."`
+	Target              Target `json:"target" enum:"tmux,gh,claude,claude-code,codex,opencode,opencode-v2,pi,agy,omp,cloudflared" description:"Fixed install target this job ran (or is running) for."`
 	Status              Status `json:"status" enum:"idle,running,waiting_for_idle,installing,verifying,succeeded,failed,unsupported,interrupted" description:"Current lifecycle state of the job. waiting_for_idle: the update runs once every session using the harness is idle (Windows)."`
 	Method              string `json:"method,omitempty" description:"Server-owned installation method selected for this harness job."`
 	Command             string `json:"command,omitempty" description:"Human-readable install command, e.g. \"brew install tmux\", for display even before/without output."`
@@ -626,10 +595,6 @@ func installMethodLabel(method string) string {
 		return "npm"
 	case "winget":
 		return "winget"
-	case "uv":
-		return "uv tool"
-	case "pipx":
-		return "pipx"
 	case "bun":
 		return "Bun"
 	case "official-installer":
@@ -799,7 +764,7 @@ func (s *Service) StartAgentOperation(ctx context.Context, target Target, method
 	}
 	if operation == AgentOperationUpdate && expected != "" {
 		if baseline == nil {
-			baseline = &installedBaseline{scheme: versionSchemeFor(target)}
+			baseline = &installedBaseline{scheme: versionSemver}
 		}
 		// An update never moves the installed copy backwards.
 		if versionAtMost(baseline.scheme, expected, baseline.version) {
@@ -827,7 +792,6 @@ func (s *Service) StartAgentOperation(ctx context.Context, target Target, method
 			// if a newer one was announced meanwhile.
 			baseline.latest = pin
 		}
-		plan = pinVendorUpdate(plan, pin)
 	}
 	if operation == AgentOperationUpdate {
 		// Sessions are checked once the plan is final: whether an update may run
@@ -1274,7 +1238,6 @@ func (s *Service) runAgentOperation(parent context.Context, plan Plan, operation
 		return
 	}
 	defer release()
-	plan = plan.withLinkedOpenCodeV1()
 	s.mu.Lock()
 	job.Command = displayCommand(plan)
 	s.mu.Unlock()
@@ -1282,11 +1245,6 @@ func (s *Service) runAgentOperation(parent context.Context, plan Plan, operation
 	defer cancel()
 	out := &capturedOutput{max: maxOutputBytes}
 	outputWriter := io.Writer(out)
-	var devinOutput *devinInstallOutput
-	if plan.Target == TargetDevin && plan.Method == "official-installer" && plan.Script != nil {
-		devinOutput = &devinInstallOutput{dst: out, maxPending: maxOutputBytes}
-		outputWriter = devinOutput
-	}
 	env := []string{
 		"CI=1", "NONINTERACTIVE=1", "HOMEBREW_NO_AUTO_UPDATE=1",
 		"NPM_CONFIG_AUDIT=false", "NPM_CONFIG_FUND=false",
@@ -1349,8 +1307,7 @@ func (s *Service) runAgentOperation(parent context.Context, plan Plan, operation
 		s.finishAgentJob(job, StatusInterrupted, out.String(), fmt.Sprintf("daemon shutdown interrupted %s", operation), "")
 		return
 	}
-	installConfirmed := runErr != nil && devinOutput != nil && devinOutput.Confirmed()
-	if runErr != nil && !installConfirmed {
+	if runErr != nil {
 		message := failureSummary(runErr, out)
 		s.finishAgentJob(job, StatusFailed, out.String(), message, "")
 		return
@@ -1631,45 +1588,6 @@ func (c *capturedOutput) String() string {
 	return c.buf.String()
 }
 
-// devinInstallOutput remembers whether Devin reported a completed binary
-// install, even after the bounded destination evicts that line from diagnostics.
-type devinInstallOutput struct {
-	mu         sync.Mutex
-	dst        io.Writer
-	pending    []byte
-	maxPending int
-	confirmed  bool
-}
-
-func (w *devinInstallOutput) Write(p []byte) (int, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	n, err := w.dst.Write(p)
-	if w.confirmed {
-		return n, err
-	}
-	w.pending = append(w.pending, p...)
-	if devinInstalledLine.Match(w.pending) {
-		w.confirmed = true
-		w.pending = nil
-		return n, err
-	}
-	if delimiter := bytes.LastIndexAny(w.pending, "\r\n"); delimiter >= 0 {
-		w.pending = append(w.pending[:0], w.pending[delimiter+1:]...)
-	}
-	if len(w.pending) > w.maxPending {
-		w.pending = append(w.pending[:0], w.pending[len(w.pending)-w.maxPending:]...)
-	}
-	return n, err
-}
-
-func (w *devinInstallOutput) Confirmed() bool {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.confirmed
-}
-
 // planFor resolves the install Plan for target on the current platform,
 // probing PATH via s.executables so tests can inject deterministic results.
 func (s *Service) planFor(target Target) Plan {
@@ -1682,10 +1600,6 @@ func (s *Service) planFor(target Target) Plan {
 		return s.planNPM(TargetClaude, "@anthropic-ai/claude-code")
 	case TargetCodex:
 		return s.planNPM(TargetCodex, "@openai/codex")
-	case TargetCopilot:
-		return s.planNPM(TargetCopilot, "@github/copilot")
-	case TargetOpencode:
-		return s.planOpencode()
 	case TargetOpencodeV2:
 		return s.planAgent(TargetOpencodeV2)
 	case TargetCloudflared:
@@ -1866,8 +1780,6 @@ func (p requestPlanner) planNPM(target Target, pkg string) Plan {
 
 func minimumNodeVersionForTarget(target Target) [3]int {
 	switch target {
-	case TargetAuggie, TargetGemini:
-		return [3]int{20, 0, 0}
 	case TargetClaudeCode:
 		return [3]int{22, 0, 0}
 	case TargetPi:
@@ -1911,16 +1823,6 @@ func versionAtLeast(got, minimum [3]int) bool {
 		}
 	}
 	return true
-}
-
-func (s *Service) planOpencode() Plan {
-	if s.goos == "windows" {
-		return s.planWinget(TargetOpencode, "SST.opencode")
-	}
-	return Plan{
-		Target: TargetOpencode, Unsupported: true, Method: "manual",
-		Reason: "AO does not automatically execute opencode's mutable remote installer script.",
-	}
 }
 
 func (s *Service) planBrew(target Target, pkg string) Plan {

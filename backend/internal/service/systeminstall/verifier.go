@@ -12,7 +12,7 @@ import (
 
 // defaultVerifyTimeout bounds the post-install version probe. The first launch
 // of a freshly downloaded CLI can block far beyond its normal startup while
-// macOS assesses the new binary: Cursor's `cursor-agent --version` took ~12s
+// macOS assesses the new binary: one CLI's first `--version` took ~12s
 // on an Intel Mac right after install versus under 1s afterwards (#5887), and
 // harnesses installed together queue behind each other's assessment.
 const defaultVerifyTimeout = 60 * time.Second

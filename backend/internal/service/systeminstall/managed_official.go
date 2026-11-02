@@ -53,15 +53,6 @@ func withV(pin string) string {
 func noArgs(string, string) []string { return nil }
 
 var officialManagedRecipes = map[Target]officialManagedRecipe{
-	// opencode.ai/install installs to $HOME/.opencode/bin, takes VERSION, and
-	// skips the install when the opencode on PATH already reports it.
-	TargetOpencode: {
-		binRel: filepath.Join(".install-home", ".opencode", "bin", "opencode"),
-		env: func(dir, pin string) []string {
-			return officialInstallerEnv(dir, "VERSION="+strings.TrimPrefix(pin, "v"))
-		},
-		args: func(string, string) []string { return []string{"--no-modify-path"} },
-	},
 	// OMP builds from source with bun unless told to install its binary.
 	TargetOMP: {
 		binRel: filepath.Join("bin", "omp"),
@@ -93,14 +84,23 @@ var officialManagedRecipes = map[Target]officialManagedRecipe{
 		},
 		args: noArgs,
 	},
-	// OpenCode 2 installs the same opencode binary (plus an opencode2 shim)
-	// to $HOME/.opencode/bin; its launcher stays distinct from version 1's.
+	// OpenCode 2 installs the opencode binary (plus an opencode2 shim)
+	// to $HOME/.opencode/bin.
 	TargetOpencodeV2: {
 		binRel: filepath.Join(".install-home", ".opencode", "bin", "opencode"),
 		env: func(dir, pin string) []string {
 			return officialInstallerEnv(dir, "VERSION="+strings.TrimPrefix(pin, "v"))
 		},
 		args: func(string, string) []string { return []string{"--no-modify-path"} },
+	},
+	// Agy installs its latest release only; the installed version is still
+	// checked against the release the update picked.
+	TargetAgy: {
+		binRel: filepath.Join("bin", "agy"),
+		env:    func(dir, _ string) []string { return officialInstallerEnv(dir) },
+		args: func(dir, _ string) []string {
+			return []string{"--dir", filepath.Join(dir, "bin")}
+		},
 	},
 }
 

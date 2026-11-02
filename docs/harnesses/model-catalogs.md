@@ -9,11 +9,11 @@ or `BrowseAll` switch.
 The shared catalog includes native command/configuration/ACP/app-server output
 and the broader provider sources already supported by each harness:
 
-- OpenCode, Kilo Code and MiMo Code: their own native model caches.
-- Pi, Kimchi and Prime Agent: their supported local model stores, custom
+- OpenCode: its own native model cache.
+- Pi: its supported local model stores, custom
   configuration or installed package catalogs.
 - OMP: its read-only native model database.
-- FX: Gateway, Codex, Grok and declared custom connection models.
+- FX: Gateway, Codex and declared custom connection models.
 
 Claude models come from the configured provider. Failed discovery retains the
 last cached catalog for matching discovery inputs; no hardcoded Claude list is

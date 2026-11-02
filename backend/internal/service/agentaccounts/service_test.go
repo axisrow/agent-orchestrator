@@ -461,7 +461,7 @@ func TestRunsOnComputerLoginFollowsTheDefaultAndThePick(t *testing.T) {
 	}
 	check("", false)
 	check("device-claude", true)
-	if !svc.RunsOnComputerLogin(ctx, domain.HarnessGemini, "") {
+	if !svc.RunsOnComputerLogin(ctx, domain.HarnessGoose, "") {
 		t.Fatal("a harness without accounts runs on the computer's login")
 	}
 }

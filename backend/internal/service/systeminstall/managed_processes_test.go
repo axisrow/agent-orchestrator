@@ -55,15 +55,15 @@ func TestManagedCleanupRetainsDetachedNativeProcessRelease(t *testing.T) {
 func TestBrewCleanupRetainsDetachedProviderHub(t *testing.T) {
 	s, ran := updateWhileRunningService(t, nil)
 	s.SetHarnessUpdateObserver(&updateObserverStub{})
-	s.deferredCleanups = map[Target]string{TargetKimchi: "kimchi"}
+	s.deferredCleanups = map[Target]string{TargetOMP: "omp"}
 	alive := true
 	s.commands = commandRunnerFunc(func(_ context.Context, argv []string, out, _ io.Writer) error {
 		text := "1 /usr/local/bin/ao\n"
 		if argv[0] == "ps" && alive {
-			text = "/opt/homebrew/Cellar/kimchi/1.2.0/bin/kimchi --provider-hub\n"
+			text = "/opt/homebrew/Cellar/omp/1.2.0/bin/omp --provider-hub\n"
 		}
 		if len(argv) > 1 && argv[1] == "--cellar" {
-			text = "/opt/homebrew/Cellar/kimchi\n"
+			text = "/opt/homebrew/Cellar/omp\n"
 		}
 		if len(argv) > 0 && argv[0] == "ps" && !strings.HasPrefix(text, "1 ") {
 			text = "123 " + text
@@ -143,18 +143,18 @@ func TestWindowsManagedProcessReferencesKeepOpaqueScriptRuntimes(t *testing.T) {
 func TestWindowsManagedProcessReferencesKeepOpaqueNativeChildren(t *testing.T) {
 	s := newTestService("windows")
 	s.managedRoot = t.TempDir()
-	record := managedRecord{CLI: "copilot", Method: "npm"}
+	record := managedRecord{CLI: "codex", Method: "npm"}
 	for _, tt := range []struct {
 		process string
 		want    bool
 	}{
-		{"copilot-win32-x64.exe", true},
-		{"copilot.exe", true},
-		{"codex.exe", false},
+		{"codex-win32-x64.exe", true},
+		{"codex.exe", true},
+		{"other.exe", false},
 	} {
 		t.Run(tt.process, func(t *testing.T) {
 			snapshot := managedProcessSnapshot{opaque: []string{tt.process}}
-			if got := s.managedReleaseHasProcess(snapshot, TargetCopilot, record, "v1"); got != tt.want {
+			if got := s.managedReleaseHasProcess(snapshot, TargetCodex, record, "v1"); got != tt.want {
 				t.Fatalf("referenced=%v want %v", got, tt.want)
 			}
 		})
@@ -215,14 +215,14 @@ func TestManagedCleanupRetainsRealDetachedProcess(t *testing.T) {
 func TestBrewCleanupRetainsMutableScriptLauncher(t *testing.T) {
 	s, ran := updateWhileRunningService(t, nil)
 	s.SetHarnessUpdateObserver(&updateObserverStub{})
-	s.deferredCleanups = map[Target]string{TargetKimchi: "kimchi"}
+	s.deferredCleanups = map[Target]string{TargetOMP: "omp"}
 	s.verifier = harnessVerifierFunc(func(context.Context, Target) (VerifyResult, error) {
-		return VerifyResult{ResolvedPath: "/opt/homebrew/bin/kimchi"}, nil
+		return VerifyResult{ResolvedPath: "/opt/homebrew/bin/omp"}, nil
 	})
 	s.commands = commandRunnerFunc(func(_ context.Context, argv []string, out, _ io.Writer) error {
-		text := "node /opt/homebrew/bin/kimchi\n"
+		text := "node /opt/homebrew/bin/omp\n"
 		if len(argv) > 1 && argv[1] == "--cellar" {
-			text = "/opt/homebrew/Cellar/kimchi\n"
+			text = "/opt/homebrew/Cellar/omp\n"
 		}
 		if len(argv) > 0 && argv[0] == "ps" && !strings.HasPrefix(text, "1 ") {
 			text = "123 " + text

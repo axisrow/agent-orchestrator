@@ -353,10 +353,6 @@ func (m *Manager) launchChatController(ctx context.Context, in chatSpawn) (domai
 // reach this daemon for this session, never a credential such as
 // AO_BROWSER_CAPABILITY.
 func (m *Manager) aoMCPServers(harness domain.AgentHarness, env map[string]string) []ports.ChatMCPServerConfig {
-	if harness == domain.HarnessUnreal {
-		// Its driver refuses AO-supplied tool servers; the agent uses `ao render`.
-		return nil
-	}
 	executable, err := m.executable()
 	if err != nil || !filepath.IsAbs(executable) {
 		m.logger.Warn("chat session gets no ao tool server; the agent can still run ao render",

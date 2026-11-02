@@ -64,37 +64,25 @@ surface (`npm run sqlc`, `npm run api`).
   archive/projection, controller-generation fencing, turns, messages,
   activities, approvals, structured input, usage, compaction, and rollback.
 - Chat drivers for the user's installed Codex (native app-server), Claude Code
-  (claude-agent-acp), Cursor, OpenCode 1 and 2, Droid, Kimchi, Kimi, Pi, OMP, Qwen, DeepSeek Harness, GitHub Copilot, and
-  the built-in Unreal Agent library. Unreal Agent Chat runs on macOS and Linux
-  behind AO's detached provider host, persists its native session plus an
-  acknowledged AO event journal, and currently requires an explicit
-  bypass-permissions session because the upstream harness has no interactive
-  approval channel.
+  (claude-agent-acp), OpenCode 1 and 2, Droid, Kimi, Pi, OMP, and Qwen.
   Qwen Chat uses native `qwen --acp` and requires Qwen Code 0.16.0 or newer.
   Qwen Code's ACP mode enforces approval modes over `session/request_permission`
   (verified live: a non-read-only shell under auto-edit asks), so AO maps its
   permission modes onto Qwen's (default to Ask Permissions) and admits Qwen Chat
-  in every mode. GitHub Copilot Chat uses native `copilot --acp` and requires
-  Copilot CLI 1.0.93 or newer; see [the Copilot harness note](harnesses/copilot.md)
-  for its approval mapping and model limits. OMP Chat uses native `omp acp` and requires OMP
+  in every mode. OMP Chat uses native `omp acp` and requires OMP
   15.0.0 or newer. Pi's independently installed pi-acp adapter does not enforce
   approval modes, so AO admits Pi Chat only after the user explicitly chooses the
   per-session bypass-permissions fallback. The binding reuses the existing Pi config environment and auth
   probe and is never downloaded by AO. AO reuses each harness's existing
-  binary/auth/environment resolution and does not bundle provider CLIs; Unreal
-  Agent is the library-backed exception. Cursor has both Chat and TUI adapters; cross-interface history handoff is a separate capability and must not be inferred from Chat registration.
-- MiMo Code 0.1.14+ is available as a TUI worker/orchestrator harness with
-  model selection, native-session restore, workspace activity hooks, and
-  truthful configured-credential readiness. Chat and reviewer support are not
-  claimed.
+  binary/auth/environment resolution and does not bundle provider CLIs.
 - Project CRUD plus per-project config (`PUT /projects/{id}/config`).
 - PR action engine wired into the API: `POST /prs/{id}/merge` and
   `/prs/{id}/resolve-comments`.
 - Review routes registered: `GET /reviews`, `POST /reviews/execute`,
   `POST /reviews/{id}/send`.
-- Interactive reviewer adapters: Aider, Agy, Amp, Auggie, Autohand,
-  Claude Code, Cline, Codex, GitHub Copilot, Crush, Cursor, Devin, Droid,
-  Grok, Kilo Code, Kimchi, Kiro, Kimi, Muse, OpenCode 1 and 2, and Pi.
+- Interactive reviewer adapters: Agy, Amp, Autohand,
+  Claude Code, Codex, Droid,
+  Kimi, OpenCode 1 and 2, and Pi.
   Worker, Chat, and reviewer registries are separate. Experimental reviewer
   selection must be explicit; native modes and prompts are not OS or network
   isolation. See the [public catalog](../frontend/src/docs/content/plugins/agents/index.mdx)

@@ -30,7 +30,7 @@ vi.mock("../hooks/useCloudCp", () => ({ useCloudCp: () => ({ ready: false, baseU
 function session(hostId: string): WorkspaceSession {
 	return {
 		id: "same-session", hostId, workspaceId: "same-project", workspaceName: "todo", title: "Fix todo",
-		provider: "opencode", kind: "worker", status: "review_pending", mode: "chat",
+		provider: "opencode-v2", kind: "worker", status: "review_pending", mode: "chat",
 		createdAt: "2026-09-28T00:00:00Z", updatedAt: "2026-09-28T00:00:00Z", autoReviewEnabled: false,
 		autoInjectCI: true, autoInjectReview: true,
 		prs: [{ url: "https://github.com/acme/todo/pull/7", number: 7, state: "open", ci: "passing", review: "none", mergeability: "mergeable", reviewComments: false, updatedAt: "2026-09-28T00:00:00Z" }],

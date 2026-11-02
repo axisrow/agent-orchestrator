@@ -107,7 +107,7 @@ func TestACPReplayProjectsExactlyOnceAcrossDaemonRestarts(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(logFile, nil))
 	releasePath := filepath.Join(dataDir, "release")
 	cfg := acp.Config{
-		Harness: domain.HarnessOpenCode,
+		Harness: domain.HarnessOpenCodeV2,
 		Capabilities: ports.ChatCapabilities{
 			ports.ChatCapabilityStreaming: true, ports.ChatCapabilityResume: true,
 			ports.ChatCapabilityApprovals: true, ports.ChatCapabilityInterrupt: true,
@@ -144,7 +144,7 @@ func TestACPReplayProjectsExactlyOnceAcrossDaemonRestarts(t *testing.T) {
 	firstService := newService()
 	start := chatsvc.StartConfig{
 		SessionID: testSession, ProjectID: testProject, Kind: domain.KindOrchestrator,
-		Harness: domain.HarnessOpenCode, DataDir: dataDir, WorkspacePath: workspace,
+		Harness: domain.HarnessOpenCodeV2, DataDir: dataDir, WorkspacePath: workspace,
 	}
 	first, err := firstService.Start(ctx, start)
 	if err != nil {

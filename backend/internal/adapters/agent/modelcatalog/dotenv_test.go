@@ -1,9 +1,20 @@
 package modelcatalog
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
+
+func writeProviderTestFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}
 
 func TestEnvFileHasKeyParsesFinalAssignment(t *testing.T) {
 	for _, tc := range []struct {

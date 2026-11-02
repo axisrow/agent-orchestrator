@@ -24,13 +24,13 @@ func readinessAgentsJSON(agent, installation, authentication string) string {
 		`,"effectiveReadiness":"unknown","usageCount":0}]}`
 }
 
-func TestSpawnHelpListsPrimeAgentHarness(t *testing.T) {
+func TestSpawnHelpListsDroidHarness(t *testing.T) {
 	out, errOut, err := executeCLI(t, Deps{}, "spawn", "--help")
 	if err != nil {
 		t.Fatalf("spawn --help: %v\nstderr: %s", err, errOut)
 	}
-	if !strings.Contains(out, "prime-agent") {
-		t.Fatalf("spawn help does not list prime-agent:\n%s", out)
+	if !strings.Contains(out, "droid") {
+		t.Fatalf("spawn help does not list droid:\n%s", out)
 	}
 }
 

@@ -3,7 +3,6 @@ package systeminstall
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -12,34 +11,12 @@ import (
 )
 
 var agentDocumentationURLs = map[Target]string{
-	TargetClaudeCode:  "https://code.claude.com/docs/en/installation",
-	TargetCodex:       "https://github.com/openai/codex",
-	TargetCursor:      "https://docs.cursor.com/en/cli/installation",
-	TargetOpencode:    "https://github.com/anomalyco/opencode",
-	TargetOpencodeV2:  "https://opencode.ai/v2/docs",
-	TargetAider:       "https://aider.chat/docs/install.html",
-	TargetCopilot:     "https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/install-copilot-cli",
-	TargetGrok:        "https://docs.x.ai/build/overview",
-	TargetPi:          "https://github.com/earendil-works/pi",
-	TargetAuggie:      "https://docs.augmentcode.com/cli/overview",
-	TargetCrush:       "https://github.com/charmbracelet/crush",
-	TargetCline:       "https://github.com/cline/cline",
-	TargetGemini:      "https://geminicli.com/docs/get-started/installation/",
-	TargetContinue:    "https://docs.continue.dev/cli/quickstart",
-	TargetDevin:       "https://docs.devin.ai/get-started/devin-intro",
-	TargetKiro:        "https://kiro.dev/docs/getting-started/installation/",
-	TargetKilocode:    "https://kilo.ai/docs/code-with-ai/platforms/cli",
-	TargetVibe:        "https://github.com/mistralai/mistral-vibe",
-	TargetMuse:        "https://ai.meta.com/llama/",
-	TargetKimchi:      "https://docs.kimchi.dev/docs/coding-getting-started",
-	TargetPrimeAgent:  "https://github.com/PrimeIntellect-ai/prime-agent/blob/main/packages/coding-agent/docs/quickstart.md",
-	TargetOMP:         "https://github.com/can1357/oh-my-pi",
-	TargetCodewhale:   "https://github.com/Hmbown/Codewhale",
-	TargetUnreal:      "https://github.com/unreallabsai/unreal-agent",
-	TargetMiMoCode:    "https://github.com/XiaomiMiMo/MiMo-Code",
-	TargetDeepSeek:    "https://github.com/deepseek-ai/deepseek-harness",
-	TargetOpenHands:   "https://docs.openhands.dev/openhands/usage/cli/installation",
-	TargetCommandCode: "https://commandcode.ai/docs/quickstart",
+	TargetClaudeCode: "https://code.claude.com/docs/en/installation",
+	TargetCodex:      "https://github.com/openai/codex",
+	TargetOpencodeV2: "https://opencode.ai/v2/docs",
+	TargetPi:         "https://github.com/earendil-works/pi",
+	TargetAgy:        "https://github.com/google-antigravity/antigravity-cli",
+	TargetOMP:        "https://github.com/can1357/oh-my-pi",
 }
 
 func (s requestPlanner) agentMethodPlans(target Target, operation AgentOperation) []Plan {
@@ -59,17 +36,6 @@ func (s requestPlanner) agentMethodPlans(target Target, operation AgentOperation
 		} else {
 			plans = []Plan{s.planNPM(target, "@openai/codex"), official}
 		}
-	case TargetOpencode:
-		switch s.goos {
-		case "windows":
-			plans = []Plan{s.planWinget(target, "SST.opencode")}
-		case "darwin":
-			plans = []Plan{s.planBrew(target, "anomalyco/tap/opencode"), s.planNPM(target, "opencode-ai@latest"), s.planShellInstaller(target, "https://opencode.ai/install", "bash")}
-		case "linux":
-			plans = []Plan{s.planNPM(target, "opencode-ai@latest"), s.planShellInstaller(target, "https://opencode.ai/install", "bash")}
-		default:
-			plans = []Plan{s.planNPM(target, "opencode-ai@latest")}
-		}
 	case TargetOpencodeV2:
 		switch s.goos {
 		case "darwin":
@@ -79,85 +45,13 @@ func (s requestPlanner) agentMethodPlans(target Target, operation AgentOperation
 		default:
 			plans = []Plan{s.planNPM(target, "@opencode/cli")}
 		}
-	case TargetCopilot:
-		switch s.goos {
-		case "windows":
-			plans = []Plan{s.planWinget(target, "GitHub.Copilot"), s.planNPM(target, "@github/copilot")}
-		case "darwin":
-			plans = []Plan{s.planBrewCask(target, "copilot-cli"), s.planNPM(target, "@github/copilot")}
-		default:
-			plans = []Plan{s.planNPM(target, "@github/copilot")}
-		}
-	case TargetCursor:
-		plans = []Plan{s.officialByOS(target, "https://cursor.com/install", "bash", "https://cursor.com/install?win32=true", agentDocumentationURLs[target])}
-	// Aider's installer runs `uv tool install aider-chat`, so uv owns the binary
-	// it leaves behind; listing uv lets updates go through it.
-	case TargetAider:
-		plans = []Plan{s.officialByOS(target, "https://aider.chat/install.sh", "sh", "https://aider.chat/install.ps1", agentDocumentationURLs[target]), s.planUV(target, "aider-chat")}
-	case TargetGrok:
-		plans = []Plan{s.officialByOS(target, "https://x.ai/cli/install.sh", "bash", "https://x.ai/cli/install.ps1", agentDocumentationURLs[target])}
 	case TargetPi:
 		plans = []Plan{s.planNPM(target, "@earendil-works/pi-coding-agent")}
 		if s.goos == "darwin" || s.goos == "linux" {
 			plans = append(plans, s.planPiOfficialInstaller())
 		}
-	case TargetAuggie:
-		plans = []Plan{s.planNPM(target, "@augmentcode/auggie")}
-	case TargetCrush:
-		if s.goos == "darwin" {
-			plans = []Plan{s.planBrew(target, "charmbracelet/tap/crush"), s.planNPM(target, "@charmland/crush")}
-		} else {
-			plans = []Plan{s.planNPM(target, "@charmland/crush")}
-		}
-	case TargetCline:
-		plans = []Plan{s.planNPM(target, "cline@latest")}
-	case TargetGemini:
-		plans = []Plan{s.planNPM(target, "@google/gemini-cli@latest")}
-	case TargetContinue:
-		plans = []Plan{s.planNPM(target, "@continuedev/cli")}
-	case TargetDevin:
-		switch s.goos {
-		case "windows":
-			plans = []Plan{manualPlan(target, "Devin for Terminal documents installation through WSL on Windows.", agentDocumentationURLs[target])}
-		case "darwin", "linux":
-			plans = []Plan{s.planShellInstaller(target, "https://cli.devin.ai/install.sh", "bash")}
-		default:
-			plans = []Plan{manualPlan(target, "Devin for Terminal publishes this installer for macOS and Linux only.", agentDocumentationURLs[target])}
-		}
-	case TargetKimchi:
-		official := s.officialByOS(target,
-			"https://github.com/getkimchi/kimchi/releases/latest/download/install.sh", "sh",
-			"https://github.com/getkimchi/kimchi/releases/latest/download/install.ps1",
-			agentDocumentationURLs[target])
-		if s.goos == "darwin" {
-			plans = []Plan{s.planBrew(target, "getkimchi/tap/kimchi"), official}
-		} else {
-			plans = []Plan{official}
-		}
-	case TargetVibe:
-		plans = []Plan{s.planUV(target, "mistral-vibe"), s.planPipx(target, "mistral-vibe")}
-	case TargetKiro:
-		plans = []Plan{s.planKiroInstall()}
-	case TargetKilocode:
-		plans = []Plan{s.planNPM(target, "@kilocode/cli")}
-	case TargetMuse:
-		switch s.goos {
-		case "windows":
-			plans = []Plan{manualPlan(target, "Muse Code does not currently publish a native Windows installer.", agentDocumentationURLs[target])}
-		case "darwin", "linux":
-			plans = []Plan{s.planShellInstaller(target, "https://dev.meta.ai/install.sh", "bash")}
-		default:
-			plans = []Plan{manualPlan(target, "Muse Code publishes this installer for macOS and Linux only.", agentDocumentationURLs[target])}
-		}
-	case TargetPrimeAgent:
-		switch s.goos {
-		case "windows":
-			plans = []Plan{manualPlan(target, "Prime Agent currently documents macOS and Linux; use WSL on Windows.", agentDocumentationURLs[target])}
-		case "darwin", "linux":
-			plans = []Plan{s.planShellInstaller(target, "https://app.primeintellect.ai/prime-agent/install.sh", "sh")}
-		default:
-			plans = []Plan{manualPlan(target, "Prime Agent publishes this installer for macOS and Linux only.", agentDocumentationURLs[target])}
-		}
+	case TargetAgy:
+		plans = []Plan{s.officialByOS(target, "https://antigravity.google/cli/install.sh", "bash", "https://antigravity.google/cli/install.ps1", agentDocumentationURLs[target])}
 	case TargetOMP:
 		official := s.officialByOS(target, "https://omp.sh/install", "sh", "https://omp.sh/install.ps1", agentDocumentationURLs[target])
 		if s.goos == "darwin" {
@@ -165,33 +59,6 @@ func (s requestPlanner) agentMethodPlans(target Target, operation AgentOperation
 		} else {
 			plans = []Plan{s.planBun(target), official}
 		}
-	case TargetCodewhale:
-		plans = []Plan{manualPlan(
-			target,
-			"AO does not automatically install Codewhale. Follow the upstream installation instructions, then refresh harness status.",
-			agentDocumentationURLs[target],
-		)}
-	case TargetUnreal:
-		plans = []Plan{{
-			Target: target, Unsupported: true, Method: "manual",
-			Reason: "Unreal Agent is built into AO; update AO to update the harness.",
-		}}
-	case TargetMiMoCode:
-		plans = []Plan{s.planNPM(target, "@mimo-ai/cli")}
-	case TargetDeepSeek:
-		// DeepSeek Harness ships as one Node CLI that boots every profile
-		// (headless, ACP, web) from the same install, so npm is the only method.
-		plans = []Plan{s.planNPM(target, "@deepseek-ai/dsh")}
-	case TargetOpenHands:
-		// The package pins Requires-Python ==3.12.*, which uv resolves (and
-		// downloads if needed) on its own; pipx would need a 3.12 interpreter
-		// already on PATH, so it is not offered.
-		plans = []Plan{s.planUV(target, "openhands")}
-		if s.goos == "darwin" || s.goos == "linux" {
-			plans = append(plans, s.planShellInstaller(target, "https://install.openhands.dev/install.sh", "sh"))
-		}
-	case TargetCommandCode:
-		plans = []Plan{s.planNPM(target, "command-code")}
 	default:
 		plans = []Plan{{Target: target, Unsupported: true, Method: "manual", Reason: "unknown install target"}}
 	}
@@ -254,19 +121,6 @@ func (s requestPlanner) planPiOfficialInstaller() Plan {
 	return plan
 }
 
-func (s requestPlanner) planKiroInstall() Plan {
-	if s.goos == "darwin" {
-		return manualPlan(
-			TargetKiro,
-			"Kiro's official macOS installer writes an app bundle to /Applications and must be run interactively. Follow Kiro's installation guide, then refresh harness status.",
-			agentDocumentationURLs[TargetKiro],
-		)
-	}
-	return s.officialByOS(TargetKiro,
-		"https://cli.kiro.dev/install", "bash",
-		"https://cli.kiro.dev/install.ps1", agentDocumentationURLs[TargetKiro])
-}
-
 func (s requestPlanner) planForOperation(plan Plan, operation AgentOperation) Plan {
 	if operation == AgentOperationUpdate && plan.Method == "npm" && (plan.daemonRuntimeRejected || plan.daemonPrefixRejected) {
 		// The installed copy may live under another prefix (nvm, fnm, ~/.local)
@@ -305,10 +159,6 @@ func (s requestPlanner) planForOperation(plan Plan, operation AgentOperation) Pl
 			plan.Command = append(plan.Command, "--force")
 		case "winget":
 			plan.Command = append(plan.Command, "--force")
-		case "uv":
-			plan.Command = []string{"uv", "tool", "install", plan.Package, "--force", "--reinstall"}
-		case "pipx":
-			plan.Command = []string{"pipx", "install", "--force", plan.Package}
 		case "bun":
 			plan.Command = append(plan.Command, "--force")
 		case "official-installer":
@@ -345,10 +195,6 @@ func (s requestPlanner) planForOperation(plan Plan, operation AgentOperation) Pl
 			plan.Command = []string{"npm", "install", "-g", "--prefix", plan.PackagePrefix, pkg + "@latest"}
 		case "winget":
 			plan.Command = []string{"winget", "upgrade", "-e", "--id", plan.Package, "--silent", "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity"}
-		case "uv":
-			plan.Command = []string{"uv", "tool", "upgrade", plan.Package}
-		case "pipx":
-			plan.Command = []string{"pipx", "upgrade", plan.Package}
 		case "bun":
 			plan.Command = []string{"bun", "install", "-g", packageWithoutLatest(plan.Package) + "@latest"}
 		case "official-installer":
@@ -357,14 +203,6 @@ func (s requestPlanner) planForOperation(plan Plan, operation AgentOperation) Pl
 			if script, ok := s.officialManagedScript(plan, installScript); ok {
 				plan.Command = nil
 				plan.Script = script
-				break
-			}
-			// These Windows self-updaters do not reliably replace the installed
-			// binary headlessly. Re-run the vendor's installer instead; ownership
-			// and post-update version checks still guard the operation.
-			if installScript != nil && s.goos == "windows" && plan.Target == TargetGrok {
-				plan.Command = nil
-				plan.Script = installScript
 				break
 			}
 			command, ok := vendorUpdateCommands[plan.Target]
@@ -397,20 +235,13 @@ func (s requestPlanner) planForOperation(plan Plan, operation AgentOperation) Pl
 
 // vendorUpdateCommands are the harnesses' own self-update commands, used only
 // when the vendor installer, not a package manager, owns the running binary.
-// Each updates the stable channel without a terminal: Kimchi's "self" leaves
-// its extensions alone and --force skips its confirmation prompt, and
-// OpenCode is told the install method AO already proved. Pi updates
-// only itself without trusting project-local files.
+// Each updates the stable channel without a terminal. Pi updates only itself
+// without trusting project-local files.
 var vendorUpdateCommands = map[Target][]string{
 	TargetClaudeCode: {"claude", "update"},
 	TargetCodex:      {"codex", "update"},
-	TargetOpencode:   {"opencode", "upgrade", "--method", "curl"},
-	TargetKimchi:     {"kimchi", "update", "self", "--force"},
 	TargetOMP:        {"omp", "update"},
-	TargetCursor:     {"cursor-agent", "update"},
-	TargetGrok:       {"grok", "update"},
 	TargetPi:         {"pi", "update", "self", "--no-approve"},
-	TargetPrimeAgent: {"prime-agent", "update"},
 }
 
 func packageWithoutLatest(pkg string) string {
@@ -469,13 +300,6 @@ func (s *Service) planPowerShellInstaller(target Target, url string) Plan {
 	return Plan{Target: target, Unsupported: true, Method: "official-installer", Reason: "PowerShell was not found on PATH."}
 }
 
-func (s *Service) planUV(target Target, pkg string) Plan {
-	if _, err := s.executables.LookPath("uv"); err != nil {
-		return Plan{Target: target, Unsupported: true, Method: "uv", Reason: "uv was not found on PATH. Install uv, then retry."}
-	}
-	return Plan{Target: target, Method: "uv", Command: []string{"uv", "tool", "install", pkg}, Package: pkg}
-}
-
 func (s *Service) planBun(target Target) Plan {
 	const pkg = "@oh-my-pi/pi-coding-agent"
 	if _, err := s.executables.LookPath("bun"); err != nil {
@@ -484,47 +308,19 @@ func (s *Service) planBun(target Target) Plan {
 	return Plan{Target: target, Method: "bun", Command: []string{"bun", "install", "-g", pkg}, Package: pkg}
 }
 
-func (s *Service) planPipx(target Target, pkg string) Plan {
-	if _, err := s.executables.LookPath("pipx"); err != nil {
-		return Plan{Target: target, Unsupported: true, Method: "pipx", Reason: "pipx was not found on PATH. Install pipx, then retry."}
-	}
-	return Plan{Target: target, Method: "pipx", Command: []string{"pipx", "install", pkg}, Package: pkg}
-}
-
 func manualPlan(target Target, reason, docsURL string) Plan {
 	return Plan{Target: target, Unsupported: true, Method: "manual", Reason: reason, DocsURL: docsURL}
 }
 
-// pinVendorUpdate asks OpenCode's installer for the exact release
-// the update advisory reported, so the version installed is the one the
-// update badge announced.
-func pinVendorUpdate(plan Plan, latest string) Plan {
-	if plan.Method != "official-installer" || latest == "" {
-		return plan
-	}
-	if plan.Target != TargetOpencode || len(plan.Command) < 2 {
-		return plan
-	}
-	plan.Command = append([]string{plan.Command[0], plan.Command[1], latest}, plan.Command[2:]...)
-	return plan
-}
+// openCodeV2HomebrewKeg is the opencode-v2 formula's keg name.
+const openCodeV2HomebrewKeg = "opencode-v2"
 
-// openCodeV2HomebrewKeg is the opencode-v2 formula's keg name, and
-// openCodeV1HomebrewKeg the formula it declares conflicts_with.
-const (
-	openCodeV2HomebrewKeg = "opencode-v2"
-	openCodeV1HomebrewKeg = "opencode"
-)
-
-// isolateOpenCodeV2 keeps every OpenCode 2 method from replacing OpenCode 1's
-// `opencode` executable. Both majors ship an executable of that name, and each
-// vendor recipe writes it where OpenCode 1's own recipe does. npm already
-// installs into a private prefix (planNPM). The official installer always
-// writes $HOME/.opencode/bin, so it runs with a private HOME and leaves shell
-// profiles alone. Homebrew links opencode-v2 into <prefix>/bin, so the keg is
-// unlinked afterwards and resolved through its opt link; an OpenCode 1 formula
-// that is linked is unlinked first, because opencode-v2 refuses to install
-// beside it, and linked again whatever the outcome.
+// isolateOpenCodeV2 keeps every OpenCode 2 method from writing a bare
+// `opencode` executable onto PATH. npm already installs into a private prefix
+// (planNPM). The official installer always writes $HOME/.opencode/bin, so it
+// runs with a private HOME and leaves shell profiles alone. Homebrew links
+// opencode-v2 into <prefix>/bin, so the keg is unlinked afterwards and resolved
+// through its opt link.
 func (s requestPlanner) isolateOpenCodeV2(plan Plan) Plan {
 	if plan.Unsupported {
 		return plan
@@ -549,28 +345,7 @@ func (s requestPlanner) isolateOpenCodeV2(plan Plan) Plan {
 		if len(plan.Command) == 0 {
 			return plan
 		}
-		// Even an absent marker can mean v1 is reinstalling. Reserve its
-		// harness before inspecting linked state in runAgentOperation.
-		plan.alsoChanges = []Target{TargetOpencode}
-		if s.capabilities != nil {
-			plan.homebrewV1Prefix = s.capabilities.Homebrew.Prefix
-		}
 		plan.Cleanup = [][]string{{"brew", "unlink", openCodeV2HomebrewKeg}}
-	}
-	return plan
-}
-
-// withLinkedOpenCodeV1 inspects linked state only after the run reserves v1.
-// A plan may have been built while a v1 reinstall temporarily removed its
-// marker, or long before a deferred update actually starts.
-func (plan Plan) withLinkedOpenCodeV1() Plan {
-	if plan.homebrewV1Prefix == "" {
-		return plan
-	}
-	_, err := os.Lstat(filepath.Join(plan.homebrewV1Prefix, "var", "homebrew", "linked", openCodeV1HomebrewKeg))
-	if err == nil {
-		plan.Prepare = append(slices.Clone(plan.Prepare), []string{"brew", "unlink", openCodeV1HomebrewKeg})
-		plan.Cleanup = append(slices.Clone(plan.Cleanup), []string{"brew", "link", openCodeV1HomebrewKeg})
 	}
 	return plan
 }
@@ -600,25 +375,6 @@ func withInstallerEnv(script *ports.InstallScriptCommand, entries ...string) *po
 // finds first, and npm acts on the global prefix that holds the package with
 // that prefix's own Node, which need not be the daemon's npm.
 func targetInstalledCopy(goos string, plan Plan, target Target, binaryPath string) Plan {
-	if goos == "windows" && target == TargetGrok && plan.Method == "official-installer" && plan.Script != nil {
-		// PowerShell's installer defaults to the user's profile. Bind its
-		// destination even when the confirmed copy lives on another drive/share.
-		slashed := strings.ReplaceAll(binaryPath, `\`, "/")
-		driveAbsolute := len(slashed) >= 3 && ((slashed[0] >= 'A' && slashed[0] <= 'Z') || (slashed[0] >= 'a' && slashed[0] <= 'z')) && slashed[1:3] == ":/"
-		uncAbsolute := strings.HasPrefix(slashed, "//") && len(strings.Split(strings.TrimPrefix(slashed, "//"), "/")) >= 3
-		if !driveAbsolute && !uncAbsolute {
-			plan.Unsupported = true
-			plan.Reason = "AO could not preserve the confirmed Grok installation directory; update it manually."
-			return plan
-		}
-		end := strings.LastIndex(slashed, "/")
-		if driveAbsolute && end == 2 {
-			end++ // Keep the separator in a drive root such as D:\.
-		}
-		plan.Script = withInstallerEnv(plan.Script, "GROK_BIN_DIR="+binaryPath[:end])
-		plan.ExpectedDestination = binaryPath
-		return plan
-	}
 	if len(plan.Command) == 0 {
 		return plan
 	}

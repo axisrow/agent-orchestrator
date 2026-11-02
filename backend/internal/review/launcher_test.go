@@ -1009,18 +1009,6 @@ func TestLauncherCancelSendsEscapeForPi(t *testing.T) {
 	}
 }
 
-func TestLauncherCancelSendsEscapeForKiro(t *testing.T) {
-	reviewer := &fakeCancellableReviewer{mode: ports.ReviewCancelInput, input: "\x1b"}
-	rt := &fakeRuntime{}
-	l := newTestLauncher(t, reviewer, rt)
-	if err := l.Cancel(context.Background(), "review-mer-1", domain.ReviewerKiro); err != nil {
-		t.Fatalf("Cancel: %v", err)
-	}
-	if rt.sentTo != "review-mer-1" || rt.sentInput != "\x1b" || rt.interrupts != 0 {
-		t.Fatalf("native input = %q to %q, interrupts=%d", rt.sentInput, rt.sentTo, rt.interrupts)
-	}
-}
-
 func TestLauncherSpawnUsesReviewerWorkingDirectoryAndInitialMessage(t *testing.T) {
 	reviewer := &fakeReviewerWithLaunchSpec{spec: ports.ReviewCommandSpec{
 		Argv: []string{"kiro-cli", "chat"}, WorkingDirectory: "/ao/reviewer", InitialMessage: "task ref",
@@ -1092,7 +1080,7 @@ func TestLauncherCancelCanSendReviewerInput(t *testing.T) {
 	rt := &fakeRuntime{}
 	l := newTestLauncher(t, reviewer, rt)
 
-	if err := l.Cancel(context.Background(), "review-mer-1", domain.ReviewerOpenCode); err != nil {
+	if err := l.Cancel(context.Background(), "review-mer-1", domain.ReviewerOpenCodeV2); err != nil {
 		t.Fatalf("Cancel: %v", err)
 	}
 	if !reviewer.cancelled {

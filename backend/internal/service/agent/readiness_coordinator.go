@@ -533,7 +533,7 @@ func (c *readinessCoordinator) runCheck(id string, purpose domain.AgentReadiness
 func (c *readinessCoordinator) checkInstallation(item agentregistry.HarnessAgent, presenceOnly bool) (domain.AgentInstallationObservation, bool) {
 	attempted := c.now()
 	timeout := c.installTimeout
-	if timeout == defaultInstallCheckTimeout && (item.Harness == domain.HarnessOpenCode || item.Harness == domain.HarnessOpenCodeV2) {
+	if timeout == defaultInstallCheckTimeout && item.Harness == domain.HarnessOpenCodeV2 {
 		timeout = opencodeInstallCheckTimeout
 	}
 	ctx, cancel := context.WithTimeout(c.ctx, timeout)
@@ -558,11 +558,7 @@ func (c *readinessCoordinator) checkInstallation(item agentregistry.HarnessAgent
 	}
 	var incompatibleVersion *opencode.IncompatibleVersionError
 	if errors.As(err, &incompatibleVersion) {
-		message := item.Manifest.Name + " is not installed."
-		if replaced := incompatibleVersion.ReplacedOpenCode1Message(); replaced != "" {
-			message = replaced
-		}
-		return successfulInstallation(attempted, domain.AgentInstallationNotInstalled, domain.AgentReadinessReasonNotInstalled, message), false
+		return successfulInstallation(attempted, domain.AgentInstallationNotInstalled, domain.AgentReadinessReasonNotInstalled, item.Manifest.Name+" is not installed: "+incompatibleVersion.Error()), false
 	}
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		return failedInstallation(attempted, domain.AgentReadinessReasonInstallCheckTimeout, "Installation check timed out."), true

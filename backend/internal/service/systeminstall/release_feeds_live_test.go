@@ -33,7 +33,7 @@ func TestLiveHarnessReleaseFeeds(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, ok := versionSchemeFor(target).parse(latest); !ok {
+			if _, ok := versionSemver.parse(latest); !ok {
 				t.Fatalf("release %q is not comparable", latest)
 			}
 			t.Logf("latest %s", latest)
@@ -42,7 +42,7 @@ func TestLiveHarnessReleaseFeeds(t *testing.T) {
 
 	seen := map[string]bool{}
 	for _, goos := range []string{"darwin", "linux", "windows"} {
-		planner, err := newTestService(goos, "npm", "brew", "bun", "uv", "pipx", "winget", "bash", "sh").newRequestPlanner(ctx)
+		planner, err := newTestService(goos, "npm", "brew", "bun", "winget", "bash", "sh").newRequestPlanner(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -54,7 +54,7 @@ func TestLiveHarnessReleaseFeeds(t *testing.T) {
 					continue
 				}
 				seen[name] = true
-				scheme := versionSchemeFor(target)
+				scheme := versionSemver
 				var lookup func() (string, error)
 				switch {
 				case plan.Method == "npm" || plan.Method == "bun":
@@ -63,8 +63,6 @@ func TestLiveHarnessReleaseFeeds(t *testing.T) {
 					// Tap packages are read from local brew metadata only.
 					cask := plan.PackageCask
 					lookup = func() (string, error) { return homebrewAPIVersion(ctx, client, pkg, cask) }
-				case plan.Method == "uv" || plan.Method == "pipx":
-					lookup = func() (string, error) { return pypiManagedVersion(ctx, client, pkg, scheme) }
 				default:
 					continue
 				}

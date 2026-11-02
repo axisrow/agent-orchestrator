@@ -778,20 +778,17 @@ func writeVersionScript(path, version string) error {
 	return os.WriteFile(path, []byte("#!/bin/sh\necho "+version+"\n"), 0755)
 }
 
-func TestManagedOpenCodeMajorsKeepSeparateLaunchers(t *testing.T) {
-	version := "1.2.27"
+func TestManagedOpenCodeV2KeepsItsOwnLauncher(t *testing.T) {
+	version := "2.0.0"
 	s := newManagedNPMExecService(t, func(prefix string) error {
 		return writeVersionScript(filepath.Join(prefix, "bin", "opencode"), version)
 	})
 	for _, step := range []struct {
 		target            Target
 		version, baseline string
-	}{{TargetOpencode, "1.2.27", "/usr/local/bin/opencode"}, {TargetOpencodeV2, "2.0.0", "/usr/local/bin/opencode"}, {TargetOpencodeV2, "2.0.1", filepath.Join(s.ManagedBinDir(), "opencode-v2")}} {
+	}{{TargetOpencodeV2, "2.0.0", "/usr/local/bin/opencode"}, {TargetOpencodeV2, "2.0.1", filepath.Join(s.ManagedBinDir(), "opencode-v2")}} {
 		version = step.version
-		plan := Plan{Target: step.target, Method: "npm", Package: "opencode-ai"}
-		if step.target == TargetOpencodeV2 {
-			plan.Package = "@opencode/cli"
-		}
+		plan := Plan{Target: step.target, Method: "npm", Package: "@opencode/cli"}
 		if !s.managedEligible(plan) {
 			t.Fatalf("%s cannot install side by side", step.target)
 		}
@@ -799,41 +796,10 @@ func TestManagedOpenCodeMajorsKeepSeparateLaunchers(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for name, want := range map[string]string{"opencode": "1.2.27", "opencode-v2": "2.0.1"} {
+	for name, want := range map[string]string{"opencode-v2": "2.0.1"} {
 		out, err := exec.Command(filepath.Join(s.ManagedBinDir(), name), "--version").Output()
 		if err != nil || strings.TrimSpace(string(out)) != want {
 			t.Fatalf("%s launcher=%q,%v; want %s", name, out, err, want)
 		}
-	}
-}
-
-func TestManagedCopilotInstallsTheLauncherNotThePlatformBinary(t *testing.T) {
-	// npm's layout: bin/copilot links to the package's Node loader, and the
-	// platform package's binary sits under the loader's node_modules/.bin.
-	s := newManagedNPMExecService(t, func(prefix string) error {
-		pkg := filepath.Join(prefix, "lib", "node_modules", "@github", "copilot")
-		if err := writeVersionScript(filepath.Join(pkg, "npm-loader.js"), "1.0.101"); err != nil {
-			return err
-		}
-		if err := writeVersionScript(filepath.Join(pkg, "node_modules", ".bin", "copilot-darwin-arm64"), "1.0.101"); err != nil {
-			return err
-		}
-		if err := os.MkdirAll(filepath.Join(prefix, "bin"), 0755); err != nil {
-			return err
-		}
-		return os.Symlink(filepath.Join("..", "lib", "node_modules", "@github", "copilot", "npm-loader.js"), filepath.Join(prefix, "bin", "copilot"))
-	})
-	// The resolver returns the native binary behind the npm loader.
-	native := "/opt/homebrew/lib/node_modules/@github/copilot/node_modules/.bin/copilot-darwin-arm64"
-	plan := Plan{Target: TargetCopilot, Method: "npm", Package: "@github/copilot"}
-	if err := s.runManagedInstall(context.Background(), plan, &installedBaseline{path: native, expected: "1.0.101"}, nil, io.Discard); err != nil {
-		t.Fatal(err)
-	}
-	if record, ok := s.readManagedRecord(TargetCopilot); !ok || record.CLI != "copilot" || record.BinRel != filepath.Join("bin", "copilot") {
-		t.Fatalf("managed record = %+v, %v", record, ok)
-	}
-	out, err := exec.Command(filepath.Join(s.ManagedBinDir(), "copilot"), "--version").Output()
-	if err != nil || strings.TrimSpace(string(out)) != "1.0.101" {
-		t.Fatalf("copilot launcher=%q,%v; want 1.0.101", out, err)
 	}
 }

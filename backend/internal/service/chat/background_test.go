@@ -171,7 +171,7 @@ func TestRunBackgroundTaskUsesAdvertisedNativeEffort(t *testing.T) {
 				},
 			}
 			service := chatsvc.New(chatsvc.Options{Drivers: fakeRegistry{driver: fakeDriver{conv: conversation}}, NewID: func() string { return "id" }})
-			if _, err := service.RunBackgroundTask(context.Background(), domain.HarnessDeepSeek, ports.ChatStartConfig{}, "Write a short title"); err != nil {
+			if _, err := service.RunBackgroundTask(context.Background(), domain.HarnessAgy, ports.ChatStartConfig{}, "Write a short title"); err != nil {
 				t.Fatal(err)
 			}
 			if conversation.setValue.Select != tt.want || (tt.want != "" && conversation.setID != "native-reasoning") {

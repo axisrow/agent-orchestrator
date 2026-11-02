@@ -77,12 +77,12 @@ func (l mutableSessionLister) ListAllSessions(context.Context) ([]domain.Session
 }
 
 // windowsIdleService is a Windows service with update-when-idle on, one live
-// Auggie session, and an npm update that succeeds unless failUpdate is set.
+// Codex session, and an npm update that succeeds unless failUpdate is set.
 func windowsIdleService(t *testing.T, failUpdate bool) (*Service, *idleCoordinatorStub, *[]ports.InstallCommand) {
 	t.Helper()
 	s := newTestService("windows", "npm")
 	s.updateWhenIdle = true
-	sessions := []domain.SessionRecord{{ID: "auggie-1", Harness: domain.AgentHarness(TargetAuggie), Activity: domain.Activity{State: domain.ActivityIdle}}}
+	sessions := []domain.SessionRecord{{ID: "codex-1", Harness: domain.AgentHarness(TargetCodex), Activity: domain.Activity{State: domain.ActivityIdle}}}
 	coordinator := &idleCoordinatorStub{sessions: &sessions}
 	s.sessions = mutableSessionLister{mu: &coordinator.mu, sessions: &sessions}
 	s.SetIdleUpdateCoordinator(coordinator)
@@ -92,7 +92,7 @@ func windowsIdleService(t *testing.T, failUpdate bool) (*Service, *idleCoordinat
 	s.verifier = harnessVerifierFunc(func(context.Context, Target) (VerifyResult, error) {
 		mu.Lock()
 		defer mu.Unlock()
-		return VerifyResult{ResolvedPath: `C:\Users\test\AppData\Roaming\npm\auggie.cmd`, Output: "auggie " + version}, nil
+		return VerifyResult{ResolvedPath: `C:\Users\test\AppData\Roaming\npm\codex.cmd`, Output: "codex " + version}, nil
 	})
 	var ran []ports.InstallCommand
 	s.installCommands = installCommandRunnerFunc(func(_ context.Context, command ports.InstallCommand, _, _ io.Writer) error {
@@ -125,49 +125,49 @@ func waitForJob(t *testing.T, s *Service, target Target, done func(Job) bool) Jo
 
 func TestWindowsUpdateWaitsForIdleSessions(t *testing.T) {
 	s, coordinator, ran := windowsIdleService(t, false)
-	coordinator.busy = []domain.SessionWait{{SessionID: "auggie-1", Reason: domain.SessionWaitCommand}}
+	coordinator.busy = []domain.SessionWait{{SessionID: "codex-1", Reason: domain.SessionWaitCommand}}
 	// No confirmation: the update just waits for the sessions.
-	job, err := s.StartAgentOperation(context.Background(), TargetAuggie, "npm", AgentOperationUpdate, "")
+	job, err := s.StartAgentOperation(context.Background(), TargetCodex, "npm", AgentOperationUpdate, "")
 	if err != nil || job.Status != StatusWaitingForIdle {
 		t.Fatalf("update = %+v, %v; want waiting_for_idle", job, err)
 	}
 	// While a session runs a command, nothing is stopped and npm never runs.
-	waiting := waitForJob(t, s, TargetAuggie, func(job Job) bool { return len(job.WaitingOn) == 1 })
+	waiting := waitForJob(t, s, TargetCodex, func(job Job) bool { return len(job.WaitingOn) == 1 })
 	if waiting.WaitingOn[0].Reason != domain.SessionWaitCommand || coordinator.stops != 0 || len(*ran) != 0 {
 		t.Fatalf("waiting job = %+v, stops=%d ran=%v", waiting, coordinator.stops, *ran)
 	}
 	// New sessions may start while the update waits.
-	if release, ok := s.TryBeginHarnessUse(domain.AgentHarness(TargetAuggie)); !ok {
+	if release, ok := s.TryBeginHarnessUse(domain.AgentHarness(TargetCodex)); !ok {
 		t.Fatal("a launch was refused while the update only waited")
 	} else {
 		release()
 	}
-	s.CancelAgentOperation(context.Background(), TargetAuggie) //nolint:errcheck // exercised below
+	s.CancelAgentOperation(context.Background(), TargetCodex) //nolint:errcheck // exercised below
 	s.workers.Wait()
 }
 
 func TestWindowsIdleUpdateStopsUpdatesAndResumes(t *testing.T) {
 	s, coordinator, ran := windowsIdleService(t, false)
-	if _, err := s.StartAgentOperation(context.Background(), TargetAuggie, "npm", AgentOperationUpdate, ""); err != nil {
+	if _, err := s.StartAgentOperation(context.Background(), TargetCodex, "npm", AgentOperationUpdate, ""); err != nil {
 		t.Fatal(err)
 	}
-	job := waitForJob(t, s, TargetAuggie, func(job Job) bool { return job.Status == StatusSucceeded || job.Status == StatusFailed })
+	job := waitForJob(t, s, TargetCodex, func(job Job) bool { return job.Status == StatusSucceeded || job.Status == StatusFailed })
 	if job.Status != StatusSucceeded {
 		t.Fatalf("job = %+v", job)
 	}
 	coordinator.mu.Lock()
 	defer coordinator.mu.Unlock()
-	if coordinator.stops != 1 || len(coordinator.resumed) != 1 || coordinator.resumed[0][0] != "auggie-1" || len(*ran) == 0 {
+	if coordinator.stops != 1 || len(coordinator.resumed) != 1 || coordinator.resumed[0][0] != "codex-1" || len(*ran) == 0 {
 		t.Fatalf("stops=%d resumed=%v ran=%v", coordinator.stops, coordinator.resumed, *ran)
 	}
 }
 
 func TestWindowsIdleUpdateFailureResumesOnTheOldRelease(t *testing.T) {
 	s, coordinator, _ := windowsIdleService(t, true)
-	if _, err := s.StartAgentOperation(context.Background(), TargetAuggie, "npm", AgentOperationUpdate, ""); err != nil {
+	if _, err := s.StartAgentOperation(context.Background(), TargetCodex, "npm", AgentOperationUpdate, ""); err != nil {
 		t.Fatal(err)
 	}
-	job := waitForJob(t, s, TargetAuggie, func(job Job) bool { return job.Status == StatusSucceeded || job.Status == StatusFailed })
+	job := waitForJob(t, s, TargetCodex, func(job Job) bool { return job.Status == StatusSucceeded || job.Status == StatusFailed })
 	if job.Status != StatusFailed {
 		t.Fatalf("job = %+v, want failed", job)
 	}
@@ -180,11 +180,11 @@ func TestWindowsIdleUpdateFailureResumesOnTheOldRelease(t *testing.T) {
 
 func TestCancelledIdleUpdateLeavesSessionsUntouched(t *testing.T) {
 	s, coordinator, ran := windowsIdleService(t, false)
-	coordinator.busy = []domain.SessionWait{{SessionID: "auggie-1", Reason: domain.SessionWaitWorking}}
-	if _, err := s.StartAgentOperation(context.Background(), TargetAuggie, "npm", AgentOperationUpdate, ""); err != nil {
+	coordinator.busy = []domain.SessionWait{{SessionID: "codex-1", Reason: domain.SessionWaitWorking}}
+	if _, err := s.StartAgentOperation(context.Background(), TargetCodex, "npm", AgentOperationUpdate, ""); err != nil {
 		t.Fatal(err)
 	}
-	job, err := s.CancelAgentOperation(context.Background(), TargetAuggie)
+	job, err := s.CancelAgentOperation(context.Background(), TargetCodex)
 	if err != nil || job.Status != StatusInterrupted {
 		t.Fatalf("cancel = %+v, %v", job, err)
 	}
@@ -192,7 +192,7 @@ func TestCancelledIdleUpdateLeavesSessionsUntouched(t *testing.T) {
 	if coordinator.stops != 0 || len(coordinator.resumed) != 0 || len(*ran) != 0 {
 		t.Fatalf("cancel touched sessions: stops=%d resumed=%v ran=%v", coordinator.stops, coordinator.resumed, *ran)
 	}
-	if _, err := s.CancelAgentOperation(context.Background(), TargetAuggie); !errors.Is(err, ErrNotWaiting) {
+	if _, err := s.CancelAgentOperation(context.Background(), TargetCodex); !errors.Is(err, ErrNotWaiting) {
 		t.Fatalf("second cancel = %v, want ErrNotWaiting", err)
 	}
 }
@@ -201,10 +201,10 @@ func TestIdleUpdateNeverRunsNPMWhileASessionStillRuns(t *testing.T) {
 	s, coordinator, ran := windowsIdleService(t, false)
 	// Stopping fails, so a session keeps running.
 	coordinator.stopErr = errors.New("chat has work in progress")
-	if _, err := s.StartAgentOperation(context.Background(), TargetAuggie, "npm", AgentOperationUpdate, ""); err != nil {
+	if _, err := s.StartAgentOperation(context.Background(), TargetCodex, "npm", AgentOperationUpdate, ""); err != nil {
 		t.Fatal(err)
 	}
-	waitForJob(t, s, TargetAuggie, func(Job) bool {
+	waitForJob(t, s, TargetCodex, func(Job) bool {
 		coordinator.mu.Lock()
 		defer coordinator.mu.Unlock()
 		return coordinator.stops > 0
@@ -212,7 +212,7 @@ func TestIdleUpdateNeverRunsNPMWhileASessionStillRuns(t *testing.T) {
 	if len(*ran) != 0 {
 		t.Fatalf("npm ran while a session still ran: %v", *ran)
 	}
-	if _, err := s.CancelAgentOperation(context.Background(), TargetAuggie); err != nil {
+	if _, err := s.CancelAgentOperation(context.Background(), TargetCodex); err != nil {
 		t.Fatal(err)
 	}
 	s.workers.Wait()
@@ -223,16 +223,16 @@ func TestIdleUpdateNeverRunsNPMWhileASessionStillRuns(t *testing.T) {
 func TestIdleUpdateRunsAfterStoppingTerminalSessions(t *testing.T) {
 	s, coordinator, ran := windowsIdleService(t, false)
 	coordinator.terminals = true
-	if _, err := s.StartAgentOperation(context.Background(), TargetAuggie, "npm", AgentOperationUpdate, ""); err != nil {
+	if _, err := s.StartAgentOperation(context.Background(), TargetCodex, "npm", AgentOperationUpdate, ""); err != nil {
 		t.Fatal(err)
 	}
-	job := waitForJob(t, s, TargetAuggie, func(job Job) bool { return job.Status == StatusSucceeded || job.Status == StatusFailed })
+	job := waitForJob(t, s, TargetCodex, func(job Job) bool { return job.Status == StatusSucceeded || job.Status == StatusFailed })
 	if job.Status != StatusSucceeded {
 		t.Fatalf("job = %+v", job)
 	}
 	coordinator.mu.Lock()
 	defer coordinator.mu.Unlock()
-	if coordinator.stops != 1 || len(coordinator.resumed) != 1 || coordinator.resumed[0][0] != "auggie-1" || len(*ran) == 0 {
+	if coordinator.stops != 1 || len(coordinator.resumed) != 1 || coordinator.resumed[0][0] != "codex-1" || len(*ran) == 0 {
 		t.Fatalf("stops=%d resumed=%v ran=%v", coordinator.stops, coordinator.resumed, *ran)
 	}
 }
@@ -242,13 +242,13 @@ func TestIdleUpdateNeverRunsBesideASessionThatWasNotStopped(t *testing.T) {
 	s, coordinator, ran := windowsIdleService(t, false)
 	coordinator.terminals = true
 	coordinator.mu.Lock()
-	*coordinator.sessions = append(*coordinator.sessions, domain.SessionRecord{ID: "auggie-2", Harness: domain.AgentHarness(TargetAuggie), Activity: domain.Activity{State: domain.ActivityIdle}})
-	coordinator.unstopped = "auggie-2"
+	*coordinator.sessions = append(*coordinator.sessions, domain.SessionRecord{ID: "codex-2", Harness: domain.AgentHarness(TargetCodex), Activity: domain.Activity{State: domain.ActivityIdle}})
+	coordinator.unstopped = "codex-2"
 	coordinator.mu.Unlock()
-	if _, err := s.StartAgentOperation(context.Background(), TargetAuggie, "npm", AgentOperationUpdate, ""); err != nil {
+	if _, err := s.StartAgentOperation(context.Background(), TargetCodex, "npm", AgentOperationUpdate, ""); err != nil {
 		t.Fatal(err)
 	}
-	waitForJob(t, s, TargetAuggie, func(Job) bool {
+	waitForJob(t, s, TargetCodex, func(Job) bool {
 		coordinator.mu.Lock()
 		defer coordinator.mu.Unlock()
 		return len(coordinator.resumed) > 0
@@ -256,7 +256,7 @@ func TestIdleUpdateNeverRunsBesideASessionThatWasNotStopped(t *testing.T) {
 	if len(*ran) != 0 {
 		t.Fatalf("npm ran while a session still ran: %v", *ran)
 	}
-	if _, err := s.CancelAgentOperation(context.Background(), TargetAuggie); err != nil {
+	if _, err := s.CancelAgentOperation(context.Background(), TargetCodex); err != nil {
 		t.Fatal(err)
 	}
 	s.workers.Wait()
@@ -264,16 +264,16 @@ func TestIdleUpdateNeverRunsBesideASessionThatWasNotStopped(t *testing.T) {
 
 func TestLaunchWaitsForAHarnessChangeInsteadOfFailing(t *testing.T) {
 	s := newTestService("windows")
-	gate := s.harnessGate(domain.AgentHarness(TargetAuggie))
+	gate := s.harnessGate(domain.AgentHarness(TargetCodex))
 	gate.Lock()
-	s.setHarnessChanging(TargetAuggie, true)
+	s.setHarnessChanging(TargetCodex, true)
 	go func() {
 		time.Sleep(300 * time.Millisecond)
-		s.setHarnessChanging(TargetAuggie, false)
+		s.setHarnessChanging(TargetCodex, false)
 		gate.Unlock()
 	}()
 	started := time.Now()
-	release, ok := s.TryBeginHarnessUse(domain.AgentHarness(TargetAuggie))
+	release, ok := s.TryBeginHarnessUse(domain.AgentHarness(TargetCodex))
 	if !ok {
 		t.Fatal("launch failed instead of waiting for the update batch")
 	}
@@ -302,15 +302,15 @@ func TestIdleUpdateReportsSessionsItCouldNotResume(t *testing.T) {
 	coordinator.resumeErr = errors.New("provider did not start")
 	events := &eventRecorder{}
 	s.SetTelemetry(events)
-	if _, err := s.StartAgentOperation(context.Background(), TargetAuggie, "npm", AgentOperationUpdate, ""); err != nil {
+	if _, err := s.StartAgentOperation(context.Background(), TargetCodex, "npm", AgentOperationUpdate, ""); err != nil {
 		t.Fatal(err)
 	}
-	waitForJob(t, s, TargetAuggie, func(job Job) bool { return job.Status == StatusSucceeded || job.Status == StatusFailed })
+	waitForJob(t, s, TargetCodex, func(job Job) bool { return job.Status == StatusSucceeded || job.Status == StatusFailed })
 	s.workers.Wait()
 	events.mu.Lock()
 	defer events.mu.Unlock()
 	for _, ev := range events.events {
-		if ev.Name == EventHarnessResumeFailed && ev.Payload["harness"] == string(TargetAuggie) && ev.Payload["error"] == "provider did not start" {
+		if ev.Name == EventHarnessResumeFailed && ev.Payload["harness"] == string(TargetCodex) && ev.Payload["error"] == "provider did not start" {
 			return
 		}
 	}
@@ -347,7 +347,7 @@ func TestUpdateWhenIdleWithoutSessionsDoesNotDeadlock(t *testing.T) {
 		*coordinator.sessions = nil
 		started := make(chan error, 1)
 		go func() {
-			_, err := s.StartAgentOperation(context.Background(), TargetAuggie, "npm", AgentOperationUpdate, "")
+			_, err := s.StartAgentOperation(context.Background(), TargetCodex, "npm", AgentOperationUpdate, "")
 			started <- err
 		}()
 		select {
@@ -358,7 +358,7 @@ func TestUpdateWhenIdleWithoutSessionsDoesNotDeadlock(t *testing.T) {
 		case <-time.After(5 * time.Second):
 			t.Fatalf("%s: StartAgentOperation deadlocked", goos)
 		}
-		waitForJob(t, s, TargetAuggie, func(job Job) bool { return job.Status == StatusSucceeded })
+		waitForJob(t, s, TargetCodex, func(job Job) bool { return job.Status == StatusSucceeded })
 		if len(*ran) != 1 {
 			t.Fatalf("%s: installs = %v", goos, *ran)
 		}

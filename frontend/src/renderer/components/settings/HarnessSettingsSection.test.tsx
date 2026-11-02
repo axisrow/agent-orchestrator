@@ -76,9 +76,9 @@ function catalogWithInstalled(...installed: string[]) {
 		agents: [
 			{ id: "claude-code", label: "Claude Code" },
 			{ id: "codex", label: "Codex" },
-			{ id: "cursor", label: "Cursor" },
+			{ id: "qwen", label: "Qwen" },
 			{ id: "goose", label: "Goose" },
-			{ id: "codewhale", label: "Codewhale" },
+			{ id: "kimi", label: "Kimi" },
 		].map((agent) => ({
 			...agent,
 			installation: { state: installed.includes(agent.id) ? "installed" : "not_installed", freshness: "fresh", reason: "", reasonCode: "", attemptedAt: null, checkedAt: null },
@@ -110,14 +110,14 @@ const plans = {
 			],
 		},
 		{
-			agentId: "aider", available: true, automatic: true, method: "pipx",
-			command: "pipx install aider-chat", documentationUrl: "https://aider.chat/docs/install.html",
-			methods: [{ id: "pipx", label: "pipx", available: true, recommended: true, command: "pipx install aider-chat", reinstallAvailable: true, reinstallCommand: "pipx reinstall aider-chat" }],
+			agentId: "qwen", available: true, automatic: true, method: "npm",
+			command: "npm install -g @qwen-code/qwen-code", documentationUrl: "https://qwen.ai/docs",
+			methods: [{ id: "npm", label: "npm", available: true, recommended: true, command: "npm install -g @qwen-code/qwen-code", reinstallAvailable: true, reinstallCommand: "npm install -g @qwen-code/qwen-code --force" }],
 		},
 		{
-			agentId: "cursor", available: true, automatic: true, method: "official-installer",
-			command: "bash <downloaded from https://cursor.com/install>", documentationUrl: "https://cursor.com/cli",
-			methods: [{ id: "official-installer", label: "Official installer", available: true, recommended: true, command: "bash <downloaded from https://cursor.com/install>", reinstallAvailable: false, reinstallReason: "No headless reinstall" }],
+			agentId: "droid", available: true, automatic: true, method: "official-installer",
+			command: "curl -fsSL https://example.test/droid/install | sh", documentationUrl: "https://example.test/droid",
+			methods: [{ id: "official-installer", label: "Official installer", available: true, recommended: true, command: "curl -fsSL https://example.test/droid/install | sh", reinstallAvailable: false, reinstallReason: "No headless reinstall" }],
 		},
 		{
 			agentId: "goose", available: true, automatic: true, method: "official-installer",
@@ -126,9 +126,9 @@ const plans = {
 			methods: [{ id: "official-installer", label: "Official installer", available: true, recommended: true, command: "pwsh.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File <downloaded from https://raw.githubusercontent.com/aaif-goose/goose/main/download_cli.ps1>", reinstallAvailable: false, reinstallReason: "No headless reinstall" }],
 		},
 		{
-			agentId: "codewhale", available: false, automatic: false, method: "manual",
-			reason: "AO does not automatically install Codewhale.", documentationUrl: "https://github.com/Hmbown/Codewhale",
-			methods: [{ id: "manual", label: "Manual", available: false, recommended: true, reason: "AO does not automatically install Codewhale.", reinstallAvailable: false }],
+			agentId: "memcode", available: false, automatic: false, method: "manual",
+			reason: "AO does not automatically install memcode.", documentationUrl: "https://example.test/memcode",
+			methods: [{ id: "manual", label: "Manual", available: false, recommended: true, reason: "AO does not automatically install memcode.", reinstallAvailable: false }],
 		},
 	],
 };
@@ -182,7 +182,7 @@ function renderSection(focusAgentId?: string, selectorAgentId?: string, initialV
 }
 
 function readyCatalog() {
-	const readiness = catalogWithInstalled("claude-code", "codex", "cursor");
+	const readiness = catalogWithInstalled("claude-code", "codex", "qwen");
 	for (const agent of readiness.agents) agent.authentication.state = "authorized";
 	return readiness;
 }
@@ -553,10 +553,10 @@ describe("HarnessSettingsSection", () => {
 		expect(screen.queryByRole("menuitem", { name: "empty · 0" })).toBeNull();
 	});
 
-	it.each(["codewhale", "fx"] as const)("allows %s browsing while signed out", async (agentId) => {
+	it.each(["kimi", "fx"] as const)("allows %s browsing while signed out", async (agentId) => {
 		const readiness = catalogWithInstalled(agentId);
 		if (!readiness.agents.some((agent) => agent.id === agentId)) {
-			const [template] = catalogWithInstalled("codewhale").agents.filter((agent) => agent.id === "codewhale");
+			const [template] = catalogWithInstalled("kimi").agents.filter((agent) => agent.id === "kimi");
 			readiness.agents.push({ ...template, id: agentId, label: "FX" });
 		}
 		readiness.agents.find((agent) => agent.id === agentId)!.authentication.state = "unauthorized";
@@ -764,7 +764,7 @@ describe("HarnessSettingsSection", () => {
 	it("hides logout when the harness has no native logout command", async () => {
 		mockInstalledOperations("npm");
 		renderSection();
-		expect(within(await findAgentRow("cursor")).queryByRole("button", { name: "Log out" })).toBeNull();
+		expect(within(await findAgentRow("qwen")).queryByRole("button", { name: "Log out" })).toBeNull();
 	});
 
 	it("offers to log in again for a signed-in harness", async () => {
@@ -785,14 +785,14 @@ describe("HarnessSettingsSection", () => {
 		const readiness = readyCatalog();
 		const codex = readiness.agents.find((agent) => agent.id === "codex")!;
 		Object.assign(codex.authentication, { account: { email: "dev@example.com", organization: "Acme", plan: "pro", method: "account" } });
-		const cursor = readiness.agents.find((agent) => agent.id === "cursor")!;
-		Object.assign(cursor.authentication, { account: { method: "api_key", provider: "zai", sourceKind: "environment", source: "CURSOR_API_KEY" } });
+		const qwen = readiness.agents.find((agent) => agent.id === "qwen")!;
+		Object.assign(qwen.authentication, { account: { method: "api_key", provider: "zai", sourceKind: "environment", source: "ZAI_API_KEY" } });
 		mockInstalledOperations("npm", readiness);
 		renderSection();
 		expect(await within(await findAgentRow("codex")).findByText("Signed in as dev@example.com · Pro · Acme")).toBeInTheDocument();
 		backToList();
 		// The credential's source is never shown, only who and how.
-		expect(await within(await findAgentRow("cursor")).findByText("Using an API key · zai")).toBeInTheDocument();
+		expect(await within(await findAgentRow("qwen")).findByText("Using an API key · zai")).toBeInTheDocument();
 	});
 
 	it("keeps the list beside the open harness when there is room", async () => {
@@ -817,7 +817,7 @@ describe("HarnessSettingsSection", () => {
 			expect(await within(page).findByRole("button", { name: "Update" })).toBeEnabled();
 			expect(await findListRow("codex")).toHaveAttribute("aria-current", "true");
 			expect(first).not.toHaveAttribute("aria-current");
-			expect(await findListRow("cursor")).toBeInTheDocument();
+			expect(await findListRow("qwen")).toBeInTheDocument();
 		} finally {
 			window.ResizeObserver = original;
 		}
@@ -1397,17 +1397,17 @@ describe("HarnessSettingsSection", () => {
 		expect(within(row).queryByRole("button", { name: "Instructions" })).not.toBeInTheDocument();
 	});
 
-	it("shows configured MiMo Code as connected and offers to log in again", async () => {
-		const configured = { agents: [agentReadiness("mimo-code", "MiMo Code", { authentication: "configured" })] };
+	it("shows configured Kimi as connected and offers to log in again", async () => {
+		const configured = { agents: [agentReadiness("kimi", "Kimi", { authentication: "configured" })] };
 		vi.mocked(apiClient.GET).mockImplementation(async (path) => {
 			if (path === "/api/v1/agents/readiness") return { data: configured } as never;
-			if (path === "/api/v1/agents/auth-plans") return { data: { plans: [{ agentId: "mimo-code", action: "login", launchMode: "terminal", available: true }] } } as never;
+			if (path === "/api/v1/agents/auth-plans") return { data: { plans: [{ agentId: "kimi", action: "login", launchMode: "terminal", available: true }] } } as never;
 			if (path === "/api/v1/agents/installers") return { data: { agents: [] } } as never;
 			if (path === "/api/v1/agents/install-jobs") return { data: { jobs: [] } } as never;
 			return { data: undefined } as never;
 		});
 		renderSection();
-		const row = await findAgentRow("mimo-code");
+		const row = await findAgentRow("kimi");
 		expect(await within(row).findByText("Connected")).toBeInTheDocument();
 		expect(within(row).queryByText("Configured")).toBeNull();
 		expect(within(row).queryByRole("button", { name: "Login" })).not.toBeInTheDocument();
@@ -1484,7 +1484,7 @@ describe("HarnessSettingsSection", () => {
 		view.rerender(
 			<QueryClientProvider client={view.client}>
 				<TooltipProvider>
-					<HarnessSettingsSection focusAgentId="cursor" />
+					<HarnessSettingsSection focusAgentId="qwen" />
 				</TooltipProvider>
 			</QueryClientProvider>,
 		);
@@ -1560,50 +1560,50 @@ describe("HarnessSettingsSection", () => {
 	it("opens the installation guide for a manual-only harness", async () => {
 		const openExternal = vi.spyOn(aoBridge.app, "openExternal").mockResolvedValue(undefined);
 		renderSection();
-		const row = await findAgentRow("codewhale");
+		const row = await findAgentRow("memcode");
 		await userEvent.click(await within(row).findByRole("button", { name: "Open installation guide" }));
 
-		expect(openExternal).toHaveBeenCalledWith("https://github.com/Hmbown/Codewhale");
+		expect(openExternal).toHaveBeenCalledWith("https://example.test/memcode");
 	});
 
-	it("classifies an unauthorized Unreal Agent as not configured and offers documentation", async () => {
-		const unrealCatalog = { agents: [agentReadiness("unreal-agent", "Unreal Agent", { authentication: "unauthorized" })] };
-		const documentationUrl = "https://github.com/Untrivial-ai/agent-orchestrator/blob/main/docs/harnesses/unreal-agent.md";
+	it("classifies an unauthorized Droid as not configured and offers documentation", async () => {
+		const droidCatalog = { agents: [agentReadiness("droid", "Droid", { authentication: "unauthorized" })] };
+		const documentationUrl = "https://example.test/droid/setup";
 		vi.mocked(apiClient.GET).mockImplementation(async (path) => {
-			if (path === "/api/v1/agents/readiness") return { data: unrealCatalog } as never;
+			if (path === "/api/v1/agents/readiness") return { data: droidCatalog } as never;
 			if (path === "/api/v1/agents/auth-plans") {
-				return { data: { plans: [{ agentId: "unreal-agent", action: "setup", launchMode: "documentation", available: true, documentationUrl }] } } as never;
+				return { data: { plans: [{ agentId: "droid", action: "setup", launchMode: "documentation", available: true, documentationUrl }] } } as never;
 			}
 			if (path === "/api/v1/agents/installers") return { data: { agents: [] } } as never;
 			if (path === "/api/v1/agents/install-jobs") return { data: { jobs: [] } } as never;
 			return { data: undefined } as never;
 		});
-		vi.mocked(apiClient.POST).mockResolvedValue({ data: unrealCatalog } as never);
+		vi.mocked(apiClient.POST).mockResolvedValue({ data: droidCatalog } as never);
 		const openExternal = vi.spyOn(aoBridge.app, "openExternal").mockResolvedValue(undefined);
 
 		renderSection();
-		const row = await findAgentRow("unreal-agent");
+		const row = await findAgentRow("droid");
 		expect(await within(row).findByText("Not set up")).toBeInTheDocument();
 		const documentation = within(row).getByRole("button", { name: "View documentation" });
 		await userEvent.click(documentation);
 		expect(openExternal).toHaveBeenCalledWith(documentationUrl);
 	});
 
-	it("keeps Unreal documentation available when credentials are configured but unverified", async () => {
-		const unrealCatalog = { agents: [agentReadiness("unreal-agent", "Unreal Agent", { authentication: "configured" })] };
+	it("keeps Droid documentation available when credentials are configured but unverified", async () => {
+		const droidCatalog = { agents: [agentReadiness("droid", "Droid", { authentication: "configured" })] };
 		vi.mocked(apiClient.GET).mockImplementation(async (path) => {
-			if (path === "/api/v1/agents/readiness") return { data: unrealCatalog } as never;
+			if (path === "/api/v1/agents/readiness") return { data: droidCatalog } as never;
 			if (path === "/api/v1/agents/auth-plans") {
-				return { data: { plans: [{ agentId: "unreal-agent", action: "setup", launchMode: "documentation", available: true, documentationUrl: "https://example.test/unreal" }] } } as never;
+				return { data: { plans: [{ agentId: "droid", action: "setup", launchMode: "documentation", available: true, documentationUrl: "https://example.test/droid" }] } } as never;
 			}
 			if (path === "/api/v1/agents/installers") return { data: { agents: [] } } as never;
 			if (path === "/api/v1/agents/install-jobs") return { data: { jobs: [] } } as never;
 			return { data: undefined } as never;
 		});
-		vi.mocked(apiClient.POST).mockResolvedValue({ data: unrealCatalog } as never);
+		vi.mocked(apiClient.POST).mockResolvedValue({ data: droidCatalog } as never);
 
 		renderSection();
-		const row = await findAgentRow("unreal-agent");
+		const row = await findAgentRow("droid");
 		expect(await within(row).findByText("Configured")).toBeInTheDocument();
 		expect(within(row).getByRole("button", { name: "View documentation" })).toBeEnabled();
 	});
@@ -1836,36 +1836,36 @@ describe("HarnessSettingsSection", () => {
 		await waitFor(() => expect(within(row).queryByTestId("inline-terminal-body")).not.toBeInTheDocument(), { timeout: 5_000 });
 	}, 15_000);
 
-	it("completes MiMo Code login when the key is configured locally", async () => {
-		const initial = { agents: [agentReadiness("mimo-code", "MiMo Code", { authentication: "unauthorized" })] };
-		const configured = { agents: [agentReadiness("mimo-code", "MiMo Code", { authentication: "configured" })] };
+	it("completes Kimi login when the login terminal exits", async () => {
+		const initial = { agents: [agentReadiness("kimi", "Kimi", { authentication: "unauthorized" })] };
+		const configured = { agents: [agentReadiness("kimi", "Kimi", { authentication: "authorized" })] };
 		let probed = false;
 		vi.mocked(apiClient.GET).mockImplementation(async (path) => {
 			if (path === "/api/v1/agents/readiness") return { data: initial } as never;
-			if (path === "/api/v1/agents/auth-plans") return { data: { plans: [{ agentId: "mimo-code", action: "login", launchMode: "terminal", available: true }] } } as never;
+			if (path === "/api/v1/agents/auth-plans") return { data: { plans: [{ agentId: "kimi", action: "login", launchMode: "terminal", available: true }] } } as never;
 			if (path === "/api/v1/agents/installers") return { data: { agents: [] } } as never;
 			if (path === "/api/v1/agents/install-jobs") return { data: { jobs: [] } } as never;
 			return { data: undefined } as never;
 		});
 		vi.mocked(apiClient.POST).mockImplementation(async (path) => {
 			if (path === "/api/v1/agents/{agent}/auth") return { data: {
-				agentId: "mimo-code", action: "login", terminal: { handleId: "auth-mimo", projectId: null, sessionId: null, workingDir: "/tmp", title: "MiMo Code login", createdAt: "2026-09-29T00:00:00Z" },
+				agentId: "kimi", action: "login", terminal: { handleId: "auth-kimi", projectId: null, sessionId: null, workingDir: "/tmp", title: "Kimi login", createdAt: "2026-09-29T00:00:00Z" },
 			} } as never;
 			if (path === "/api/v1/agents/{agent}/probe") {
 				probed = true;
-				return { data: { agent: { id: "mimo-code", authStatus: "configured" }, installed: true } } as never;
+				return { data: { agent: { id: "kimi", authStatus: "authorized" }, installed: true } } as never;
 			}
 			if (path === "/api/v1/agents/readiness/ensure") return { data: probed ? configured : initial } as never;
 			return { data: undefined } as never;
 		});
 		const close = vi.spyOn(apiClient, "DELETE").mockResolvedValue({ data: undefined } as never);
 		renderSection();
-		const row = await findAgentRow("mimo-code");
+		const row = await findAgentRow("kimi");
 		await userEvent.click(await within(row).findByRole("button", { name: "Login" }));
 		await userEvent.click(await within(row).findByRole("button", { name: "Complete login terminal" }));
 
 		await waitFor(() => expect(close).toHaveBeenCalledWith("/api/v1/shell-terminals/{handleId}", {
-			params: { path: { handleId: "auth-mimo" } },
+			params: { path: { handleId: "auth-kimi" } },
 		}));
 		expect(await within(row).findByText("Connected")).toBeInTheDocument();
 		expect(within(row).queryByText("Configured")).toBeNull();
@@ -2035,7 +2035,7 @@ describe("HarnessSettingsSection", () => {
 	});
 
 	it("sorts harnesses by authentication state while preserving catalog order within each group", async () => {
-		const readiness = catalogWithInstalled("claude-code", "codex", "cursor", "goose");
+		const readiness = catalogWithInstalled("claude-code", "codex", "qwen", "goose");
 		readiness.agents[0].authentication.state = "unknown";
 		readiness.agents[1].authentication.state = "authorized";
 		readiness.agents[2].authentication.state = "unauthorized";
@@ -2052,7 +2052,7 @@ describe("HarnessSettingsSection", () => {
 		await waitFor(() => {
 			const agentIds = Array.from(document.querySelectorAll<HTMLElement>("[data-agent]"))
 				.map((row) => row.dataset.agent);
-			expect(agentIds.slice(0, 4)).toEqual(["codex", "goose", "cursor", "claude-code"]);
+			expect(agentIds.slice(0, 4)).toEqual(["codex", "goose", "qwen", "claude-code"]);
 		});
 	});
 
@@ -2172,7 +2172,7 @@ describe("HarnessSettingsSection", () => {
 
 	it("does not offer reinstall actions for installed harnesses", async () => {
 		vi.mocked(apiClient.GET).mockImplementation(async (path) => {
-			if (path === "/api/v1/agents/readiness") return { data: catalogWithInstalled("claude-code", "cursor") } as never;
+			if (path === "/api/v1/agents/readiness") return { data: catalogWithInstalled("claude-code", "qwen") } as never;
 			if (path === "/api/v1/agents/installers") return { data: plans } as never;
 			if (path === "/api/v1/agents/install-jobs") return { data: { jobs: [] } } as never;
 			return { data: undefined } as never;
@@ -2181,29 +2181,29 @@ describe("HarnessSettingsSection", () => {
 		const claudeRow = await findAgentRow("claude-code");
 		expect(claudeRow).toHaveTextContent("Installed");
 		expect(within(claudeRow).queryByRole("button", { name: "Reinstall" })).not.toBeInTheDocument();
-		const cursorRow = await findAgentRow("cursor");
-		expect(within(cursorRow).queryByRole("button", { name: "Reinstall" })).not.toBeInTheDocument();
-		expect(within(cursorRow).queryByRole("button", { name: "Instructions" })).not.toBeInTheDocument();
+		const qwenRow = await findAgentRow("qwen");
+		expect(within(qwenRow).queryByRole("button", { name: "Reinstall" })).not.toBeInTheDocument();
+		expect(within(qwenRow).queryByRole("button", { name: "Instructions" })).not.toBeInTheDocument();
 	});
 
 	it("starts an official vendor installer with one click and no instructions dialog", async () => {
 		vi.mocked(apiClient.POST).mockImplementation(async (path) => {
 			if (path === "/api/v1/agents/{agent}/install") {
-				return { data: { target: "cursor", status: "installing", method: "official-installer" } } as never;
+				return { data: { target: "qwen", status: "installing", method: "npm" } } as never;
 			}
 			return { data: undefined } as never;
 		});
 		const user = userEvent.setup();
 		renderSection();
-		const row = await findAgentRow("cursor");
+		const row = await findAgentRow("qwen");
 		await within(row).findByRole("button", { name: "Install" });
 		expect(within(row).queryByRole("button", { name: "Instructions" })).not.toBeInTheDocument();
 
 		await user.click(within(row).getByRole("button", { name: "Install" }));
 
 		await waitFor(() => expect(apiClient.POST).toHaveBeenCalledWith("/api/v1/agents/{agent}/install", {
-			params: { path: { agent: "cursor" } },
-			body: { method: "official-installer", operation: "install" },
+			params: { path: { agent: "qwen" } },
+			body: { method: "npm", operation: "install" },
 		}));
 		expect(row).toHaveTextContent("Installing…");
 	});
@@ -2376,21 +2376,21 @@ describe("HarnessSettingsSection", () => {
 		await waitFor(() => expect(within(codexPage).getByRole("button", { name: "Install" })).toBeEnabled());
 		await user.click(within(codexPage).getByRole("button", { name: "Install" }));
 		expect(await within(codexPage).findByRole("status")).toHaveTextContent("Installing…");
-		const aiderPage = await findAgentRow("aider");
-		await user.click(within(aiderPage).getByRole("button", { name: "Install" }));
-		expect(await within(aiderPage).findByRole("status")).toHaveTextContent("Installing…");
+		const qwenPage = await findAgentRow("qwen");
+		await user.click(within(qwenPage).getByRole("button", { name: "Install" }));
+		expect(await within(qwenPage).findByRole("status")).toHaveTextContent("Installing…");
 		backToList();
 
 		const codexRow = await findListRow("codex");
-		const aiderRow = await findListRow("aider");
+		const qwenRow = await findListRow("qwen");
 		const codexStatus = within(codexRow).getByRole("status");
-		const aiderStatus = within(aiderRow).getByRole("status");
+		const qwenStatus = within(qwenRow).getByRole("status");
 		expect(codexStatus.querySelector("svg.animate-spin")).not.toBeNull();
-		expect(aiderStatus.querySelector("svg.animate-spin")).not.toBeNull();
+		expect(qwenStatus.querySelector("svg.animate-spin")).not.toBeNull();
 		expect(within(codexRow).queryByRole("progressbar")).not.toBeInTheDocument();
-		expect(within(aiderRow).queryByRole("progressbar")).not.toBeInTheDocument();
+		expect(within(qwenRow).queryByRole("progressbar")).not.toBeInTheDocument();
 		expect(within(codexRow).getAllByText("Installing…")).toHaveLength(1);
-		expect(within(aiderRow).getAllByText("Installing…")).toHaveLength(1);
+		expect(within(qwenRow).getAllByText("Installing…")).toHaveLength(1);
 	});
 
 	it("hydrates interrupted jobs and offers verification", async () => {

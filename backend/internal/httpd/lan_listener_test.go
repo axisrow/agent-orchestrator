@@ -312,7 +312,7 @@ func TestLANManagerBlocksLoopbackOnlyControlRoutes(t *testing.T) {
 	}
 
 	// Paired clients can request the daemon's fixed harness installer.
-	req, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("http://127.0.0.1:%d/api/v1/agents/cursor/install", port), nil)
+	req, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("http://127.0.0.1:%d/api/v1/agents/codex/install", port), nil)
 	req.Host = "127.0.0.1"
 	req.Header.Set("Authorization", "Bearer secret12")
 	resp, err := http.DefaultClient.Do(req)
@@ -333,7 +333,7 @@ func TestLANManagerBlocksLoopbackOnlyControlRoutes(t *testing.T) {
 			t.Fatalf("%s: got %d want 404", path, blockedResp.StatusCode)
 		}
 	}
-	unauthenticatedInstall, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("http://127.0.0.1:%d/api/v1/agents/cursor/install", port), nil)
+	unauthenticatedInstall, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("http://127.0.0.1:%d/api/v1/agents/codex/install", port), nil)
 	unauthenticatedResp, err := http.DefaultClient.Do(unauthenticatedInstall)
 	if err != nil {
 		t.Fatalf("unauthenticated agent install: %v", err)

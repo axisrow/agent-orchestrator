@@ -207,31 +207,6 @@ func TestManagedVersionCheckerRejectsUnparseableLatestDistTag(t *testing.T) {
 	}
 }
 
-func TestManagedVersionCheckerQueriesPyPIForOwnedPythonTools(t *testing.T) {
-	for _, method := range []string{"uv", "pipx"} {
-		t.Run(method, func(t *testing.T) {
-			client := &http.Client{Transport: managerRoundTripFunc(func(request *http.Request) (*http.Response, error) {
-				if request.URL.String() != "https://pypi.org/pypi/mistral-vibe/json" {
-					t.Fatalf("URL = %s", request.URL.String())
-				}
-				return managerHTTPResponse(http.StatusOK, `{"info":{"version":"2.0.0"}}`), nil
-			})}
-			commandsCalled := false
-			commands := commandRunnerFunc(func(context.Context, []string, io.Writer, io.Writer) error {
-				commandsCalled = true
-				return nil
-			})
-			got, err := newManagedVersionChecker(commands, client)(context.Background(), Plan{Method: method, Package: "mistral-vibe"})
-			if err != nil || got != "2.0.0" {
-				t.Fatalf("result=%+v err=%v", got, err)
-			}
-			if commandsCalled {
-				t.Fatal("version checker repeated the ownership inventory command")
-			}
-		})
-	}
-}
-
 func TestManagedVersionCheckerRejectsBadRegistryResponses(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -247,7 +222,7 @@ func TestManagedVersionCheckerRejectsBadRegistryResponses(t *testing.T) {
 			client := &http.Client{Transport: managerRoundTripFunc(func(*http.Request) (*http.Response, error) {
 				return managerHTTPResponse(tt.status, tt.body), nil
 			})}
-			if _, err := newManagedVersionChecker(nil, client)(context.Background(), Plan{Method: "uv", Package: "mistral-vibe"}); err == nil {
+			if _, err := newManagedVersionChecker(nil, client)(context.Background(), Plan{Method: "npm", Package: "@openai/codex"}); err == nil {
 				t.Fatal("bad registry response unexpectedly succeeded")
 			}
 		})

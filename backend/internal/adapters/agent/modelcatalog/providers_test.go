@@ -97,7 +97,7 @@ func TestConfiguredProvidersOMPDisabledCredentialsDoNotFallBack(t *testing.T) {
 }
 
 func TestProviderSelectorsPreserveNativeIDs(t *testing.T) {
-	for _, agentID := range []string{"opencode", "opencode-v2", "kilocode", "crush"} {
+	for _, agentID := range []string{"opencode-v2"} {
 		models, err := commandSpecs[agentID].parser([]byte("openrouter/meta-llama/llama-4\nanthropic/claude-sonnet\n"))
 		if err != nil {
 			t.Fatal(err)

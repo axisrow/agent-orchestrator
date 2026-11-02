@@ -36,7 +36,6 @@ type APIDeps struct {
 	Automations        controllers.AutomationService
 	DesktopWorkspaces  controllers.DesktopWorkspaceService
 	Activity           controllers.ActivityRecorder
-	NativeSessions     ports.AgentNativeSessionResolver
 	UsageHooks         controllers.UsageHookRecorder
 	UsageSummary       controllers.UsageSummaryService
 	SessionMemory      controllers.SessionMemoryService
@@ -194,7 +193,6 @@ func newAPIWithLogger(cfg config.Config, deps APIDeps, log *slog.Logger) *API {
 			Svc:                      deps.Sessions,
 			Projects:                 deps.Projects,
 			Activity:                 deps.Activity,
-			NativeSessions:           deps.NativeSessions,
 			DataDir:                  cfg.DataDir,
 			Usage:                    deps.UsageHooks,
 			Attachments:              attachmentstore.New(cfg.DataDir),

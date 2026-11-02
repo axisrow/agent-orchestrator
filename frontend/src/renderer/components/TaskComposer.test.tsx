@@ -20,7 +20,7 @@ const h = vi.hoisted(() => ({
 	agentCatalog: undefined as { agents: ReturnType<typeof import("../test/agent-readiness-fixtures").agentReadiness>[] } | undefined,
 	cloudProjects: [] as Array<{ id: string; displayName: string; repositoryUrl: string; defaultBranch: string; config: Record<string, unknown> }>,
 	cloudCreateSession: vi.fn(),
-	cloudChatHarnesses: ["claude-code", "codex", "cursor"],
+	cloudChatHarnesses: ["claude-code", "codex", "opencode-v2"],
 }));
 
 vi.mock("../hooks/useAgentReadinessQuery", async (importOriginal) => {
@@ -154,7 +154,7 @@ afterEach(() => {
 	h.agentCatalog = undefined;
 	h.cloudProjects.length = 0;
 	h.cloudCreateSession.mockReset();
-	h.cloudChatHarnesses = ["claude-code", "codex", "cursor"];
+	h.cloudChatHarnesses = ["claude-code", "codex", "opencode-v2"];
 	vi.unstubAllGlobals();
 	h.agentValues.length = 0;
 	window.localStorage.removeItem("ao.taskComposer.preferences.v1");
@@ -1470,27 +1470,27 @@ describe("TaskComposer", () => {
 			if (path.includes("/models")) {
 				return {
 					data: {
-						agent: "grok",
+						agent: "qwen",
 						selectionMode: "catalog",
-						models: [{ id: "grok-4.6", label: "grok-4.6", isDefault: true }],
+						models: [{ id: "qwen3", label: "qwen3", isDefault: true }],
 						allowCustom: true,
 					},
 				};
 			}
-			return { data: { status: "ok", project: { agent: "grok", config: {} } } };
+			return { data: { status: "ok", project: { agent: "qwen", config: {} } } };
 		});
-		h.post.mockResolvedValueOnce({ data: { workerId: "sess-grok" } });
+		h.post.mockResolvedValueOnce({ data: { workerId: "sess-qwen" } });
 
 		render(<Wrap><TaskComposer projectId="proj-1" onCreated={vi.fn()} /></Wrap>);
 
-		expect(await screen.findByRole("button", { name: "Model" })).toHaveTextContent("grok-4.6");
+		expect(await screen.findByRole("button", { name: "Model" })).toHaveTextContent("qwen3");
 		expect(screen.queryByRole("status")).not.toBeInTheDocument();
 		fireEvent.change(task(), { target: { value: "Do the thing" } });
 		fireEvent.click(screen.getByText("Start task"));
 
 		await waitFor(() => expect(h.post).toHaveBeenCalledWith(
 			"/api/v1/orchestrators/delegate",
-			expect.objectContaining({ body: expect.objectContaining({ agent: "grok", mode: "tui" }) }),
+			expect.objectContaining({ body: expect.objectContaining({ agent: "qwen", mode: "tui" }) }),
 		));
 	});
 
@@ -1544,9 +1544,9 @@ describe("TaskComposer", () => {
 	it("offers an explicit approval-less retry from structured capability details", async () => {
 		h.get.mockImplementation(async (path: string) => {
 			if (path.includes("/models")) {
-				return { data: { agent: "cursor", selectionMode: "text", models: [], allowCustom: true } };
+				return { data: { agent: "qwen", selectionMode: "text", models: [], allowCustom: true } };
 			}
-			return { data: { status: "ok", project: { agent: "cursor", config: {} } } };
+			return { data: { status: "ok", project: { agent: "qwen", config: {} } } };
 		});
 		h.post
 			.mockResolvedValueOnce({
@@ -1567,7 +1567,7 @@ describe("TaskComposer", () => {
 				<TaskComposer projectId="proj-1" onCreated={onCreated} />
 			</Wrap>,
 		);
-		await waitFor(() => expect(screen.getByTestId("agent-field")).toHaveAttribute("data-value", "cursor"));
+		await waitFor(() => expect(screen.getByTestId("agent-field")).toHaveAttribute("data-value", "qwen"));
 		fireEvent.change(task(), { target: { value: "Use approval-less Chat" } });
 		fireEvent.click(screen.getByText("Start task"));
 
@@ -1583,16 +1583,16 @@ describe("TaskComposer", () => {
 		expect(h.post.mock.calls[1][1].body).not.toHaveProperty("mode");
 	});
 
-	it("starts an Unreal task in Chat after approval-less retry", async () => {
-		h.agentCatalog = { agents: [agentReadiness("unreal-agent", "Unreal Agent")] };
+	it("starts a Claude Code task in Chat after approval-less retry", async () => {
+		h.agentCatalog = { agents: [agentReadiness("claude-code", "Claude Code")] };
 		h.get.mockImplementation(async (path: string) => {
 			if (path === "/api/v1/settings") {
-				return { data: { defaultSessionMode: "tui", chatHarnesses: ["unreal-agent"] } };
+				return { data: { defaultSessionMode: "tui", chatHarnesses: ["claude-code"] } };
 			}
 			if (path.includes("/models")) {
-				return { data: { agent: "unreal-agent", selectionMode: "text", models: [], allowCustom: true } };
+				return { data: { agent: "claude-code", selectionMode: "text", models: [], allowCustom: true } };
 			}
-			return { data: { status: "ok", project: { agent: "unreal-agent", config: {} } } };
+			return { data: { status: "ok", project: { agent: "claude-code", config: {} } } };
 		});
 		h.post
 			.mockResolvedValueOnce({
@@ -1602,19 +1602,19 @@ describe("TaskComposer", () => {
 					details: { missingCapabilities: ["approvals"], allowedApprovalModes: ["bypass-permissions"] },
 				},
 			})
-			.mockResolvedValueOnce({ data: { workerId: "sess-unreal" } });
+			.mockResolvedValueOnce({ data: { workerId: "sess-claude" } });
 		const onCreated = vi.fn();
 
 		render(<Wrap><TaskComposer projectId="project-a" onCreated={onCreated} /></Wrap>);
-		await waitFor(() => expect(screen.getByTestId("agent-field")).toHaveAttribute("data-value", "unreal-agent"));
+		await waitFor(() => expect(screen.getByTestId("agent-field")).toHaveAttribute("data-value", "claude-code"));
 		fireEvent.change(task(), { target: { value: "Say hello" } });
 		fireEvent.click(startTask());
 		fireEvent.click(await screen.findByRole("button", { name: "Start without approvals" }));
 
-		await waitFor(() => expect(onCreated).toHaveBeenCalledWith("sess-unreal"));
-		expect(h.post.mock.calls[0][1].body).toMatchObject({ agent: "unreal-agent", mode: "chat" });
+		await waitFor(() => expect(onCreated).toHaveBeenCalledWith("sess-claude"));
+		expect(h.post.mock.calls[0][1].body).toMatchObject({ agent: "claude-code", mode: "chat" });
 		expect(h.post.mock.calls[1][1].body).toMatchObject({
-			agent: "unreal-agent", mode: "chat", approvalMode: "bypass-permissions",
+			agent: "claude-code", mode: "chat", approvalMode: "bypass-permissions",
 		});
 	});
 

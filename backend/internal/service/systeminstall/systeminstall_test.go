@@ -3,14 +3,12 @@ package systeminstall
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"os/exec"
 	"reflect"
 	"slices"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -287,26 +285,6 @@ func TestPlanFor(t *testing.T) {
 			wantUnsupported: true, wantReasonHas: "npm was not found",
 		},
 		{
-			name: "copilot uses npm", target: TargetCopilot, goos: "windows", found: []string{"npm"},
-			wantCommand: []string{"npm", "install", "-g", "@github/copilot"},
-		},
-		{
-			name: "opencode windows uses winget", target: TargetOpencode, goos: "windows", found: []string{"winget"},
-			wantCommand: []string{"winget", "install", "-e", "--id", "SST.opencode", "--silent", "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity"},
-		},
-		{
-			name: "opencode darwin remote script is manual", target: TargetOpencode, goos: "darwin", found: []string{"curl", "bash"},
-			wantUnsupported: true, wantReasonHas: "does not automatically execute",
-		},
-		{
-			name: "opencode without curl remains manual", target: TargetOpencode, goos: "linux", found: []string{"bash"},
-			wantUnsupported: true, wantReasonHas: "does not automatically execute",
-		},
-		{
-			name: "opencode with sh remains manual", target: TargetOpencode, goos: "linux", found: []string{"curl", "sh"},
-			wantUnsupported: true, wantReasonHas: "does not automatically execute",
-		},
-		{
 			name: "opencode v2 legacy route uses official installer", target: TargetOpencodeV2, goos: "linux", found: []string{"bash"},
 		},
 	}
@@ -337,7 +315,7 @@ func TestPlanFor(t *testing.T) {
 }
 
 func TestValid(t *testing.T) {
-	for _, target := range []Target{TargetTmux, TargetGH, TargetClaude, TargetCodex, TargetOpencode, TargetOpencodeV2, TargetCopilot} {
+	for _, target := range []Target{TargetTmux, TargetGH, TargetClaude, TargetCodex, TargetOpencodeV2, TargetOMP} {
 		if !Valid(target) {
 			t.Errorf("Valid(%q) = false, want true", target)
 		}
@@ -668,28 +646,28 @@ func TestAgentVendorScriptInstallPersistsInstallVerifySuccessLifecycle(t *testin
 		return ports.InstallScriptResult{SHA256: "abc123"}, nil
 	})
 	s.verifier = harnessVerifierFunc(func(context.Context, Target) (VerifyResult, error) {
-		return VerifyResult{ResolvedPath: "/home/test/.local/bin/agent", Output: "cursor 1.2.3\n"}, nil
+		return VerifyResult{ResolvedPath: "/home/test/.local/bin/agent", Output: "opencode 1.2.3\n"}, nil
 	})
 
-	job, err := s.StartAgent(context.Background(), TargetCursor, "official-installer")
+	job, err := s.StartAgent(context.Background(), TargetOpencodeV2, "official-installer")
 	if err != nil {
 		t.Fatalf("StartAgent: %v", err)
 	}
 	if job.Status != StatusInstalling || job.Method != "official-installer" {
 		t.Fatalf("initial job = %+v", job)
 	}
-	waitForStatus(t, s, TargetCursor, StatusSucceeded)
+	waitForStatus(t, s, TargetOpencodeV2, StatusSucceeded)
 	command := <-captured
-	if command.URL != "https://cursor.com/install" {
+	if command.URL != "https://opencode.ai/v2/install" {
 		t.Fatalf("URL = %q", command.URL)
 	}
-	final, err := s.Status(context.Background(), TargetCursor)
+	final, err := s.Status(context.Background(), TargetOpencodeV2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(final.Output, "source: https://cursor.com/install") ||
+	if !strings.Contains(final.Output, "source: https://opencode.ai/v2/install") ||
 		!strings.Contains(final.Output, "sha256: abc123") ||
-		!strings.Contains(final.Output, "cursor 1.2.3") {
+		!strings.Contains(final.Output, "opencode 1.2.3") {
 		t.Fatalf("output = %q", final.Output)
 	}
 	store.mu.Lock()
@@ -729,11 +707,11 @@ func TestAgentVendorScriptInstallPreservesPlanEnvironment(t *testing.T) {
 
 func TestAgentVendorScriptInstallFailsWithoutRunner(t *testing.T) {
 	s := newTestService("linux", "bash")
-	if _, err := s.StartAgent(context.Background(), TargetCursor, "official-installer"); err != nil {
+	if _, err := s.StartAgent(context.Background(), TargetOpencodeV2, "official-installer"); err != nil {
 		t.Fatal(err)
 	}
-	waitForStatus(t, s, TargetCursor, StatusFailed)
-	job, _ := s.Status(context.Background(), TargetCursor)
+	waitForStatus(t, s, TargetOpencodeV2, StatusFailed)
+	job, _ := s.Status(context.Background(), TargetOpencodeV2)
 	if !strings.Contains(job.Error, "runner is not configured") {
 		t.Fatalf("error = %q", job.Error)
 	}
@@ -744,98 +722,13 @@ func TestAgentVendorScriptInstallPreservesDigestOnRunnerFailure(t *testing.T) {
 	s.installScripts = installScriptRunnerFunc(func(context.Context, ports.InstallScriptCommand, io.Writer, io.Writer) (ports.InstallScriptResult, error) {
 		return ports.InstallScriptResult{SHA256: "deadbeef"}, errors.New("installer exited 7")
 	})
-	if _, err := s.StartAgent(context.Background(), TargetCursor, "official-installer"); err != nil {
+	if _, err := s.StartAgent(context.Background(), TargetOpencodeV2, "official-installer"); err != nil {
 		t.Fatal(err)
 	}
-	waitForStatus(t, s, TargetCursor, StatusFailed)
-	job, _ := s.Status(context.Background(), TargetCursor)
+	waitForStatus(t, s, TargetOpencodeV2, StatusFailed)
+	job, _ := s.Status(context.Background(), TargetOpencodeV2)
 	if job.Error != "installer exited 7" || !strings.Contains(job.Output, "sha256: deadbeef") {
 		t.Fatalf("job = %+v", job)
-	}
-}
-
-func TestDevinInstallerFailureAfterInstallConfirmationVerifiesBinary(t *testing.T) {
-	s := newTestService("darwin", "bash")
-	s.installScripts = installScriptRunnerFunc(func(_ context.Context, _ ports.InstallScriptCommand, stdout, _ io.Writer) (ports.InstallScriptResult, error) {
-		_, _ = io.WriteString(stdout, "\x1b[0;32m✓\x1b[0m Installed devin v3000.")
-		_, _ = io.WriteString(stdout, "11.3 to ~/.local/bin/devin.\n")
-		_, _ = io.WriteString(stdout, strings.Repeat("setup output\n", maxOutputBytes))
-		_, _ = io.WriteString(stdout, "Error: setup failed\n")
-		return ports.InstallScriptResult{SHA256: "abc123"}, errors.New("exit status 1")
-	})
-	verified := make(chan Target, 1)
-	s.verifier = harnessVerifierFunc(func(_ context.Context, target Target) (VerifyResult, error) {
-		verified <- target
-		return VerifyResult{ResolvedPath: "/home/test/.local/bin/devin", Output: "devin 3000.11.3\n"}, nil
-	})
-
-	if _, err := s.StartAgent(context.Background(), TargetDevin, "official-installer"); err != nil {
-		t.Fatal(err)
-	}
-	waitForStatus(t, s, TargetDevin, StatusSucceeded)
-	job, err := s.Status(context.Background(), TargetDevin)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if target := <-verified; target != TargetDevin {
-		t.Fatalf("verified target = %q, want devin", target)
-	}
-	if job.Error != "" || job.ExpectedDestination != "/home/test/.local/bin/devin" || !strings.Contains(job.Output, "sha256: abc123") {
-		t.Fatalf("job = %+v, want verified install", job)
-	}
-	if strings.Contains(job.Output, "Installed devin") {
-		t.Fatalf("output = %q, want confirmation evicted from bounded diagnostics", job.Output)
-	}
-}
-
-func TestDevinInstallerDoesNotIgnoreOtherFailures(t *testing.T) {
-	for _, test := range []struct {
-		name   string
-		target Target
-		output string
-	}{
-		{name: "no install confirmation", target: TargetDevin, output: "Error: Login canceled\n"},
-		{name: "different target", target: TargetCursor, output: "Installed devin v3000.11.3 to ~/.local/bin/devin.\nError: Login canceled\n"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			s := newTestService("darwin", "bash")
-			s.installScripts = installScriptRunnerFunc(func(_ context.Context, _ ports.InstallScriptCommand, stdout, _ io.Writer) (ports.InstallScriptResult, error) {
-				_, _ = io.WriteString(stdout, test.output)
-				return ports.InstallScriptResult{}, errors.New("exit status 1")
-			})
-			verified := false
-			s.verifier = harnessVerifierFunc(func(context.Context, Target) (VerifyResult, error) {
-				verified = true
-				return VerifyResult{ResolvedPath: "/home/test/.local/bin/devin"}, nil
-			})
-			if _, err := s.StartAgent(context.Background(), test.target, "official-installer"); err != nil {
-				t.Fatal(err)
-			}
-			waitForStatus(t, s, test.target, StatusFailed)
-			job, _ := s.Status(context.Background(), test.target)
-			if job.Error != "exit status 1" || verified {
-				t.Fatalf("job = %+v, verified = %t; want original failure without verification", job, verified)
-			}
-		})
-	}
-}
-
-func TestDevinInstallerFailureAfterInstallConfirmationFailsWhenBinaryVerificationFails(t *testing.T) {
-	s := newTestService("darwin", "bash")
-	s.installScripts = installScriptRunnerFunc(func(_ context.Context, _ ports.InstallScriptCommand, stdout, _ io.Writer) (ports.InstallScriptResult, error) {
-		_, _ = io.WriteString(stdout, "Installed devin v3000.11.3 to ~/.local/bin/devin.\nError: setup failed\n")
-		return ports.InstallScriptResult{}, errors.New("exit status 1")
-	})
-	s.verifier = harnessVerifierFunc(func(context.Context, Target) (VerifyResult, error) {
-		return VerifyResult{}, errors.New("version probe failed")
-	})
-	if _, err := s.StartAgent(context.Background(), TargetDevin, "official-installer"); err != nil {
-		t.Fatal(err)
-	}
-	waitForStatus(t, s, TargetDevin, StatusFailed)
-	job, _ := s.Status(context.Background(), TargetDevin)
-	if !strings.Contains(job.Error, "version probe failed") {
-		t.Fatalf("job = %+v, want failed verification", job)
 	}
 }
 
@@ -858,7 +751,7 @@ func TestAgentVendorScriptInstallTimeoutAndShutdown(t *testing.T) {
 				<-ctx.Done()
 				return ports.InstallScriptResult{}, ctx.Err()
 			})
-			if _, err := s.StartAgent(context.Background(), TargetCursor, "official-installer"); err != nil {
+			if _, err := s.StartAgent(context.Background(), TargetOpencodeV2, "official-installer"); err != nil {
 				t.Fatal(err)
 			}
 			<-started
@@ -867,8 +760,8 @@ func TestAgentVendorScriptInstallTimeoutAndShutdown(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			waitForStatus(t, s, TargetCursor, test.wantStatus)
-			job, _ := s.Status(context.Background(), TargetCursor)
+			waitForStatus(t, s, TargetOpencodeV2, test.wantStatus)
+			job, _ := s.Status(context.Background(), TargetOpencodeV2)
 			if !strings.Contains(job.Error, test.wantError) {
 				t.Fatalf("error = %q", job.Error)
 			}
@@ -1373,7 +1266,7 @@ func TestStartRefusesLinuxRootInstall(t *testing.T) {
 func TestResolveMatchesServicePlan(t *testing.T) {
 	lookPath := lookPathFound("brew", "curl", "bash")
 	service := &Service{goos: "darwin", executables: executableFinderFunc(lookPath)}
-	for _, target := range []Target{TargetTmux, TargetCursor} {
+	for _, target := range []Target{TargetTmux, TargetCodex} {
 		got := Resolve("darwin", lookPath, target)
 		want := service.resolvePlan(target)
 		if strings.Join(got.Command, " ") != strings.Join(want.Command, " ") {
@@ -1400,11 +1293,7 @@ func TestVendorInstallerUpdateUsesHarnessSelfUpdateCommand(t *testing.T) {
 	for target, want := range map[Target][]string{
 		TargetClaudeCode: {"claude", "update"},
 		TargetCodex:      {"codex", "update"},
-		TargetOpencode:   {"opencode", "upgrade", "--method", "curl"},
-		TargetKimchi:     {"kimchi", "update", "self", "--force"},
 		TargetOMP:        {"omp", "update"},
-		TargetCursor:     {"cursor-agent", "update"},
-		TargetGrok:       {"grok", "update"},
 	} {
 		plan, err := planner.resolveAgentMethod(target, "official-installer", AgentOperationUpdate)
 		if err != nil {
@@ -1413,85 +1302,6 @@ func TestVendorInstallerUpdateUsesHarnessSelfUpdateCommand(t *testing.T) {
 		if !slices.Equal(plan.Command, want) || plan.Script != nil {
 			t.Fatalf("%s update = %v script=%v, want %v", target, plan.Command, plan.Script, want)
 		}
-	}
-	if _, err := planner.resolveAgentMethod(TargetMuse, "official-installer", AgentOperationUpdate); !errors.Is(err, ErrInstallMethod) {
-		t.Fatalf("Muse update error = %v, want ErrInstallMethod for a vendor without a self-update command", err)
-	}
-}
-
-func TestWindowsVendorUpdatesUsePowerShellInstallers(t *testing.T) {
-	// A pwsh.exe alias may exist in WindowsApps but refuse execution. The system
-	// powershell.exe must win when both names resolve.
-	s := newTestService("windows", "pwsh.exe", "powershell.exe")
-	planner, err := s.newRequestPlanner(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	for target, url := range map[Target]string{
-		TargetGrok: "https://x.ai/cli/install.ps1",
-	} {
-		t.Run(string(target), func(t *testing.T) {
-			plan, err := planner.resolveAgentMethod(target, "official-installer", AgentOperationUpdate)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if plan.Unsupported || plan.Script == nil || plan.Script.URL != url || len(plan.Command) != 0 {
-				t.Fatalf("Windows update plan = %+v, want PowerShell installer %s", plan, url)
-			}
-			if want := []string{"/usr/bin/powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"}; !slices.Equal(plan.Script.Interpreter, want) {
-				t.Fatalf("interpreter = %v, want %v", plan.Script.Interpreter, want)
-			}
-		})
-	}
-}
-
-func TestWindowsGrokUpdateRefusesUnknownDestination(t *testing.T) {
-	for _, binary := range []string{"", "grok.exe", `D:grok.exe`, `tools\grok.exe`} {
-		plan := targetInstalledCopy("windows", Plan{Method: "official-installer", Script: &ports.InstallScriptCommand{}}, TargetGrok, binary)
-		if !plan.Unsupported || plan.Reason == "" {
-			t.Fatalf("path %q: update was not refused: %+v", binary, plan)
-		}
-	}
-}
-
-func TestWindowsGrokUpdateReplacesPlanDestinationWithoutMutation(t *testing.T) {
-	script := &ports.InstallScriptCommand{Env: []string{`grok_bin_dir=C:/alternate`, "KEEP=yes"}}
-	plan := targetInstalledCopy("windows", Plan{Method: "official-installer", Script: script}, TargetGrok, `D:\grok.exe`)
-	if !slices.Equal(plan.Script.Env, []string{"KEEP=yes", `GROK_BIN_DIR=D:\`}) {
-		t.Fatalf("environment = %v", plan.Script.Env)
-	}
-	if !slices.Equal(script.Env, []string{`grok_bin_dir=C:/alternate`, "KEEP=yes"}) {
-		t.Fatalf("original script was mutated: %v", script.Env)
-	}
-}
-
-func TestWindowsGrokUpdateTargetsConfirmedDirectory(t *testing.T) {
-	for _, binary := range []string{`D:\tools\grok\grok.exe`, `D:\tools with spaces\grok.exe`, `\\server\tools\grok\grok.exe`} {
-		t.Run(binary, func(t *testing.T) {
-			s := newTestService("windows", "powershell.exe")
-			t.Cleanup(s.stop)
-			t.Setenv("GROK_BIN_DIR", `C:/alternate/grok`)
-			var version atomic.Int32
-			version.Store(13)
-			s.verifier = harnessVerifierFunc(func(context.Context, Target) (VerifyResult, error) {
-				return VerifyResult{ResolvedPath: binary, Output: fmt.Sprintf("1.0.%d", version.Load())}, nil
-			})
-			captured := make(chan ports.InstallScriptCommand, 1)
-			s.installScripts = installScriptRunnerFunc(func(_ context.Context, command ports.InstallScriptCommand, _, _ io.Writer) (ports.InstallScriptResult, error) {
-				captured <- command
-				version.Store(14)
-				return ports.InstallScriptResult{}, nil
-			})
-			if _, err := s.StartAgentOperation(t.Context(), TargetGrok, "official-installer", AgentOperationUpdate, ""); err != nil {
-				t.Fatal(err)
-			}
-			waitForStatus(t, s, TargetGrok, StatusSucceeded)
-			command := <-captured
-			want := "GROK_BIN_DIR=" + binary[:strings.LastIndex(binary, `\`)]
-			if !slices.Contains(command.Env, want) {
-				t.Fatalf("installer environment = %v, want %q", command.Env, want)
-			}
-		})
 	}
 }
 
@@ -1516,143 +1326,19 @@ func TestLastOutputLineShowsWhatTheTerminalWouldShow(t *testing.T) {
 func TestFailedUpdateQuotesWhatTheUpdaterReported(t *testing.T) {
 	s := newTestService("darwin", "sh")
 	s.commands = commandRunnerFunc(func(_ context.Context, _ []string, stdout, _ io.Writer) error {
-		_, _ = io.WriteString(stdout, "Checking for updates...\nGrok is already up to date.\n\n")
+		_, _ = io.WriteString(stdout, "Checking for updates...\nomp is already up to date.\n\n")
 		return nil
 	})
 	s.verifier = harnessVerifierFunc(func(context.Context, Target) (VerifyResult, error) {
-		return VerifyResult{ResolvedPath: "/Users/test/.local/bin/grok", Output: "1.0.0"}, nil
+		return VerifyResult{ResolvedPath: "/Users/test/.local/bin/omp", Output: "1.0.0"}, nil
 	})
-	job := &Job{Target: TargetGrok, Method: "official-installer", Status: StatusInstalling}
-	plan := Plan{Target: TargetGrok, Method: "official-installer", Command: []string{"/Users/test/.local/bin/grok", "update"}}
-	baseline := &installedBaseline{path: "/Users/test/.local/bin/grok", version: "1.0.0", expected: "1.1.0", scheme: versionSchemeFor(TargetGrok)}
+	job := &Job{Target: TargetOMP, Method: "official-installer", Status: StatusInstalling}
+	plan := Plan{Target: TargetOMP, Method: "official-installer", Command: []string{"/Users/test/.local/bin/omp", "update"}}
+	baseline := &installedBaseline{path: "/Users/test/.local/bin/omp", version: "1.0.0", expected: "1.1.0", scheme: versionSemver}
 	s.runAgentOperation(context.Background(), plan, AgentOperationUpdate, job, baseline)
-	want := `The update finished, but it reports 1.0.0, not the requested version 1.1.0. The updater said: "Grok is already up to date."`
+	want := `The update finished, but it reports 1.0.0, not the requested version 1.1.0. The updater said: "omp is already up to date."`
 	if job.Status != StatusFailed || job.Error != want {
 		t.Fatalf("status = %s, error = %q; want failed with %q", job.Status, job.Error, want)
-	}
-}
-
-func TestOpenCodeVendorUpdatePinsAdvisoryRelease(t *testing.T) {
-	s := newTestService("darwin", "bash")
-	s.updateAdvisories = map[Target]UpdateAdvisory{TargetOpencode: {AgentID: string(TargetOpencode), Status: UpdateStatusBehindLatest, CurrentVersion: "1.18.34", LatestVersion: "1.18.35", CheckedAt: time.Now()}}
-	version := "1.18.34"
-	s.verifier = harnessVerifierFunc(func(context.Context, Target) (VerifyResult, error) {
-		return VerifyResult{ResolvedPath: "/Users/test/.opencode/bin/opencode", Output: version}, nil
-	})
-	var ran []string
-	s.commands = commandRunnerFunc(func(_ context.Context, argv []string, _, _ io.Writer) error {
-		ran = argv
-		version = "1.18.35"
-		return nil
-	})
-	if _, err := s.StartAgentOperation(context.Background(), TargetOpencode, "official-installer", AgentOperationUpdate, ""); err != nil {
-		t.Fatal(err)
-	}
-	s.workers.Wait()
-	waitForStatus(t, s, TargetOpencode, StatusSucceeded)
-	if want := []string{"/Users/test/.opencode/bin/opencode", "upgrade", "1.18.35", "--method", "curl"}; !slices.Equal(ran, want) {
-		t.Fatalf("ran %v, want %v", ran, want)
-	}
-}
-
-func TestAiderUpdatesThroughUVThatItsInstallerUses(t *testing.T) {
-	s := newTestService("darwin", "sh", "uv")
-	planner, err := s.newRequestPlanner(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	plan, err := planner.resolveAgentMethod(TargetAider, "uv", AgentOperationUpdate)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := []string{"uv", "tool", "upgrade", "aider-chat"}; !slices.Equal(plan.Command, want) {
-		t.Fatalf("Aider update = %v, want %v", plan.Command, want)
-	}
-	// The installer's binary lives in uv's tool layout, which the official
-	// method can never own; uv is the method that can update it.
-	if s.methodOwnsBinary(context.Background(), Plan{Method: "official-installer"}, "/Users/test/.local/share/uv/tools/aider-chat/bin/aider") {
-		t.Fatal("official installer claimed Aider's uv-managed binary")
-	}
-}
-
-func TestOpenCodeVendorUpdatePinsApprovedReleaseOverAdvisory(t *testing.T) {
-	s := newTestService("darwin", "bash")
-	s.updateAdvisories = map[Target]UpdateAdvisory{TargetOpencode: {AgentID: string(TargetOpencode), Status: UpdateStatusBehindLatest, CurrentVersion: "1.18.34", LatestVersion: "1.18.36", CheckedAt: time.Now()}}
-	version := "1.18.34"
-	s.verifier = harnessVerifierFunc(func(context.Context, Target) (VerifyResult, error) {
-		return VerifyResult{ResolvedPath: "/Users/test/.opencode/bin/opencode", Output: version}, nil
-	})
-	var ran []string
-	s.commands = commandRunnerFunc(func(_ context.Context, argv []string, _, _ io.Writer) error {
-		ran = argv
-		version = "1.18.35"
-		return nil
-	})
-	if _, err := s.StartAgentOperation(context.Background(), TargetOpencode, "official-installer", AgentOperationUpdate, "1.18.35"); err != nil {
-		t.Fatal(err)
-	}
-	s.workers.Wait()
-	if want := []string{"/Users/test/.opencode/bin/opencode", "upgrade", "1.18.35", "--method", "curl"}; !slices.Equal(ran, want) {
-		t.Fatalf("ran %v, want the approved release %v", ran, want)
-	}
-	// Reaching the approved release is success, though 1.18.36 was announced.
-	waitForStatus(t, s, TargetOpencode, StatusSucceeded)
-}
-
-func TestOpenCodeVendorUpdateNeverPinsAStaleCachedRelease(t *testing.T) {
-	s := newTestService("darwin", "bash")
-	// The cache still announces 1.18.35, but 1.18.36 was installed since.
-	s.updateAdvisories = map[Target]UpdateAdvisory{TargetOpencode: {AgentID: string(TargetOpencode), Status: UpdateStatusBehindLatest, CurrentVersion: "1.18.34", LatestVersion: "1.18.35", CheckedAt: time.Now()}}
-	s.verifier = harnessVerifierFunc(func(context.Context, Target) (VerifyResult, error) {
-		return VerifyResult{ResolvedPath: "/Users/test/.opencode/bin/opencode", Output: "1.18.36"}, nil
-	})
-	var ran []string
-	s.commands = commandRunnerFunc(func(_ context.Context, argv []string, _, _ io.Writer) error {
-		ran = argv
-		return nil
-	})
-	if _, err := s.StartAgentOperation(context.Background(), TargetOpencode, "official-installer", AgentOperationUpdate, ""); err != nil {
-		t.Fatal(err)
-	}
-	s.workers.Wait()
-	if slices.Contains(ran, "1.18.35") {
-		t.Fatalf("ran %v, which installs the stale cached release over 1.18.36", ran)
-	}
-}
-
-func TestOpenCodeVendorUpdateNeverPinsUnvettedApprovedRelease(t *testing.T) {
-	newService := func(ran *[]string) *Service {
-		s := newTestService("darwin", "bash")
-		s.updateAdvisories = map[Target]UpdateAdvisory{TargetOpencode: {AgentID: string(TargetOpencode), Status: UpdateStatusBehindLatest, CurrentVersion: "1.18.34", LatestVersion: "1.18.36", CheckedAt: time.Now()}}
-		s.verifier = harnessVerifierFunc(func(context.Context, Target) (VerifyResult, error) {
-			return VerifyResult{ResolvedPath: "/Users/test/.opencode/bin/opencode", Output: "1.18.34"}, nil
-		})
-		s.commands = commandRunnerFunc(func(_ context.Context, argv []string, _, _ io.Writer) error {
-			*ran = argv
-			return nil
-		})
-		return s
-	}
-	for _, downgrade := range []string{"0.1.0", "1.18.34"} {
-		var ran []string
-		s := newService(&ran)
-		if _, err := s.StartAgentOperation(context.Background(), TargetOpencode, "official-installer", AgentOperationUpdate, downgrade); !errors.Is(err, ErrUpdateVersion) {
-			t.Fatalf("expectedVersion %s: err = %v, want ErrUpdateVersion", downgrade, err)
-		}
-		s.workers.Wait()
-		if ran != nil {
-			t.Fatalf("expectedVersion %s ran %v", downgrade, ran)
-		}
-	}
-	// A release the advisory has not seen is a verification floor only.
-	var ran []string
-	s := newService(&ran)
-	if _, err := s.StartAgentOperation(context.Background(), TargetOpencode, "official-installer", AgentOperationUpdate, "9.9.9"); err != nil {
-		t.Fatal(err)
-	}
-	s.workers.Wait()
-	if want := []string{"/Users/test/.opencode/bin/opencode", "upgrade", "1.18.36", "--method", "curl"}; !slices.Equal(ran, want) {
-		t.Fatalf("ran %v, want the advisory release %v", ran, want)
 	}
 }
 
@@ -1701,10 +1387,10 @@ func TestHarnessUpdateIsBlockedWhileItsReviewerRuns(t *testing.T) {
 
 func TestHomebrewUpdateRefreshesMetadataBeforeUpgrading(t *testing.T) {
 	s := newTestService("darwin", "bash", "brew")
-	s.updateAdvisories = map[Target]UpdateAdvisory{TargetKimchi: {AgentID: string(TargetKimchi), Status: UpdateStatusBehindLatest, CurrentVersion: "1.2.0", LatestVersion: "1.3.0", CheckedAt: time.Now()}}
+	s.updateAdvisories = map[Target]UpdateAdvisory{TargetOMP: {AgentID: string(TargetOMP), Status: UpdateStatusBehindLatest, CurrentVersion: "1.2.0", LatestVersion: "1.3.0", CheckedAt: time.Now()}}
 	version := "1.2.0"
 	s.verifier = harnessVerifierFunc(func(context.Context, Target) (VerifyResult, error) {
-		return VerifyResult{ResolvedPath: "/opt/homebrew/Cellar/kimchi/1.2.0/bin/kimchi", Output: version}, nil
+		return VerifyResult{ResolvedPath: "/opt/homebrew/Cellar/omp/1.2.0/bin/omp", Output: version}, nil
 	})
 	s.ownsInstallation = func(context.Context, string, string, string, bool) (bool, error) { return true, nil }
 	var ran [][]string
@@ -1716,19 +1402,19 @@ func TestHomebrewUpdateRefreshesMetadataBeforeUpgrading(t *testing.T) {
 		version = "1.3.0"
 		return nil
 	})
-	job, err := s.StartAgentOperation(context.Background(), TargetKimchi, "homebrew", AgentOperationUpdate, "")
+	job, err := s.StartAgentOperation(context.Background(), TargetOMP, "homebrew", AgentOperationUpdate, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if job.Command != "brew update; brew upgrade getkimchi/tap/kimchi" {
+	if job.Command != "brew update; brew upgrade can1357/tap/omp" {
 		t.Fatalf("command = %q", job.Command)
 	}
 	s.workers.Wait()
-	waitForStatus(t, s, TargetKimchi, StatusSucceeded)
-	if want := [][]string{{"brew", "update"}, {"brew", "upgrade", "getkimchi/tap/kimchi"}}; !reflect.DeepEqual(ran, want) {
+	waitForStatus(t, s, TargetOMP, StatusSucceeded)
+	if want := [][]string{{"brew", "update"}, {"brew", "upgrade", "can1357/tap/omp"}}; !reflect.DeepEqual(ran, want) {
 		t.Fatalf("ran %v, want %v", ran, want)
 	}
-	final, _ := s.Status(context.Background(), TargetKimchi)
+	final, _ := s.Status(context.Background(), TargetOMP)
 	if !strings.Contains(final.Output, "brew update failed") {
 		t.Fatalf("output %q does not note the failed refresh", final.Output)
 	}

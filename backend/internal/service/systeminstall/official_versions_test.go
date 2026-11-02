@@ -16,14 +16,10 @@ func TestParseOfficialVersionReadsEachVendorFormat(t *testing.T) {
 		want   string
 	}{
 		{name: "plain text", target: TargetClaudeCode, body: "2.1.291\n", want: "2.1.291"},
-		{name: "v-prefixed text", target: TargetGrok, body: "v0.0.13", want: "0.0.13"},
-		{name: "build metadata text", target: TargetPrimeAgent, body: "0.0.1791273659-g33d612\n", want: "0.0.1791273659-g33d612"},
+		{name: "v-prefixed text", target: TargetClaudeCode, body: "v2.1.291", want: "2.1.291"},
 		{name: "prefixed json tag", target: TargetCodex, body: `{"assets":[],"tag_name":"rust-v0.160.1"}`, want: "0.160.1"},
-		{name: "json manifest", target: TargetDevin, body: `{"version":"3000.11.3","platforms":{}}`, want: "3000.11.3"},
-		{name: "revisioned channel", target: TargetMuse, body: `{"channel":"muse-stable","version":"1.4.3-R5018.1"}`, want: "1.4.3-R5018.1"},
-		{name: "github release", target: TargetKimchi, body: `{"tag_name":"v0.47.4"}`, want: "0.47.4"},
+		{name: "github release", target: TargetOMP, body: `{"tag_name":"v0.47.4"}`, want: "0.47.4"},
 		{name: "opencode 2 release document", target: TargetOpencodeV2, body: `{"channel":"latest","name":"cli","distribution":"npm","version":"2.1.4","metadata":{"package":"@opencode/cli"}}`, want: "2.1.4"},
-		{name: "install script url", target: TargetCursor, body: `DOWNLOAD_URL="https://downloads.cursor.com/lab/2026.10.01-e373342/${OS}/${ARCH}/agent-cli-package.tar.gz"`, want: "2026.10.01-e373342"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			source, ok := officialSourceFor(tt.target, "darwin", "arm64")
@@ -42,19 +38,23 @@ func TestParseOfficialVersionReadsEachVendorFormat(t *testing.T) {
 }
 
 func TestParseOfficialVersionRejectsMetadataWithoutVersion(t *testing.T) {
-	source, _ := officialSourceFor(TargetKiro, "linux", "amd64")
+	source, _ := officialSourceFor(TargetOpencodeV2, "linux", "amd64")
 	if _, err := parseOfficialVersion(source, []byte(`{"packages":[]}`)); err == nil {
 		t.Fatal("expected an error for a manifest without a version")
 	}
-	source, _ = officialSourceFor(TargetGrok, "linux", "amd64")
+	source, _ = officialSourceFor(TargetClaudeCode, "linux", "amd64")
 	if _, err := parseOfficialVersion(source, []byte("<html>maintenance</html>")); err == nil {
 		t.Fatal("expected an error for a non-version body")
 	}
 }
 
-func TestOfficialSourceForRejectsTargetsWithoutVerifiedChannel(t *testing.T) {
-	if _, ok := officialSourceFor(TargetAuggie, "darwin", "arm64"); ok {
-		t.Fatal("Auggie has no verified official release source")
+func TestOfficialSourceForSelectsAntigravityPlatformManifest(t *testing.T) {
+	source, ok := officialSourceFor(TargetAgy, "linux", "amd64")
+	if !ok || source.ref != "https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests/linux_amd64.json" {
+		t.Fatalf("source = %+v ok=%t", source, ok)
+	}
+	if _, ok := officialSourceFor(TargetAgy, "windows", "amd64"); ok {
+		t.Fatal("windows has no verified Antigravity manifest")
 	}
 }
 
@@ -124,9 +124,9 @@ func TestUpdateAdvisoryPrefersOwningPackageOverOfficialRelease(t *testing.T) {
 
 func TestUpdateAdvisoryUnknownWithoutOfficialSource(t *testing.T) {
 	s := newTestService("darwin")
-	s.verifier = harnessVerifierFunc(func(context.Context, Target) (VerifyResult, error) { return VerifyResult{Output: "auggie 0.1.0"}, nil })
+	s.verifier = harnessVerifierFunc(func(context.Context, Target) (VerifyResult, error) { return VerifyResult{Output: "codex 0.1.0"}, nil })
 	s.officialVersion = func(context.Context, Target) (string, error) { return "", errNoOfficialSource }
-	advisory, err := s.UpdateAdvisory(context.Background(), TargetAuggie, false)
+	advisory, err := s.UpdateAdvisory(context.Background(), TargetCodex, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,50 +160,19 @@ func TestUpdateAdvisoryComparesOfficialPrereleaseWithLatest(t *testing.T) {
 	}
 }
 
-func TestUpdateAdvisoryComparesBuildSuffixedOfficialReleases(t *testing.T) {
-	for _, tt := range []struct {
-		name       string
-		target     Target
-		path       string
-		output     string
-		latest     string
-		wantStatus UpdateStatus
-		wantReason UpdateUnknownReason
-	}{
-		{name: "cursor current", target: TargetCursor, path: "/Users/test/.local/share/cursor-agent/versions/2026.10.01-e373342/cursor-agent", output: "2026.10.01-e373342\n", latest: "2026.10.01-e373342", wantStatus: UpdateStatusCurrent},
-		{name: "cursor same-day rebuild", target: TargetCursor, path: "/Users/test/.local/share/cursor-agent/versions/2026.10.01-e373342/cursor-agent", output: "2026.10.01-e373342\n", latest: "2026.10.01-a1b2c3d", wantStatus: UpdateStatusUnknown, wantReason: UpdateReasonBuildUnordered},
-		{name: "muse current", target: TargetMuse, path: "/Users/test/.local/bin/muse", output: "Muse Code 1.4.3 (1.4.3-R5018.1)\n", latest: "1.4.3-R5018.1", wantStatus: UpdateStatusCurrent},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			s := newTestService("darwin")
-			s.verifier = harnessVerifierFunc(func(context.Context, Target) (VerifyResult, error) {
-				return VerifyResult{ResolvedPath: tt.path, Output: tt.output}, nil
-			})
-			s.officialVersion = func(context.Context, Target) (string, error) { return tt.latest, nil }
-			advisory, err := s.UpdateAdvisory(context.Background(), tt.target, false)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if advisory.Status != tt.wantStatus || advisory.Reason != tt.wantReason || advisory.Source != officialReleaseSource {
-				t.Fatalf("advisory = %+v", advisory)
-			}
-		})
-	}
-}
-
 func TestOfficialGitHubVersionReadsReleaseRedirect(t *testing.T) {
 	var requests []string
 	client := &http.Client{Transport: managerRoundTripFunc(func(request *http.Request) (*http.Response, error) {
 		requests = append(requests, request.Method+" "+request.URL.String())
 		response := managerHTTPResponse(http.StatusFound, "")
-		response.Header.Set("Location", "https://github.com/getkimchi/kimchi/releases/tag/v0.47.4")
+		response.Header.Set("Location", "https://github.com/can1357/oh-my-pi/releases/tag/v0.47.4")
 		return response, nil
 	})}
-	got, err := officialReleaseVersionWith(client, "darwin", "arm64")(context.Background(), TargetKimchi)
+	got, err := officialReleaseVersionWith(client, "darwin", "arm64")(context.Background(), TargetOMP)
 	if err != nil || got != "0.47.4" {
 		t.Fatalf("version=%q err=%v", got, err)
 	}
-	if want := []string{"HEAD https://github.com/getkimchi/kimchi/releases/latest"}; !slices.Equal(requests, want) {
+	if want := []string{"HEAD https://github.com/can1357/oh-my-pi/releases/latest"}; !slices.Equal(requests, want) {
 		t.Fatalf("requests = %v, want %v", requests, want)
 	}
 }
@@ -215,7 +184,7 @@ func TestOfficialGitHubVersionFallsBackToAPIWithoutReleaseRedirect(t *testing.T)
 	}{
 		{name: "no releases", redirect: func() *http.Response {
 			response := managerHTTPResponse(http.StatusFound, "")
-			response.Header.Set("Location", "https://github.com/getkimchi/kimchi/releases")
+			response.Header.Set("Location", "https://github.com/can1357/oh-my-pi/releases")
 			return response
 		}},
 		{name: "blocked", redirect: func() *http.Response { return managerHTTPResponse(http.StatusTooManyRequests, "") }},
@@ -225,30 +194,16 @@ func TestOfficialGitHubVersionFallsBackToAPIWithoutReleaseRedirect(t *testing.T)
 				if request.URL.Host == "github.com" {
 					return tt.redirect(), nil
 				}
-				if request.URL.String() != "https://api.github.com/repos/getkimchi/kimchi/releases/latest" {
+				if request.URL.String() != "https://api.github.com/repos/can1357/oh-my-pi/releases/latest" {
 					t.Fatalf("URL = %s", request.URL)
 				}
 				return managerHTTPResponse(http.StatusOK, `{"tag_name":"v1.9.0"}`), nil
 			})}
-			got, err := officialReleaseVersionWith(client, "darwin", "arm64")(context.Background(), TargetKimchi)
+			got, err := officialReleaseVersionWith(client, "darwin", "arm64")(context.Background(), TargetOMP)
 			if err != nil || got != "1.9.0" {
 				t.Fatalf("version=%q err=%v", got, err)
 			}
 		})
-	}
-}
-
-// opencode.ai/install refuses OpenCode 2, so OpenCode 1 never pins it, from
-// GitHub's Latest release or from npm.
-func TestOpencodeOneNeverPinsAnOpencodeTwoRelease(t *testing.T) {
-	client := &http.Client{Transport: managerRoundTripFunc(func(request *http.Request) (*http.Response, error) {
-		if request.URL.Host != "registry.npmjs.org" {
-			t.Fatalf("OpenCode 1 release read from %s", request.URL)
-		}
-		return managerHTTPResponse(http.StatusOK, `{"latest":"2.0.0"}`), nil
-	})}
-	if got, err := officialReleaseVersionWith(client, "darwin", "arm64")(context.Background(), TargetOpencode); err == nil {
-		t.Fatalf("version = %q, want an error for an OpenCode 2 release", got)
 	}
 }
 
@@ -259,8 +214,7 @@ func TestOfficialRegistrySourcesShareThePackageLookups(t *testing.T) {
 		body   string
 		want   string
 	}{
-		{target: TargetAider, url: "https://pypi.org/pypi/aider-chat/json", body: `{"info":{"version":"0.86.2"}}`, want: "0.86.2"},
-		{target: TargetOpencode, url: "https://registry.npmjs.org/-/package/opencode-ai/dist-tags", body: `{"latest":"1.19.4","latest-1":"1.1.4"}`, want: "1.19.4"},
+		{target: TargetPi, url: "https://registry.npmjs.org/-/package/@earendil-works%2Fpi-coding-agent/dist-tags", body: `{"latest":"1.19.4"}`, want: "1.19.4"},
 	} {
 		t.Run(string(tt.target), func(t *testing.T) {
 			client := &http.Client{Transport: managerRoundTripFunc(func(request *http.Request) (*http.Response, error) {

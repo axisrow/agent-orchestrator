@@ -6,28 +6,20 @@ import (
 	"path/filepath"
 	"strings"
 
-	"gopkg.in/yaml.v3"
-
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 )
 
 // configuredDefaultSource describes where an agent CLI keeps the model it runs
-// when no --model flag is passed. Only user-level sources are read: sessions
-// launch from AO worktrees whose repository content is chosen per session, so
-// repository config is never trusted (see repoMayHoldConfig).
+// when no --model flag is passed. Only user-level sources are read.
 type configuredDefaultSource struct {
 	// paths lists user-level config files, lowest precedence first: a later
 	// file that sets a model overrides an earlier one.
 	paths func(home string, env map[string]string) []string
 	parse func(raw []byte) string
-	// repoFiles names repository config files (relative to a directory, slash
-	// separated) that outrank every user-level path. If the repository may
-	// hold any of them, the default is left unresolved.
-	repoFiles []string
 	// envOverride names a variable that wins over every file when set.
 	envOverride string
-	// resolve replaces paths/parse/repoFiles for agents whose layering cannot
-	// be expressed as a flat file list. It returns "" when the effective model
+	// resolve replaces paths/parse for agents whose layering cannot be
+	// expressed as a flat file list. It returns "" when the effective model
 	// cannot be determined.
 	resolve func(home, workingDir string, env map[string]string) string
 }
@@ -37,23 +29,9 @@ type configuredDefaultSource struct {
 // has no default to show and the task form reads "Model not reported" even
 // though the user has already chosen a model in the agent's own settings.
 var configuredDefaultSources = map[string]configuredDefaultSource{
-	"opencode": {resolve: func(home, workingDir string, env map[string]string) string {
-		return resolveOpenCodeModel(1, home, workingDir, env)
-	}},
 	"opencode-v2": {resolve: func(home, workingDir string, env map[string]string) string {
-		return resolveOpenCodeModel(2, home, workingDir, env)
+		return resolveOpenCodeModel(home, workingDir, env)
 	}},
-	"aider": {
-		paths: func(home string, _ map[string]string) []string {
-			if home == "" {
-				return nil
-			}
-			return []string{filepath.Join(home, ".aider.conf.yml"), filepath.Join(home, ".aider.conf.yaml")}
-		},
-		parse:       parseYAMLModelKey,
-		repoFiles:   []string{".aider.conf.yml", ".aider.conf.yaml"},
-		envOverride: "AIDER_MODEL",
-	},
 	"droid": {
 		paths: func(home string, _ map[string]string) []string {
 			if home == "" {
@@ -63,27 +41,6 @@ var configuredDefaultSources = map[string]configuredDefaultSource{
 		},
 		parse: parseJSONCModelKey,
 	},
-	// Copilot CLI keeps user-editable settings, including the model /model
-	// selects, in settings.json; config.json is legacy managed state and is not
-	// read, so a stale value there can never be marked as the default. Model
-	// precedence: user settings < repository settings < repository local
-	// settings < COPILOT_MODEL.
-	// https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-config-dir-reference
-	"copilot": {
-		paths: func(home string, env map[string]string) []string {
-			root := envValue(env, "COPILOT_HOME")
-			if root == "" && home != "" {
-				root = filepath.Join(home, ".copilot")
-			}
-			if root == "" {
-				return nil
-			}
-			return []string{filepath.Join(root, "settings.json")}
-		},
-		parse:       parseJSONCModelKey,
-		repoFiles:   []string{".github/copilot/settings.json", ".github/copilot/settings.local.json"},
-		envOverride: "COPILOT_MODEL",
-	},
 	"pi": {
 		paths: func(home string, _ map[string]string) []string {
 			if home == "" {
@@ -92,21 +49,6 @@ var configuredDefaultSources = map[string]configuredDefaultSource{
 			return []string{filepath.Join(home, ".pi", "agent", "settings.json")}
 		},
 		parse: parsePiDefaultModel,
-	},
-	"crush": {
-		paths: func(home string, env map[string]string) []string {
-			var paths []string
-			if configHome := xdgDir(home, env, "XDG_CONFIG_HOME", ".config"); configHome != "" {
-				paths = append(paths, filepath.Join(configHome, "crush", "crush.json"))
-			}
-			// Crush's own model picker persists the selection to its data dir.
-			if dataHome := xdgDir(home, env, "XDG_DATA_HOME", filepath.Join(".local", "share")); dataHome != "" {
-				paths = append(paths, filepath.Join(dataHome, "crush", "crush.json"))
-			}
-			return paths
-		},
-		parse:     parseCrushDefaultModel,
-		repoFiles: []string{"crush.json", ".crush.json"},
 	},
 }
 
@@ -138,9 +80,6 @@ func configuredDefaultModel(agentID, workingDir string, env map[string]string) s
 	home, _ := os.UserHomeDir()
 	if source.resolve != nil {
 		return strings.TrimSpace(source.resolve(home, workingDir, env))
-	}
-	if repoMayHoldConfig(workingDir, source.repoFiles...) {
-		return ""
 	}
 	configured := ""
 	for _, path := range source.paths(home, env) {
@@ -190,16 +129,6 @@ func parseJSONCModelKey(raw []byte) string {
 	return config.Model
 }
 
-func parseYAMLModelKey(raw []byte) string {
-	var config struct {
-		Model string `yaml:"model"`
-	}
-	if yaml.Unmarshal(raw, &config) != nil {
-		return ""
-	}
-	return config.Model
-}
-
 func parsePiDefaultModel(raw []byte) string {
 	var settings struct {
 		DefaultProvider string `json:"defaultProvider"`
@@ -209,21 +138,6 @@ func parsePiDefaultModel(raw []byte) string {
 		return ""
 	}
 	return joinProviderModel(settings.DefaultProvider, settings.DefaultModel)
-}
-
-func parseCrushDefaultModel(raw []byte) string {
-	var config struct {
-		Models struct {
-			Large struct {
-				Provider string `json:"provider"`
-				Model    string `json:"model"`
-			} `json:"large"`
-		} `json:"models"`
-	}
-	if json.Unmarshal(stripJSONC(raw), &config) != nil {
-		return ""
-	}
-	return joinProviderModel(config.Models.Large.Provider, config.Models.Large.Model)
 }
 
 // joinProviderModel builds the provider/model id these CLIs list. A model with

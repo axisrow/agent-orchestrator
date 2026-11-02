@@ -43,7 +43,7 @@ link in `~/.local/bin`) therefore no longer wins in zsh or bash. sh, dash, ksh
 and fish offer no such hook: `ao doctor`'s `ao-login-shell` check starts the
 user's login shell exactly as a session does and names whichever `ao` wins.
 An AppImage mounts under a new `/tmp/.mount_*` path on every launch, so a
-daemon running from one pins, and gives Codex and Auggie hooks,
+daemon running from one pins, and gives Codex and Claude Code hooks,
 `<data dir>/runtime/ao-current/ao` instead: a link it moves to its own mount at
 every start, so sessions that outlive an app restart still reach the app.
 When the install directory contains other executable tools, AO creates an

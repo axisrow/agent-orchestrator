@@ -5458,63 +5458,6 @@ paths:
       summary: Report an agent activity-state signal for a session
       tags:
       - sessions
-  /api/v1/sessions/{sessionId}/activity/codewhale:
-    post:
-      operationId: setCodewhaleSessionActivity
-      parameters:
-      - description: Session identifier, e.g. project-1.
-        in: path
-        name: sessionId
-        required: true
-        schema:
-          description: Session identifier, e.g. project-1.
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CodewhaleLifecycleWebhookRequest'
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SetActivityResponse'
-          description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIError'
-          description: Bad Request
-        "404":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIError'
-          description: Not Found
-        "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIError'
-          description: Internal Server Error
-        "501":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIError'
-          description: Not Implemented
-        "503":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIError'
-          description: Service Unavailable
-      summary: Record a Codewhale lifecycle outbox event
-      tags:
-      - sessions
   /api/v1/sessions/{sessionId}/agent-browser/*:
     get:
       operationId: getSessionAgentBrowser
@@ -11313,22 +11256,24 @@ paths:
     get:
       operationId: getSystemInstallStatus
       parameters:
-      - description: 'Install target identifier: tmux, gh, claude, codex, opencode,
-          opencode-v2, copilot, or cloudflared.'
+      - description: 'Install target identifier: tmux, gh, claude, claude-code, codex,
+          opencode-v2, pi, agy, omp, or cloudflared.'
         in: path
         name: target
         required: true
         schema:
-          description: 'Install target identifier: tmux, gh, claude, codex, opencode,
-            opencode-v2, copilot, or cloudflared.'
+          description: 'Install target identifier: tmux, gh, claude, claude-code,
+            codex, opencode-v2, pi, agy, omp, or cloudflared.'
           enum:
           - tmux
           - gh
           - claude
+          - claude-code
           - codex
-          - opencode
           - opencode-v2
-          - copilot
+          - pi
+          - agy
+          - omp
           - cloudflared
           type: string
       responses:
@@ -11362,22 +11307,24 @@ paths:
     post:
       operationId: startSystemInstall
       parameters:
-      - description: 'Install target identifier: tmux, gh, claude, codex, opencode,
-          opencode-v2, copilot, or cloudflared.'
+      - description: 'Install target identifier: tmux, gh, claude, claude-code, codex,
+          opencode-v2, pi, agy, omp, or cloudflared.'
         in: path
         name: target
         required: true
         schema:
-          description: 'Install target identifier: tmux, gh, claude, codex, opencode,
-            opencode-v2, copilot, or cloudflared.'
+          description: 'Install target identifier: tmux, gh, claude, claude-code,
+            codex, opencode-v2, pi, agy, omp, or cloudflared.'
           enum:
           - tmux
           - gh
           - claude
+          - claude-code
           - codex
-          - opencode
           - opencode-v2
-          - copilot
+          - pi
+          - agy
+          - omp
           - cloudflared
           type: string
       responses:
@@ -13499,59 +13446,6 @@ components:
       - remoteUrl
       - destinationParent
       type: object
-    CodewhaleLifecycleEvent:
-      properties:
-        created_at:
-          format: date-time
-          type: string
-        event:
-          type: string
-        item_id:
-          type:
-          - "null"
-          - string
-        kind:
-          enum:
-          - session.started
-          - turn.started
-          - turn.completed
-          - turn.failed
-          - turn.interrupted
-          - turn.stalled
-          - session.ended
-          - subagent.spawned
-          - subagent.completed
-          type: string
-        payload: {}
-        schema_version:
-          type: integer
-        seq:
-          minimum: 0
-          type: integer
-        thread_id:
-          type: string
-        timestamp:
-          format: date-time
-          type: string
-        turn_id:
-          type: string
-      required:
-      - schema_version
-      - seq
-      - event
-      - kind
-      - thread_id
-      type: object
-    CodewhaleLifecycleWebhookRequest:
-      properties:
-        at:
-          format: date-time
-          type: string
-        event:
-          $ref: '#/components/schemas/CodewhaleLifecycleEvent'
-      required:
-      - event
-      type: object
     CodexAccountCapabilitiesResponse:
       properties:
         globalSwitch:
@@ -14394,25 +14288,12 @@ components:
           enum:
           - claude-code
           - codex
-          - copilot
-          - cursor
-          - kilocode
-          - opencode
           - opencode-v2
-          - kiro
           - pi
           - agy
-          - devin
           - droid
           - kimi
-          - kimchi
-          - muse
           - amp
-          - aider
-          - grok
-          - crush
-          - auggie
-          - cline
           - autohand
           type: string
         scmStatus:
@@ -15438,40 +15319,17 @@ components:
           enum:
           - claude-code
           - codex
-          - aider
-          - opencode
           - opencode-v2
-          - grok
           - droid
           - amp
           - agy
-          - crush
-          - cursor
           - qwen
-          - gemini
-          - copilot
           - goose
-          - auggie
-          - continue
-          - devin
-          - cline
           - kimi
-          - muse
-          - kiro
-          - kilocode
-          - vibe
           - pi
-          - kimchi
+          - autohand
           - omp
           - fx
-          - prime-agent
-          - autohand
-          - unreal-agent
-          - codewhale
-          - mimo-code
-          - deepseek-harness
-          - openhands
-          - command-code
           - memcode
           - fake
           type: string
@@ -16178,41 +16036,11 @@ components:
           - claude
           - claude-code
           - codex
-          - cursor
           - opencode
           - opencode-v2
-          - aider
-          - copilot
-          - grok
-          - kimi
           - pi
-          - amp
-          - auggie
-          - droid
-          - crush
-          - cline
-          - goose
-          - qwen
-          - gemini
-          - continue
-          - devin
-          - kiro
-          - kilocode
-          - vibe
-          - muse
           - agy
-          - autohand
-          - kimchi
-          - prime-agent
           - omp
-          - fx
-          - unreal-agent
-          - codewhale
-          - mimo-code
-          - deepseek-harness
-          - openhands
-          - command-code
-          - memcode
           - cloudflared
           type: string
         updatedAt:
@@ -19136,25 +18964,12 @@ components:
           enum:
           - claude-code
           - codex
-          - copilot
-          - cursor
-          - kilocode
-          - opencode
           - opencode-v2
-          - kiro
           - pi
           - agy
-          - devin
           - droid
           - kimi
-          - kimchi
-          - muse
           - amp
-          - aider
-          - grok
-          - crush
-          - auggie
-          - cline
           - autohand
           type: string
       type: object
@@ -19308,40 +19123,17 @@ components:
           enum:
           - claude-code
           - codex
-          - aider
-          - opencode
           - opencode-v2
-          - grok
           - droid
           - amp
           - agy
-          - crush
-          - cursor
           - qwen
-          - gemini
-          - copilot
           - goose
-          - auggie
-          - continue
-          - devin
-          - cline
           - kimi
-          - muse
-          - kiro
-          - kilocode
-          - vibe
           - pi
-          - kimchi
+          - autohand
           - omp
           - fx
-          - prime-agent
-          - autohand
-          - unreal-agent
-          - codewhale
-          - mimo-code
-          - deepseek-harness
-          - openhands
-          - command-code
           - memcode
           type: string
         issueId:
@@ -19888,25 +19680,12 @@ components:
           enum:
           - claude-code
           - codex
-          - copilot
-          - cursor
-          - kilocode
-          - opencode
           - opencode-v2
-          - kiro
           - pi
           - agy
-          - devin
           - droid
           - kimi
-          - kimchi
-          - muse
           - amp
-          - aider
-          - grok
-          - crush
-          - auggie
-          - cline
           - autohand
           type: string
         interfaceMode:

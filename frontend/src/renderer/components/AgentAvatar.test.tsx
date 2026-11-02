@@ -1,12 +1,10 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { AgentAvatar } from "./AgentAvatar";
+import agyLogo from "../assets/agents/agy.svg";
 import fxDarkLogo from "../assets/agents/fx-dark.svg";
 import fxLightLogo from "../assets/agents/fx-light.svg";
-import geminiLogo from "../assets/agents/gemini.svg";
 import memcodeLogo from "../assets/agents/memcode.png";
-import unrealAgentDarkLogo from "../assets/agents/unreal-agent-dark.png";
-import unrealAgentLightLogo from "../assets/agents/unreal-agent-light.png";
 
 function themeSources(name: string) {
 	const mark = screen.getByRole("img", { name });
@@ -25,19 +23,13 @@ describe("AgentAvatar", () => {
 	});
 
 	it("renders a single mark when the brand reads on both themes", () => {
-		render(<AgentAvatar provider="gemini" />);
+		render(<AgentAvatar provider="agy" />);
 
-		expect(screen.getByRole("img", { name: "gemini" })).toHaveAttribute("src", geminiLogo);
-	});
-
-	it("keeps raster marks as a theme pair when no vector exists", () => {
-		render(<AgentAvatar provider="unreal-agent" />);
-
-		expect(themeSources("unreal-agent")).toEqual([unrealAgentLightLogo, unrealAgentDarkLogo]);
+		expect(screen.getByRole("img", { name: "agy" })).toHaveAttribute("src", agyLogo);
 	});
 
 	it("gives every harness a theme-safe brand mark", () => {
-		const providers = ["prime-agent", "omp", "codewhale", "deepseek-harness", "mimo-code", "openhands", "amp"];
+		const providers = ["omp", "qwen", "droid", "kimi", "goose", "pi", "amp"];
 		render(
 			<>
 				{providers.map((provider) => (
@@ -52,14 +44,9 @@ describe("AgentAvatar", () => {
 		}
 	});
 
-	it("reuses the OpenCode brand marks for OpenCode 2", () => {
-		render(
-			<>
-				<AgentAvatar provider="opencode" />
-				<AgentAvatar provider="opencode-v2" />
-			</>,
-		);
+	it("falls back to a lettered tile for the removed OpenCode 1 harness", () => {
+		render(<AgentAvatar provider="opencode" />);
 
-		expect(themeSources("opencode-v2")).toEqual(themeSources("opencode"));
+		expect(screen.getByRole("img", { name: "opencode" }).querySelector("img")).toBeNull();
 	});
 });

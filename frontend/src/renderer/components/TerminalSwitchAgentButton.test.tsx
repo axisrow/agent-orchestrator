@@ -166,7 +166,7 @@ describe("TerminalSwitchAgentButton", () => {
 	});
 
 	it.each([
-		["unsupported provider", { provider: "cursor" }],
+		["unsupported provider", { provider: "fake" }],
 		["terminated worker", { isTerminated: true, status: "terminated" }],
 		["orchestrator", { id: "orch-1", kind: "orchestrator" }],
 	] as const)("does not render for an %s", (_name, overrides) => {
@@ -204,7 +204,7 @@ describe("TerminalSwitchAgentButton", () => {
 		expect(targetAgent).toHaveTextContent("Codex");
 		await userEvent.click(targetAgent);
 		expect(screen.getAllByRole("menuitem")).toHaveLength(AGENT_OPTIONS.length);
-		expect(screen.getByRole("menuitem", { name: /Cursor,\s*Coming soon/ })).toHaveAttribute("data-disabled");
+		expect(screen.getByRole("menuitem", { name: /Qwen,\s*Coming soon/ })).toHaveAttribute("data-disabled");
 		await userEvent.keyboard("{Escape}");
 		expect(within(dialog).queryByRole("textbox")).not.toBeInTheDocument();
 		await userEvent.click(within(dialog).getByRole("button", { name: "Switch" }));

@@ -38,7 +38,7 @@ describe("selectCloudOrchestratorHarness", () => {
 	});
 
 	it("preserves Codex as the preference when several supported agents are connected", () => {
-		expect(selectCloudOrchestratorHarness([connection("cursor"), connection("codex")])).toBe("codex");
+		expect(selectCloudOrchestratorHarness([connection("opencode"), connection("codex")])).toBe("codex");
 	});
 
 	it("ignores invalid, non-default, and non-agent provider connections", () => {
@@ -130,11 +130,11 @@ describe("spawnCloudOrchestrator", () => {
 	});
 
 	it("falls back to the connected-credential priority when the configured agent is not connected", async () => {
-		// Project configured Cursor, but only Codex is connected: fall back rather
+		// Project configured OpenCode, but only Codex is connected: fall back rather
 		// than block the spawn on an unusable choice.
 		const queryClient = primeClient({
 			id: "project-1",
-			config: { orchestrator: { agent: "cursor" } },
+			config: { orchestrator: { agent: "opencode" } },
 		});
 		cloudMocks.listUserProviderConnections.mockResolvedValue({
 			providerConnections: [connection("codex")],
