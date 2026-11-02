@@ -167,7 +167,7 @@ export function MarkdownFileView({
 	);
 	return (
 		<MarkdownFileContext.Provider value={contextValue}>
-			<div>
+			<div className="select-text">
 				{truncated ? (
 					<div className="shrink-0 border-b border-border bg-warning/10 px-3 py-1.5 text-xs text-warning">
 						{t("files.contentTruncated")}
