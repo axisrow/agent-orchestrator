@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/claudecode"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/codex"
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 	"github.com/aoagents/agent-orchestrator/backend/internal/lifecycle"
@@ -44,11 +45,46 @@ type turnFailureHarness struct {
 	rollout  string
 }
 
-// newTurnFailureHarness runs the real chain: a Codex UserPromptSubmit hook
-// signal makes the session active and records its rollout path, then the
-// observer reads that rollout through the Codex adapter and writes through
-// the lifecycle manager into SQLite.
+// newTurnFailureHarness runs the real chain: a UserPromptSubmit hook signal
+// makes the session active and records its native transcript path, then the
+// observer reads that transcript through the harness's adapter and writes
+// through the lifecycle manager into SQLite.
 func newTurnFailureHarness(t *testing.T, promptAt time.Time) *turnFailureHarness {
+	return newTranscriptFailureHarness(t, promptAt, turnTranscriptFacts{
+		harness:        domain.HarnessCodex,
+		agent:          func() ports.Agent { return codex.New() },
+		seedRecord:     `{"type":"session_meta","payload":{"source":"cli"}}` + "\n",
+		nativeSubdir:   filepath.Join("sessions", "2026", "10", "18"),
+		fileName:       "rollout-2026-10-18T10-00-00-0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b.jsonl",
+		agentSessionID: "0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b",
+	})
+}
+
+// newClaudeTurnFailureHarness is the same chain for a Claude Code session:
+// the transcript lives under the project's ~/.claude directory and the
+// completed turn is the final assistant record carrying stop_reason end_turn.
+func newClaudeTurnFailureHarness(t *testing.T, promptAt time.Time) *turnFailureHarness {
+	return newTranscriptFailureHarness(t, promptAt, turnTranscriptFacts{
+		harness: domain.HarnessClaudeCode,
+		agent:   func() ports.Agent { return claudecode.New() },
+		seedRecord: `{"parentUuid":null,"isSidechain":false,"type":"user","message":{"role":"user","content":"ship it"},` +
+			`"timestamp":"2026-11-02T03:00:00.000Z","version":"2.1.316"}` + "\n",
+		nativeSubdir:   filepath.Join("projects", "-Users-me-workspace"),
+		fileName:       "8f2f7b5c-1c74-4d76-9a27-4b3e0a1c9d88.jsonl",
+		agentSessionID: "8f2f7b5c-1c74-4d76-9a27-4b3e0a1c9d88",
+	})
+}
+
+type turnTranscriptFacts struct {
+	harness        domain.AgentHarness
+	agent          func() ports.Agent
+	seedRecord     string
+	nativeSubdir   string
+	fileName       string
+	agentSessionID string
+}
+
+func newTranscriptFailureHarness(t *testing.T, promptAt time.Time, facts turnTranscriptFacts) *turnFailureHarness {
 	t.Helper()
 	ctx := context.Background()
 	store, err := sqlitetest.Open(t.TempDir())
@@ -64,7 +100,7 @@ func newTurnFailureHarness(t *testing.T, promptAt time.Time) *turnFailureHarness
 	session, err := store.CreateSession(ctx, domain.SessionRecord{
 		ProjectID: "turnfail",
 		Kind:      domain.KindWorker,
-		Harness:   domain.HarnessCodex,
+		Harness:   facts.harness,
 		Activity:  domain.Activity{State: domain.ActivityIdle, LastActivityAt: createdAt},
 		CreatedAt: createdAt,
 		UpdatedAt: createdAt,
@@ -77,23 +113,23 @@ func newTurnFailureHarness(t *testing.T, promptAt time.Time) *turnFailureHarness
 	if err := store.UpdateSession(ctx, session); err != nil {
 		t.Fatal(err)
 	}
-	dir := filepath.Join(t.TempDir(), "sessions", "2026", "10", "18")
+	dir := filepath.Join(t.TempDir(), facts.nativeSubdir)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	rollout := filepath.Join(dir, "rollout-2026-10-18T10-00-00-0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b.jsonl")
-	if err := os.WriteFile(rollout, []byte(`{"type":"session_meta","payload":{"source":"cli"}}`+"\n"), 0o600); err != nil {
+	rollout := filepath.Join(dir, facts.fileName)
+	if err := os.WriteFile(rollout, []byte(facts.seedRecord), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	manager := lifecycle.New(store, nil)
 	h := &turnFailureHarness{
 		ctx: ctx, store: store, manager: manager, session: session, rollout: rollout,
-		observer: NewTurnFailureObserver(store, manager, fakeAgents{domain.HarnessCodex: codex.New()},
+		observer: NewTurnFailureObserver(store, manager, fakeAgents{facts.harness: facts.agent()},
 			TurnFailureConfig{Logger: testLogger()}),
 	}
 	if err := manager.ApplyActivitySignal(ctx, session.ID, ports.ActivitySignal{
 		Valid: true, State: domain.ActivityActive, Timestamp: promptAt, Event: "user-prompt-submit",
-		LaunchID: "launch-1", AgentSessionID: "0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b", TranscriptPath: rollout,
+		LaunchID: "launch-1", AgentSessionID: facts.agentSessionID, TranscriptPath: rollout,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -191,6 +227,29 @@ func TestTurnFailureObserverIdlesASuccessfulTurnWhoseHookWasLost(t *testing.T) {
 	}
 	if !got.Activity.LastActivityAt.Equal(promptAt.Add(3 * time.Second)) {
 		t.Fatalf("idle LastActivityAt = %v, want the completion time %v", got.Activity.LastActivityAt, promptAt.Add(3*time.Second))
+	}
+}
+
+// The same lost-stop case on a Claude Code session: the turn's final
+// assistant record carries stop_reason end_turn, and the Stop hook that
+// would have reported it never reached the daemon.
+func TestTurnFailureObserverIdlesALostStopOnAClaudeTranscript(t *testing.T) {
+	promptAt := time.Now().UTC().Add(-10 * time.Second).Truncate(time.Millisecond)
+	h := newClaudeTurnFailureHarness(t, promptAt)
+	if got := h.poll(t); got.Activity.State != domain.ActivityActive {
+		t.Fatalf("running turn: state = %q, want active", got.Activity.State)
+	}
+	completedAt := promptAt.Add(3 * time.Second)
+	completion := `{"parentUuid":"8f2f7b5c-1c74-4d76-9a27-4b3e0a1c9d88","isSidechain":false,"type":"assistant",` +
+		`"message":{"role":"assistant","content":[{"type":"text","text":"done"}],"stop_reason":"end_turn"},` +
+		`"timestamp":"` + completedAt.UTC().Format("2006-01-02T15:04:05.000Z") + `","version":"2.1.316"}` + "\n"
+	h.appendRollout(t, completion)
+	got := h.poll(t)
+	if got.Activity.State != domain.ActivityIdle {
+		t.Fatalf("completed turn: state = %q, want idle", got.Activity.State)
+	}
+	if !got.Activity.LastActivityAt.Equal(completedAt) {
+		t.Fatalf("idle LastActivityAt = %v, want the end_turn time %v", got.Activity.LastActivityAt, completedAt)
 	}
 }
 

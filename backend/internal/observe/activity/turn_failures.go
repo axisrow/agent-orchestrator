@@ -239,6 +239,11 @@ func (o *TurnFailureObserver) reconcile(ctx context.Context, session domain.Turn
 		return
 	}
 	watch.reported = key
-	o.logger.Info("agent turn "+what+"; marking the session idle",
-		"session", session.ID, "harness", session.Harness, "error_message", watch.end.Message)
+	// Completed turns carry no error text; log the message only when the end
+	// has one, so a completion does not log an empty error field.
+	attrs := []any{"session", session.ID, "harness", session.Harness}
+	if watch.end.Message != "" {
+		attrs = append(attrs, "error_message", watch.end.Message)
+	}
+	o.logger.Info("agent turn "+what+"; marking the session idle", attrs...)
 }
