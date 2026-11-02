@@ -306,12 +306,24 @@ func reapProbeHarness(t *testing.T, workers int, rt runtimeController) (*Manager
 
 type probeCountingRuntime struct {
 	fakeRuntime
+	// Serializes the embedded fake's map mutations against concurrent IsAlive
+	// reads: ReapTerminated probes (and destroys) through a worker pool, and
+	// the embedded fake's maps are not safe for concurrent access.
+	mu     sync.Mutex
 	probes atomic.Int32
 }
 
 func (r *probeCountingRuntime) IsAlive(ctx context.Context, handle ports.RuntimeHandle) (bool, error) {
 	r.probes.Add(1)
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	return r.fakeRuntime.IsAlive(ctx, handle)
+}
+
+func (r *probeCountingRuntime) Destroy(ctx context.Context, handle ports.RuntimeHandle) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.fakeRuntime.Destroy(ctx, handle)
 }
 
 // TestReapTerminatedCancelledContextProbesNothing pins the shutdown half of
