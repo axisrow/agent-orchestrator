@@ -202,9 +202,6 @@ type Plan struct {
 	managed bool
 	// managedPin is the release a managed reinstall installs again.
 	managedPin string
-	// download is a pinned release binary AO installs itself; see
-	// planCloudflared.
-	download *ports.ManagedBinaryDownload
 	// sourceMethod/sourcePackage identify the existing owner during a planned
 	// migration. Method and Package always describe what the operation runs.
 	sourceMethod  string
@@ -414,7 +411,6 @@ type Service struct {
 	commands              ports.CommandRunner
 	installCommands       ports.InstallCommandRunner
 	installScripts        ports.InstallScriptRunner
-	managedBinaries       ports.ManagedBinaryInstaller
 	installCapabilities   ports.InstallCapabilityProbe
 	pathWritable          ports.PathWritableProbe
 	privateNPMPrefixes    map[Target]string

@@ -99,6 +99,7 @@ type mcpConfig struct {
 // roleOverride mirrors domain.RoleOverride.
 type roleOverride struct {
 	Agent       string      `json:"agent,omitempty"`
+	Provider    string      `json:"provider,omitempty"`
 	AgentConfig agentConfig `json:"agentConfig,omitempty"`
 }
 
@@ -113,6 +114,7 @@ type trackerIntakeConfig struct {
 // reviewerConfig mirrors domain.ReviewerConfig.
 type reviewerConfig struct {
 	Harness     string       `json:"harness"`
+	Provider    string       `json:"provider,omitempty"`
 	AgentConfig *agentConfig `json:"agentConfig,omitempty"`
 }
 
@@ -136,7 +138,6 @@ type projectConfig struct {
 	AgentRules                 string               `json:"agentRules,omitempty"`
 	AgentRulesFile             string               `json:"agentRulesFile,omitempty"`
 	OrchestratorRules          string               `json:"orchestratorRules,omitempty"`
-	OrchestratorRulesFile      string               `json:"orchestratorRulesFile,omitempty"`
 	WorkerPromptOverride       string               `json:"workerPromptOverride,omitempty"`
 	OrchestratorPromptOverride string               `json:"orchestratorPromptOverride,omitempty"`
 	AgentConfig                agentConfig          `json:"agentConfig,omitempty"`
@@ -401,7 +402,7 @@ var projectConfigFlags = []string{
 	"canonical-repo-url", "default-branch", "session-prefix", "model", "permission",
 	"worker-agent", "orchestrator-agent", "worker-mcp-config", "worker-strict-mcp",
 	"worker-plugin-dir", "agent-rules", "agent-rules-file",
-	"orchestrator-rules", "orchestrator-rules-file", "worker-prompt", "orchestrator-prompt",
+	"orchestrator-rules", "worker-prompt", "orchestrator-prompt",
 	"env", "symlink", "post-create",
 	"tracker-intake", "tracker-repo", "tracker-assignee", "reviewer", "own-account",
 }
@@ -449,7 +450,6 @@ func buildProjectConfig(opts projectSetConfigOptions, changed func(name string) 
 	setIfChanged("agent-rules", &cfg.AgentRules, opts.agentRules)
 	setIfChanged("agent-rules-file", &cfg.AgentRulesFile, opts.agentRulesFile)
 	setIfChanged("orchestrator-rules", &cfg.OrchestratorRules, opts.orchestratorRules)
-	setIfChanged("orchestrator-rules-file", &cfg.OrchestratorRulesFile, opts.orchestratorRulesFile)
 	setIfChanged("tracker-repo", &cfg.TrackerIntake.Repo, opts.trackerRepo)
 	setIfChanged("tracker-assignee", &cfg.TrackerIntake.Assignee, opts.trackerAssignee)
 	if changed("tracker-intake") {
