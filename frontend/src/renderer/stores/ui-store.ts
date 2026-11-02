@@ -25,6 +25,8 @@ import {
 export type { Theme, ThemePreference, ThemeStyle } from "../lib/theme";
 export { readStoredThemePreference, readStoredThemeStyle, resolveTheme } from "../lib/theme";
 
+export type ChatSendKeyMode = "enter" | "mod-enter";
+
 export type GlobalSettingsSection =
 	| "general"
 	| "harness"
@@ -150,6 +152,8 @@ export type UiState = {
 	windowTranslucency: boolean;
 	/** Copy the terminal selection to the clipboard on mouse-up, like native terminals. Default on. */
 	terminalCopyOnSelect: boolean;
+	/** Chat only: plain Enter sends by default; mod-enter reserves it for newlines. */
+	chatSendKeyMode: ChatSendKeyMode;
 	restartingProjectIds: ReadonlySet<string>;
 	// Projects whose initial orchestrator spawn (after import/clone) is still
 	// running in the background. The board renders a progress banner and gates
@@ -205,6 +209,7 @@ export type UiState = {
 	setDiagnostics: (enabled: boolean) => void;
 	setWindowTranslucency: (enabled: boolean) => void;
 	setTerminalCopyOnSelect: (enabled: boolean) => void;
+	setChatSendKeyMode: (mode: ChatSendKeyMode) => void;
 	openGlobalSettings: (section?: GlobalSettingsSection, options?: { focusAgentId?: string; hostId?: string; harnessView?: "local" | "cloud"; startLogin?: boolean; showDiagnostics?: HarnessDiagnosticsRequest; preserveProject?: boolean }) => void;
 	/** `options` as a string is the owning daemon's host ID (remote projects). */
 	openProjectSettings: (projectId: string, options?: string | { section?: ProjectSettingsSection; cloudOrgId?: string }) => void;
@@ -259,6 +264,7 @@ const sidebarStorageKey = "ao.sidebar.open";
 const remoteHostsStorageKey = "ao.remoteHosts";
 const diagnosticsStorageKey = "ao.diagnostics";
 const terminalCopyOnSelectStorageKey = "ao.terminalCopyOnSelect";
+const chatSendKeyModeStorageKey = "ao.chatSendKeyMode";
 function getLocalStorage() {
 	if (typeof window === "undefined" || !window.localStorage) return null;
 	return window.localStorage;
@@ -288,6 +294,10 @@ function initialWindowTranslucency() {
 
 function initialTerminalCopyOnSelect() {
 	return getLocalStorage()?.getItem(terminalCopyOnSelectStorageKey) !== "false";
+}
+
+function initialChatSendKeyMode(): ChatSendKeyMode {
+	return getLocalStorage()?.getItem(chatSendKeyModeStorageKey) === "mod-enter" ? "mod-enter" : "enter";
 }
 
 function inspectorState(sessions: Record<string, InspectorSessionState>, sessionId: string): InspectorSessionState {
@@ -342,6 +352,7 @@ export const useUiStore = create<UiState>((set, get) => ({
 	diagnostics: initialDiagnostics(),
 	windowTranslucency: initialWindowTranslucency(),
 	terminalCopyOnSelect: initialTerminalCopyOnSelect(),
+	chatSendKeyMode: initialChatSendKeyMode(),
 	restartingProjectIds: new Set<string>(),
 	provisioningProjectIds: new Set<string>(),
 	projectCreationPending: false,
@@ -403,6 +414,10 @@ export const useUiStore = create<UiState>((set, get) => ({
 	setTerminalCopyOnSelect: (terminalCopyOnSelect) => {
 		getLocalStorage()?.setItem(terminalCopyOnSelectStorageKey, String(terminalCopyOnSelect));
 		set({ terminalCopyOnSelect });
+	},
+	setChatSendKeyMode: (chatSendKeyMode) => {
+		getLocalStorage()?.setItem(chatSendKeyModeStorageKey, chatSendKeyMode);
+		set({ chatSendKeyMode });
 	},
 	openGlobalSettings: (section, options) => set((state) => ({
 		settingsModal: {
