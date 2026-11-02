@@ -315,13 +315,16 @@ func (p *Provider) fetchJobLogTail(ctx context.Context, owner, repo string, jobI
 // ---------------------------------------------------------------------------
 
 // ciSummaryFromGraphQL maps the per-PR status rollup onto domain.CIState.
-// If ANY visible context concluded failure-class we return CIFailing.
-// Otherwise any pending context wins over passing. An empty rollup is
-// CIUnknown. When the rollup is paginated (pageInfo.hasNextPage=true)
-// the verdict is conservative: a known failure is still safe — failures
-// don't get un-failed by more pages — but passing/pending/unknown
-// verdicts could hide a failing context on the next page, so we degrade
-// them all to CIUnknown rather than risk reporting a broken PR as ready.
+// The verdict follows the latest run per check name (see
+// ciStateFromContextNodes): a complete, failure-free latest-run set is
+// ground truth even when GitHub's aggregate state says FAILURE — the
+// aggregate keeps counting superseded runs that GitHub's own check UI does
+// not render (issue #230). When the rollup is paginated
+// (pageInfo.hasNextPage=true) the verdict is conservative: a known failure
+// is still safe — failures don't get un-failed by more pages — but
+// passing/pending/unknown verdicts could hide a failing context on the next
+// page, so we degrade them all to CIUnknown rather than risk reporting a
+// broken PR as ready.
 func ciSummaryFromGraphQL(pr map[string]any) domain.CIState {
 	roll := statusRollup(pr)
 	if roll == nil {
@@ -332,8 +335,16 @@ func ciSummaryFromGraphQL(pr map[string]any) domain.CIState {
 	if len(rawNodes) == 0 {
 		// GitHub returns a top-level "state" on the rollup even when the
 		// nodes list is empty (e.g. SUCCESS / FAILURE / PENDING). Honor it
-		// rather than returning CIUnknown for an otherwise-decided PR.
-		return mapRollupState(str(roll["state"]))
+		// rather than returning CIUnknown for an otherwise-decided PR — but
+		// never let the aggregate assert failing against a provider CLEAN
+		// merge state (issue #230): CLEAN means GitHub considers every
+		// required check green, so a FAILURE aggregate alongside it is the
+		// stale-aggregate pattern, not a real failure.
+		state := mapRollupState(str(roll["state"]))
+		if state == domain.CIFailing && mergeStateStatusClean(pr) {
+			return domain.CIPassing
+		}
+		return state
 	}
 	state := ciStateFromContextNodes(rawNodes)
 	if state != domain.CIFailing && pageInfoHasMore(contexts) {
@@ -342,12 +353,17 @@ func ciSummaryFromGraphQL(pr map[string]any) domain.CIState {
 	return state
 }
 
-// ciStateFromContextNodes classifies a visible rollup context set:
-// failure-class entries win, then pending; a set with neither is passing
-// (or unknown when no context carries a decidable state).
+// ciStateFromContextNodes classifies a rollup context set by the LATEST run
+// per check name (the rows GitHub's check UI renders): failure-class entries
+// win, then pending; a set with neither is passing (or unknown when no
+// context carries a decidable state). Re-running a failed workflow creates a
+// new CheckRun while the superseded red run stays in statusCheckRollup.
+// contexts (issue #230, BeamCraft#407: 42 contexts for 32 checks; the
+// aggregate counted the superseded runs and stayed FAILURE over an all-green
+// latest set), so raw nodes must be collapsed before classification.
 func ciStateFromContextNodes(rawNodes []map[string]any) domain.CIState {
 	pending, passing := false, false
-	for _, n := range rawNodes {
+	for _, n := range latestRunNodesByName(rawNodes) {
 		switch checkStatusFromGraphQL(n) {
 		case domain.PRCheckFailed, domain.PRCheckCancelled:
 			return domain.CIFailing
@@ -365,6 +381,62 @@ func ciStateFromContextNodes(rawNodes []map[string]any) domain.CIState {
 	default:
 		return domain.CIUnknown
 	}
+}
+
+// latestRunNodesByName projects rollup context nodes onto the view GitHub's
+// check UI renders: one entry per check name — the latest run. The latest
+// run is the one with the greatest CheckRun databaseId (re-running creates a
+// new run with a new id); missing ids sort last, and ties keep the later
+// list position (reruns follow their superseded runs in connection order).
+// StatusContext rows are unique per name by construction and pass through.
+// The result keeps first-seen order and shares the input node maps.
+func latestRunNodesByName(rawNodes []map[string]any) []map[string]any {
+	latest := make(map[string]map[string]any, len(rawNodes))
+	order := make([]string, 0, len(rawNodes))
+	for _, n := range rawNodes {
+		name := checkNodeName(n)
+		if name == "" {
+			continue
+		}
+		prev, seen := latest[name]
+		if !seen {
+			latest[name] = n
+			order = append(order, name)
+			continue
+		}
+		if checkRunDatabaseID(n) >= checkRunDatabaseID(prev) {
+			latest[name] = n
+		}
+	}
+	out := make([]map[string]any, 0, len(order))
+	for _, name := range order {
+		out = append(out, latest[name])
+	}
+	return out
+}
+
+// checkNodeName extracts a check's display name from a rollup context node
+// (CheckRun.name vs StatusContext.context). Consumers key checks by this
+// name — including the pr_checks (pr_url, name, commit_hash) rows.
+func checkNodeName(n map[string]any) string {
+	if str(n["__typename"]) == "StatusContext" {
+		return str(n["context"])
+	}
+	return str(n["name"])
+}
+
+func checkRunDatabaseID(n map[string]any) int64 {
+	if str(n["__typename"]) != "CheckRun" {
+		return 0
+	}
+	return int64(num(n["databaseId"]))
+}
+
+// mergeStateStatusClean reports whether the PR payload's GraphQL
+// mergeStateStatus is CLEAN — GitHub's own verdict that every required check
+// is green and nothing blocks the merge.
+func mergeStateStatusClean(pr map[string]any) bool {
+	return strings.EqualFold(strings.TrimSpace(str(pr["mergeStateStatus"])), "CLEAN")
 }
 
 // pageInfoHasMore reports whether the rollup contexts have a next page
@@ -476,10 +548,12 @@ func mergeabilityFromGraphQL(pr map[string]any, rest restPull, ci domain.CIState
 // checksFromGraphQL projects each context node into a PRCheckObservation.
 // StatusContext (commit-status) and CheckRun (Actions) are both flattened
 // into the same slice because downstream consumers don't distinguish.
+// Superseded runs are collapsed to the latest run per name first (see
+// latestRunNodesByName), so the projected checks match GitHub's check UI.
 func checksFromGraphQL(pr map[string]any, headSHA string) []ports.PRCheckObservation {
 	roll := statusRollup(pr)
 	contexts, _ := roll["contexts"].(map[string]any)
-	rawNodes := nodes(contexts["nodes"])
+	rawNodes := latestRunNodesByName(nodes(contexts["nodes"]))
 	if len(rawNodes) == 0 {
 		return nil
 	}
@@ -564,11 +638,13 @@ func isBotAuthor(author map[string]any) bool {
 // jobIDForCheck looks up the Actions job ID for a check by name, so we
 // can call /actions/jobs/{job_id}/logs. StatusContext rows have no job
 // ID (they're commit statuses, not Actions runs); those return 0 and
-// the log fetch is skipped for them.
+// the log fetch is skipped for them. The lookup runs over the
+// latest-run-per-name projection so a rerun's log is fetched from the
+// current run, not a superseded one sharing the name.
 func jobIDForCheck(pr map[string]any, name string) int64 {
 	roll := statusRollup(pr)
 	contexts, _ := roll["contexts"].(map[string]any)
-	for _, n := range nodes(contexts["nodes"]) {
+	for _, n := range latestRunNodesByName(nodes(contexts["nodes"])) {
 		if str(n["__typename"]) != "CheckRun" {
 			continue
 		}
