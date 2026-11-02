@@ -32,15 +32,15 @@ func RealUserHome() string {
 // hand that sandbox to everything it spawns. A no-op when the real home cannot
 // be resolved.
 func RepairForeignHome() (previous string, repaired bool) {
-	real := RealUserHome()
-	if real == "" {
+	accountHome := RealUserHome()
+	if accountHome == "" {
 		return "", false
 	}
 	current, _ := os.LookupEnv("HOME")
-	if strings.TrimSpace(current) == real {
+	if strings.TrimSpace(current) == accountHome {
 		return "", false
 	}
-	_ = os.Setenv("HOME", real)
+	_ = os.Setenv("HOME", accountHome)
 	return current, true
 }
 

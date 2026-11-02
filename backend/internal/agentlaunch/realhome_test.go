@@ -42,13 +42,13 @@ func TestRepairForeignHome_ResetsForeignSandbox(t *testing.T) {
 }
 
 func TestRepairForeignHome_KeepsAccountHome(t *testing.T) {
-	real := RealUserHome()
-	if real == "" {
+	accountHome := RealUserHome()
+	if accountHome == "" {
 		t.Skip("platform cannot resolve the account home (pure-Go user database)")
 	}
-	t.Setenv("HOME", real)
+	t.Setenv("HOME", accountHome)
 	if _, repaired := RepairForeignHome(); repaired {
-		t.Fatalf("RepairForeignHome repaired a HOME already at the account home %q", real)
+		t.Fatalf("RepairForeignHome repaired a HOME already at the account home %q", accountHome)
 	}
 }
 
@@ -70,11 +70,11 @@ func TestRepairForeignHome_FillsMissingHome(t *testing.T) {
 }
 
 func TestStampSessionHome(t *testing.T) {
-	real := RealUserHome()
+	accountHome := RealUserHome()
 	env := map[string]string{"AO_SESSION_ID": "s-1"}
 	StampSessionHome(env)
-	if real != "" && env["HOME"] != real {
-		t.Fatalf("stamped HOME = %q, want the account home %q", env["HOME"], real)
+	if accountHome != "" && env["HOME"] != accountHome {
+		t.Fatalf("stamped HOME = %q, want the account home %q", env["HOME"], accountHome)
 	}
 
 	env = map[string]string{"HOME": "/proj/home"}
