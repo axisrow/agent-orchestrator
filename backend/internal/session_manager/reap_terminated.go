@@ -87,7 +87,10 @@ func (m *Manager) ReapTerminated(ctx context.Context) error {
 	}
 	close(jobs)
 	wg.Wait()
-	return nil
+	// A cancelled pass is an intentional stop, not a failure: both callers would
+	// log an error line on every ordinary shutdown, and leaked runtimes are the
+	// next boot's business.
+	return nil //nolint:nilerr // cancellation is the expected shutdown path, not a pass failure
 }
 
 // NotifyOrphanWorkers reports the orphaned worker trees of terminated sessions
