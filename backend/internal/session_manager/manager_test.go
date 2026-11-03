@@ -2317,12 +2317,20 @@ func TestResumeAgent_SessionEnvOverridesWinOverProjectEnv(t *testing.T) {
 	}
 }
 
-// TestSetSessionEnvOverridesValidation keeps the write path honest: valid maps
-// land in the store, reserved AO_ keys are refused before storage.
+// TestSetSessionEnvOverridesValidation keeps the write path honest: unknown
+// sessions get ErrNotFound (the raw UPDATE would silently no-op), valid maps
+// land in the store, and reserved AO_ keys are refused before storage.
 func TestSetSessionEnvOverridesValidation(t *testing.T) {
 	st := newFakeStore()
+	st.sessions["s1"] = domain.SessionRecord{ID: "s1"}
 	m := New(Deps{Store: st, Messenger: &fakeMessenger{}, Lifecycle: &fakeLCM{store: st}, LookPath: func(string) (string, error) { return "/bin/true", nil }})
 
+	if err := m.SetSessionEnvOverrides(ctx, "missing", map[string]string{"FOO": "bar"}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown session: err = %v, want ErrNotFound", err)
+	}
+	if _, written := st.setSessionEnv["missing"]; written {
+		t.Fatal("unknown session reached the store")
+	}
 	if err := m.SetSessionEnvOverrides(ctx, "s1", map[string]string{"FOO": "bar", "BAZ": ""}); err != nil {
 		t.Fatalf("valid env rejected: %v", err)
 	}

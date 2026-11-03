@@ -46,6 +46,11 @@ func (m *Manager) SetSessionEnvOverrides(ctx context.Context, id domain.SessionI
 	if err := domain.ValidateEnv(env); err != nil {
 		return err
 	}
+	// The write itself would silently no-op on a missing row; refuse unknown
+	// sessions so the API answers 404 instead of a lying 200.
+	if _, err := m.getRecord(ctx, id); err != nil {
+		return err
+	}
 	store, ok := m.store.(sessionEnvStore)
 	if !ok {
 		return fmt.Errorf("session env overrides are not supported by this store")
