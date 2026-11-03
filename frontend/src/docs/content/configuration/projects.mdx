@@ -204,7 +204,7 @@ Create recurring work in **Automations**. Create reusable prompts or shell comma
 
 <span id="session-recovery" />
 
-Use **Resume agent** or `ao session resume-agent <id>` to restart a stopped controller in a session that is still active. Use **Restore** or `ao session restore <id>` to relaunch a terminated session when its harness supports recovery. `ao session kill <id>` terminates the session; `ao session exit-agent <id>` stops only its controller.
+Use **Resume agent** or `ao session respawn <id>` to restart a stopped controller in a session that is still active. Use **Restore** or `ao session restore <id>` to relaunch a terminated session when its harness supports recovery. `ao session kill <id>` terminates the session; `ao session exit-agent <id>` stops only its controller.
 
 Keep the harness installed and signed in. Recovery may restore the session, worktree, and supported provider conversation, but it cannot recreate arbitrary terminal screen history. Orchestrator does not force-delete a dirty registered worktree. `orchestratorSessionStrategy` and `opencodeIssueSessionStrategy` are not current configuration fields.
 

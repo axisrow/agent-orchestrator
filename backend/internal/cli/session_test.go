@@ -582,12 +582,12 @@ func TestSessionExitAndResumeAgentUseProcessOnlyRoutes(t *testing.T) {
 		t.Fatalf("unexpected exit-agent output:\n%s", out)
 	}
 
-	out, errOut, err = executeCLI(t, deps, "session", "resume-agent", "demo-1")
+	out, errOut, err = executeCLI(t, deps, "session", "respawn", "demo-1")
 	if err != nil {
-		t.Fatalf("session resume-agent failed: %v\nstderr=%s", err, errOut)
+		t.Fatalf("session respawn failed: %v\nstderr=%s", err, errOut)
 	}
 	if !strings.Contains(out, "agent resumed for session demo-1") || !strings.Contains(out, "mode: native") {
-		t.Fatalf("unexpected resume-agent output:\n%s", out)
+		t.Fatalf("unexpected respawn output:\n%s", out)
 	}
 
 	want := []string{
@@ -807,7 +807,7 @@ func TestSessionRename_OrchestratorRefusalIsRuntimeError(t *testing.T) {
 
 func TestSessionCommands_MissingIDIsUsageError(t *testing.T) {
 	setConfigEnv(t)
-	for _, sub := range []string{"get", "kill", "restore", "exit-agent", "resume-agent"} {
+	for _, sub := range []string{"get", "kill", "restore", "exit-agent", "respawn", "resume", "resume-agent"} {
 		t.Run(sub, func(t *testing.T) {
 			_, _, err := executeCLI(t, Deps{}, "session", sub)
 			if err == nil {

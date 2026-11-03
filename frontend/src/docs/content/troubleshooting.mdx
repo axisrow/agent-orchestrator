@@ -55,7 +55,7 @@ ao doctor --json
 		Status is derived from activity, termination, controller, and pull-request facts. A failed runtime probe is not treated as death. Reopen the session and inspect its Chat or terminal before killing it.
 	</Accordion>
 	<Accordion title="A session will not restore">
-		Use the desktop restore action or `ao session restore <session-id>`. Restore reuses the same session and worktree when the selected adapter supports recovery. Check that the harness remains installed and authenticated. For a stopped controller on a non-terminated session use `ao session resume-agent <id>` instead. A disabled interface switch can indicate unavailable native history, an unsupported direction, or pending recovery; inspect its reason before retrying.
+		Use the desktop restore action or `ao session restore <session-id>`. Restore reuses the same session and worktree when the selected adapter supports recovery. Check that the harness remains installed and authenticated. For a stopped controller on a non-terminated session use `ao session respawn <id>` instead. A disabled interface switch can indicate unavailable native history, an unsupported direction, or pending recovery; inspect its reason before retrying.
 	</Accordion>
 </Accordions>
 

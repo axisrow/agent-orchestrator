@@ -144,7 +144,7 @@ When an orchestrator already exists, a worker can send a checkpoint with `ao rep
 
 A person can send a follow-up through the session message controls or `ao send --session <id> --message "Check the Windows case"`. Use `--steer` only when you intend to change an active Chat turn.
 
-If an agent stops but its session remains, use **Resume agent** or `ao session resume-agent <id>`. If the session was terminated, use **Restore** or `ao session restore <id>` when offered. `exit-agent` stops only the controller; `kill` terminates the session.
+If an agent stops but its session remains, use **Resume agent** or `ao session respawn <id>`. If the session was terminated, use **Restore** or `ao session restore <id>` when offered. `exit-agent` stops only the controller; `kill` terminates the session.
 
 Recovery depends on the harness and saved provider state. It cannot recreate terminal screen output as Chat history. Check for uncommitted files before cleanup; Orchestrator does not force-delete a dirty registered worktree.
 
