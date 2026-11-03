@@ -312,7 +312,7 @@ func newSessionResumeAgentCommand(ctx *commandContext) *cobra.Command {
 		Use:     "respawn <id>",
 		Aliases: []string{"resume", "resume-agent"},
 		Short:   "Respawn an exited agent in its existing AO session",
-		Args:  oneSessionIDArg,
+		Args:    oneSessionIDArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := normalizeSessionID(args[0])
 			if err != nil {
