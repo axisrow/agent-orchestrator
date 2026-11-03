@@ -356,3 +356,12 @@ b08d227c0045db152938a53418267ed69f1311cd taken fix(chat): guard IME Enter and pe
 9343f6a5280ef4cb271da0077b1c76fdee324a56 skipped fix(cli): add --pre-remove to project set-config (7531) — новый CLI-флаг = фича, не багфикс (fixes-only)
 e52f094f7dbaded356685cd8c102be50b0cf7fb3 skipped feat(diagnostics): cleaner Diagnostics panel, and the memory light beside the Orchestrator button (7576)
 c75074d9b59a59b9fcc3a658a351cc17cb7028d9 taken fix(desktop): let inspector details, Markdown, and error copy be selected (7575) — без sideChat-веток (выпилены) и без промежуточного ao-document-surface/thumbnail (CSS-класса в форке нет); в MarkdownFileView взят только select-text
+6f17d1c49c35fa2e4ee02466ee0b09839bdf4b30 taken fix: use normal wrapping in tooltips (#7612)
+aec2c689ced205ca2061e5a624df66b8dc77f9d3 taken fix(scm): hide worker-reported PRs tracked under a renamed repository (#7563)
+80556c340d2e96ccebba391d9267649ff580ee15 skipped feat(cloud): bring Cloud chat and sessions to parity with local (#7543)
+ccf9cf44b73ea032fccbaf6cba3a86fb9000c506 skipped feat: tighten telemetry and record onboarding milestones (#7471)
+c72caff13d9d949929bc5ec0a5cd5ad1402bd77d skipped perf(remote): gzip JSON responses on the remote listener (#7128)
+c58481a558ba973a6d8d3a3bdbd7e84df2bdece9 taken fix(inspector): clear stale Conflict and Changes Requested pills (#7539)
+25bc9b148f76438a117b930608a4a19d60e32fab taken fix: make Sentry failures diagnosable without leaking context (#7551)
+23840aa541049b57a412db0aef0502543c4c6301 skipped feat(cloud): cloud on for everyone, faster Settings, share gate, file attachments (#7615)
+c229930ac55ad226c8b308bba637abd85fad2303 taken fix(tabs): keep the file icon visible after clicking a tab (#7537)
