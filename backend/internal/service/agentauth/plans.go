@@ -45,12 +45,6 @@ func ompLoginPlan() Plan {
 	return plan("omp", ActionLogin, "Log in to OMP", []string{"omp", "setup"}, "Sign in to a provider in OMP's setup wizard, then finish or skip the remaining setup steps", "https://github.com/can1357/oh-my-pi")
 }
 
-func documentationPlan(agentID string, action Action, title, guidance, docs string) Plan {
-	p := plan(agentID, action, title, nil, guidance, docs)
-	p.LaunchMode = LaunchDocumentation
-	return p
-}
-
 func loginMenuPlan(agentID, launcher string, launcherArgs []string, title string, command []string, guidance, docs string) Plan {
 	p := plan(agentID, ActionLogin, title, command, guidance, docs)
 	p.launcher = launcher

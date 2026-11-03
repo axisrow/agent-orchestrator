@@ -365,7 +365,7 @@ func (s *Service) runManagedInstall(ctx context.Context, plan Plan, baseline *in
 	if _, err := os.Stat(binary); err != nil {
 		return installFailed(fmt.Sprintf("Installed, but %s was not found.", cli), fmt.Errorf("%s is missing", binary))
 	}
-	version, err := s.probeManagedVersion(ctx, plan.Target, cli, binary)
+	version, err := s.probeManagedVersion(ctx, cli, binary)
 	if err != nil {
 		return err
 	}
@@ -444,7 +444,7 @@ func (s *Service) runManagedInstall(ctx context.Context, plan Plan, baseline *in
 }
 
 // probeManagedVersion runs the new copy's --version.
-func (s *Service) probeManagedVersion(ctx context.Context, target Target, cli, binary string) (string, error) {
+func (s *Service) probeManagedVersion(ctx context.Context, cli, binary string) (string, error) {
 	probeCtx, cancel := context.WithTimeout(ctx, defaultVerifyTimeout)
 	defer cancel()
 	var output strings.Builder

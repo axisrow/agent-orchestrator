@@ -33,7 +33,7 @@ func TestSupportsHarness(t *testing.T) {
 		"kimi", "goose", "memcode", "fx", "qwen", "amp", "autohand", "droid",
 		domain.AgentHarness(""),
 	} {
-		if SupportsHarness(domain.AgentHarness(h)) {
+		if SupportsHarness(h) {
 			t.Errorf("SupportsHarness(%q) = true, want false", h)
 		}
 	}

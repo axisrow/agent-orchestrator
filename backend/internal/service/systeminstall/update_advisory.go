@@ -284,7 +284,7 @@ func (s *Service) computeUpdateAdvisory(ctx context.Context, target Target) (Upd
 		advisory.MaintenanceMethod = source.Method
 		advisory.maintenanceCask = source.PackageCask
 		advisory.maintenancePackage = source.Package
-	} else if managedOfficial || verified.ResolvedPath != "" && vendorLayout(target, layout) && s.officialManagedUpdate(plans) {
+	} else if managedOfficial || verified.ResolvedPath != "" && vendorLayout(layout) && s.officialManagedUpdate(plans) {
 		// The update installs a release of AO's own, so it needs neither the
 		// harness's own update command nor the user's copy in a known place.
 		advisory.MaintenanceMethod = "official-installer"
@@ -356,12 +356,12 @@ func (s *Service) computeUpdateAdvisory(ctx context.Context, target Target) (Upd
 // so it updates that copy however the user placed it.
 func vendorMaintainable(target Target, resolvedPath string) bool {
 	_, ok := vendorUpdateCommands[target]
-	return ok && resolvedPath != "" && vendorLayout(target, packageLayout(resolvedPath))
+	return ok && resolvedPath != "" && vendorLayout(packageLayout(resolvedPath))
 }
 
 // vendorLayout reports whether a binary in layout belongs to the vendor
 // installer: outside every package tool's directory layout.
-func vendorLayout(target Target, layout string) bool {
+func vendorLayout(layout string) bool {
 	return layout == ""
 }
 
