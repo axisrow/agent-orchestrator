@@ -43,15 +43,18 @@ test("Markdown file content and error copy can be drag-selected and copied @T0",
 	await expectDragCopies(page, page.getByRole("alert"), "Push rejected: branch demo/new-task-flake is protected.");
 });
 
-test("dragging across a sidebar session row selects nothing and still opens the session @T0", async ({ page }) => {
+test("dragging across a sidebar session row selects nothing and the row still opens on click @T0", async ({ page }) => {
 	await page.goto("/#/projects/ao-demo");
-	// The kanban board is gone in this fork: a project lands on its top
-	// sidebar session. The row is app chrome — a drag across it must select
-	// nothing and still open the session.
+	// The kanban board is gone in this fork: a project lands on its live
+	// orchestrator (#260), so the row dragged below is not the active session.
+	// The row is app chrome — a drag across it must select nothing, and the
+	// row must still open its session. The drag itself is a sort gesture, not
+	// a click, so the open happens on the row's click.
 	const row = page.getByRole("button", { name: "Open Build screenshot-ready dashboard data" });
 	await expect(row).toBeVisible();
 	expect(await row.evaluate((el) => getComputedStyle(el).userSelect)).toBe("none");
 	await dragAcross(page, row);
 	expect(await page.evaluate(() => window.getSelection()?.toString())).toBe("");
+	await row.click();
 	await expect(page).toHaveURL(/\/sessions\/demo-working$/);
 });
