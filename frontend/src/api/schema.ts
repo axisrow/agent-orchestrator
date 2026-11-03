@@ -6580,6 +6580,8 @@ export interface components {
             /** Format: date-time */
             ciObservedAt?: string;
             /** Format: date-time */
+            ciPendingSince?: null | string;
+            /** Format: date-time */
             createdAt?: null | string;
             deletions: number;
             headSha: string;

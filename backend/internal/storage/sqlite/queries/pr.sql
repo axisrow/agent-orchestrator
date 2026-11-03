@@ -6,9 +6,9 @@ INSERT INTO pr (
     is_draft, is_merged, is_closed,
     provider_state, provider_mergeable, provider_merge_state_status, html_url,
     created_at_provider, updated_at_provider, merged_at_provider, closed_at_provider,
-    metadata_hash, ci_hash, review_hash, observed_at, ci_observed_at, review_observed_at, review_partial, auto_inject_ci
+    metadata_hash, ci_hash, review_hash, observed_at, ci_observed_at, ci_pending_since, review_observed_at, review_partial, auto_inject_ci
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
     COALESCE((SELECT auto_inject_ci FROM sessions WHERE id = ?), TRUE))
 ON CONFLICT (url) DO UPDATE SET
     number = excluded.number,
@@ -64,6 +64,12 @@ ON CONFLICT (url) DO UPDATE SET
     review_hash = excluded.review_hash,
     observed_at = CASE WHEN pr.pr_state = 'merged' AND excluded.pr_state != 'merged' THEN pr.observed_at ELSE excluded.observed_at END,
     ci_observed_at = excluded.ci_observed_at,
+    ci_pending_since = CASE
+        WHEN pr.head_sha = excluded.head_sha AND pr.ci_state IN ('pending', 'unknown')
+             AND excluded.ci_state IN ('pending', 'unknown') AND pr.ci_pending_since IS NOT NULL
+        THEN pr.ci_pending_since
+        ELSE excluded.ci_pending_since
+    END,
     -- The review completeness pair travels together: a writer that did not
     -- fetch review threads passes a NULL review_observed_at, and must keep the
     -- stored pair untouched instead of manufacturing a complete-looking

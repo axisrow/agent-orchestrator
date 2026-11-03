@@ -1277,6 +1277,7 @@ type SessionPRSummary struct {
 	CreatedAt        *time.Time                   `json:"createdAt,omitempty"`
 	UpdatedAt        time.Time                    `json:"updatedAt"`
 	ObservedAt       time.Time                    `json:"observedAt,omitempty"`
+	CIPendingSince   *time.Time                   `json:"ciPendingSince,omitempty"`
 	CIObservedAt     time.Time                    `json:"ciObservedAt,omitempty"`
 	ReviewObservedAt time.Time                    `json:"reviewObservedAt,omitempty"`
 	LastSeenAt       *time.Time                   `json:"lastSeenAt,omitempty"`
@@ -1393,6 +1394,7 @@ func NewSessionPRSummary(in sessionsvc.PRSummary) SessionPRSummary {
 		CreatedAt:        optionalTime(in.CreatedAt),
 		UpdatedAt:        in.UpdatedAt,
 		ObservedAt:       in.ObservedAt,
+		CIPendingSince:   optionalTime(in.CIPendingSince),
 		CIObservedAt:     in.CIObservedAt,
 		ReviewObservedAt: in.ReviewObservedAt,
 		LastSeenAt:       optionalTime(in.LastSeenAt),

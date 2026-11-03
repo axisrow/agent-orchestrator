@@ -190,7 +190,7 @@ export function prCardPresentation(pr: SessionPRSummary, aoReview?: PRReviewStat
 	} else if (pr.review.decision === "review_required") {
 		primary = cardStatus("review", "pr.card.reviewRequired", "review", appI18n.t("pr.card.reviewRequiredDetail"));
 	} else if (pr.ci.state === "pending") {
-		primary = cardStatus("ci", "pr.card.checksPending", "validating", undefined, [], prChecksUrl(pr), true, pr.ciObservedAt);
+		primary = cardStatus("ci", "pr.card.checksPending", "validating", undefined, [], prChecksUrl(pr), true, pr.ciPendingSince ?? undefined);
 	} else if (pr.ci.state === "unknown") {
 		primary = cardStatus("ci", "pr.card.checksLoading", "passive", undefined, [], prChecksUrl(pr), true);
 	} else if (pr.mergeability.state === "blocked" || pr.mergeability.state === "unstable") {
@@ -216,7 +216,7 @@ export function prCardPresentation(pr: SessionPRSummary, aoReview?: PRReviewStat
 		if (pr.ci.state === "passing") {
 			supporting.push(cardStatus("ci", "pr.card.checksPassing", "success", undefined, [], prChecksUrl(pr)));
 		} else if (pr.ci.state === "pending") {
-			supporting.push(cardStatus("ci", "pr.card.checksPending", "validating", undefined, [], prChecksUrl(pr), true, pr.ciObservedAt));
+			supporting.push(cardStatus("ci", "pr.card.checksPending", "validating", undefined, [], prChecksUrl(pr), true, pr.ciPendingSince ?? undefined));
 		} else if (pr.ci.state === "unknown") {
 			supporting.push(cardStatus("ci", "pr.card.checksLoading", "passive", undefined, [], prChecksUrl(pr), true));
 		}
@@ -233,7 +233,7 @@ export function prCardPresentation(pr: SessionPRSummary, aoReview?: PRReviewStat
 		} else if (mergeReasons(pr).includes("github_checks_unavailable")) {
 			statusRows.push(cardStatus("ci", "pr.card.checksUnavailable", "warning", undefined, [], prChecksUrl(pr)));
 		} else if (pr.ci.state === "pending" || pr.ci.state === "unknown") {
-			statusRows.push(cardStatus("ci", pr.ci.state === "pending" ? "pr.card.checksPending" : "pr.card.checksLoading", pr.ci.state === "pending" ? "validating" : "passive", undefined, [], prChecksUrl(pr), true, pr.ci.state === "pending" ? pr.ciObservedAt : undefined));
+			statusRows.push(cardStatus("ci", pr.ci.state === "pending" ? "pr.card.checksPending" : "pr.card.checksLoading", pr.ci.state === "pending" ? "validating" : "passive", undefined, [], prChecksUrl(pr), true, pr.ci.state === "pending" ? pr.ciPendingSince ?? undefined : undefined));
 		}
 		statusRows.push(cardStatus("review", "pr.card.reviewStatus", reviewTone(pr.review.decision, pr.review.hasUnresolvedHumanComments), reviewStatusDetail(pr)));
 		// Independent of the review status above: the GitHub requirement and the
@@ -296,7 +296,7 @@ function cardStatus(
 	breathe = false,
 	since?: string,
 ): PRCardStatus {
-	return { key, label: appI18n.t(labelKey), detail, href, breathe, since, links, tone };
+	return { key, label: appI18n.t(labelKey), detail, href, breathe, since, links, tone, timeUnavailable: labelKey === "pr.card.checksPending" || labelKey === "pr.card.aoReviewRunning" ? appI18n.t("pr.card.timeUnavailable") : undefined };
 }
 
 export function prCanMerge(pr: SessionPRSummary): boolean {
@@ -336,7 +336,7 @@ function aoReviewCardRow(pr: SessionPRSummary, ao: PRReviewState | undefined): P
 	// distinct from the GitHub review-decision row above.
 	const latestStale = aoRunStale(pr, ao.latestRun?.targetSha);
 	if (ao.status === "running" && !latestStale) {
-		return cardStatus("ao_review", "pr.card.aoReviewRunning", "neutral", undefined, [], undefined, true);
+		return cardStatus("ao_review", "pr.card.aoReviewRunning", "neutral", undefined, [], undefined, true, ao.latestRun?.createdAt);
 	}
 	if (ao.status === "up_to_date" && !latestStale) {
 		return cardStatus("ao_review", "pr.card.aoReviewApproved", "success");

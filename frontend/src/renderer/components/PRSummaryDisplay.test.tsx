@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { act, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import type { SessionPRSummary } from "../hooks/useSessionScmSummary";
 import { appI18n } from "../i18n";
 import { useLocaleStore } from "../stores/locale-store";
@@ -32,6 +32,23 @@ const summary = (overrides: Partial<SessionPRSummary> = {}): SessionPRSummary =>
 });
 
 describe("PRSummaryParts", () => {
+	it("ticks the reliable CI observation time and keeps the link name", () => {
+		vi.useFakeTimers();
+		try {
+			vi.setSystemTime(new Date("2026-10-01T00:00:40Z"));
+			const pr = summary({ ci: { autoInjectCI: true, state: "pending", failingChecks: [] }, ciPendingSince: "2026-10-01T00:00:00Z", ciObservedAt: "2026-10-01T00:00:19Z" });
+			const { rerender } = render(<PRCardStatusSummary pr={pr} />);
+			expect(screen.getByText("· 40s")).toBeInTheDocument();
+			expect(screen.getByRole("link", { name: "Checks running" })).toBeInTheDocument();
+			act(() => vi.advanceTimersByTime(20_000));
+			expect(screen.getByText("· 1m 00s")).toBeInTheDocument();
+			act(() => vi.advanceTimersByTime(1_000));
+			expect(screen.getByText("· 1m 01s")).toBeInTheDocument();
+			rerender(<PRCardStatusSummary pr={{ ...pr, ciPendingSince: undefined }} />);
+			expect(screen.getByText("· Time unavailable")).toBeInTheDocument();
+		} finally { vi.useRealTimers(); }
+	});
+
 	it("links GitHub authors and successful checks to their provider pages", () => {
 		render(
 			<>

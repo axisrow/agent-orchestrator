@@ -1,6 +1,5 @@
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import type { ExternalLinkComponent } from "./external-link";
-import { formatElapsed } from "./formatting";
 import { ArrowUpRightIcon, LoaderCircleIcon } from "./icons";
 import { UserAvatar } from "./UserAvatar";
 import { scmUserAvatarUrl } from "./scm-avatar";
@@ -47,7 +46,7 @@ export function PRStatusGlyph({ breathe, dotClassName }: { breathe?: boolean; do
  * must stay the bare label.
  */
 function PRCardStatusElapsed({ status }: { status: PRCardStatus }) {
-	const label = useElapsedLabel(status.breathe ? status.since : undefined);
+	const label = useElapsedLabel(status.breathe ? status.since : undefined) ?? (status.breathe ? status.timeUnavailable : undefined);
 	if (!label) {
 		return null;
 	}
@@ -56,17 +55,23 @@ function PRCardStatusElapsed({ status }: { status: PRCardStatus }) {
 
 function useElapsedLabel(since: string | undefined): string | undefined {
 	const start = since ? Date.parse(since) : Number.NaN;
-	const [label, setLabel] = useState(() => Number.isFinite(start) ? formatElapsed(Date.now() - start) : undefined);
+	const [label, setLabel] = useState(() => Number.isFinite(start) ? formatStatusElapsed(Date.now() - start) : undefined);
 	useEffect(() => {
 		if (!Number.isFinite(start)) {
+			setLabel(undefined);
 			return;
 		}
-		const tick = () => setLabel(formatElapsed(Math.max(0, Date.now() - start)));
+		const tick = () => setLabel(formatStatusElapsed(Date.now() - start));
 		tick();
 		const timer = window.setInterval(tick, 1_000);
 		return () => window.clearInterval(timer);
 	}, [start]);
-	return label;
+	return Number.isFinite(start) ? label : undefined;
+}
+
+function formatStatusElapsed(ms: number): string {
+	const seconds = Math.floor(Math.max(0, ms) / 1000);
+	return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`;
 }
 
 const defaultCountNounLabel: CountNounLabel = (count, noun) => `${count} ${noun}${count === 1 ? "" : "s"}`;

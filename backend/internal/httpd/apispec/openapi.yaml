@@ -18423,6 +18423,11 @@ components:
         ciObservedAt:
           format: date-time
           type: string
+        ciPendingSince:
+          format: date-time
+          type:
+          - "null"
+          - string
         createdAt:
           format: date-time
           type:

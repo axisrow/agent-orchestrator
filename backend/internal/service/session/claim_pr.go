@@ -297,6 +297,9 @@ func claimRowsFromSCM(sessionID domain.SessionID, obs ports.SCMObservation, revi
 		ReviewObservedAt:         reviewObservedAt,
 		ReviewPartial:            reviewPartial,
 	}
+	if !obs.CI.Partial && pr.CI == domain.CIPending {
+		pr.CIPendingSince = observedAt
+	}
 	checks := make([]domain.PullRequestCheck, 0, len(obs.CI.Checks))
 	for _, ch := range obs.CI.Checks {
 		checks = append(checks, domain.PullRequestCheck{Name: ch.Name, CommitHash: obs.CI.HeadSHA, Status: domain.PRCheckStatus(ch.Status), Conclusion: ch.Conclusion, URL: ch.URL, Details: ch.ProviderID, LogTail: ch.LogTail, CreatedAt: now})

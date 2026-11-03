@@ -3873,3 +3873,48 @@ func TestPoll_FreshHeadConflictingDemotedUntilConfirmed(t *testing.T) {
 		t.Fatalf("same-head conflicting persisted as %q, want conflicting", confirmed.Mergeability)
 	}
 }
+
+func TestCIPendingSinceTransitions(t *testing.T) {
+	start := time.Unix(100, 0).UTC()
+	local := domain.PullRequest{CI: domain.CIPending, HeadSHA: "sha1", CIPendingSince: start, CIObservedAt: start.Add(19 * time.Second)}
+	observation := testObs(1)
+	observation.PR.HeadSHA = "sha1"
+	observation.CI.Summary = string(domain.CIPending)
+	observation.ObservedAt = start.Add(40 * time.Second)
+	observation.Changed.CI = true
+	makePR := func(opts persistenceOptions) domain.PullRequest {
+		pr, _, _, _, _ := domainFromObservation("session", domain.SessionRecord{}, observation, local, opts, observation.ObservedAt)
+		return pr
+	}
+	got := makePR(persistenceOptions{ciFetched: true})
+	if !got.CIPendingSince.Equal(start) || !got.CIObservedAt.Equal(observation.ObservedAt) {
+		t.Fatalf("check change reset timer: %+v", got)
+	}
+	observation.CI.Summary = string(domain.CIUnknown)
+	got = makePR(persistenceOptions{ciFetched: true})
+	if !got.CIPendingSince.Equal(start) {
+		t.Fatal("unknown lost pending time")
+	}
+	observation.CI.Summary = string(domain.CIPassing)
+	got = makePR(persistenceOptions{ciFetched: false})
+	if !got.CIPendingSince.Equal(start) {
+		t.Fatal("failed fetch lost pending time")
+	}
+	got = makePR(persistenceOptions{ciFetched: true})
+	if !got.CIPendingSince.IsZero() {
+		t.Fatal("completion retained pending time")
+	}
+	local = got
+	observation.CI.Summary = string(domain.CIPending)
+	got = makePR(persistenceOptions{ciFetched: true})
+	if !got.CIPendingSince.Equal(observation.ObservedAt) {
+		t.Fatal("new run did not start timer")
+	}
+	local = got
+	observation.PR.HeadSHA = "sha2"
+	observation.ObservedAt = observation.ObservedAt.Add(time.Minute)
+	got = makePR(persistenceOptions{ciFetched: true})
+	if !got.CIPendingSince.Equal(observation.ObservedAt) {
+		t.Fatal("new commit did not restart timer")
+	}
+}

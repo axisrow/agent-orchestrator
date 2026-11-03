@@ -1964,7 +1964,7 @@ func TestWritePRPreservesSCMReviewThreads(t *testing.T) {
 		URL: "https://github.com/o/r/pull/1", SessionID: r.ID, Number: 1, UpdatedAt: now,
 		Provider: "github", Host: "github.com", Repo: "o/r", HeadSHA: "head-1",
 		MetadataHash: "metadata-v1", CIHash: "ci-v1", ReviewHash: "review-v1",
-		ObservedAt: observedAt, CIObservedAt: observedAt, ReviewObservedAt: observedAt,
+		ObservedAt: observedAt, CIObservedAt: observedAt, CIPendingSince: observedAt, ReviewObservedAt: observedAt,
 	}
 	threads := []domain.PullRequestReviewThread{{ThreadID: "t1", Path: "main.go", Line: 7, SemanticHash: "thread-v1", UpdatedAt: now}}
 	comments := []domain.PullRequestComment{{ThreadID: "t1", ID: "c1", Author: "reviewer", Body: "scm", URL: "https://example/comment/c1", CreatedAt: now}}
@@ -1988,7 +1988,7 @@ func TestWritePRPreservesSCMReviewThreads(t *testing.T) {
 		gotPR.MetadataHash != "metadata-v1" || gotPR.CIHash != "ci-v1" || gotPR.ReviewHash != "review-v1" {
 		t.Fatalf("legacy WritePR must preserve SCM-owned metadata and hashes, got %+v", gotPR)
 	}
-	if !gotPR.ObservedAt.Equal(observedAt) || !gotPR.CIObservedAt.Equal(observedAt) || !gotPR.ReviewObservedAt.Equal(observedAt) {
+	if !gotPR.ObservedAt.Equal(observedAt) || !gotPR.CIObservedAt.Equal(observedAt) || !gotPR.CIPendingSince.Equal(observedAt) || !gotPR.ReviewObservedAt.Equal(observedAt) {
 		t.Fatalf("legacy WritePR must preserve SCM observation timestamps, got observed=%s ci=%s review=%s", gotPR.ObservedAt, gotPR.CIObservedAt, gotPR.ReviewObservedAt)
 	}
 	if gotPR.CI != domain.CIPassing {
