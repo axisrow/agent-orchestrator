@@ -78,11 +78,14 @@ WHERE project_id = sqlc.arg(project_id) AND delivery_state = 'claimed'
   AND claim_token = sqlc.arg(claim_token)
 RETURNING *;
 
--- name: MarkReportBatchEmitted :execrows
+-- name: MarkReportBatchEmitted :many
+-- RETURNING * feeds the delivery-events journal: the visible emission is a
+-- journal transition (emit_visible), not a silent stamp.
 UPDATE deliveries
 SET emitted_at = sqlc.arg(emitted_at)
 WHERE project_id = sqlc.arg(project_id) AND delivery_state = 'claimed'
-  AND claim_token = sqlc.arg(claim_token);
+  AND claim_token = sqlc.arg(claim_token)
+RETURNING *;
 
 -- name: FailClaimedReportBatch :many
 -- Terminal outcome of a delivery whose target held the text in its message
@@ -112,26 +115,28 @@ SET delivery_state = 'acknowledged', acknowledged_at = sqlc.arg(acknowledged_at)
 WHERE project_id = sqlc.arg(project_id) AND delivery_state = 'pending'
   AND emitted_at IS NOT NULL
   AND delivery_batch_id = sqlc.arg(delivery_batch_id)
-RETURNING id;
+RETURNING *;
 
--- name: ExpireStalePendingReports :execrows
+-- name: ExpireStalePendingReports :many
 -- Terminal expiry of the delivery ledger: pending report rows older than the
 -- cutoff stop retrying forever and stay readable as stale. Claims in flight
 -- are untouched; their own attempt fences them.
 -- (ASCII-only comment: a unicode dash here breaks sqlc v1.31.1 query parsing.)
+-- RETURNING * feeds the delivery-events journal (expired cause per row).
 UPDATE deliveries
 SET delivery_state = 'stale'
 WHERE kind = 'report' AND delivery_state = 'pending'
-  AND created_at < sqlc.arg(cutoff);
+  AND created_at < sqlc.arg(cutoff)
+RETURNING *;
 
--- name: SupersedeSessionReports :many
+-- name: SupersedeSessionPendingReports :many
 -- Retires a worker's undelivered reports terminally when a new prompt reaches
 -- the session (fork issue #240): the reports describe the previous task, and
 -- delivering them after a fresh instruction would present stale work as
--- current status. Stale is the ledger's terminal state, so the rows leave the
--- delivery schedule with the reason in last_error. Claimed rows retire too:
--- a claim released by a failed cycle or a restart requeue would otherwise
--- return to pending and deliver after the new prompt. The in-flight attempt's
+-- current status. Split into pending and claimed queries so the journal
+-- records the precise from-state per row. Claimed rows retire too: a claim
+-- released by a failed cycle or restart requeue would otherwise return to
+-- pending and deliver after the new prompt. The in-flight attempt's
 -- token-fenced ack and defer become no-ops, which the coordinator reports as
 -- a lost claim instead of passing as success.
 UPDATE deliveries
@@ -139,8 +144,17 @@ SET delivery_state = 'stale', claim_token = '', claimed_at = NULL,
     last_error = sqlc.arg(reason)
 WHERE session_id = sqlc.arg(session_id)
   AND kind = 'report'
-  AND delivery_state IN ('pending', 'claimed')
-RETURNING id;
+  AND delivery_state = 'pending'
+RETURNING *;
+
+-- name: SupersedeSessionClaimedReports :many
+UPDATE deliveries
+SET delivery_state = 'stale', claim_token = '', claimed_at = NULL,
+    last_error = sqlc.arg(reason)
+WHERE session_id = sqlc.arg(session_id)
+  AND kind = 'report'
+  AND delivery_state = 'claimed'
+RETURNING *;
 
 -- name: GetReportInterrupt :one
 SELECT last_interrupted_at FROM report_worker_interrupts WHERE session_id = ?;
@@ -177,11 +191,13 @@ SET delivery_state = 'pending', available_at = sqlc.arg(available_at),
 WHERE id = sqlc.arg(id) AND delivery_state = 'claimed' AND claim_token = sqlc.arg(claim_token)
 RETURNING *;
 
--- name: RequeueClaimedReports :execrows
+-- name: RequeueClaimedReports :many
+-- RETURNING * feeds the delivery-events journal (restart_requeue per row).
 UPDATE deliveries
 SET delivery_state = 'pending', claim_token = '', claimed_at = NULL,
     last_error = 'delivery claim recovered after daemon restart'
-WHERE delivery_state = 'claimed';
+WHERE delivery_state = 'claimed'
+RETURNING *;
 
 -- name: ListStuckDeliveryCandidates :many
 -- Read-only visibility sweep for stuck deliveries (fork issue #211): report

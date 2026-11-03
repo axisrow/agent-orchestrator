@@ -489,6 +489,9 @@ var schemaNames = map[string]string{ //nolint:gosec // Public OpenAPI type names
 	"ControllersListReportsResponse":              "ListReportsResponse",
 	"ControllersStuckDeliveryGroupResponse":       "StuckDeliveryGroupResponse",
 	"ControllersListStuckDeliveriesResponse":      "ListStuckDeliveriesResponse",
+	"ControllersDeliveryMetricsResponse":          "DeliveryMetricsResponse",
+	"ControllersDeliveryWindowMetricsResponse":    "DeliveryWindowMetricsResponse",
+	"ControllersDeliveryProjectMetricsResponse":   "DeliveryProjectMetricsResponse",
 	"ControllersClearNotificationsResponse":       "ClearNotificationsResponse",
 	"ControllersUsageHookMetadata":                "UsageHookMetadata",
 	"ControllersListUsageSessionsQuery":           "ListUsageSessionsQuery",
@@ -810,6 +813,14 @@ func reportOperations() []operation {
 		summary: "Group report deliveries stuck past the visibility threshold without changing delivery state",
 		resps: []respUnit{
 			{http.StatusOK, controllers.ListStuckDeliveriesResponse{}},
+			{http.StatusInternalServerError, envelope.APIError{}},
+			{http.StatusNotImplemented, envelope.APIError{}},
+		},
+	}, {
+		method: http.MethodGet, path: "/api/v1/reports/deliveries/metrics", id: "getDeliveryMetrics", tag: "reports",
+		summary: "Report delivery outcome metrics computed from the append-only delivery event journal without changing delivery state",
+		resps: []respUnit{
+			{http.StatusOK, controllers.DeliveryMetricsResponse{}},
 			{http.StatusInternalServerError, envelope.APIError{}},
 			{http.StatusNotImplemented, envelope.APIError{}},
 		},

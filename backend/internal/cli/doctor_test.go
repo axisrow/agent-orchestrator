@@ -889,3 +889,73 @@ func TestDoctorStuckDeliveriesEmptyAndSilentWithoutDaemon(t *testing.T) {
 		t.Fatalf("checks without daemon = %+v, want silent skip", checks)
 	}
 }
+
+// deliveryMetricsDaemon serves the delivery-metrics section `ao doctor` reads
+// from the running daemon (fork issue #242).
+func deliveryMetricsDaemon(t *testing.T, body string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/reports/deliveries/metrics" {
+			t.Errorf("unexpected daemon request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, body)
+	}))
+	t.Cleanup(srv.Close)
+	cfg := setConfigEnv(t)
+	writeRunFileFor(t, cfg, srv)
+	return srv
+}
+
+// The delivery-metrics section is informational PASS rows: one per cohort plus
+// the per-project breakdown, and the same data lands in the JSON report.
+func TestDoctorDeliveryMetricsSection(t *testing.T) {
+	deliveryMetricsDaemon(t, `{"window":{"reports":7,"acknowledged":4,"stale":2,"superseded":1,"open":1,"deliveryRatePct":57.1,"staleSharePct":28.6,"supersededSharePct":14.3,"medianDeliveryAgeSeconds":70,"p95DeliveryAgeSeconds":210,"staleByCause":{"expired":1,"reprompt_superseded":1}},"allTime":{"reports":8,"acknowledged":5,"stale":2,"superseded":1,"open":1,"deliveryRatePct":62.5,"staleSharePct":25,"supersededSharePct":12.5,"medianDeliveryAgeSeconds":70,"p95DeliveryAgeSeconds":310},"perProject":[{"projectId":"cc","reports":5,"acknowledged":4,"stale":1,"superseded":0,"deliveryRatePct":80}]}`)
+	c := doctorContextAlive(t, map[string]string{})
+
+	checks, metrics := c.checkDeliveryMetrics(context.Background())
+	if metrics == nil || metrics.Window.Reports != 7 || metrics.AllTime.DeliveryRatePct != 62.5 ||
+		len(metrics.PerProject) != 1 || metrics.PerProject[0].ProjectID != "cc" {
+		t.Fatalf("metrics = %+v", metrics)
+	}
+	if len(checks) != 3 {
+		t.Fatalf("checks = %+v, want window, all-time, and project rows", checks)
+	}
+	window := checks[0]
+	if window.Level != doctorPass || window.Section != doctorSectionDeliveries || window.Name != "delivery-metrics" ||
+		!strings.Contains(window.Message, "last 7d - 57.1% delivered (4/7)") ||
+		!strings.Contains(window.Message, "28.6% stale (expired: 1, reprompt_superseded: 1)") ||
+		!strings.Contains(window.Message, "14.3% superseded") ||
+		!strings.Contains(window.Message, "median delivery age 1m10s, p95 4m0s") {
+		t.Fatalf("window check = %+v", window)
+	}
+	allTime := checks[1]
+	if allTime.Level != doctorPass || allTime.Name != "delivery-metrics-all-time" ||
+		!strings.Contains(allTime.Message, "all time - 62.5% delivered (5/8)") {
+		t.Fatalf("all-time check = %+v", allTime)
+	}
+	project := checks[2]
+	if project.Level != doctorPass || project.Name != "delivery-metrics-project" ||
+		!strings.Contains(project.Message, "cc (last 7d) - 80.0% delivered (4/5), 1 stale, 0 superseded") {
+		t.Fatalf("project check = %+v", project)
+	}
+}
+
+func TestDoctorDeliveryMetricsEmptyAndSilentWithoutDaemon(t *testing.T) {
+	deliveryMetricsDaemon(t, `{"window":{"reports":0,"acknowledged":0,"stale":0,"superseded":0,"open":0,"deliveryRatePct":0,"staleSharePct":0,"supersededSharePct":0,"medianDeliveryAgeSeconds":0,"p95DeliveryAgeSeconds":0},"allTime":{"reports":0,"acknowledged":0,"stale":0,"superseded":0,"open":0,"deliveryRatePct":0,"staleSharePct":0,"supersededSharePct":0,"medianDeliveryAgeSeconds":0,"p95DeliveryAgeSeconds":0}}`)
+	c := doctorContextAlive(t, map[string]string{})
+	checks, metrics := c.checkDeliveryMetrics(context.Background())
+	if metrics == nil || len(checks) != 2 || checks[0].Level != doctorPass || !strings.Contains(checks[0].Message, "0.0% delivered (0/0)") {
+		t.Fatalf("empty checks = %+v metrics = %+v", checks, metrics)
+	}
+
+	// No run-file at all: the section stays out of the report quietly, exactly
+	// like the stuck-deliveries section.
+	setConfigEnv(t)
+	checks, metrics = c.checkDeliveryMetrics(context.Background())
+	if len(checks) != 0 || metrics != nil {
+		t.Fatalf("checks without daemon = %+v, want silent skip", checks)
+	}
+}

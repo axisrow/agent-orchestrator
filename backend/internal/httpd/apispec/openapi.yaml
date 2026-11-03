@@ -4755,6 +4755,32 @@ paths:
       summary: Persist a worker report for later orchestrator delivery
       tags:
       - reports
+  /api/v1/reports/deliveries/metrics:
+    get:
+      operationId: getDeliveryMetrics
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeliveryMetricsResponse'
+          description: OK
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: Report delivery outcome metrics computed from the append-only delivery
+        event journal without changing delivery state
+      tags:
+      - reports
   /api/v1/reports/deliveries/stuck:
     get:
       operationId: listStuckDeliveries
@@ -15370,6 +15396,86 @@ components:
       required:
       - ok
       - workerId
+      type: object
+    DeliveryMetricsResponse:
+      properties:
+        allTime:
+          $ref: '#/components/schemas/DeliveryWindowMetricsResponse'
+        perProject:
+          items:
+            $ref: '#/components/schemas/DeliveryProjectMetricsResponse'
+          type: array
+        window:
+          $ref: '#/components/schemas/DeliveryWindowMetricsResponse'
+      required:
+      - window
+      - allTime
+      type: object
+    DeliveryProjectMetricsResponse:
+      properties:
+        acknowledged:
+          type: integer
+        deliveryRatePct:
+          format: double
+          type: number
+        projectId:
+          type: string
+        reports:
+          type: integer
+        stale:
+          type: integer
+        superseded:
+          type: integer
+      required:
+      - projectId
+      - reports
+      - acknowledged
+      - stale
+      - superseded
+      - deliveryRatePct
+      type: object
+    DeliveryWindowMetricsResponse:
+      properties:
+        acknowledged:
+          type: integer
+        deliveryRatePct:
+          format: double
+          type: number
+        medianDeliveryAgeSeconds:
+          format: double
+          type: number
+        open:
+          type: integer
+        p95DeliveryAgeSeconds:
+          format: double
+          type: number
+        reports:
+          type: integer
+        stale:
+          type: integer
+        staleByCause:
+          additionalProperties:
+            type: integer
+          type: object
+        staleSharePct:
+          format: double
+          type: number
+        superseded:
+          type: integer
+        supersededSharePct:
+          format: double
+          type: number
+      required:
+      - reports
+      - acknowledged
+      - stale
+      - superseded
+      - open
+      - deliveryRatePct
+      - staleSharePct
+      - supersededSharePct
+      - medianDeliveryAgeSeconds
+      - p95DeliveryAgeSeconds
       type: object
     DesktopArtifactLocationResponse:
       properties:

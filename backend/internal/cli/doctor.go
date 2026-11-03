@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -50,6 +51,9 @@ type doctorReport struct {
 	// #211) so --json stays machine-readable beyond the flat check messages.
 	// Empty unless the running daemon answered the stuck-deliveries probe.
 	StuckDeliveries []doctorStuckDelivery `json:"stuckDeliveries,omitempty"`
+	// DeliveryMetrics mirrors the daemon's delivery outcome metrics (fork
+	// issue #242). Nil unless the running daemon answered the metrics probe.
+	DeliveryMetrics *doctorDeliveryMetrics `json:"deliveryMetrics,omitempty"`
 }
 
 // doctorStuckDelivery mirrors the daemon's stuck-delivery group DTO (fork
@@ -67,6 +71,37 @@ type doctorStuckDelivery struct {
 	Deliveries       int     `json:"deliveries"`
 	Zombie           bool    `json:"zombie"`
 	Terminal         bool    `json:"terminal"`
+}
+
+// doctorDeliveryMetrics mirrors the daemon's delivery metrics DTO (fork issue
+// #242): outcome shares and delivery ages from the append-only event journal.
+type doctorDeliveryMetrics struct {
+	Window     doctorWindowMetrics    `json:"window"`
+	AllTime    doctorWindowMetrics    `json:"allTime"`
+	PerProject []doctorProjectMetrics `json:"perProject,omitempty"`
+}
+
+type doctorWindowMetrics struct {
+	Reports                  int            `json:"reports"`
+	Acknowledged             int            `json:"acknowledged"`
+	Stale                    int            `json:"stale"`
+	Superseded               int            `json:"superseded"`
+	Open                     int            `json:"open"`
+	DeliveryRatePct          float64        `json:"deliveryRatePct"`
+	StaleSharePct            float64        `json:"staleSharePct"`
+	SupersededSharePct       float64        `json:"supersededSharePct"`
+	MedianDeliveryAgeSeconds float64        `json:"medianDeliveryAgeSeconds"`
+	P95DeliveryAgeSeconds    float64        `json:"p95DeliveryAgeSeconds"`
+	StaleByCause             map[string]int `json:"staleByCause,omitempty"`
+}
+
+type doctorProjectMetrics struct {
+	ProjectID       string  `json:"projectId"`
+	Reports         int     `json:"reports"`
+	Acknowledged    int     `json:"acknowledged"`
+	Stale           int     `json:"stale"`
+	Superseded      int     `json:"superseded"`
+	DeliveryRatePct float64 `json:"deliveryRatePct"`
 }
 
 const (
@@ -114,6 +149,8 @@ func newDoctorCommand(ctx *commandContext) *cobra.Command {
 			checks := ctx.runDoctor(cmd.Context())
 			stuckChecks, stuck := ctx.checkStuckDeliveries(cmd.Context())
 			checks = append(checks, stuckChecks...)
+			metricsChecks, metrics := ctx.checkDeliveryMetrics(cmd.Context())
+			checks = append(checks, metricsChecks...)
 			failures := 0
 			for _, check := range checks {
 				if check.Level == doctorFail {
@@ -123,7 +160,8 @@ func newDoctorCommand(ctx *commandContext) *cobra.Command {
 
 			if asJSON {
 				if err := writeJSON(cmd.OutOrStdout(), doctorReport{
-					OK: failures == 0, Failures: failures, Checks: checks, StuckDeliveries: stuck,
+					OK: failures == 0, Failures: failures, Checks: checks,
+					StuckDeliveries: stuck, DeliveryMetrics: metrics,
 				}); err != nil {
 					return err
 				}
@@ -279,6 +317,59 @@ func (c *commandContext) checkStuckDeliveries(ctx context.Context) ([]doctorChec
 		})
 	}
 	return checks, out.Groups
+}
+
+// checkDeliveryMetrics renders the daemon's delivery outcome metrics (fork
+// issue #242): how reports actually reached recipients, per the append-only
+// event journal. Informational by contract, like the stuck section: PASS
+// rows, never a FAIL — a bad delivery rate is a delivery-pipeline fact the
+// stuck checks already WARN about, not a broken daemon, and the exit code
+// must keep saying so. A daemon that is not running skips the section
+// quietly, mirroring checkStuckDeliveries.
+func (c *commandContext) checkDeliveryMetrics(ctx context.Context) ([]doctorCheck, *doctorDeliveryMetrics) {
+	var out doctorDeliveryMetrics
+	if err := c.getJSON(ctx, "reports/deliveries/metrics", &out); err != nil {
+		if errors.Is(err, errDaemonUnavailable) {
+			return nil, nil
+		}
+		return []doctorCheck{{
+			Level: doctorWarn, Section: doctorSectionDeliveries, Name: "delivery-metrics",
+			Message: fmt.Sprintf("could not read delivery metrics from the daemon: %v", err),
+		}}, nil
+	}
+	checks := []doctorCheck{
+		{Level: doctorPass, Section: doctorSectionDeliveries, Name: "delivery-metrics",
+			Message: "last 7d - " + formatDeliveryMetricsLine(out.Window)},
+		{Level: doctorPass, Section: doctorSectionDeliveries, Name: "delivery-metrics-all-time",
+			Message: "all time - " + formatDeliveryMetricsLine(out.AllTime)},
+	}
+	for _, project := range out.PerProject {
+		checks = append(checks, doctorCheck{
+			Level: doctorPass, Section: doctorSectionDeliveries, Name: "delivery-metrics-project",
+			Message: fmt.Sprintf("%s (last 7d) - %.1f%% delivered (%d/%d), %d stale, %d superseded",
+				project.ProjectID, project.DeliveryRatePct, project.Acknowledged, project.Reports,
+				project.Stale, project.Superseded),
+		})
+	}
+	return checks, &out
+}
+
+// formatDeliveryMetricsLine renders one cohort's delivery facts at doctor
+// granularity: outcome shares, the stale split by cause, and delivery ages.
+func formatDeliveryMetricsLine(m doctorWindowMetrics) string {
+	causes := "none"
+	if len(m.StaleByCause) > 0 {
+		labels := make([]string, 0, len(m.StaleByCause))
+		for cause, count := range m.StaleByCause {
+			labels = append(labels, fmt.Sprintf("%s: %d", cause, count))
+		}
+		sort.Strings(labels)
+		causes = strings.Join(labels, ", ")
+	}
+	return fmt.Sprintf("%.1f%% delivered (%d/%d), %.1f%% stale (%s), %.1f%% superseded, %d open; median delivery age %s, p95 %s",
+		m.DeliveryRatePct, m.Acknowledged, m.Reports, m.StaleSharePct, causes,
+		m.SupersededSharePct, m.Open,
+		humanDeliveryAge(m.MedianDeliveryAgeSeconds), humanDeliveryAge(m.P95DeliveryAgeSeconds))
 }
 
 // humanDeliveryAge renders a stuck-delivery age at doctor granularity: the

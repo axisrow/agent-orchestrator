@@ -18,7 +18,7 @@ SET delivery_state = 'acknowledged', acknowledged_at = ?1,
 WHERE project_id = ?2 AND delivery_state = 'pending'
   AND emitted_at IS NOT NULL
   AND delivery_batch_id = ?3
-RETURNING id
+RETURNING id, kind, session_id, project_id, recipient_session_id, state, note, message, created_at, delivery_state, available_at, settlement_deadline, repeat_count, claim_token, claimed_at, delivery_attempts, acknowledged_at, last_error, emitted_at, delivery_batch_id
 `
 
 type AcknowledgeAcceptedPendingReportsParams struct {
@@ -35,19 +35,40 @@ type AcknowledgeAcceptedPendingReportsParams struct {
 // stay pending and re-emit instead of passing as delivered.
 // The synthetic claim token exists only to satisfy the delivery-state CHECK:
 // acknowledged rows must carry a token, and nothing reads it after the ack.
-func (q *Queries) AcknowledgeAcceptedPendingReports(ctx context.Context, arg AcknowledgeAcceptedPendingReportsParams) ([]string, error) {
+func (q *Queries) AcknowledgeAcceptedPendingReports(ctx context.Context, arg AcknowledgeAcceptedPendingReportsParams) ([]Delivery, error) {
 	rows, err := q.db.QueryContext(ctx, acknowledgeAcceptedPendingReports, arg.AcknowledgedAt, arg.ProjectID, arg.DeliveryBatchID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []string{}
+	items := []Delivery{}
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+		var i Delivery
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.SessionID,
+			&i.ProjectID,
+			&i.RecipientSessionID,
+			&i.State,
+			&i.Note,
+			&i.Message,
+			&i.CreatedAt,
+			&i.DeliveryState,
+			&i.AvailableAt,
+			&i.SettlementDeadline,
+			&i.RepeatCount,
+			&i.ClaimToken,
+			&i.ClaimedAt,
+			&i.DeliveryAttempts,
+			&i.AcknowledgedAt,
+			&i.LastError,
+			&i.EmittedAt,
+			&i.DeliveryBatchID,
+		); err != nil {
 			return nil, err
 		}
-		items = append(items, id)
+		items = append(items, i)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -433,23 +454,61 @@ func (q *Queries) DeferReportBatch(ctx context.Context, arg DeferReportBatchPara
 	return items, nil
 }
 
-const expireStalePendingReports = `-- name: ExpireStalePendingReports :execrows
+const expireStalePendingReports = `-- name: ExpireStalePendingReports :many
 UPDATE deliveries
 SET delivery_state = 'stale'
 WHERE kind = 'report' AND delivery_state = 'pending'
   AND created_at < ?1
+RETURNING id, kind, session_id, project_id, recipient_session_id, state, note, message, created_at, delivery_state, available_at, settlement_deadline, repeat_count, claim_token, claimed_at, delivery_attempts, acknowledged_at, last_error, emitted_at, delivery_batch_id
 `
 
 // Terminal expiry of the delivery ledger: pending report rows older than the
 // cutoff stop retrying forever and stay readable as stale. Claims in flight
 // are untouched; their own attempt fences them.
 // (ASCII-only comment: a unicode dash here breaks sqlc v1.31.1 query parsing.)
-func (q *Queries) ExpireStalePendingReports(ctx context.Context, cutoff time.Time) (int64, error) {
-	result, err := q.db.ExecContext(ctx, expireStalePendingReports, cutoff)
+// RETURNING * feeds the delivery-events journal (expired cause per row).
+func (q *Queries) ExpireStalePendingReports(ctx context.Context, cutoff time.Time) ([]Delivery, error) {
+	rows, err := q.db.QueryContext(ctx, expireStalePendingReports, cutoff)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return result.RowsAffected()
+	defer rows.Close()
+	items := []Delivery{}
+	for rows.Next() {
+		var i Delivery
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.SessionID,
+			&i.ProjectID,
+			&i.RecipientSessionID,
+			&i.State,
+			&i.Note,
+			&i.Message,
+			&i.CreatedAt,
+			&i.DeliveryState,
+			&i.AvailableAt,
+			&i.SettlementDeadline,
+			&i.RepeatCount,
+			&i.ClaimToken,
+			&i.ClaimedAt,
+			&i.DeliveryAttempts,
+			&i.AcknowledgedAt,
+			&i.LastError,
+			&i.EmittedAt,
+			&i.DeliveryBatchID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const failClaimedReportBatch = `-- name: FailClaimedReportBatch :many
@@ -946,11 +1005,12 @@ func (q *Queries) ListStuckDeliveryCandidates(ctx context.Context, arg ListStuck
 	return items, nil
 }
 
-const markReportBatchEmitted = `-- name: MarkReportBatchEmitted :execrows
+const markReportBatchEmitted = `-- name: MarkReportBatchEmitted :many
 UPDATE deliveries
 SET emitted_at = ?1
 WHERE project_id = ?2 AND delivery_state = 'claimed'
   AND claim_token = ?3
+RETURNING id, kind, session_id, project_id, recipient_session_id, state, note, message, created_at, delivery_state, available_at, settlement_deadline, repeat_count, claim_token, claimed_at, delivery_attempts, acknowledged_at, last_error, emitted_at, delivery_batch_id
 `
 
 type MarkReportBatchEmittedParams struct {
@@ -959,12 +1019,50 @@ type MarkReportBatchEmittedParams struct {
 	ClaimToken string
 }
 
-func (q *Queries) MarkReportBatchEmitted(ctx context.Context, arg MarkReportBatchEmittedParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, markReportBatchEmitted, arg.EmittedAt, arg.ProjectID, arg.ClaimToken)
+// RETURNING * feeds the delivery-events journal: the visible emission is a
+// journal transition (emit_visible), not a silent stamp.
+func (q *Queries) MarkReportBatchEmitted(ctx context.Context, arg MarkReportBatchEmittedParams) ([]Delivery, error) {
+	rows, err := q.db.QueryContext(ctx, markReportBatchEmitted, arg.EmittedAt, arg.ProjectID, arg.ClaimToken)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return result.RowsAffected()
+	defer rows.Close()
+	items := []Delivery{}
+	for rows.Next() {
+		var i Delivery
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.SessionID,
+			&i.ProjectID,
+			&i.RecipientSessionID,
+			&i.State,
+			&i.Note,
+			&i.Message,
+			&i.CreatedAt,
+			&i.DeliveryState,
+			&i.AvailableAt,
+			&i.SettlementDeadline,
+			&i.RepeatCount,
+			&i.ClaimToken,
+			&i.ClaimedAt,
+			&i.DeliveryAttempts,
+			&i.AcknowledgedAt,
+			&i.LastError,
+			&i.EmittedAt,
+			&i.DeliveryBatchID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const putReportInterrupt = `-- name: PutReportInterrupt :exec
@@ -1096,32 +1194,129 @@ func (q *Queries) ReleaseReportBatch(ctx context.Context, arg ReleaseReportBatch
 	return items, nil
 }
 
-const requeueClaimedReports = `-- name: RequeueClaimedReports :execrows
+const requeueClaimedReports = `-- name: RequeueClaimedReports :many
 UPDATE deliveries
 SET delivery_state = 'pending', claim_token = '', claimed_at = NULL,
     last_error = 'delivery claim recovered after daemon restart'
 WHERE delivery_state = 'claimed'
+RETURNING id, kind, session_id, project_id, recipient_session_id, state, note, message, created_at, delivery_state, available_at, settlement_deadline, repeat_count, claim_token, claimed_at, delivery_attempts, acknowledged_at, last_error, emitted_at, delivery_batch_id
 `
 
-func (q *Queries) RequeueClaimedReports(ctx context.Context) (int64, error) {
-	result, err := q.db.ExecContext(ctx, requeueClaimedReports)
+// RETURNING * feeds the delivery-events journal (restart_requeue per row).
+func (q *Queries) RequeueClaimedReports(ctx context.Context) ([]Delivery, error) {
+	rows, err := q.db.QueryContext(ctx, requeueClaimedReports)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return result.RowsAffected()
+	defer rows.Close()
+	items := []Delivery{}
+	for rows.Next() {
+		var i Delivery
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.SessionID,
+			&i.ProjectID,
+			&i.RecipientSessionID,
+			&i.State,
+			&i.Note,
+			&i.Message,
+			&i.CreatedAt,
+			&i.DeliveryState,
+			&i.AvailableAt,
+			&i.SettlementDeadline,
+			&i.RepeatCount,
+			&i.ClaimToken,
+			&i.ClaimedAt,
+			&i.DeliveryAttempts,
+			&i.AcknowledgedAt,
+			&i.LastError,
+			&i.EmittedAt,
+			&i.DeliveryBatchID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
-const supersedeSessionReports = `-- name: SupersedeSessionReports :many
+const supersedeSessionClaimedReports = `-- name: SupersedeSessionClaimedReports :many
 UPDATE deliveries
 SET delivery_state = 'stale', claim_token = '', claimed_at = NULL,
     last_error = ?1
 WHERE session_id = ?2
   AND kind = 'report'
-  AND delivery_state IN ('pending', 'claimed')
-RETURNING id
+  AND delivery_state = 'claimed'
+RETURNING id, kind, session_id, project_id, recipient_session_id, state, note, message, created_at, delivery_state, available_at, settlement_deadline, repeat_count, claim_token, claimed_at, delivery_attempts, acknowledged_at, last_error, emitted_at, delivery_batch_id
 `
 
-type SupersedeSessionReportsParams struct {
+type SupersedeSessionClaimedReportsParams struct {
+	Reason    string
+	SessionID string
+}
+
+func (q *Queries) SupersedeSessionClaimedReports(ctx context.Context, arg SupersedeSessionClaimedReportsParams) ([]Delivery, error) {
+	rows, err := q.db.QueryContext(ctx, supersedeSessionClaimedReports, arg.Reason, arg.SessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Delivery{}
+	for rows.Next() {
+		var i Delivery
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.SessionID,
+			&i.ProjectID,
+			&i.RecipientSessionID,
+			&i.State,
+			&i.Note,
+			&i.Message,
+			&i.CreatedAt,
+			&i.DeliveryState,
+			&i.AvailableAt,
+			&i.SettlementDeadline,
+			&i.RepeatCount,
+			&i.ClaimToken,
+			&i.ClaimedAt,
+			&i.DeliveryAttempts,
+			&i.AcknowledgedAt,
+			&i.LastError,
+			&i.EmittedAt,
+			&i.DeliveryBatchID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const supersedeSessionPendingReports = `-- name: SupersedeSessionPendingReports :many
+UPDATE deliveries
+SET delivery_state = 'stale', claim_token = '', claimed_at = NULL,
+    last_error = ?1
+WHERE session_id = ?2
+  AND kind = 'report'
+  AND delivery_state = 'pending'
+RETURNING id, kind, session_id, project_id, recipient_session_id, state, note, message, created_at, delivery_state, available_at, settlement_deadline, repeat_count, claim_token, claimed_at, delivery_attempts, acknowledged_at, last_error, emitted_at, delivery_batch_id
+`
+
+type SupersedeSessionPendingReportsParams struct {
 	Reason    string
 	SessionID string
 }
@@ -1129,25 +1324,46 @@ type SupersedeSessionReportsParams struct {
 // Retires a worker's undelivered reports terminally when a new prompt reaches
 // the session (fork issue #240): the reports describe the previous task, and
 // delivering them after a fresh instruction would present stale work as
-// current status. Stale is the ledger's terminal state, so the rows leave the
-// delivery schedule with the reason in last_error. Claimed rows retire too:
-// a claim released by a failed cycle or a restart requeue would otherwise
-// return to pending and deliver after the new prompt. The in-flight attempt's
+// current status. Split into pending and claimed queries so the journal
+// records the precise from-state per row. Claimed rows retire too: a claim
+// released by a failed cycle or restart requeue would otherwise return to
+// pending and deliver after the new prompt. The in-flight attempt's
 // token-fenced ack and defer become no-ops, which the coordinator reports as
 // a lost claim instead of passing as success.
-func (q *Queries) SupersedeSessionReports(ctx context.Context, arg SupersedeSessionReportsParams) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, supersedeSessionReports, arg.Reason, arg.SessionID)
+func (q *Queries) SupersedeSessionPendingReports(ctx context.Context, arg SupersedeSessionPendingReportsParams) ([]Delivery, error) {
+	rows, err := q.db.QueryContext(ctx, supersedeSessionPendingReports, arg.Reason, arg.SessionID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []string{}
+	items := []Delivery{}
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+		var i Delivery
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.SessionID,
+			&i.ProjectID,
+			&i.RecipientSessionID,
+			&i.State,
+			&i.Note,
+			&i.Message,
+			&i.CreatedAt,
+			&i.DeliveryState,
+			&i.AvailableAt,
+			&i.SettlementDeadline,
+			&i.RepeatCount,
+			&i.ClaimToken,
+			&i.ClaimedAt,
+			&i.DeliveryAttempts,
+			&i.AcknowledgedAt,
+			&i.LastError,
+			&i.EmittedAt,
+			&i.DeliveryBatchID,
+		); err != nil {
 			return nil, err
 		}
-		items = append(items, id)
+		items = append(items, i)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
