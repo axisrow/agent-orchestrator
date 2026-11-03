@@ -199,13 +199,14 @@ ao session exit-agent <id> [flags]
 
 ---
 
-### ao session resume-agent
+### ao session respawn
 
-Resume an exited agent in its existing AO session.
+Respawn an exited agent in its existing AO session. Aliases: `resume`,
+`resume-agent`.
 
 **Syntax:**
 ```
-ao session resume-agent <id> [flags]
+ao session respawn <id> [flags]
 ```
 
 **Flags:**
@@ -219,7 +220,7 @@ ao session resume-agent <id> [flags]
 
 ```bash
 ao session exit-agent mer-3
-ao session resume-agent mer-3
+ao session respawn mer-3
 ```
 
 ---
