@@ -3,6 +3,8 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MachOParseError } from "./makers/macho-archs";
+import MakerNSIS from "./makers/maker-nsis";
+import appPackage from "./package.json";
 
 // postMake's dmg branch only needs to prove it calls the right
 // maker-dmg functions with the right gates; the functions' own behavior
@@ -20,7 +22,7 @@ vi.mock("./makers/maker-dmg", async (importOriginal) => {
 	return { ...actual, sealDmg, verifyDmg };
 });
 
-import config, { extraResourcesForPlatform, labelMacBundle, macSignOptionsForFile } from "./forge.config";
+import config, { extraResourcesForPlatform, labelMacBundle, macSignOptionsForFile, WINDOWS_DISPLAY_NAME } from "./forge.config";
 
 // Minimal synthetic Mach-O headers (thin little-endian + fat big-endian), the
 // two on-disk layouts the signing selector must tell apart. Full parser
@@ -241,6 +243,38 @@ describe("postMake artifact verification", () => {
 
 		expect(sealDmg).not.toHaveBeenCalled();
 		expect(verifyDmg).not.toHaveBeenCalled();
+	});
+});
+
+describe("Windows app labels", () => {
+	it("matches the installer display name without renaming the executable or bundle", async () => {
+		expect(WINDOWS_DISPLAY_NAME).toBe("Orchestrator.inc");
+		expect(appPackage.author).toBe(WINDOWS_DISPLAY_NAME);
+		expect(config.packagerConfig?.win32metadata).toEqual({
+			FileDescription: WINDOWS_DISPLAY_NAME,
+			InternalName: WINDOWS_DISPLAY_NAME,
+			ProductName: WINDOWS_DISPLAY_NAME,
+		});
+		const windowsInstaller = config.makers?.find((maker) => maker instanceof MakerNSIS);
+		await windowsInstaller?.prepareConfig("x64");
+		expect(windowsInstaller?.config.productName).toBe(WINDOWS_DISPLAY_NAME);
+		expect(windowsInstaller?.config.appId).toBe("dev.agent-orchestrator.desktop");
+		expect(appPackage.name).toBe("agent-orchestrator");
+		expect(appPackage.productName).toBe("Orchestrator");
+		expect(config.packagerConfig?.executableName).toBe("agent-orchestrator");
+		expect(config.packagerConfig?.name).toBe("Agent Orchestrator");
+		expect(config.packagerConfig?.appBundleId).toBe("dev.agent-orchestrator.desktop");
+	});
+});
+
+describe("Linux package maintainer", () => {
+	it("uses the publisher label from package metadata", () => {
+		const makers = config.makers as Array<{
+			name?: string;
+			config?: { options?: { maintainer?: string } };
+		}>;
+		const deb = makers.find((maker) => maker.name === "@electron-forge/maker-deb");
+		expect(deb?.config?.options?.maintainer).toBe(appPackage.author);
 	});
 });
 
