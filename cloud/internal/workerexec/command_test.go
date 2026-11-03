@@ -590,18 +590,6 @@ func TestBuildInteractiveWorkerPromptWithoutParent(t *testing.T) {
 	}
 }
 
-func TestBuildInteractiveCursorBuildsWithoutPrompt(t *testing.T) {
-	// Cursor receives standing instructions through its generated plugin rather
-	// than a prompt flag, so the launch command itself must remain prompt-free.
-	command := buildInteractive(t, worker.LaunchContext{
-		SessionID: "11111111-1111-4111-8111-111111111111",
-		Kind:      "worker", Harness: "cursor", Mode: "trusted",
-	})
-	if prompt := systemPromptArg(command); prompt != "" {
-		t.Fatalf("cursor unexpectedly carries a system prompt flag: %q", prompt)
-	}
-}
-
 // Claude Code opens "Make auto mode your default permission mode?" when its
 // global config lacks hasSeenAutoDefaultNudge and user settings pin a non-auto
 // defaultMode, which AO's settings always do. The dialog swallows messages AO

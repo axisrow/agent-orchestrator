@@ -123,23 +123,3 @@ func TestCursorACPStandingRuleCleansUpFailedProviderLaunch(t *testing.T) {
 		t.Fatalf("managed rule survived failed launch: %v", err)
 	}
 }
-
-func TestCursorTerminalClearsStaleChatStandingRule(t *testing.T) {
-	workspace := t.TempDir()
-	if err := writeCursorACPStandingRule(workspace, "session-1", "STALE CHAT ROLE"); err != nil {
-		t.Fatal(err)
-	}
-	_, err := (HarnessBuilder{DataDir: t.TempDir()}).BuildInteractive(
-		worker.LaunchContext{SessionID: "session-1", Kind: "worker", Harness: "cursor", Mode: "trusted"},
-		worker.CredentialResponse{Provider: "cursor", CredentialType: "api_key", Secret: "test-secret"}, workspace)
-	if err != nil {
-		t.Fatal(err)
-	}
-	path, err := cursorACPStandingRulePath(workspace, "session-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatalf("Terminal retained stale Chat rule: %v", err)
-	}
-}

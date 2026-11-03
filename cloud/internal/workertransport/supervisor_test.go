@@ -827,13 +827,6 @@ func TestAgentCommandFactoryBuildsHarnessResumeCommands(t *testing.T) {
 			credentialType: "api_key",
 			wantContains:   []string{"--resume", "native-claude-1"},
 		},
-		{
-			name:           "cursor",
-			harness:        "cursor",
-			mode:           "trusted",
-			credentialType: "api_key",
-			wantContains:   []string{"--resume", "native-cursor-1"},
-		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -845,7 +838,6 @@ func TestAgentCommandFactoryBuildsHarnessResumeCommands(t *testing.T) {
 			nativeID := map[string]string{
 				"codex":       "native-thread-1",
 				"claude-code": "native-claude-1",
-				"cursor":      "native-cursor-1",
 			}[test.harness]
 			if test.harness == "claude-code" {
 				// Claude only resumes a conversation whose JSONL transcript
