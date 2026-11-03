@@ -1583,7 +1583,7 @@ describe("TaskComposer", () => {
 		expect(h.post.mock.calls[1][1].body).not.toHaveProperty("mode");
 	});
 
-	it("starts a Claude Code task in Chat after approval-less retry", async () => {
+	it("retries with bypass-permissions after a session-mode rejection", async () => {
 		h.agentCatalog = { agents: [agentReadiness("claude-code", "Claude Code")] };
 		h.get.mockImplementation(async (path: string) => {
 			if (path === "/api/v1/settings") {
@@ -1612,10 +1612,11 @@ describe("TaskComposer", () => {
 		fireEvent.click(await screen.findByRole("button", { name: "Start without approvals" }));
 
 		await waitFor(() => expect(onCreated).toHaveBeenCalledWith("sess-claude"));
-		expect(h.post.mock.calls[0][1].body).toMatchObject({ agent: "claude-code", mode: "chat" });
+		expect(h.post.mock.calls[0][1].body).toMatchObject({ agent: "claude-code" });
 		expect(h.post.mock.calls[1][1].body).toMatchObject({
-			agent: "claude-code", mode: "chat", approvalMode: "bypass-permissions",
+			agent: "claude-code", approvalMode: "bypass-permissions",
 		});
+		expect(h.post.mock.calls[1][1].body).not.toHaveProperty("mode");
 	});
 
 	it("reports a create failure", async () => {
