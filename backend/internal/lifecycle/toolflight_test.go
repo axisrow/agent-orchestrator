@@ -318,23 +318,47 @@ func TestToolPrecedence_LegacySignalsKeepLastWriterWins(t *testing.T) {
 	}
 }
 
-func TestToolPrecedence_ToolEventsDoNotDemoteWaitingInput(t *testing.T) {
-	// waiting_input marks "the user's turn". Background subagent tool traffic
-	// must not clear it; an explicit user signal does.
+func TestToolPrecedence_SubagentToolEventsDoNotDemoteWaitingInput(t *testing.T) {
+	// waiting_input marks "the user's turn". Child-tagged tool traffic cannot
+	// clear it: the parent may genuinely wait on the user while a spawned
+	// child keeps working.
 	m, st, _ := newManager()
 	seedSignaled(st, "mer-1", domain.ActivityWaitingInput)
 
-	mustApply(t, m, "mer-1", sig(domain.ActivityActive, "pre-tool-use", "Read", "toolu_bg"))
+	mustApply(t, m, "mer-1", ports.ActivitySignal{Valid: true, State: domain.ActivityActive, Event: "pre-tool-use", ToolName: "Read", ToolUseID: "toolu_bg", SubagentID: "sub-1"})
 	if got := stateOf(st, "mer-1"); got != domain.ActivityWaitingInput {
-		t.Fatalf("state after background pre = %q, want waiting_input", got)
+		t.Fatalf("state after child pre = %q, want waiting_input", got)
 	}
-	mustApply(t, m, "mer-1", sig(domain.ActivityActive, "post-tool-use", "Read", "toolu_bg"))
+	mustApply(t, m, "mer-1", ports.ActivitySignal{Valid: true, State: domain.ActivityActive, Event: "post-tool-use", ToolName: "Read", ToolUseID: "toolu_bg", SubagentID: "sub-1"})
 	if got := stateOf(st, "mer-1"); got != domain.ActivityWaitingInput {
-		t.Fatalf("state after background post = %q, want waiting_input", got)
+		t.Fatalf("state after child post = %q, want waiting_input", got)
 	}
 	mustApply(t, m, "mer-1", sig(domain.ActivityActive, "user-prompt-submit", "", ""))
 	if got := stateOf(st, "mer-1"); got != domain.ActivityActive {
 		t.Fatalf("state after user prompt = %q, want active", got)
+	}
+}
+
+func TestToolPrecedence_MainTurnToolEventsDemoteWaitingInput(t *testing.T) {
+	// An uncorrelated needs-input notification can land mid-turn (#259); the
+	// next main-turn tool event is proof the agent is executing again and
+	// clears the false marker. Without this the sticky marker froze a working
+	// session on "Input Needed" until the next turn boundary.
+	m, st, _ := newManager()
+	seedSignaled(st, "mer-1", domain.ActivityWaitingInput)
+
+	mustApply(t, m, "mer-1", sig(domain.ActivityActive, "pre-tool-use", "Read", "toolu_main"))
+	if got := stateOf(st, "mer-1"); got != domain.ActivityActive {
+		t.Fatalf("state after main pre = %q, want active", got)
+	}
+
+	mustApply(t, m, "mer-1", sig(domain.ActivityWaitingInput, "notification", "", ""))
+	if got := stateOf(st, "mer-1"); got != domain.ActivityWaitingInput {
+		t.Fatalf("setup: state after repeat needs-input notification = %q, want waiting_input", got)
+	}
+	mustApply(t, m, "mer-1", sig(domain.ActivityActive, "post-tool-use", "Read", "toolu_main2"))
+	if got := stateOf(st, "mer-1"); got != domain.ActivityActive {
+		t.Fatalf("state after main post = %q, want active", got)
 	}
 }
 

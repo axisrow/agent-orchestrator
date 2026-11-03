@@ -283,6 +283,57 @@ func TestSessionsAPI_ActivityAcceptsBlocked(t *testing.T) {
 	}
 }
 
+// disconnectProbe simulates a projection that is still running when the hook
+// client hangs up: the agent's hook runner kills `ao hooks` after its own
+// timeout, dropping the connection mid-request (#259).
+type disconnectProbe struct {
+	entered chan struct{}
+	release chan struct{}
+	done    chan struct{}
+	gotErr  error
+}
+
+func (p *disconnectProbe) ApplyActivitySignal(ctx context.Context, _ domain.SessionID, _ ports.ActivitySignal) error {
+	close(p.entered)
+	<-p.release
+	// The handler must hand the projection a context that did not die with
+	// the request; a canceled one here is what froze working sessions in
+	// waiting_input.
+	p.gotErr = ctx.Err()
+	close(p.done)
+	return nil
+}
+
+func TestSessionsAPI_ActivityProjectionSurvivesClientDisconnect(t *testing.T) {
+	probe := &disconnectProbe{
+		entered: make(chan struct{}),
+		release: make(chan struct{}),
+		done:    make(chan struct{}),
+	}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	srv := httptest.NewServer(httpd.NewRouterWithControl(config.Config{}, log, nil,
+		httpd.APIDeps{Activity: probe}, httpd.ControlDeps{}))
+	t.Cleanup(srv.Close)
+
+	reqCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, srv.URL+"/api/v1/sessions/ao-1/activity",
+		strings.NewReader(`{"state":"active","event":"post-tool-use"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _, _ = http.DefaultClient.Do(req) }() // hangs up when canceled below
+
+	<-probe.entered
+	cancel() // the hook client dies mid-projection
+	close(probe.release)
+	<-probe.done
+
+	if errors.Is(probe.gotErr, context.Canceled) {
+		t.Fatalf("projection context died with the request: %v", probe.gotErr)
+	}
+}
+
 func TestSessionsAPI_ActivityForwardsClaudeSubagentFacts(t *testing.T) {
 	rec := &fakeActivityRecorder{}
 	srv := newActivityTestServer(t, rec)
