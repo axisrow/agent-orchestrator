@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/httpd/envelope"
+	"github.com/aoagents/agent-orchestrator/backend/internal/observe/ownership"
 	"github.com/aoagents/agent-orchestrator/backend/internal/observe/sentryobs"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 	"github.com/aoagents/agent-orchestrator/backend/internal/telemetrymeta"
@@ -139,7 +140,10 @@ func requestLoggerWithCapture(log *slog.Logger, sink ports.EventSink, captureHTT
 					if capErr != nil && errorCode == "LINK_PREVIEW_FETCH_FAILED" && ww.Status() == http.StatusBadGateway {
 						captureSentry = false
 					}
-					if captureSentry {
+					// Fork: agent-switch saga failures report through their own
+					// agentswitchobs sender; the request logger must not duplicate
+					// them into daemon Sentry.
+					if captureSentry && captured.ReportingOwner != ownership.OwnerAgentSwitchSaga {
 						err := capErr
 						if err == nil {
 							err = fmt.Errorf("HTTP %d %s %s", ww.Status(), r.Method, path)

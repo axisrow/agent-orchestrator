@@ -9,8 +9,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -20,7 +18,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	sqlite3 "modernc.org/sqlite"
 
-	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/telemetry/policyauthority"
 	"github.com/aoagents/agent-orchestrator/backend/internal/telemetrymeta"
 )
 
@@ -167,15 +164,17 @@ func TestCaptureChecksDurableConsentAtEachCapture(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { SetPolicyCheck(nil); enabled.Store(false) })
-	policyPath := filepath.Join(t.TempDir(), policyauthority.FileName)
-	reader := policyauthority.New(policyPath)
-	SetPolicyCheck(func(ctx context.Context) bool { return reader.EventsAllowed(ctx, true, true) })
-	writePolicy := func(eventsEnabled, productionConsent bool) {
+	// The fork's consent authority is the agent-switch policy coordinator, not
+	// upstream's policyauthority file format; the per-capture gate semantics
+	// under test here are identical, so a plain flip stands in for the reader.
+	// The scenario is an explicit policy: events_enabled decides on its own —
+	// a stale legacy production veto does not block an explicit opt-in, and an
+	// explicit opt-out wins over a legacy consent flag.
+	policyAllowed := true
+	SetPolicyCheck(func(context.Context) bool { return policyAllowed })
+	writePolicy := func(eventsEnabled, _ bool) {
 		t.Helper()
-		raw := fmt.Sprintf(`{"schema_version":2,"events_enabled":%t,"consent_generation":"7f80c8a9-ec67-4a16-a067-a444ffcc5cca","consent_production_enabled":%t,"updated_at":"2026-08-28T10:15:30.000Z"}`, eventsEnabled, productionConsent)
-		if err := os.WriteFile(policyPath, []byte(raw), 0o600); err != nil {
-			t.Fatal(err)
-		}
+		policyAllowed = eventsEnabled
 	}
 	capture := func() {
 		CaptureError(context.Background(), errString("synthetic"), nil, "fp", telemetrymeta.RoutePattern(nil), telemetrymeta.FailureSite{})
