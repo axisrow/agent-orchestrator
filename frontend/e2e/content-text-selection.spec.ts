@@ -31,7 +31,9 @@ async function expectDragCopies(page: Page, target: Locator, text: string) {
 test("inspector details can be drag-selected and copied @T0", async ({ page }) => {
 	await page.goto("/#/projects/ao-demo/sessions/demo-ci-failed");
 	const inspector = await openInspector(page);
-	const text = "The review requirement is satisfied, but failing checks still block this PR.";
+	// This fork's PR card shows merge readiness as a short status line instead
+	// of upstream's merge-reason sentence; drag across the readiness text.
+	const text = "Not mergeable yet";
 	await expectDragCopies(page, inspector.getByText(text, { exact: true }), text);
 });
 
@@ -41,13 +43,15 @@ test("Markdown file content and error copy can be drag-selected and copied @T0",
 	await expectDragCopies(page, page.getByRole("alert"), "Push rejected: branch demo/new-task-flake is protected.");
 });
 
-test("dragging across a board card selects nothing and still opens the session @T0", async ({ page }) => {
+test("dragging across a sidebar session row selects nothing and still opens the session @T0", async ({ page }) => {
 	await page.goto("/#/projects/ao-demo");
-	const card = page.locator('[data-testid="board-session-card"][data-session-id="demo-working"]');
-	const title = card.getByText("Build screenshot-ready dashboard data");
-	await expect(title).toBeVisible();
-	expect(await title.evaluate((el) => getComputedStyle(el).userSelect)).toBe("none");
-	await dragAcross(page, title);
+	// The kanban board is gone in this fork: a project lands on its top
+	// sidebar session. The row is app chrome — a drag across it must select
+	// nothing and still open the session.
+	const row = page.getByRole("button", { name: "Open Build screenshot-ready dashboard data" });
+	await expect(row).toBeVisible();
+	expect(await row.evaluate((el) => getComputedStyle(el).userSelect)).toBe("none");
+	await dragAcross(page, row);
 	expect(await page.evaluate(() => window.getSelection()?.toString())).toBe("");
 	await expect(page).toHaveURL(/\/sessions\/demo-working$/);
 });
