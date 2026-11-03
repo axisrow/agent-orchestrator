@@ -256,7 +256,7 @@ func (m *Manager) launchChatController(ctx context.Context, in chatSpawn) (domai
 		Permissions:             agentConfig.Permissions,
 		SystemPrompt:            in.systemPrompt,
 		AdditionalDirectories:   workspaceProjectDirectories(in.workspace.Path, in.workspaceProject),
-		MCPServers:              m.aoMCPServers(in.cfg.Harness, env),
+		MCPServers:              m.aoMCPServers(env),
 		ExpectedControllerOwner: in.record.ControllerOwner(),
 		PrepareControllerEnv: func(launchCtx context.Context, expected domain.SessionControllerOwner) (map[string]string, error) {
 			prepared, launchEnv, prepareErr := m.prepareChatControllerEnv(
@@ -349,7 +349,7 @@ func (m *Manager) launchChatController(ctx context.Context, in chatSpawn) (domai
 // session (edit, rollback, fork). Its env holds only what the CLI needs to
 // reach this daemon for this session, never a credential such as
 // AO_BROWSER_CAPABILITY.
-func (m *Manager) aoMCPServers(harness domain.AgentHarness, env map[string]string) []ports.ChatMCPServerConfig {
+func (m *Manager) aoMCPServers(env map[string]string) []ports.ChatMCPServerConfig {
 	executable, err := m.executable()
 	if err != nil || !filepath.IsAbs(executable) {
 		m.logger.Warn("chat session gets no ao tool server; the agent can still run ao render",
@@ -547,7 +547,7 @@ func (m *Manager) resumeChatController(
 		Permissions:             agentConfig.Permissions,
 		SystemPrompt:            systemPrompt,
 		AdditionalDirectories:   additionalDirectories,
-		MCPServers:              m.aoMCPServers(rec.Harness, env),
+		MCPServers:              m.aoMCPServers(env),
 		ExpectedControllerOwner: rec.ControllerOwner(),
 		PrepareControllerEnv: func(launchCtx context.Context, expected domain.SessionControllerOwner) (map[string]string, error) {
 			prepared, launchEnv, prepareErr := m.prepareChatControllerEnv(

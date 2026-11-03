@@ -396,7 +396,7 @@ func (m *Manager) executeChatAgentSwitch(
 		Permissions:             agentConfig.Permissions,
 		SystemPrompt:            finalSystemPrompt,
 		AdditionalDirectories:   additionalDirectories,
-		MCPServers:              m.aoMCPServers(cfg.TargetHarness, targetLaunchEnv),
+		MCPServers:              m.aoMCPServers(targetLaunchEnv),
 		ExpectedControllerOwner: credentialRecord.ControllerOwner(),
 		PrepareControllerEnv: func(launchCtx context.Context, expected domain.SessionControllerOwner) (map[string]string, error) {
 			prepared, launchEnv, prepareErr := m.prepareChatControllerEnv(

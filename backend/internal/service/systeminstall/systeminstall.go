@@ -165,10 +165,6 @@ type Plan struct {
 	managed bool
 	// managedPin is the release a managed reinstall installs again.
 	managedPin string
-	// sourceMethod/sourcePackage identify the existing owner during a planned
-	// migration. Method and Package always describe what the operation runs.
-	sourceMethod  string
-	sourcePackage string
 	// alsoChanges are other harnesses whose executable the run makes
 	// unavailable for a while (Prepare unlinks it, Cleanup restores it). The
 	// run holds each one's harness gate throughout, so its launches wait and

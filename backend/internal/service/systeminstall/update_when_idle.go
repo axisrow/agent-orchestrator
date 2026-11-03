@@ -374,14 +374,6 @@ func (s *Service) holdOtherHarnesses(targets []Target) (release func(), err erro
 	return release, nil
 }
 
-// harnessChanging reports whether another run holds target (an update, an
-// update-when-idle run, or a run that lists it in Plan.alsoChanges).
-func (s *Service) harnessChanging(target Target) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.changing[target]
-}
-
 func (s *Service) cleanupStepTimeout() time.Duration {
 	if s.cleanupStepLimit > 0 {
 		return s.cleanupStepLimit

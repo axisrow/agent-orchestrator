@@ -14,7 +14,7 @@ func TestOpenCodeV2HarnessIsKnown(t *testing.T) {
 // A cut harness is no longer known, so user-supplied names fail validation.
 func TestCutHarnessIsUnknown(t *testing.T) {
 	for _, cut := range []AgentHarness{"kimi", "goose", "memcode", "fx", "qwen", "amp", "autohand", "droid"} {
-		if AgentHarness(cut).IsKnown() {
+		if cut.IsKnown() {
 			t.Fatalf("harness %q IsKnown() = true, want false after the cut", cut)
 		}
 	}

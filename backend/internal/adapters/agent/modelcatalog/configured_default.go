@@ -21,7 +21,7 @@ type configuredDefaultSource struct {
 	// resolve replaces paths/parse for agents whose layering cannot be
 	// expressed as a flat file list. It returns "" when the effective model
 	// cannot be determined.
-	resolve func(home, workingDir string, env map[string]string) string
+	resolve func(home string, env map[string]string) string
 }
 
 // configuredDefaultSources covers agents whose model-list command reports
@@ -29,9 +29,7 @@ type configuredDefaultSource struct {
 // has no default to show and the task form reads "Model not reported" even
 // though the user has already chosen a model in the agent's own settings.
 var configuredDefaultSources = map[string]configuredDefaultSource{
-	"opencode-v2": {resolve: func(home, workingDir string, env map[string]string) string {
-		return resolveOpenCodeModel(home, workingDir, env)
-	}},
+	"opencode-v2": {resolve: resolveOpenCodeModel},
 	"pi": {
 		paths: func(home string, _ map[string]string) []string {
 			if home == "" {
@@ -58,7 +56,7 @@ func readConfiguredModel(path string, parse func([]byte) string, fallback string
 
 // configuredDefaultModel returns the model the agent's local configuration
 // selects, or "" when the agent has no such source or nothing is configured.
-func configuredDefaultModel(agentID, workingDir string, env map[string]string) string {
+func configuredDefaultModel(agentID string, env map[string]string) string {
 	source, ok := configuredDefaultSources[agentID]
 	if !ok {
 		return ""
@@ -70,7 +68,7 @@ func configuredDefaultModel(agentID, workingDir string, env map[string]string) s
 	}
 	home, _ := os.UserHomeDir()
 	if source.resolve != nil {
-		return strings.TrimSpace(source.resolve(home, workingDir, env))
+		return strings.TrimSpace(source.resolve(home, env))
 	}
 	configured := ""
 	for _, path := range source.paths(home, env) {

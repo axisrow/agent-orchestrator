@@ -41,7 +41,7 @@ func TestShippedChatDrivers(t *testing.T) {
 		"kimi", "goose", "memcode", "fx", "qwen", "amp", "autohand", "droid",
 		"definitely-not-an-agent",
 	} {
-		if _, err := r.Driver(domain.AgentHarness(harness)); err == nil {
+		if _, err := r.Driver(harness); err == nil {
 			t.Errorf("%s resolved a chat driver", harness)
 		} else if !errors.Is(err, ports.ErrChatUnsupported) {
 			t.Errorf("%s refused with %v, want ErrChatUnsupported so callers can branch", harness, err)
