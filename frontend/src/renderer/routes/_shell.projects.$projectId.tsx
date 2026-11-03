@@ -8,8 +8,9 @@ export const Route = createFileRoute("/_shell/projects/$projectId")({
 });
 
 // The kanban board is gone (#163): opening a project lands on its live
-// orchestrator — the sidebar icon's target (#260) — or on the top worker
-// without one, or home when the project has no live sessions.
+// orchestrator — the sidebar icon's target (#260) — or on its terminated
+// orchestrator's Restore view (#260 reopen), or on the top worker when the
+// project has no orchestrator session, or home when it has no sessions.
 function ProjectRoute() {
 	const { projectId } = Route.useParams();
 	const navigate = useNavigate();

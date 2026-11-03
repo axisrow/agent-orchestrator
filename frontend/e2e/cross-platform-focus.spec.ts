@@ -94,10 +94,11 @@ for (const platform of PLATFORMS) {
 		await fakePlatform(page, platform);
 		await installFakeAgent(page, { projectId: "fake-proj", projectName: "fake-proj" });
 		await page.goto("/#/projects/fake-proj");
-		// The project route redirects (#163): to the live orchestrator, or the
-		// top worker without one (#260). Either way the sidebar mounts once the
-		// startup screen is gone — wait for that, then click for real (a forced
-		// click can land through a covering screen and never open the menu).
+		// The project route redirects (#163): to the live orchestrator, its
+		// terminated orchestrator, or the top worker (#260). Either way the
+		// sidebar mounts once the startup screen is gone — wait for that, then
+		// click for real (a forced click can land through a covering screen and
+		// never open the menu).
 		await expect(page.getByTestId("daemon-startup-loader")).toHaveCount(0);
 		const projectActions = page
 			.getByRole("button", { name: /Project actions for fake-proj/ })
