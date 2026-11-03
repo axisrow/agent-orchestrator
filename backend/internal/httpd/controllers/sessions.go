@@ -75,6 +75,12 @@ const (
 	// (spawn's up-to-eight): unlike spawn, a send carries at most one inline
 	// attachment.
 	maxSendBodyBytes = maxAttachmentBytes*4/3 + (2 << 20)
+
+	// activityHookBudget bounds the detached projection of one agent hook
+	// signal. Generous by design: the projection runs after the client may
+	// already be gone (agent hook runners kill `ao hooks` on their own
+	// timeouts), and it must win against transient store contention.
+	activityHookBudget = 2 * time.Minute
 )
 
 // blockedAttachmentMimes contains MIME types that are explicitly rejected for
@@ -2393,6 +2399,14 @@ func (c *SessionsController) activity(w http.ResponseWriter, r *http.Request) {
 		envelope.WriteAPIError(w, r, http.StatusBadRequest, "bad_request", "ACTIVITY_OR_SESSION_ID_REQUIRED", "Activity state, agent session ID, or subagent ID is required", nil)
 		return
 	}
+	// Hook clients die on the agent's own hook timeout (30s for kimchi) and
+	// hang up while a slow projection is still running; the fire-and-forget
+	// signal must not die with the request. Detach it from the request
+	// context with a server-side bound: a canceled client context here once
+	// froze working sessions in waiting_input because every later active
+	// signal aborted mid-flight (#259).
+	hookCtx, cancel := context.WithTimeout(context.Background(), activityHookBudget)
+	defer cancel()
 	// The correlation fields ride the same lenient decode: absent on old CLIs.
 	// They are externally-supplied strings headed for logs and in-memory maps,
 	// so sanitize control chars and cap their length (a truncated id could
@@ -2435,7 +2449,7 @@ func (c *SessionsController) activity(w http.ResponseWriter, r *http.Request) {
 	}
 	var activityErr error
 	if c.Activity != nil && (sig.Valid || sig.AgentSessionID != "" || sig.SubagentID != "") {
-		activityErr = c.Activity.ApplyActivitySignal(r.Context(), sessionID(r), sig)
+		activityErr = c.Activity.ApplyActivitySignal(hookCtx, sessionID(r), sig)
 		if err := activityErr; err != nil && !errors.Is(err, ports.ErrActivityProjectionContention) {
 			if errors.Is(err, ports.ErrSessionNotFound) {
 				envelope.WriteAPIError(w, r, http.StatusNotFound, "not_found", "SESSION_NOT_FOUND", "Unknown session", nil)
@@ -2459,7 +2473,7 @@ func (c *SessionsController) activity(w http.ResponseWriter, r *http.Request) {
 			usageSignal.SubagentID = capActivityMeta(domain.SanitizeControlChars(strings.TrimSpace(in.Usage.SubagentID)))
 			usageSignal.SubagentTranscriptPath = capUsagePath(domain.SanitizeControlChars(strings.TrimSpace(in.Usage.SubagentTranscriptPath)))
 		}
-		if err := c.Usage.RecordHook(r.Context(), sessionID(r), usageSignal); err != nil {
+		if err := c.Usage.RecordHook(hookCtx, sessionID(r), usageSignal); err != nil {
 			if errors.Is(err, usagesvc.ErrUsageSessionNotFound) {
 				envelope.WriteAPIError(w, r, http.StatusNotFound, "not_found", "SESSION_NOT_FOUND", "Unknown session", nil)
 				return

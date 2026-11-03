@@ -1527,10 +1527,16 @@ func (m *Manager) applyToolPrecedenceLocked(id domain.SessionID, cur domain.Acti
 			return suppressed
 		}
 
-	case cur.IsSticky() && isToolUseEvent(s.Event):
-		// waiting_input: background tool traffic must not clear the "waiting
-		// on the user" marker; only an explicit user/turn signal does.
-		return suppressed
+	case cur == domain.ActivityWaitingInput && isToolUseEvent(s.Event):
+		// A main-turn tool event is proof the agent is executing again, so it
+		// clears the marker: an uncorrelated needs-input notification that
+		// fired mid-turn must not pin a working session (#259). Child-tagged
+		// tool traffic still cannot clear it — the parent may genuinely wait
+		// on the user while a spawned child keeps working.
+		if s.SubagentID != "" {
+			return suppressed
+		}
+		return s
 
 	default:
 		if isTurnBoundaryEvent(s.Event) {
