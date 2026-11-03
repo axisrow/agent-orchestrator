@@ -309,8 +309,9 @@ func newSessionExitAgentCommand(ctx *commandContext) *cobra.Command {
 func newSessionResumeAgentCommand(ctx *commandContext) *cobra.Command {
 	var opts sessionOptions
 	cmd := &cobra.Command{
-		Use:   "resume-agent <id>",
-		Short: "Resume an exited agent in its existing AO session",
+		Use:     "respawn <id>",
+		Aliases: []string{"resume", "resume-agent"},
+		Short:   "Respawn an exited agent in its existing AO session",
 		Args:  oneSessionIDArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := normalizeSessionID(args[0])
