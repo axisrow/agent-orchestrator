@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -49,6 +50,8 @@ type fakeSessionService struct {
 	artifactsDeleted           []domain.SessionID
 	deleteArtifactsErr         error
 	sessions                   map[domain.SessionID]domain.Session
+	sessionEnv                 map[domain.SessionID]map[string]string
+	sessionEnvErr              error
 	staleness                  []sessionsvc.ProviderStaleness
 	sent                       string
 	sendErr                    error
@@ -243,6 +246,7 @@ func newFakeSessionService() *fakeSessionService {
 	s := domain.Session{SessionRecord: domain.SessionRecord{ID: "ao-1", ProjectID: "ao", Kind: domain.KindWorker, Activity: domain.Activity{State: domain.ActivityIdle, LastActivityAt: now}, AutoInjectReview: true, AutoInjectCI: true, CreatedAt: now, UpdatedAt: now}, Status: domain.StatusIdle, TerminalHandleID: "ao-1/terminal_0"}
 	return &fakeSessionService{
 		sessions:      map[domain.SessionID]domain.Session{s.ID: s},
+		sessionEnv:    map[domain.SessionID]map[string]string{},
 		agentSwitches: map[domain.AgentSwitchID]domain.AgentSwitch{},
 	}
 }
@@ -418,6 +422,17 @@ func (f *fakeSessionService) ResumeAgent(_ context.Context, id domain.SessionID)
 	s.Status = domain.StatusIdle
 	f.sessions[id] = s
 	return sessionsvc.ResumeAgentOutcome{Session: s, Mode: sessionsvc.RestoreModeViewNative}, nil
+}
+
+func (f *fakeSessionService) SetSessionEnv(_ context.Context, id domain.SessionID, env map[string]string) error {
+	if f.sessionEnvErr != nil {
+		return f.sessionEnvErr
+	}
+	if err := domain.ValidateEnv(env); err != nil {
+		return apierr.Invalid("SESSION_ENV_INVALID", err.Error(), nil)
+	}
+	f.sessionEnv[id] = env
+	return nil
 }
 
 func (f *fakeSessionService) ProviderStaleness(_ context.Context) ([]sessionsvc.ProviderStaleness, error) {
@@ -962,6 +977,73 @@ func TestSessionsAPI_ListWorkspaceTree(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSessionsAPI_SetSessionEnv(t *testing.T) {
+	t.Run("stores overrides and echoes key names only", func(t *testing.T) {
+		svc := newFakeSessionService()
+		srv := newSessionTestServer(t, svc)
+		body, status, _ := doRequest(t, srv, http.MethodPut, "/api/v1/sessions/ao-1/env",
+			`{"env":{"ANTHROPIC_AUTH_TOKEN":"sk-local-secret","ANTHROPIC_BASE_URL":"http://127.0.0.1:11434"}}`)
+		if status != http.StatusOK {
+			t.Fatalf("status = %d, want 200; body=%s", status, body)
+		}
+		stored := svc.sessionEnv["ao-1"]
+		if stored["ANTHROPIC_BASE_URL"] != "http://127.0.0.1:11434" || stored["ANTHROPIC_AUTH_TOKEN"] != "sk-local-secret" {
+			t.Fatalf("stored = %#v", stored)
+		}
+		if strings.Contains(string(body), "sk-local-secret") {
+			t.Fatalf("response leaked an env value: %s", body)
+		}
+		var got controllers.SessionEnvResponse
+		mustJSON(t, body, &got)
+		if !got.OK || got.SessionID != "ao-1" {
+			t.Fatalf("response = %+v", got)
+		}
+		if !slices.Equal(got.EnvKeys, []string{"ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL"}) {
+			t.Fatalf("envKeys = %#v, want sorted keys", got.EnvKeys)
+		}
+	})
+
+	t.Run("clears with an empty map", func(t *testing.T) {
+		svc := newFakeSessionService()
+		svc.sessionEnv["ao-1"] = map[string]string{"OLD": "value"}
+		srv := newSessionTestServer(t, svc)
+		body, status, _ := doRequest(t, srv, http.MethodPut, "/api/v1/sessions/ao-1/env", `{"env":{}}`)
+		if status != http.StatusOK {
+			t.Fatalf("status = %d, want 200; body=%s", status, body)
+		}
+		if len(svc.sessionEnv["ao-1"]) != 0 {
+			t.Fatalf("stored = %#v, want empty", svc.sessionEnv["ao-1"])
+		}
+		var got controllers.SessionEnvResponse
+		mustJSON(t, body, &got)
+		if len(got.EnvKeys) != 0 {
+			t.Fatalf("envKeys = %#v, want empty", got.EnvKeys)
+		}
+	})
+
+	t.Run("rejects invalid env", func(t *testing.T) {
+		srv := newSessionTestServer(t, newFakeSessionService())
+		body, status, _ := doRequest(t, srv, http.MethodPut, "/api/v1/sessions/ao-1/env", `{"env":{"AO_SESSION_ID":"forged"}}`)
+		if status != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400; body=%s", status, body)
+		}
+		body, status, _ = doRequest(t, srv, http.MethodPut, "/api/v1/sessions/ao-1/env", `{"env":{"BAD NAME":"v"}}`)
+		if status != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400; body=%s", status, body)
+		}
+	})
+
+	t.Run("surfaces service errors", func(t *testing.T) {
+		svc := newFakeSessionService()
+		svc.sessionEnvErr = errors.New("storage down")
+		srv := newSessionTestServer(t, svc)
+		_, status, _ := doRequest(t, srv, http.MethodPut, "/api/v1/sessions/ao-1/env", `{"env":{"K":"V"}}`)
+		if status != http.StatusInternalServerError {
+			t.Fatalf("status = %d, want 500", status)
+		}
+	})
 }
 
 func TestSessionsAPI_AgentSwitchLifecycle(t *testing.T) {

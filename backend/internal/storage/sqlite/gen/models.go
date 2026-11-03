@@ -753,6 +753,7 @@ type Session struct {
 	BranchNaming                     bool
 	TemporaryBranch                  string
 	ReviewOnly                       bool
+	EnvOverrides                     string
 	ProviderBaseURL                  string
 	ProviderModel                    string
 }

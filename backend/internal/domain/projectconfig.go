@@ -276,19 +276,8 @@ func (c ProjectConfig) Validate() error {
 	if err := validateNameComponent("sessionPrefix", c.SessionPrefix); err != nil {
 		return err
 	}
-	seenEnv := make(map[string]bool, len(c.Env))
-	for key, value := range c.Env {
-		if !validEnvName(key) || strings.ContainsRune(value, '\x00') {
-			return fmt.Errorf("env %q: invalid variable name or value", key)
-		}
-		folded := strings.ToUpper(key)
-		if strings.HasPrefix(folded, "AO_") {
-			return fmt.Errorf("env %q: AO_ prefix is reserved", key)
-		}
-		if seenEnv[folded] {
-			return fmt.Errorf("env %q: duplicate variable name", key)
-		}
-		seenEnv[folded] = true
+	if err := ValidateEnv(c.Env); err != nil {
+		return err
 	}
 	for role, ro := range map[string]RoleOverride{"worker": c.Worker, "orchestrator": c.Orchestrator} {
 		if ro.Harness != "" && !ro.Harness.IsKnown() {
@@ -353,6 +342,27 @@ func NormalizeOwnAccount(account string) string {
 	login := strings.TrimSpace(account)
 	login = strings.TrimPrefix(login, "@")
 	return strings.ToLower(login)
+}
+
+// ValidateEnv checks an env map destined for agent sessions: shell-safe
+// variable names, NUL-free values, no AO_-prefixed keys, and no duplicate
+// names once case is folded (macOS/Windows env lookup is case-insensitive).
+func ValidateEnv(env map[string]string) error {
+	seenEnv := make(map[string]bool, len(env))
+	for key, value := range env {
+		if !validEnvName(key) || strings.ContainsRune(value, '\x00') {
+			return fmt.Errorf("env %q: invalid variable name or value", key)
+		}
+		folded := strings.ToUpper(key)
+		if strings.HasPrefix(folded, "AO_") {
+			return fmt.Errorf("env %q: AO_ prefix is reserved", key)
+		}
+		if seenEnv[folded] {
+			return fmt.Errorf("env %q: duplicate variable name", key)
+		}
+		seenEnv[folded] = true
+	}
+	return nil
 }
 
 func validEnvName(name string) bool {

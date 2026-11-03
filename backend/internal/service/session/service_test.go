@@ -2693,6 +2693,7 @@ func TestSessionRenameMissingSessionReturnsNotFound(t *testing.T) {
 // clean-orchestrator ordering without wiring a real session engine.
 type fakeCommander struct {
 	killed           []domain.SessionID
+	sessionEnvSaved  map[domain.SessionID]map[string]string
 	retired          []domain.SessionID
 	exited           []domain.SessionID
 	resumed          []domain.SessionID
@@ -2798,6 +2799,17 @@ func (f *fakeCommander) ResumeAgentWithMode(_ context.Context, id domain.Session
 	}
 	return f.restoreResult, nil
 }
+
+func (f *fakeCommander) SetSessionEnvOverrides(_ context.Context, id domain.SessionID, env map[string]string) error {
+	f.killMu.Lock()
+	defer f.killMu.Unlock()
+	if f.sessionEnvSaved == nil {
+		f.sessionEnvSaved = map[domain.SessionID]map[string]string{}
+	}
+	f.sessionEnvSaved[id] = env
+	return nil
+}
+
 func (f *fakeCommander) ExitAgent(_ context.Context, id domain.SessionID) (domain.SessionRecord, error) {
 	f.killMu.Lock()
 	f.exited = append(f.exited, id)
@@ -2897,6 +2909,35 @@ func (f *fakeCommander) StageAttachments(
 
 // TestCleanupMapsManagerResult: the service forwards both reclaimed and
 // skipped sessions, with non-nil slices so the wire shape stays stable.
+// TestSetSessionEnv maps manager capability, validation, and forwarding.
+func TestSetSessionEnv(t *testing.T) {
+	ctx := context.Background()
+
+	svc := &Service{}
+	err := svc.SetSessionEnv(ctx, "s1", map[string]string{"K": "V"})
+	var e *apierr.Error
+	if !errors.As(err, &e) || e.Kind != apierr.KindConflict || e.Code != "SESSION_ENV_UNSUPPORTED" {
+		t.Fatalf("unsupported manager: err = %v, want Conflict SESSION_ENV_UNSUPPORTED", err)
+	}
+
+	fc := &fakeCommander{}
+	svc = &Service{manager: fc}
+	err = svc.SetSessionEnv(ctx, "s1", map[string]string{"AO_SESSION_ID": "forged"})
+	if !errors.As(err, &e) || e.Kind != apierr.KindInvalid || e.Code != "SESSION_ENV_INVALID" {
+		t.Fatalf("AO_ key: err = %v, want Invalid SESSION_ENV_INVALID", err)
+	}
+	if len(fc.sessionEnvSaved) != 0 {
+		t.Fatalf("invalid env must not reach the manager: %#v", fc.sessionEnvSaved)
+	}
+
+	if err := svc.SetSessionEnv(ctx, "s1", map[string]string{"FOO": "bar"}); err != nil {
+		t.Fatalf("SetSessionEnv: %v", err)
+	}
+	if got := fc.sessionEnvSaved["s1"]; got["FOO"] != "bar" {
+		t.Fatalf("forwarded env = %#v", got)
+	}
+}
+
 func TestCleanupMapsManagerResult(t *testing.T) {
 	svc := &Service{manager: &fakeCommander{}}
 	out, err := svc.Cleanup(context.Background(), "mer")

@@ -1162,3 +1162,108 @@ func TestSetupCallsHaveNoClientTimeout(t *testing.T) {
 		})
 	}
 }
+
+func TestSessionSetConfigEnv(t *testing.T) {
+	cfg := setConfigEnv(t)
+	var mu sync.Mutex
+	var envBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/sessions/demo-1/env":
+			var req map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			mu.Lock()
+			envBody, _ = req["env"].(map[string]any)
+			mu.Unlock()
+			_, _ = io.WriteString(w, `{"ok":true,"sessionId":"demo-1","envKeys":["ANTHROPIC_BASE_URL","ANTHROPIC_AUTH_TOKEN"]}`)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/sessions/demo-1/resume-agent":
+			_, _ = io.WriteString(w, `{"ok":true,"sessionId":"demo-1","resumeMode":"native","session":`+sessionJSON("demo-1", "demo", "worker", "idle", false)+`}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	writeRunFileFor(t, cfg, srv)
+
+	out, errOut, err := executeCLI(t, Deps{
+		ProcessAlive: func(int) bool { return true },
+	}, "session", "set-config", "demo-1",
+		"--env", "ANTHROPIC_BASE_URL=http://127.0.0.1:11434",
+		"--env", "ANTHROPIC_AUTH_TOKEN=sk-local-only",
+		"--respawn")
+	if err != nil {
+		t.Fatalf("session set-config failed: %v\nstderr=%s", err, errOut)
+	}
+	mu.Lock()
+	got := envBody
+	mu.Unlock()
+	want := map[string]any{
+		"ANTHROPIC_BASE_URL":   "http://127.0.0.1:11434",
+		"ANTHROPIC_AUTH_TOKEN": "sk-local-only",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("env body = %#v, want %#v", got, want)
+	}
+	if !strings.Contains(out, "env overrides saved for session demo-1") || !strings.Contains(out, "agent resumed for session demo-1") {
+		t.Fatalf("unexpected set-config --respawn output:\n%s", out)
+	}
+	if strings.Contains(out, "sk-local-only") {
+		t.Fatalf("set-config output leaked an env value:\n%s", out)
+	}
+}
+
+func TestSessionSetConfigClearEnv(t *testing.T) {
+	cfg := setConfigEnv(t)
+	var mu sync.Mutex
+	var envRaw string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodPut && r.URL.Path == "/api/v1/sessions/demo-1/env" {
+			raw, _ := io.ReadAll(r.Body)
+			mu.Lock()
+			envRaw = string(raw)
+			mu.Unlock()
+			_, _ = io.WriteString(w, `{"ok":true,"sessionId":"demo-1","envKeys":[]}`)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	writeRunFileFor(t, cfg, srv)
+
+	out, errOut, err := executeCLI(t, Deps{ProcessAlive: func(int) bool { return true }}, "session", "set-config", "demo-1", "--clear-env")
+	if err != nil {
+		t.Fatalf("session set-config --clear-env failed: %v\nstderr=%s", err, errOut)
+	}
+	mu.Lock()
+	got := envRaw
+	mu.Unlock()
+	if got != `{"env":null}` {
+		t.Fatalf("clear-env body = %q, want null env", got)
+	}
+	if !strings.Contains(out, "keys: ") {
+		t.Fatalf("unexpected clear-env output:\n%s", out)
+	}
+}
+
+func TestSessionSetConfigUsageErrors(t *testing.T) {
+	cfg := setConfigEnv(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, `{"error":"no request expected"}`, http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+	writeRunFileFor(t, cfg, srv)
+
+	for _, args := range [][]string{
+		{"session", "set-config", "demo-1"},
+		{"session", "set-config", "demo-1", "--env", "K=V", "--clear-env"},
+		{"session", "set-config", "demo-1", "--env", "K"},
+	} {
+		_, _, err := executeCLI(t, Deps{}, args...)
+		if err == nil || ExitCode(err) != 2 {
+			t.Fatalf("args=%v: err=%v exit=%d, want usage error 2", args, err, ExitCode(err))
+		}
+	}
+}

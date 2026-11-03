@@ -1070,6 +1070,21 @@ type ResumeAgentResponse struct {
 	Session    SessionView                `json:"session"`
 }
 
+// SessionEnvRequest is the body of PUT /api/v1/sessions/{sessionId}/env.
+// The map replaces the session's env overrides wholesale; an empty map clears
+// them. Values are applied to the session's runtime env on the next launch.
+type SessionEnvRequest struct {
+	Env map[string]string `json:"env"`
+}
+
+// SessionEnvResponse echoes the saved override's key names only. Values are
+// secrets and are never served back.
+type SessionEnvResponse struct {
+	OK        bool             `json:"ok"`
+	SessionID domain.SessionID `json:"sessionId"`
+	EnvKeys   []string         `json:"envKeys"`
+}
+
 // StartSessionInterfaceTransitionRequest is the body of POST
 // /api/v1/sessions/{sessionId}/interface-transition.
 type StartSessionInterfaceTransitionRequest struct {

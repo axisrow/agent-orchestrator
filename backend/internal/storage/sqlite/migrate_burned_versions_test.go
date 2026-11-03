@@ -231,6 +231,7 @@ var shippedMigrations = map[int64]string{
 	20261028124744445: "20261028124744445_pr_last_seen_at.sql",
 	20261028124744446: "20261028124744446_notification_stuck_delivery.sql",
 	20261103025608417: "20261103025608417_pr_ci_pending_since.sql",
+	20261103092817976: "20261103092817976_session_env_overrides.sql",
 	9001:              "9001_add_user_config.sql",
 	9006:              "9006_session_provider_stamp.sql",
 	9011:              "9011_gateway_entries.sql",

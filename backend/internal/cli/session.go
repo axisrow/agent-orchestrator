@@ -204,6 +204,7 @@ func newSessionCommand(ctx *commandContext) *cobra.Command {
 	cmd.AddCommand(newSessionExitAgentCommand(ctx))
 	cmd.AddCommand(newSessionRestartAllCommand(ctx))
 	cmd.AddCommand(newSessionResumeAgentCommand(ctx))
+	cmd.AddCommand(newSessionSetConfigCommand(ctx))
 	cmd.AddCommand(newSessionRenameCommand(ctx))
 	cmd.AddCommand(newSessionCleanupCommand(ctx))
 	cmd.AddCommand(newSessionClaimPRCommand(ctx))
@@ -324,6 +325,100 @@ func newSessionResumeAgentCommand(ctx *commandContext) *cobra.Command {
 	addSessionProjectFlag(cmd.Flags(), &opts.project, "Project id to scope the lookup")
 	cmd.Flags().BoolVar(&opts.json, "json", false, "Output as JSON")
 	return cmd
+}
+
+type sessionSetConfigOptions struct {
+	project  string
+	json     bool
+	env      []string
+	clearEnv bool
+	respawn  bool
+}
+
+// sessionEnvRequest mirrors the PUT /sessions/{id}/env body. The map replaces
+// the session's overrides wholesale.
+type sessionEnvRequest struct {
+	Env map[string]string `json:"env"`
+}
+
+// sessionEnvResponse carries key names only: values are secrets and are never
+// echoed back by the daemon.
+type sessionEnvResponse struct {
+	OK        bool     `json:"ok"`
+	SessionID string   `json:"sessionId"`
+	EnvKeys   []string `json:"envKeys"`
+}
+
+func newSessionSetConfigCommand(ctx *commandContext) *cobra.Command {
+	var opts sessionSetConfigOptions
+	cmd := &cobra.Command{
+		Use:   "set-config <id>",
+		Short: "Set the session's persistent env overrides",
+		Long: "Replace the session's persistent env overrides: KEY=VALUE pairs applied on top of " +
+			"the project, role, and provider-gateway env on every launch, so a hot LLM provider " +
+			"switch (e.g. ANTHROPIC_BASE_URL/ANTHROPIC_AUTH_TOKEN to a local ollama) survives " +
+			"respawn and daemon restarts. --env replaces the whole map; --clear-env removes it. " +
+			"Values are stored but never served back or printed. --respawn relaunches an exited " +
+			"agent right away so the new env applies without waiting for the next restart. " +
+			"The change reaches an agent only on launch: a running agent must exit first " +
+			"(`ao session exit-agent`) or be respawned.",
+		Args: oneSessionIDArg,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := normalizeSessionID(args[0])
+			if err != nil {
+				return err
+			}
+			return ctx.setSessionConfig(cmd.Context(), cmd, id, opts)
+		},
+	}
+	addSessionProjectFlag(cmd.Flags(), &opts.project, "Project id to scope the lookup")
+	f := cmd.Flags()
+	f.StringArrayVar(&opts.env, "env", nil, "Env var KEY=VALUE kept for every launch of this session (repeatable; replaces the whole map)")
+	f.BoolVar(&opts.clearEnv, "clear-env", false, "Remove every env override from the session")
+	f.BoolVar(&opts.respawn, "respawn", false, "Respawn the exited agent after saving, so the new env applies now")
+	f.BoolVar(&opts.json, "json", false, "Output as JSON")
+	return cmd
+}
+
+func (c *commandContext) setSessionConfig(ctx context.Context, cmd *cobra.Command, id string, opts sessionSetConfigOptions) error {
+	changedEnv := cmd.Flags().Changed("env")
+	if !changedEnv && !opts.clearEnv {
+		return usageError{errors.New("usage: provide --env KEY=VALUE (repeatable) or --clear-env")}
+	}
+	if changedEnv && opts.clearEnv {
+		return usageError{errors.New("--clear-env and --env are mutually exclusive")}
+	}
+	var env map[string]string
+	if !opts.clearEnv {
+		pairs, err := parseEnvPairs(opts.env)
+		if err != nil {
+			return err
+		}
+		env = pairs
+	}
+	if opts.project != "" {
+		if _, err := c.fetchScopedSession(ctx, id, opts.project); err != nil {
+			return err
+		}
+	}
+	var res sessionEnvResponse
+	if err := c.putJSON(ctx, "sessions/"+url.PathEscape(id)+"/env", sessionEnvRequest{Env: env}, &res); err != nil {
+		return err
+	}
+	if !opts.respawn {
+		if opts.json {
+			return writeJSON(cmd.OutOrStdout(), res)
+		}
+		_, err := fmt.Fprintf(cmd.OutOrStdout(), "env overrides saved for session %s (keys: %s)\n", res.SessionID, strings.Join(res.EnvKeys, ", "))
+		return err
+	}
+	if res.SessionID != "" {
+		id = res.SessionID
+	}
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "env overrides saved for session %s (keys: %s)\n", id, strings.Join(res.EnvKeys, ", ")); err != nil {
+		return err
+	}
+	return c.resumeSessionAgent(ctx, cmd, id, sessionOptions{})
 }
 
 func newSessionRenameCommand(ctx *commandContext) *cobra.Command {

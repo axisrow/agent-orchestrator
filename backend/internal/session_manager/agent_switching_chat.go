@@ -367,6 +367,7 @@ func (m *Manager) executeChatAgentSwitch(
 	}
 	targetLaunchEnv := m.runtimeEnv(id, credentialRecord.ProjectID, credentialRecord.IssueID, mergeEnv(project.Config.Env, baseAgentConfig.Env))
 	m.applyRoleProviderPin(ctx, targetLaunchEnv, project.ID, rec.Kind, project.Config)
+	m.applySessionEnvOverrides(ctx, id, targetLaunchEnv)
 	m.augmentAgentRuntimeEnv(targetAgent, targetLaunchEnv)
 	releaseCodexAdmission, admissionErr := m.acquireCodexControllerAdmission(ctx, cfg.TargetHarness)
 	if admissionErr != nil {
@@ -406,6 +407,7 @@ func (m *Manager) executeChatAgentSwitch(
 				return nil, prepareErr
 			}
 			m.applyRoleProviderPin(launchCtx, launchEnv, project.ID, rec.Kind, project.Config)
+			m.applySessionEnvOverrides(launchCtx, id, launchEnv)
 			credentialRecord = prepared
 			m.augmentAgentRuntimeEnv(targetAgent, launchEnv)
 			return launchEnv, nil

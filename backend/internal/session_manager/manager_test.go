@@ -84,6 +84,10 @@ type fakeStore struct {
 	// once-per-project regression test asserts on them.
 	listSessionsCalls    atomic.Int64
 	listAllSessionsCalls atomic.Int64
+	// sessionEnv backs SessionEnvOverrides/SetSessionEnvOverrides; a test that
+	// does not populate it leaves the manager without the capability.
+	sessionEnv    map[domain.SessionID]map[string]string
+	setSessionEnv map[domain.SessionID]map[string]string
 }
 
 type supersedeCall struct {
@@ -99,7 +103,23 @@ func newFakeStore() *fakeStore {
 		conversations: map[domain.SessionID]domain.ConversationRecord{},
 		workspaceRepo: map[string][]domain.WorkspaceRepoRecord{},
 		worktrees:     map[domain.SessionID][]domain.SessionWorktreeRecord{},
+		sessionEnv:    map[domain.SessionID]map[string]string{},
 	}
+}
+
+func (f *fakeStore) SessionEnvOverrides(_ context.Context, id domain.SessionID) (map[string]string, error) {
+	if f.sessionEnv == nil {
+		return nil, nil
+	}
+	return f.sessionEnv[id], nil
+}
+
+func (f *fakeStore) SetSessionEnvOverrides(_ context.Context, id domain.SessionID, env map[string]string) error {
+	if f.setSessionEnv == nil {
+		f.setSessionEnv = map[domain.SessionID]map[string]string{}
+	}
+	f.setSessionEnv[id] = env
+	return nil
 }
 func (f *fakeStore) GetProject(_ context.Context, id string) (domain.ProjectRecord, bool, error) {
 	if f.getProjectErr != nil {
@@ -2267,6 +2287,60 @@ func newExitedResumeManager(t *testing.T, runtime runtimeController, agent ports
 		fake.base().exitedLaunches["launch-old"] = true
 	}
 	return m, st, ws
+}
+
+// TestResumeAgent_SessionEnvOverridesWinOverProjectEnv proves the persisted
+// per-session env override is the top user layer on a relaunch: it beats the
+// project env (and the role env that effectiveAgentConfig folds in), while
+// AO-internal vars stay protected.
+func TestResumeAgent_SessionEnvOverridesWinOverProjectEnv(t *testing.T) {
+	runtime := &fakeRuntime{aliveByHandle: map[string]bool{"tmux-mer-1": true}}
+	agent := supervisedLaunchAgent{launchArgvAgent{argv: []string{"codex", "resume", "agent-x"}}}
+	m, st, _ := newExitedResumeManager(t, runtime, agent)
+	project := st.projects["mer"]
+	project.Config.Env = map[string]string{"SHARED": "project", "PROJECT_ONLY": "p"}
+	st.projects["mer"] = project
+	st.sessionEnv["mer-1"] = map[string]string{"SHARED": "session", "SESSION_ONLY": "s"}
+
+	if _, err := m.ResumeAgentWithMode(ctx, "mer-1"); err != nil {
+		t.Fatal(err)
+	}
+	env := runtime.lastCfg.Env
+	if env["SHARED"] != "session" {
+		t.Fatalf("SHARED = %q, want the session override to win", env["SHARED"])
+	}
+	if env["PROJECT_ONLY"] != "p" || env["SESSION_ONLY"] != "s" {
+		t.Fatalf("env = SHARED %q PROJECT_ONLY %q SESSION_ONLY %q", env["SHARED"], env["PROJECT_ONLY"], env["SESSION_ONLY"])
+	}
+	if env[EnvSessionID] == "" {
+		t.Fatal("session override must not displace AO-internal env")
+	}
+}
+
+// TestSetSessionEnvOverridesValidation keeps the write path honest: valid maps
+// land in the store, reserved AO_ keys are refused before storage.
+func TestSetSessionEnvOverridesValidation(t *testing.T) {
+	st := newFakeStore()
+	m := New(Deps{Store: st, Messenger: &fakeMessenger{}, Lifecycle: &fakeLCM{store: st}, LookPath: func(string) (string, error) { return "/bin/true", nil }})
+
+	if err := m.SetSessionEnvOverrides(ctx, "s1", map[string]string{"FOO": "bar", "BAZ": ""}); err != nil {
+		t.Fatalf("valid env rejected: %v", err)
+	}
+	if got := st.setSessionEnv["s1"]; got["FOO"] != "bar" || got["BAZ"] != "" {
+		t.Fatalf("stored = %#v", got)
+	}
+	if err := m.SetSessionEnvOverrides(ctx, "s1", nil); err != nil {
+		t.Fatalf("clear rejected: %v", err)
+	}
+	if got, saved := st.setSessionEnv["s1"]; saved && len(got) != 0 {
+		t.Fatalf("clear stored = %#v, want empty", got)
+	}
+	if err := m.SetSessionEnvOverrides(ctx, "s1", map[string]string{"AO_SESSION_ID": "forged"}); err == nil {
+		t.Fatal("AO_-prefixed override accepted")
+	}
+	if err := m.SetSessionEnvOverrides(ctx, "s1", map[string]string{"BAD NAME": "v"}); err == nil {
+		t.Fatal("invalid name accepted")
+	}
 }
 
 func TestResumeAgent_RestartsRuntimeWithManagedGeneration(t *testing.T) {

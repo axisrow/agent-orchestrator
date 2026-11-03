@@ -21,6 +21,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -99,6 +100,7 @@ type SessionService interface {
 	Restore(ctx context.Context, id domain.SessionID) (sessionsvc.RestoreOutcome, error)
 	ExitAgent(ctx context.Context, id domain.SessionID) (sessionsvc.ExitAgentOutcome, error)
 	ResumeAgent(ctx context.Context, id domain.SessionID) (sessionsvc.ResumeAgentOutcome, error)
+	SetSessionEnv(ctx context.Context, id domain.SessionID, env map[string]string) error
 	ProviderStaleness(ctx context.Context) ([]sessionsvc.ProviderStaleness, error)
 	ApplyProviderSwitch(ctx context.Context, sessionIDs []domain.SessionID) ([]sessionsvc.ProviderApplyResult, error)
 	SwitchAgent(ctx context.Context, id domain.SessionID, in sessionsvc.SwitchAgentInput) (domain.AgentSwitch, error)
@@ -275,6 +277,7 @@ func (c *SessionsController) Register(r chi.Router) {
 	r.Post("/sessions/{sessionId}/restore", c.restore)
 	r.Post("/sessions/{sessionId}/exit-agent", c.exitAgent)
 	r.Post("/sessions/{sessionId}/resume-agent", c.resumeAgent)
+	r.Put("/sessions/{sessionId}/env", c.setSessionEnv)
 	r.Post("/sessions/{sessionId}/switch-agent", c.switchAgent)
 	r.Get("/sessions/{sessionId}/agent-switches", c.listAgentSwitches)
 	r.Post("/sessions/{sessionId}/agent-switches/{switchId}/recover", c.recoverAgentSwitch)
@@ -1936,6 +1939,31 @@ func (c *SessionsController) resumeAgent(w http.ResponseWriter, r *http.Request)
 		ResumeMode: out.Mode,
 		Session:    sessionView(r, out.Session),
 	})
+}
+
+// setSessionEnv replaces the session's persistent env overrides. Values are
+// secrets: the response echoes the session id and the sorted key names only,
+// never the values.
+func (c *SessionsController) setSessionEnv(w http.ResponseWriter, r *http.Request) {
+	if c.Svc == nil {
+		apispec.NotImplemented(w, r, "PUT", "/api/v1/sessions/{sessionId}/env")
+		return
+	}
+	var in SessionEnvRequest
+	if err := decodeJSON(r, &in); err != nil && !errors.Is(err, io.EOF) {
+		envelope.WriteAPIError(w, r, http.StatusBadRequest, "bad_request", "INVALID_JSON", "Invalid JSON body", nil)
+		return
+	}
+	if err := c.Svc.SetSessionEnv(r.Context(), sessionID(r), in.Env); err != nil {
+		envelope.WriteError(w, r, err)
+		return
+	}
+	keys := make([]string, 0, len(in.Env))
+	for key := range in.Env {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	envelope.WriteJSON(w, http.StatusOK, SessionEnvResponse{OK: true, SessionID: sessionID(r), EnvKeys: keys})
 }
 
 func (c *SessionsController) exitAgent(w http.ResponseWriter, r *http.Request) {

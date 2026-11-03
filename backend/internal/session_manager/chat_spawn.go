@@ -226,6 +226,7 @@ func (m *Manager) launchChatController(ctx context.Context, in chatSpawn) (domai
 	// Role-level Env overlays the project's, matching the terminal launch.
 	env := m.runtimeEnv(id, in.record.ProjectID, in.record.IssueID, mergeEnv(in.project.Config.Env, agentConfig.Env))
 	m.applyRoleProviderPin(ctx, env, in.project.ID, in.cfg.Kind, in.project.Config)
+	m.applySessionEnvOverrides(ctx, id, env)
 	if agent, ok := m.agents.Agent(in.cfg.Harness); ok {
 		m.augmentAgentRuntimeEnv(agent, env)
 		// Chat launches go through the same workspace preparation as terminal
@@ -266,6 +267,7 @@ func (m *Manager) launchChatController(ctx context.Context, in chatSpawn) (domai
 				return nil, fmt.Errorf("%w: %w", ErrSpawnBrowser, prepareErr)
 			}
 			m.applyRoleProviderPin(launchCtx, launchEnv, in.project.ID, in.record.Kind, in.project.Config)
+			m.applySessionEnvOverrides(launchCtx, id, launchEnv)
 			if agent, ok := m.agents.Agent(in.cfg.Harness); ok {
 				m.augmentAgentRuntimeEnv(agent, launchEnv)
 			}
@@ -320,12 +322,12 @@ func (m *Manager) launchChatController(ctx context.Context, in chatSpawn) (domai
 			if completionErr != nil {
 				return domain.SessionRecord{}, wrapSpawnStage(id, ErrSpawnCommit, completionErr)
 			}
-			return domain.SessionRecord{}, wrapSpawnStage(id, ErrChatController, agentlaunch.RedactError(err, in.project.Config.Env))
+			return domain.SessionRecord{}, wrapSpawnStage(id, ErrChatController, agentlaunch.RedactError(err, env))
 		}
 		// No controller exists, so nothing provider-side needs closing. The
 		// runtime was never touched, hence runtimeDestroyed=false.
 		m.rollbackSeedSpawnWorkspace(ctx, in.record, in.workspace, in.workspaceProject, false, in.promptQueued)
-		return domain.SessionRecord{}, wrapSpawnStage(id, ErrChatController, agentlaunch.RedactError(err, in.project.Config.Env))
+		return domain.SessionRecord{}, wrapSpawnStage(id, ErrChatController, agentlaunch.RedactError(err, env))
 	}
 
 	// The initial prompt is a normal turn through the controller. There is no
@@ -336,7 +338,7 @@ func (m *Manager) launchChatController(ctx context.Context, in chatSpawn) (domai
 			m.stopChatAfterSpawnFailure(ctx, id)
 			m.rollbackPreparedSpawnWorkspaceAfterFailure(ctx, in.record, in.workspace, in.workspaceProject, true)
 			m.markSpawnFailedTerminatedAfterFailure(ctx, id, false)
-			return domain.SessionRecord{}, wrapSpawnStage(id, ErrSpawnDeliverPrompt, agentlaunch.RedactError(err, in.project.Config.Env))
+			return domain.SessionRecord{}, wrapSpawnStage(id, ErrSpawnDeliverPrompt, agentlaunch.RedactError(err, env))
 		}
 	}
 
@@ -508,6 +510,7 @@ func (m *Manager) resumeChatController(
 	}
 	env := m.runtimeEnv(rec.ID, rec.ProjectID, rec.IssueID, mergeEnv(project.Config.Env, agentConfig.Env))
 	m.applyRoleProviderPin(ctx, env, project.ID, rec.Kind, project.Config)
+	m.applySessionEnvOverrides(ctx, rec.ID, env)
 	if agent, ok := m.agents.Agent(rec.Harness); ok {
 		m.augmentAgentRuntimeEnv(agent, env)
 	}
@@ -557,6 +560,7 @@ func (m *Manager) resumeChatController(
 				return nil, prepareErr
 			}
 			m.applyRoleProviderPin(launchCtx, launchEnv, project.ID, rec.Kind, project.Config)
+			m.applySessionEnvOverrides(launchCtx, rec.ID, launchEnv)
 			if agent, ok := m.agents.Agent(rec.Harness); ok {
 				m.augmentAgentRuntimeEnv(agent, launchEnv)
 			}
@@ -620,7 +624,7 @@ func (m *Manager) resumeChatController(
 			m.stopChatBestEffort(ctx, rec.ID)
 			return RestoreResult{}, relaunchFailed("record launch", fmt.Errorf("%s %s: completed: %w", operation, rec.ID, completionErr))
 		}
-		return RestoreResult{}, relaunchFailed("chat start", fmt.Errorf("%s %s: resume chat: %w", operation, rec.ID, agentlaunch.RedactError(err, project.Config.Env)))
+		return RestoreResult{}, relaunchFailed("chat start", fmt.Errorf("%s %s: resume chat: %w", operation, rec.ID, agentlaunch.RedactError(err, env)))
 	}
 
 	restored, err := m.getRecord(ctx, rec.ID)
