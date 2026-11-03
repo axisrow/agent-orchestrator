@@ -120,12 +120,13 @@ test("renderer: session state rehydrates after a renderer relaunch @T0 @DMN", as
 		workers: [{ id: "dmn009", title: "Persisted worker", status: "working" }],
 	});
 	await page.goto("/#/projects/fake-proj");
-	await expect(page).toHaveURL(/sessions\/dmn009/);
+	// The redirect (#163, #260) lands on the fixture's live orchestrator.
+	await expect(page).toHaveURL(/sessions\/fake-proj-orchestrator/);
 	await expect(page.getByTestId("session-detail")).toBeVisible();
 
 	await page.reload();
 	await expect(page.getByTestId("daemon-status")).toHaveAttribute("data-state", "ready");
-	await expect(page).toHaveURL(/sessions\/dmn009/);
+	await expect(page).toHaveURL(/sessions\/fake-proj-orchestrator/);
 	await expect(page.getByTestId("session-detail")).toBeVisible();
 });
 

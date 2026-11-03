@@ -1320,7 +1320,7 @@ describe("Sidebar", () => {
 		]);
 	});
 
-	it("navigates to the project board when a project with worker sessions is clicked", async () => {
+	it("navigates to the project route when a project with worker sessions is clicked", async () => {
 		const user = userEvent.setup();
 		renderSidebar({ workspaces: [{ ...workspace, sessions: [session] }] });
 
@@ -1330,7 +1330,7 @@ describe("Sidebar", () => {
 		expect(navigateMock).toHaveBeenCalledWith({ to: "/projects/$projectId", params: { projectId: "proj-1" } });
 	});
 
-	it("opens the board, not the orchestrator, when an empty project row is clicked", async () => {
+	it("opens the project route, not the orchestrator, when an empty project row is clicked", async () => {
 		renderSidebar({ workspaces: [{ ...workspace, sessions: [] }] });
 		await userEvent.click(screen.getByText("Project One"));
 		expect(navigateMock).toHaveBeenCalledWith({ to: "/projects/$projectId", params: { projectId: "proj-1" } });
