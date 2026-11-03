@@ -233,11 +233,11 @@ func TestReportStoreFailsQueuedBatchTerminally(t *testing.T) {
 	if _, err = s.ClaimPendingReportBatch(ctx, sess.ProjectID, "queue-token", now); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := s.FailReportBatchTerminally(ctx, sess.ProjectID, "wrong", "reason"); err != nil || n != 0 {
+	if n, err := s.FailReportBatchTerminally(ctx, sess.ProjectID, "wrong", domain.DeliveryEventInjectFailed, "reason"); err != nil || n != 0 {
 		t.Fatalf("wrong token failed %d rows, err=%v", n, err)
 	}
 	reason := "session: prompt text is held in the target's message queue"
-	if n, err := s.FailReportBatchTerminally(ctx, sess.ProjectID, "queue-token", reason); err != nil || n != 1 {
+	if n, err := s.FailReportBatchTerminally(ctx, sess.ProjectID, "queue-token", domain.DeliveryEventInjectFailed, reason); err != nil || n != 1 {
 		t.Fatalf("failed=%d err=%v", n, err)
 	}
 	got, ok, err := s.GetReport(ctx, rec.ID)
@@ -525,7 +525,7 @@ func TestReportStoreListsStuckDeliveryCandidates(t *testing.T) {
 	if _, err := s.ClaimPendingReportBatch(ctx, stSess.ProjectID, "tok-old", now); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := s.FailReportBatchTerminally(ctx, stSess.ProjectID, "tok-old", "project archived: no report recipient can exist (fork issue #208)"); err != nil || n == 0 {
+	if n, err := s.FailReportBatchTerminally(ctx, stSess.ProjectID, "tok-old", domain.DeliveryEventRecipientGone, "project archived: no report recipient can exist (fork issue #208)"); err != nil || n == 0 {
 		t.Fatalf("terminal fail n=%d err=%v", n, err)
 	}
 	for i := 0; i < 10; i++ {

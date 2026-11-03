@@ -443,6 +443,18 @@ type Delivery struct {
 	DeliveryBatchID    string
 }
 
+type DeliveryEvent struct {
+	ID         int64
+	DeliveryID string
+	SessionID  string
+	ProjectID  string
+	FromState  string
+	ToState    string
+	Cause      string
+	Reason     string
+	CreatedAt  time.Time
+}
+
 type GatewayEntry struct {
 	Scope     string
 	ProjectID string

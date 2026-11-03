@@ -39,7 +39,8 @@ func (s *Store) CreateReport(ctx context.Context, rec domain.ReportRecord) (doma
 				return err
 			}
 		}
-		return nil
+		return journalDeliveryEvents(ctx, q, []gen.Delivery{row},
+			"", string(domain.ReportPending), domain.DeliveryEventEmitted, "", rec.CreatedAt)
 	})
 	if err != nil {
 		return domain.ReportRecord{}, fmt.Errorf("create report %s: %w", rec.ID, err)
@@ -132,7 +133,11 @@ func (s *Store) ClaimPendingReportBatch(ctx context.Context, projectID domain.Pr
 			ProjectID: string(projectID), DeliveryBatchID: batchID,
 			ClaimToken: token, ClaimedAt: nullTime(at),
 		})
-		return err
+		if err != nil {
+			return err
+		}
+		return journalDeliveryEvents(ctx, q, rows,
+			string(domain.ReportPending), string(domain.ReportClaimed), domain.DeliveryEventDeliveryAttempt, "", at)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("claim project report batch: %w", err)
@@ -140,16 +145,36 @@ func (s *Store) ClaimPendingReportBatch(ctx context.Context, projectID domain.Pr
 	return s.reportsWithOutputs(ctx, orderedReportRows(rows))
 }
 
+// runDeliveryBatchTransition runs one token-fenced batch transition and its
+// journal append in a single transaction: the transition's returned rows feed
+// the journal, so a journal failure rolls the transition back.
+func (s *Store) runDeliveryBatchTransition(ctx context.Context, what string, at time.Time, transition func(q *gen.Queries) ([]gen.Delivery, error), fromState, toState, cause, reason string) ([]gen.Delivery, error) {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	var rows []gen.Delivery
+	err := s.inTx(ctx, what, func(q *gen.Queries) error {
+		var err error
+		rows, err = transition(q)
+		if err != nil {
+			return err
+		}
+		return journalDeliveryEvents(ctx, q, rows, fromState, toState, cause, reason, at)
+	})
+	return rows, err
+}
+
 // AcknowledgeReportBatch completes only the project batch holding token.
 func (s *Store) AcknowledgeReportBatch(ctx context.Context, projectID domain.ProjectID, token string, at time.Time) (int, error) {
 	if projectID == "" || token == "" || at.IsZero() {
 		return 0, domain.ErrInvalidReport
 	}
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-	rows, err := s.qw.AcknowledgeReportBatch(ctx, gen.AcknowledgeReportBatchParams{
-		ProjectID: string(projectID), ClaimToken: token, AcknowledgedAt: nullTime(at),
-	})
+	rows, err := s.runDeliveryBatchTransition(ctx, "acknowledge project report batch", at,
+		func(q *gen.Queries) ([]gen.Delivery, error) {
+			return q.AcknowledgeReportBatch(ctx, gen.AcknowledgeReportBatchParams{
+				ProjectID: string(projectID), ClaimToken: token, AcknowledgedAt: nullTime(at),
+			})
+		},
+		string(domain.ReportClaimed), string(domain.ReportAcknowledged), domain.DeliveryEventAcknowledged, "")
 	if err != nil {
 		return 0, fmt.Errorf("acknowledge project report batch: %w", err)
 	}
@@ -165,11 +190,13 @@ func (s *Store) AcknowledgeAcceptedReportBatches(ctx context.Context, projectID 
 	if projectID == "" || acceptedBatchID == "" || at.IsZero() {
 		return 0, domain.ErrInvalidReport
 	}
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-	rows, err := s.qw.AcknowledgeAcceptedPendingReports(ctx, gen.AcknowledgeAcceptedPendingReportsParams{
-		ProjectID: string(projectID), DeliveryBatchID: acceptedBatchID, AcknowledgedAt: nullTime(at),
-	})
+	rows, err := s.runDeliveryBatchTransition(ctx, "acknowledge accepted reports", at,
+		func(q *gen.Queries) ([]gen.Delivery, error) {
+			return q.AcknowledgeAcceptedPendingReports(ctx, gen.AcknowledgeAcceptedPendingReportsParams{
+				ProjectID: string(projectID), DeliveryBatchID: acceptedBatchID, AcknowledgedAt: nullTime(at),
+			})
+		},
+		string(domain.ReportPending), string(domain.ReportAcknowledged), domain.DeliveryEventAcknowledged, "")
 	if err != nil {
 		return 0, fmt.Errorf("acknowledge accepted reports for project %s: %w", projectID, err)
 	}
@@ -182,11 +209,13 @@ func (s *Store) ReleaseReportBatch(ctx context.Context, projectID domain.Project
 	if projectID == "" || token == "" || at.IsZero() {
 		return 0, domain.ErrInvalidReport
 	}
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-	rows, err := s.qw.ReleaseReportBatch(ctx, gen.ReleaseReportBatchParams{
-		ProjectID: string(projectID), ClaimToken: token, AvailableAt: at, LastError: lastError,
-	})
+	rows, err := s.runDeliveryBatchTransition(ctx, "release project report batch", at,
+		func(q *gen.Queries) ([]gen.Delivery, error) {
+			return q.ReleaseReportBatch(ctx, gen.ReleaseReportBatchParams{
+				ProjectID: string(projectID), ClaimToken: token, AvailableAt: at, LastError: lastError,
+			})
+		},
+		string(domain.ReportClaimed), string(domain.ReportPending), domain.DeliveryEventReleased, lastError)
 	if err != nil {
 		return 0, fmt.Errorf("release project report batch: %w", err)
 	}
@@ -200,11 +229,13 @@ func (s *Store) DeferReportBatch(ctx context.Context, projectID domain.ProjectID
 	if projectID == "" || token == "" || at.IsZero() {
 		return 0, domain.ErrInvalidReport
 	}
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-	rows, err := s.qw.DeferReportBatch(ctx, gen.DeferReportBatchParams{
-		ProjectID: string(projectID), ClaimToken: token, AvailableAt: at, LastError: lastError,
-	})
+	rows, err := s.runDeliveryBatchTransition(ctx, "defer project report batch", at,
+		func(q *gen.Queries) ([]gen.Delivery, error) {
+			return q.DeferReportBatch(ctx, gen.DeferReportBatchParams{
+				ProjectID: string(projectID), ClaimToken: token, AvailableAt: at, LastError: lastError,
+			})
+		},
+		string(domain.ReportClaimed), string(domain.ReportPending), domain.DeliveryEventDeferred, lastError)
 	if err != nil {
 		return 0, fmt.Errorf("defer project report batch: %w", err)
 	}
@@ -220,13 +251,22 @@ func (s *Store) MarkReportBatchEmitted(ctx context.Context, projectID domain.Pro
 	}
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
-	n, err := s.qw.MarkReportBatchEmitted(ctx, gen.MarkReportBatchEmittedParams{
-		ProjectID: string(projectID), ClaimToken: token, EmittedAt: nullTime(at),
+	var rows []gen.Delivery
+	err := s.inTx(ctx, "mark report batch emitted", func(q *gen.Queries) error {
+		var err error
+		rows, err = q.MarkReportBatchEmitted(ctx, gen.MarkReportBatchEmittedParams{
+			ProjectID: string(projectID), ClaimToken: token, EmittedAt: nullTime(at),
+		})
+		if err != nil {
+			return err
+		}
+		return journalDeliveryEvents(ctx, q, rows,
+			string(domain.ReportClaimed), string(domain.ReportClaimed), domain.DeliveryEventEmitVisible, "", at)
 	})
 	if err != nil {
 		return 0, fmt.Errorf("mark report batch emitted: %w", err)
 	}
-	return int(n), nil
+	return len(rows), nil
 }
 
 // SupersedePendingReports retires a worker's undelivered reports terminally
@@ -243,29 +283,65 @@ func (s *Store) SupersedePendingReports(ctx context.Context, sessionID domain.Se
 	}
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
-	rows, err := s.qw.SupersedeSessionReports(ctx, gen.SupersedeSessionReportsParams{
-		SessionID: string(sessionID), Reason: reason,
+	retired := 0
+	err := s.inTx(ctx, "supersede pending reports", func(q *gen.Queries) error {
+		// Split by prior state so the journal records the precise from-state
+		// instead of an ambiguous "undelivered" for rows that retire from
+		// either pending or claimed.
+		pending, err := q.SupersedeSessionPendingReports(ctx, gen.SupersedeSessionPendingReportsParams{
+			SessionID: string(sessionID), Reason: reason,
+		})
+		if err != nil {
+			return err
+		}
+		if err := journalDeliveryEvents(ctx, q, pending,
+			string(domain.ReportPending), string(domain.ReportStale), domain.DeliveryEventRepromptSuperseded, reason, time.Now().UTC()); err != nil {
+			return err
+		}
+		claimed, err := q.SupersedeSessionClaimedReports(ctx, gen.SupersedeSessionClaimedReportsParams{
+			SessionID: string(sessionID), Reason: reason,
+		})
+		if err != nil {
+			return err
+		}
+		if err := journalDeliveryEvents(ctx, q, claimed,
+			string(domain.ReportClaimed), string(domain.ReportStale), domain.DeliveryEventRepromptSuperseded, reason, time.Now().UTC()); err != nil {
+			return err
+		}
+		retired = len(pending) + len(claimed)
+		return nil
 	})
 	if err != nil {
 		return 0, fmt.Errorf("supersede pending reports for %s: %w", sessionID, err)
 	}
-	return len(rows), nil
+	return retired, nil
 }
 
 // FailReportBatchTerminally retires the claimed batch holding token as stale
-// with the given reason — the delivery has no future attempt: the target held
-// the batch text in its message queue (fork issue #205), so retrying would
-// re-append the same content forever, or the project was archived (fork issue
-// #208) and its report recipient can never exist again. Rows are fenced by the
-// claim token like the ack path; a zero count means the claim was lost.
-func (s *Store) FailReportBatchTerminally(ctx context.Context, projectID domain.ProjectID, token, lastError string) (int, error) {
-	if projectID == "" || token == "" || lastError == "" {
+// with the journal cause the caller's branch names (the coordinator decides
+// from the real condition, not from re-parsing the reason text) and the raw
+// reason — the delivery has no future attempt: the target held the batch text
+// in its message queue (fork issue #205), so retrying would re-append the same
+// content forever, or the project was archived (fork issue #208) and its
+// report recipient can never exist again. Rows are fenced by the claim token
+// like the ack path; a zero count means the claim was lost.
+func (s *Store) FailReportBatchTerminally(ctx context.Context, projectID domain.ProjectID, token, cause, lastError string) (int, error) {
+	if projectID == "" || token == "" || cause == "" || lastError == "" {
 		return 0, domain.ErrInvalidReport
 	}
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
-	rows, err := s.qw.FailClaimedReportBatch(ctx, gen.FailClaimedReportBatchParams{
-		ProjectID: string(projectID), ClaimToken: token, LastError: lastError,
+	var rows []gen.Delivery
+	err := s.inTx(ctx, "fail queued project report batch", func(q *gen.Queries) error {
+		var err error
+		rows, err = q.FailClaimedReportBatch(ctx, gen.FailClaimedReportBatchParams{
+			ProjectID: string(projectID), ClaimToken: token, LastError: lastError,
+		})
+		if err != nil {
+			return err
+		}
+		return journalDeliveryEvents(ctx, q, rows,
+			string(domain.ReportClaimed), string(domain.ReportStale), cause, lastError, time.Now().UTC())
 	})
 	if err != nil {
 		return 0, fmt.Errorf("fail queued project report batch: %w", err)
@@ -283,11 +359,20 @@ func (s *Store) ExpireStaleReportDeliveries(ctx context.Context, cutoff time.Tim
 	}
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
-	rows, err := s.qw.ExpireStalePendingReports(ctx, cutoff)
+	var rows []gen.Delivery
+	err := s.inTx(ctx, "expire stale report deliveries", func(q *gen.Queries) error {
+		var err error
+		rows, err = q.ExpireStalePendingReports(ctx, cutoff)
+		if err != nil {
+			return err
+		}
+		return journalDeliveryEvents(ctx, q, rows,
+			string(domain.ReportPending), string(domain.ReportStale), domain.DeliveryEventExpired, "", time.Now().UTC())
+	})
 	if err != nil {
 		return 0, fmt.Errorf("expire stale report deliveries: %w", err)
 	}
-	return int(rows), nil
+	return len(rows), nil
 }
 
 // ListPendingReports returns reports eligible for a later delivery batch.
@@ -301,32 +386,46 @@ func (s *Store) ListPendingReports(ctx context.Context, at time.Time, limit int6
 
 // ClaimReport atomically fences one pending report to a delivery attempt token.
 func (s *Store) ClaimReport(ctx context.Context, id, token string, at time.Time) (domain.ReportRecord, bool, error) {
-	return s.updateReportClaim(ctx, id, token, at, "claim", func() (gen.Delivery, error) {
-		return s.qw.ClaimReport(ctx, gen.ClaimReportParams{ID: id, ClaimToken: token, ClaimedAt: nullTime(at)})
-	})
+	return s.updateReportClaim(ctx, id, token, at, "claim",
+		string(domain.ReportPending), string(domain.ReportClaimed), domain.DeliveryEventDeliveryAttempt, "",
+		func(q *gen.Queries) (gen.Delivery, error) {
+			return q.ClaimReport(ctx, gen.ClaimReportParams{ID: id, ClaimToken: token, ClaimedAt: nullTime(at)})
+		})
 }
 
 // AcknowledgeReport completes only the delivery attempt holding the current token.
 func (s *Store) AcknowledgeReport(ctx context.Context, id, token string, at time.Time) (domain.ReportRecord, bool, error) {
-	return s.updateReportClaim(ctx, id, token, at, "acknowledge", func() (gen.Delivery, error) {
-		return s.qw.AcknowledgeReport(ctx, gen.AcknowledgeReportParams{ID: id, ClaimToken: token, AcknowledgedAt: nullTime(at)})
-	})
+	return s.updateReportClaim(ctx, id, token, at, "acknowledge",
+		string(domain.ReportClaimed), string(domain.ReportAcknowledged), domain.DeliveryEventAcknowledged, "",
+		func(q *gen.Queries) (gen.Delivery, error) {
+			return q.AcknowledgeReport(ctx, gen.AcknowledgeReportParams{ID: id, ClaimToken: token, AcknowledgedAt: nullTime(at)})
+		})
 }
 
 // ReleaseReport returns the matching token's claim to pending with retry metadata.
 func (s *Store) ReleaseReport(ctx context.Context, id, token string, availableAt time.Time, lastError string) (domain.ReportRecord, bool, error) {
-	return s.updateReportClaim(ctx, id, token, availableAt, "release", func() (gen.Delivery, error) {
-		return s.qw.ReleaseReport(ctx, gen.ReleaseReportParams{ID: id, ClaimToken: token, AvailableAt: availableAt, LastError: lastError})
-	})
+	return s.updateReportClaim(ctx, id, token, availableAt, "release",
+		string(domain.ReportClaimed), string(domain.ReportPending), domain.DeliveryEventReleased, lastError,
+		func(q *gen.Queries) (gen.Delivery, error) {
+			return q.ReleaseReport(ctx, gen.ReleaseReportParams{ID: id, ClaimToken: token, AvailableAt: availableAt, LastError: lastError})
+		})
 }
 
-func (s *Store) updateReportClaim(ctx context.Context, id, token string, at time.Time, action string, update func() (gen.Delivery, error)) (domain.ReportRecord, bool, error) {
+func (s *Store) updateReportClaim(ctx context.Context, id, token string, at time.Time, action, fromState, toState, cause, reason string, update func(*gen.Queries) (gen.Delivery, error)) (domain.ReportRecord, bool, error) {
 	if id == "" || token == "" || at.IsZero() {
 		return domain.ReportRecord{}, false, domain.ErrInvalidReport
 	}
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
-	row, err := update()
+	var row gen.Delivery
+	err := s.inTx(ctx, action+" report", func(q *gen.Queries) error {
+		var err error
+		row, err = update(q)
+		if err != nil {
+			return err
+		}
+		return journalDeliveryEvents(ctx, q, []gen.Delivery{row}, fromState, toState, cause, reason, at)
+	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.ReportRecord{}, false, nil
 	}
@@ -341,11 +440,20 @@ func (s *Store) updateReportClaim(ctx context.Context, id, token string, at time
 func (s *Store) RequeueClaimedReports(ctx context.Context) (int64, error) {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
-	count, err := s.qw.RequeueClaimedReports(ctx)
+	var rows []gen.Delivery
+	err := s.inTx(ctx, "requeue claimed reports", func(q *gen.Queries) error {
+		var err error
+		rows, err = q.RequeueClaimedReports(ctx)
+		if err != nil {
+			return err
+		}
+		return journalDeliveryEvents(ctx, q, rows,
+			string(domain.ReportClaimed), string(domain.ReportPending), domain.DeliveryEventRestartRequeue, "delivery claim recovered after daemon restart", time.Now().UTC())
+	})
 	if err != nil {
 		return 0, fmt.Errorf("requeue claimed reports: %w", err)
 	}
-	return count, nil
+	return int64(len(rows)), nil
 }
 
 func (s *Store) reportWithOutputs(ctx context.Context, row gen.Delivery) (domain.ReportRecord, error) {
@@ -418,4 +526,56 @@ func (s *Store) ListStuckDeliveryCandidates(ctx context.Context, minAttempts int
 		}
 	}
 	return out, nil
+}
+
+// journalDeliveryEvents appends one journal row per transitioned delivery.
+// Callers run it inside the same transaction as the ledger transition, so a
+// journal failure rolls the transition back: no ledger state change can
+// escape its journal entry.
+func journalDeliveryEvents(ctx context.Context, q *gen.Queries, rows []gen.Delivery, fromState, toState, cause, reason string, at time.Time) error {
+	for _, row := range rows {
+		if err := q.InsertDeliveryEvent(ctx, gen.InsertDeliveryEventParams{
+			DeliveryID: row.ID, SessionID: row.SessionID, ProjectID: row.ProjectID,
+			FromState: fromState, ToState: toState, Cause: cause, Reason: reason, CreatedAt: at,
+		}); err != nil {
+			return fmt.Errorf("journal %s event for delivery %s: %w", cause, row.ID, err)
+		}
+	}
+	return nil
+}
+
+func deliveryEventFromGen(r gen.DeliveryEvent) domain.DeliveryEvent {
+	return domain.DeliveryEvent{
+		ID: r.ID, DeliveryID: r.DeliveryID, SessionID: domain.SessionID(r.SessionID),
+		ProjectID: domain.ProjectID(r.ProjectID), FromState: r.FromState, ToState: r.ToState,
+		Cause: r.Cause, Reason: r.Reason, CreatedAt: r.CreatedAt,
+	}
+}
+
+// ListDeliveryEventsByDelivery returns a delivery's full journal chain in id
+// order — the audit record of its fate (fork issue #242).
+func (s *Store) ListDeliveryEventsByDelivery(ctx context.Context, id string) ([]domain.DeliveryEvent, error) {
+	rows, err := s.qr.ListDeliveryEventsByDelivery(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("list delivery events for %s: %w", id, err)
+	}
+	events := make([]domain.DeliveryEvent, len(rows))
+	for i, row := range rows {
+		events[i] = deliveryEventFromGen(row)
+	}
+	return events, nil
+}
+
+// ListDeliveryEventsSince returns journal events created at or after since
+// (zero time reads everything), in id order. This is the metrics read path.
+func (s *Store) ListDeliveryEventsSince(ctx context.Context, since time.Time) ([]domain.DeliveryEvent, error) {
+	rows, err := s.qr.ListDeliveryEventsSince(ctx, since)
+	if err != nil {
+		return nil, fmt.Errorf("list delivery events since %v: %w", since, err)
+	}
+	events := make([]domain.DeliveryEvent, len(rows))
+	for i, row := range rows {
+		events[i] = deliveryEventFromGen(row)
+	}
+	return events, nil
 }

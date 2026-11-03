@@ -681,6 +681,9 @@ func TestCoordinatorQueuedPromptFailsBatchTerminally(t *testing.T) {
 	if rec.DeliveryState != domain.ReportStale || rec.LastError == "" || !strings.Contains(rec.LastError, "message queue") {
 		t.Fatalf("record = %+v, want terminal stale with the queue-held reason", rec)
 	}
+	if len(store.failCauses) != 1 || store.failCauses[0] != domain.DeliveryEventInjectFailed {
+		t.Fatalf("retire causes = %v, want inject_failed", store.failCauses)
+	}
 	if got := logs.String(); !strings.Contains(got, "report: batch delivery failed") || !strings.Contains(got, "message queue") {
 		t.Fatalf("delivery failure evidence = %q", got)
 	}
@@ -713,6 +716,9 @@ func TestCoordinatorArchivedProjectRetiresPendingBatch(t *testing.T) {
 	}
 	if rec := store.reports[0]; rec.DeliveryState != domain.ReportStale || !strings.Contains(rec.LastError, "archived") {
 		t.Fatalf("record = %+v, want terminal stale with the archived reason", store.reports[0])
+	}
+	if len(store.failCauses) != 1 || store.failCauses[0] != domain.DeliveryEventRecipientGone {
+		t.Fatalf("retire causes = %v, want recipient_gone", store.failCauses)
 	}
 	if got := logs.String(); !strings.Contains(got, "project archived") {
 		t.Fatalf("retirement evidence = %q", got)
@@ -881,6 +887,9 @@ type coordinatorStore struct {
 	archived  bool
 	acked     int
 	fenceAcks bool
+	// failCauses records the journal cause each terminal retire passed, in
+	// call order, so coordinator tests pin the caller-named cause.
+	failCauses []string
 }
 
 func newCoordinatorStore(now time.Time) *coordinatorStore {
@@ -1023,13 +1032,14 @@ func (s *coordinatorStore) MarkReportBatchEmitted(_ context.Context, project dom
 	return count, nil
 }
 
-func (s *coordinatorStore) FailReportBatchTerminally(_ context.Context, project domain.ProjectID, token string, reason string) (int, error) {
+func (s *coordinatorStore) FailReportBatchTerminally(_ context.Context, project domain.ProjectID, token, cause, reason string) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	count := 0
 	for i := range s.reports {
 		if s.reports[i].ProjectID == project && s.reports[i].DeliveryState == domain.ReportClaimed && s.reports[i].ClaimToken == token {
 			s.reports[i].DeliveryState, s.reports[i].ClaimToken, s.reports[i].LastError = domain.ReportStale, "", reason
+			s.failCauses = append(s.failCauses, cause)
 			count++
 		}
 	}

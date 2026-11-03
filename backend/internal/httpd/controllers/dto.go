@@ -94,6 +94,44 @@ type ListStuckDeliveriesResponse struct {
 	Groups []StuckDeliveryGroupResponse `json:"groups"`
 }
 
+// DeliveryWindowMetricsResponse is one cohort's delivery outcome distribution
+// computed from the append-only delivery event journal (fork issue #242).
+type DeliveryWindowMetricsResponse struct {
+	Reports      int `json:"reports"`
+	Acknowledged int `json:"acknowledged"`
+	Stale        int `json:"stale"`
+	Superseded   int `json:"superseded"`
+	Open         int `json:"open"`
+	// Shares of the cohort in percent, one decimal.
+	DeliveryRatePct    float64 `json:"deliveryRatePct"`
+	StaleSharePct      float64 `json:"staleSharePct"`
+	SupersededSharePct float64 `json:"supersededSharePct"`
+	// Creation-to-acknowledgment ages of the delivered share, seconds.
+	MedianDeliveryAgeSeconds float64 `json:"medianDeliveryAgeSeconds"`
+	P95DeliveryAgeSeconds    float64 `json:"p95DeliveryAgeSeconds"`
+	// StaleByCause partitions the stale share by terminal cause class.
+	StaleByCause map[string]int `json:"staleByCause,omitempty"`
+}
+
+// DeliveryProjectMetricsResponse is one project's slice of the window cohort.
+type DeliveryProjectMetricsResponse struct {
+	ProjectID       string  `json:"projectId"`
+	Reports         int     `json:"reports"`
+	Acknowledged    int     `json:"acknowledged"`
+	Stale           int     `json:"stale"`
+	Superseded      int     `json:"superseded"`
+	DeliveryRatePct float64 `json:"deliveryRatePct"`
+}
+
+// DeliveryMetricsResponse answers how reports are being delivered: the
+// rolling-window cohort, the all-time cohort, and the window's per-project
+// breakdown.
+type DeliveryMetricsResponse struct {
+	Window     DeliveryWindowMetricsResponse    `json:"window"`
+	AllTime    DeliveryWindowMetricsResponse    `json:"allTime"`
+	PerProject []DeliveryProjectMetricsResponse `json:"perProject,omitempty"`
+}
+
 // ListReportsResponse contains a project's ordered persisted reports.
 type ListReportsResponse struct {
 	Reports []ReportResponse `json:"reports"`

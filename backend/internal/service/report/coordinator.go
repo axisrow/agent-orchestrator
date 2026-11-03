@@ -48,7 +48,7 @@ type DeliveryStore interface {
 	ReleaseReportBatch(context.Context, domain.ProjectID, string, time.Time, string) (int, error)
 	DeferReportBatch(context.Context, domain.ProjectID, string, time.Time, string) (int, error)
 	MarkReportBatchEmitted(context.Context, domain.ProjectID, string, time.Time) (int, error)
-	FailReportBatchTerminally(context.Context, domain.ProjectID, string, string) (int, error)
+	FailReportBatchTerminally(ctx context.Context, projectID domain.ProjectID, token, cause, lastError string) (int, error)
 	AcknowledgeAcceptedReportBatches(context.Context, domain.ProjectID, string, time.Time) (int, error)
 	ExpireStaleReportDeliveries(context.Context, time.Time) (int, error)
 }
@@ -303,7 +303,7 @@ func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.Proje
 			// batch onto that queue forever; retire it terminally instead.
 			// The already-queued copies need a manual flush (ctrl+x ctrl+s in
 			// the session); new reports flow again once the queue is clear.
-			if _, failErr := c.store.FailReportBatchTerminally(ctx, batch.ProjectID, batch.Token, err.Error()); failErr != nil {
+			if _, failErr := c.store.FailReportBatchTerminally(ctx, batch.ProjectID, batch.Token, domain.DeliveryEventInjectFailed, err.Error()); failErr != nil {
 				return errors.Join(err, failErr)
 			}
 			return err
@@ -331,7 +331,7 @@ func (c *Coordinator) deferWithoutOrchestrator(ctx context.Context, projectID do
 	}
 	if c.projectArchived(ctx, projectID) {
 		reason := "project archived: no report recipient can exist (fork issue #208)"
-		if _, failErr := c.store.FailReportBatchTerminally(ctx, projectID, batch.Token, reason); failErr != nil {
+		if _, failErr := c.store.FailReportBatchTerminally(ctx, projectID, batch.Token, domain.DeliveryEventRecipientGone, reason); failErr != nil {
 			return failErr
 		}
 		c.log.Warn("report: batch retired terminally; project archived", "project", projectID, "batch", batch.IdempotencyKey(), "reports", len(batch.Reports), "attempts", batch.MaxDeliveryAttempts())

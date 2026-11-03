@@ -22,6 +22,7 @@ type fakeReportService struct {
 	err     error
 	reports []domain.ReportRecord
 	stuck   []reportsvc.StuckDeliveryGroup
+	metrics reportsvc.DeliveryMetricsReport
 }
 
 func (f *fakeReportService) ListProject(_ context.Context, projectID domain.ProjectID) ([]domain.ReportRecord, error) {
@@ -132,6 +133,46 @@ func TestReportsAPI_ListStuckDeliveries(t *testing.T) {
 		`"projectId":"cc"`, `"recipient":"no active orchestrator"`, `"causeClass":"no active orchestrator"`,
 		`"attempts":3631`, `"zombie":true`, `"terminal":false`,
 		`"projectId":"q"`, `"terminal":true`, `"deliveries":2`) {
+		t.Fatalf("status=%d body=%s", status, body)
+	}
+}
+
+func (f *fakeReportService) DeliveryMetrics(_ context.Context) (reportsvc.DeliveryMetricsReport, error) {
+	return f.metrics, nil
+}
+
+// The delivery-metrics section (fork issue #242): outcome shares and delivery
+// ages from the journal, with the per-project breakdown, as one wire shape.
+func TestReportsAPI_DeliveryMetrics(t *testing.T) {
+	svc := &fakeReportService{}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	srv := httptest.NewServer(httpd.NewRouterWithControl(config.Config{}, log, nil, httpd.APIDeps{Reports: svc}, httpd.ControlDeps{}))
+	defer srv.Close()
+
+	body, status, _ := doRequest(t, srv, "GET", "/api/v1/reports/deliveries/metrics", "")
+	if status != http.StatusOK || strings.TrimSpace(string(body)) != `{"window":{"reports":0,"acknowledged":0,"stale":0,"superseded":0,"open":0,"deliveryRatePct":0,"staleSharePct":0,"supersededSharePct":0,"medianDeliveryAgeSeconds":0,"p95DeliveryAgeSeconds":0},"allTime":{"reports":0,"acknowledged":0,"stale":0,"superseded":0,"open":0,"deliveryRatePct":0,"staleSharePct":0,"supersededSharePct":0,"medianDeliveryAgeSeconds":0,"p95DeliveryAgeSeconds":0}}` {
+		t.Fatalf("status=%d body=%s, want zeroed window and all-time", status, body)
+	}
+
+	svc.metrics = reportsvc.DeliveryMetricsReport{
+		Window: reportsvc.DeliveryMetrics{
+			Reports: 7, Acknowledged: 4, Stale: 2, Superseded: 1, Open: 1,
+			DeliveryRatePct: 57.1, StaleSharePct: 28.6, SupersededSharePct: 14.3,
+			MedianDeliveryAgeSeconds: 70, P95DeliveryAgeSeconds: 210,
+			StaleByCause: map[string]int{"expired": 1, "reprompt_superseded": 1},
+		},
+		AllTime: reportsvc.DeliveryMetrics{Reports: 8, Acknowledged: 5, DeliveryRatePct: 62.5},
+		PerProject: []reportsvc.DeliveryProjectMetrics{
+			{ProjectID: "cc", Reports: 5, Acknowledged: 4, DeliveryRatePct: 80},
+		},
+	}
+	body, status, _ = doRequest(t, srv, "GET", "/api/v1/reports/deliveries/metrics", "")
+	if status != http.StatusOK || !reportContainsAll(string(body),
+		`"window":{"reports":7,"acknowledged":4,"stale":2,"superseded":1,"open":1`,
+		`"deliveryRatePct":57.1`, `"medianDeliveryAgeSeconds":70`, `"p95DeliveryAgeSeconds":210`,
+		`"staleByCause":{"expired":1,"reprompt_superseded":1}`,
+		`"allTime":{"reports":8,"acknowledged":5,"stale":0,"superseded":0,"open":0,"deliveryRatePct":62.5`,
+		`"perProject":[{"projectId":"cc","reports":5,"acknowledged":4,"stale":0,"superseded":0,"deliveryRatePct":80}]`) {
 		t.Fatalf("status=%d body=%s", status, body)
 	}
 }

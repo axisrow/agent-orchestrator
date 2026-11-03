@@ -30,6 +30,7 @@ func (c *ReportsController) Register(r chi.Router) {
 	r.Post("/reports", c.create)
 	r.Get("/reports", c.list)
 	r.Get("/reports/deliveries/stuck", c.stuck)
+	r.Get("/reports/deliveries/metrics", c.metrics)
 }
 
 // reportStuckReader is the stuck-delivery visibility slice of the report
@@ -37,6 +38,53 @@ func (c *ReportsController) Register(r chi.Router) {
 // controller keeps working against the creation-only surface in tests.
 type reportStuckReader interface {
 	StuckDeliveries(ctx context.Context) ([]reportsvc.StuckDeliveryGroup, error)
+}
+
+// reportMetricsReader is the delivery-metrics slice of the report service
+// (fork issue #242), computed read-only from the append-only delivery event
+// journal.
+type reportMetricsReader interface {
+	DeliveryMetrics(ctx context.Context) (reportsvc.DeliveryMetricsReport, error)
+}
+
+// metrics serves the delivery outcome distribution behind `ao doctor`'s
+// Deliveries section. Informational by contract: shares and ages, never a
+// verdict about the daemon's health.
+func (c *ReportsController) metrics(w http.ResponseWriter, r *http.Request) {
+	reader, ok := c.Svc.(reportMetricsReader)
+	if !ok {
+		apispec.NotImplemented(w, r, "GET", "/api/v1/reports/deliveries/metrics")
+		return
+	}
+	metrics, err := reader.DeliveryMetrics(r.Context())
+	if err != nil {
+		envelope.WriteError(w, r, err)
+		return
+	}
+	response := DeliveryMetricsResponse{
+		Window:     deliveryWindowMetricsResponse(metrics.Window),
+		AllTime:    deliveryWindowMetricsResponse(metrics.AllTime),
+		PerProject: make([]DeliveryProjectMetricsResponse, len(metrics.PerProject)),
+	}
+	for i, project := range metrics.PerProject {
+		response.PerProject[i] = DeliveryProjectMetricsResponse{
+			ProjectID: project.ProjectID, Reports: project.Reports,
+			Acknowledged: project.Acknowledged, Stale: project.Stale, Superseded: project.Superseded,
+			DeliveryRatePct: project.DeliveryRatePct,
+		}
+	}
+	envelope.WriteJSON(w, http.StatusOK, response)
+}
+
+func deliveryWindowMetricsResponse(m reportsvc.DeliveryMetrics) DeliveryWindowMetricsResponse {
+	return DeliveryWindowMetricsResponse{
+		Reports: m.Reports, Acknowledged: m.Acknowledged, Stale: m.Stale,
+		Superseded: m.Superseded, Open: m.Open,
+		DeliveryRatePct: m.DeliveryRatePct, StaleSharePct: m.StaleSharePct,
+		SupersededSharePct:       m.SupersededSharePct,
+		MedianDeliveryAgeSeconds: m.MedianDeliveryAgeSeconds, P95DeliveryAgeSeconds: m.P95DeliveryAgeSeconds,
+		StaleByCause: m.StaleByCause,
+	}
 }
 
 // stuck serves the read-only stuck-delivery groups behind `ao doctor`'s

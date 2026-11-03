@@ -1875,6 +1875,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/reports/deliveries/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Report delivery outcome metrics computed from the append-only delivery event journal without changing delivery state */
+        get: operations["getDeliveryMetrics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/reports/deliveries/stuck": {
         parameters: {
             query?: never;
@@ -5375,6 +5392,40 @@ export interface components {
             ok: boolean;
             orchestratorId?: string;
             workerId: string;
+        };
+        DeliveryMetricsResponse: {
+            allTime: components["schemas"]["DeliveryWindowMetricsResponse"];
+            perProject?: components["schemas"]["DeliveryProjectMetricsResponse"][];
+            window: components["schemas"]["DeliveryWindowMetricsResponse"];
+        };
+        DeliveryProjectMetricsResponse: {
+            acknowledged: number;
+            /** Format: double */
+            deliveryRatePct: number;
+            projectId: string;
+            reports: number;
+            stale: number;
+            superseded: number;
+        };
+        DeliveryWindowMetricsResponse: {
+            acknowledged: number;
+            /** Format: double */
+            deliveryRatePct: number;
+            /** Format: double */
+            medianDeliveryAgeSeconds: number;
+            open: number;
+            /** Format: double */
+            p95DeliveryAgeSeconds: number;
+            reports: number;
+            stale: number;
+            staleByCause?: {
+                [key: string]: number;
+            };
+            /** Format: double */
+            staleSharePct: number;
+            superseded: number;
+            /** Format: double */
+            supersededSharePct: number;
         };
         DesktopArtifactLocationResponse: {
             artifactDir: string;
@@ -13644,6 +13695,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    getDeliveryMetrics: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryMetricsResponse"];
                 };
             };
             /** @description Internal Server Error */
