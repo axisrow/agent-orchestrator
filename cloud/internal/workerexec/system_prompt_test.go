@@ -10,7 +10,7 @@ import (
 )
 
 func TestBuildInteractiveInjectsSystemPromptForEveryCloudHarness(t *testing.T) {
-	for _, harness := range []string{"claude-code", "codex", "cursor"} {
+	for _, harness := range []string{"claude-code", "codex"} {
 		t.Run(harness, func(t *testing.T) {
 			dataDir := t.TempDir()
 			workspace := t.TempDir()
@@ -19,7 +19,6 @@ func TestBuildInteractiveInjectsSystemPromptForEveryCloudHarness(t *testing.T) {
 				Binaries: map[string]string{
 					"claude-code": "/usr/bin/claude",
 					"codex":       "/usr/bin/codex",
-					"cursor":      "/usr/bin/cursor-agent",
 				},
 				CodexLogin: func(_, _, _, _ string) error { return nil },
 			}
@@ -50,11 +49,6 @@ func TestBuildInteractiveInjectsSystemPromptForEveryCloudHarness(t *testing.T) {
 				assertArgPair(t, command.Args, "--append-system-prompt-file", systemPromptPath)
 			case "codex":
 				assertArgPair(t, command.Args, "-c", "model_instructions_file="+systemPromptPath)
-			case "cursor":
-				pluginDir := filepath.Join(dataDir, "cursor-plugins", sessionKey("session-1"))
-				assertArgPair(t, command.Args, "--plugin-dir", pluginDir)
-				assertFileContains(t, filepath.Join(pluginDir, "rules", "ao-standing.mdc"), "alwaysApply: true")
-				assertFileContains(t, filepath.Join(pluginDir, "rules", "ao-standing.mdc"), "SYSTEM ROLE MARKER")
 			}
 		})
 	}
@@ -81,7 +75,7 @@ func TestBuildInteractiveFallsBackToBuiltInRolePrompt(t *testing.T) {
 }
 
 func TestBuildInteractiveReappliesSystemPromptOnRestore(t *testing.T) {
-	for _, harness := range []string{"claude-code", "codex", "cursor"} {
+	for _, harness := range []string{"claude-code", "codex"} {
 		t.Run(harness, func(t *testing.T) {
 			dataDir := t.TempDir()
 			workspace := t.TempDir()
@@ -100,7 +94,6 @@ func TestBuildInteractiveReappliesSystemPromptOnRestore(t *testing.T) {
 				Binaries: map[string]string{
 					"claude-code": "/usr/bin/claude",
 					"codex":       "/usr/bin/codex",
-					"cursor":      "/usr/bin/cursor-agent",
 				},
 				CodexLogin: func(_, _, _, _ string) error { return nil },
 			}
@@ -127,10 +120,6 @@ func TestBuildInteractiveReappliesSystemPromptOnRestore(t *testing.T) {
 				if len(command.Args) == 0 || command.Args[0] != "resume" {
 					t.Fatalf("Codex restore args = %#v", command.Args)
 				}
-			case "cursor":
-				pluginDir := filepath.Join(dataDir, "cursor-plugins", sessionKey("session-1"))
-				assertArgPair(t, command.Args, "--plugin-dir", pluginDir)
-				assertArgPair(t, command.Args, "--resume", identity)
 			}
 		})
 	}

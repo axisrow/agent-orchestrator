@@ -240,7 +240,7 @@ func (s *Service) methodOwnsBinary(ctx context.Context, plan Plan, path string) 
 	default:
 		// Vendor installers write their own locations; any package tool's
 		// layout means another installer owns this binary.
-		return vendorLayout(plan.Target, packageLayout(path))
+		return vendorLayout(packageLayout(path))
 	}
 }
 

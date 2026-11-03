@@ -65,9 +65,8 @@ type SourceRoots struct {
 	CodexArchived  string
 }
 
-// DefaultSourceRoots resolves provider-owned transcript directories. dataDir
-// is AO's already-resolved durable data directory.
-func DefaultSourceRoots(ctx context.Context, dataDir string) (SourceRoots, error) {
+// DefaultSourceRoots resolves provider-owned transcript directories.
+func DefaultSourceRoots(ctx context.Context) (SourceRoots, error) {
 	if err := ctx.Err(); err != nil {
 		return SourceRoots{}, err
 	}
@@ -84,9 +83,6 @@ func DefaultSourceRoots(ctx context.Context, dataDir string) (SourceRoots, error
 	claudeHome := strings.TrimSpace(os.Getenv("CLAUDE_CONFIG_DIR"))
 	if claudeHome == "" {
 		claudeHome = filepath.Join(home, ".claude")
-	}
-	if strings.TrimSpace(dataDir) == "" {
-		dataDir = filepath.Join(home, ".ao", "data")
 	}
 	return SourceRoots{
 		ClaudeProjects: filepath.Join(claudeHome, "projects"),

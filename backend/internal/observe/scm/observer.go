@@ -259,8 +259,6 @@ type Observer struct {
 	// renames holds the repository renames already recorded, keyed
 	// host/old name. One entry per renamed scan repository.
 	renames map[string]string
-	// forceMu guards forcedReviews.
-	forceMu sync.Mutex
 	// forcedReviews holds PR URLs whose metadata and review threads the next
 	// poll fetches regardless of guards and review cadence. Each request is
 	// consumed by exactly one poll, whatever its outcome.

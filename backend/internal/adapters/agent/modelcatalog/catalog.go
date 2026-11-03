@@ -357,7 +357,7 @@ func discoverCommandCatalog(ctx context.Context, agentID, binary, workingDir str
 	if len(models) == 0 && len(base.Providers) == 0 {
 		return base, fmt.Errorf("%s model discovery returned no models", agentID)
 	}
-	models = applyConfiguredDefault(models, configuredDefaultModel(agentID, workingDir, env))
+	models = applyConfiguredDefault(models, configuredDefaultModel(agentID, env))
 	base.Models = models
 	base.Source = "cli"
 	base.FetchedAt = time.Now().UTC()
@@ -657,7 +657,7 @@ func discoveryConfigInputs(ctx context.Context, agentID, workingDir string, env 
 	// The listed models come from the binary, but which one is the default comes
 	// from the agent's settings, so a changed default must invalidate the cached
 	// catalog. Nothing configured keeps the binary-only fingerprint unchanged.
-	if configured := configuredDefaultModel(agentID, workingDir, env); configured != "" {
+	if configured := configuredDefaultModel(agentID, env); configured != "" {
 		return "default=" + configured
 	}
 	return ""

@@ -35,9 +35,8 @@ var openCodeManagedConfigDirs = func() []string {
 	}
 }
 
-// resolveOpenCodeModel returns the root model OpenCode 2 will run for a session
-// launched from an AO worktree of workingDir's repository, or "" when that
-// cannot be determined.
+// resolveOpenCodeModel returns the root model OpenCode 2 will run, or "" when
+// that cannot be determined.
 //
 // OpenCode 2 layers config lowest to highest as: global, OPENCODE_CONFIG,
 // project opencode.json(c) from the outermost directory inward to the
@@ -57,7 +56,7 @@ var openCodeManagedConfigDirs = func() []string {
 // to "".
 //
 // https://opencode.ai/v2/docs/config
-func resolveOpenCodeModel(home, workingDir string, env map[string]string) string {
+func resolveOpenCodeModel(home string, env map[string]string) string {
 	var layers []openCodeLayer
 	if configHome := xdgDir(home, env, "XDG_CONFIG_HOME", ".config"); configHome != "" {
 		layers = append(layers, openCodeDirLayer(filepath.Join(configHome, "opencode"), true, "config.json", "opencode.json", "opencode.jsonc"))

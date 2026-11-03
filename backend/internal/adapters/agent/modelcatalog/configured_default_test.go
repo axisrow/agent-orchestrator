@@ -65,14 +65,13 @@ func TestApplyConfiguredDefault(t *testing.T) {
 
 func TestConfiguredDefaultModelSources(t *testing.T) {
 	home := isolateHome(t)
-	workDir := t.TempDir()
 
 	writeConfig(t, filepath.Join(home, ".pi", "agent", "settings.json"), `{"defaultProvider": "anthropic", "defaultModel": "claude-opus-4-6"}`)
-	if got := configuredDefaultModel("pi", workDir, nil); got != "anthropic/claude-opus-4-6" {
+	if got := configuredDefaultModel("pi", nil); got != "anthropic/claude-opus-4-6" {
 		t.Errorf("pi = %q", got)
 	}
 
-	if got := configuredDefaultModel("omp", workDir, nil); got != "" {
+	if got := configuredDefaultModel("omp", nil); got != "" {
 		t.Errorf("agent without a config source = %q, want empty", got)
 	}
 }

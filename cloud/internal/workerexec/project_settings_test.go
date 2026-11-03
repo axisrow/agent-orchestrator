@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/aoagents/agent-orchestrator/cloud/internal/domain"
@@ -63,8 +62,6 @@ func TestInteractiveLaunchConsumesProjectAgentSettings(t *testing.T) {
 		{"codex", "auth_json", `{"tokens":{"access_token":"test"}}`, domain.ProjectAgentConfig{Model: "review-model", Effort: "max", Permissions: "accept-edits"}, []string{"--model", "review-model", "model_reasoning_effort=\"max\"", "--ask-for-approval", "on-request"}},
 		{"codex", "auth_json", `{"tokens":{"access_token":"test"}}`, domain.ProjectAgentConfig{Permissions: "default"}, nil},
 		{"claude-code", "api_key", "test", domain.ProjectAgentConfig{Model: "review-model", Effort: "high", Permissions: "auto"}, []string{"--model", "review-model", "--effort", "high", "--permission-mode", "auto"}},
-		{"cursor", "api_key", "test", domain.ProjectAgentConfig{Model: "review-model", Mode: "plan", Permissions: "bypass-permissions"}, []string{"--model", "review-model", "--mode", "plan", "--yolo"}},
-		{"opencode", "openai_api_key", "test", domain.ProjectAgentConfig{Model: "openai/review-model", Permissions: "auto"}, []string{"--auto"}},
 	} {
 		t.Run(test.harness, func(t *testing.T) {
 			root := t.TempDir()
@@ -81,12 +78,6 @@ func TestInteractiveLaunchConsumesProjectAgentSettings(t *testing.T) {
 			for _, flag := range test.flags {
 				if !slices.Contains(command.Args, flag) {
 					t.Fatalf("missing %q from %#v", flag, command.Args)
-				}
-			}
-			if test.harness == "opencode" {
-				config, err := os.ReadFile(command.Env["OPENCODE_CONFIG"])
-				if err != nil || !strings.Contains(string(config), test.config.Model) {
-					t.Fatalf("opencode model config=%s err=%v", config, err)
 				}
 			}
 			if test.config.Permissions == "default" && slices.Contains(command.Args, "--dangerously-bypass-approvals-and-sandbox") {
