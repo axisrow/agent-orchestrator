@@ -117,7 +117,8 @@ delivery_ledger:20261027143000000
 review_run_github_review_state:20261028124744442
 session_review_only:20261028124744444
 pr_last_seen_at:20261028124744445
-notification_stuck_delivery:20261028124744446"
+notification_stuck_delivery:20261028124744446
+pr_ci_pending_since:20261103025608417"
 
 is_fork_suffix() {
   printf '%s\n' "$FORK_SUFFIXES" | grep -qx "$1"
