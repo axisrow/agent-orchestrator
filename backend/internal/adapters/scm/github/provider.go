@@ -396,13 +396,21 @@ func ciStateFromContextNodes(rawNodes []map[string]any) domain.CIState {
 // new run with a new id); missing ids sort last, and ties keep the later
 // list position (reruns follow their superseded runs in connection order).
 // StatusContext rows are unique per name by construction and pass through.
-// The result keeps first-seen order and shares the input node maps.
+// Template-placeholder rows (issue #230, BeamCraft#415) are dropped: GitHub's
+// own UI never renders them. The result keeps first-seen order and shares
+// the input node maps.
 func latestRunNodesByName(rawNodes []map[string]any) []map[string]any {
 	latest := make(map[string]map[string]any, len(rawNodes))
 	order := make([]string, 0, len(rawNodes))
 	for _, n := range rawNodes {
 		name := checkNodeName(n)
 		if name == "" {
+			continue
+		}
+		// The expression template only ever leaks into Actions CheckRun
+		// names; a StatusContext context string is set verbatim by the API
+		// caller and passes through untouched.
+		if str(n["__typename"]) == "CheckRun" && templatePlaceholderName(name) {
 			continue
 		}
 		prev, seen := latest[name]
@@ -430,6 +438,23 @@ func checkNodeName(n map[string]any) string {
 		return str(n["context"])
 	}
 	return str(n["name"])
+}
+
+// templatePlaceholderName reports CheckRun names that are not real check
+// runs: GitHub matrix-workflow placeholders carry the raw expression
+// template in the name ("quality (${{ matrix.os }})", "test (ubuntu-latest,
+// shard ${{ matrix.shard }}/4)") when a run is cancelled before the matrix
+// jobs materialize. The check UI never renders them (BeamCraft#415: 70
+// rollup contexts, UI shows 26 success + 3 skipped — every non- `${{` name),
+// so they must not key a check row or carry the verdict; a cancelled
+// placeholder otherwise reads as a red latest run over an all-green real
+// set. Known ceiling: a real matrix job whose substituted value itself
+// embeds a literal "${{...}}" also matches — exotic (template-engine
+// test repos); if such a job fails, GitHub reports mergeStateStatus
+// UNSTABLE/BLOCKED, so the merge verdict stays conservative and only the
+// CI label can diverge.
+func templatePlaceholderName(name string) bool {
+	return strings.Contains(name, "${{")
 }
 
 func checkRunDatabaseID(n map[string]any) int64 {
