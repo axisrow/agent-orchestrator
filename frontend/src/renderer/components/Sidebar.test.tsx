@@ -966,6 +966,58 @@ describe("Sidebar", () => {
 		expect(request?.nonce ?? 0).toBeGreaterThan(before);
 	});
 
+	it("copies the exact project name from the kebab menu with copy feedback", async () => {
+		const user = userEvent.setup();
+		const writeText = vi.fn().mockResolvedValue(undefined);
+		window.ao!.clipboard.writeText = writeText;
+		useUiStore.getState().clearGlobalToast();
+		try {
+			renderSidebar();
+			await user.click(screen.getByLabelText("Project actions for Project One"));
+			await user.click(await screen.findByRole("menuitem", { name: "Copy project name" }));
+			await waitFor(() => expect(writeText).toHaveBeenCalledWith("Project One"));
+			await waitFor(() => expect(useUiStore.getState().globalToast).toMatchObject({ title: "Project name copied" }));
+		} finally {
+			useUiStore.getState().clearGlobalToast();
+		}
+	});
+
+	it("copies the project name from the row copy action without navigating", async () => {
+		const user = userEvent.setup();
+		const writeText = vi.fn().mockResolvedValue(undefined);
+		window.ao!.clipboard.writeText = writeText;
+		useUiStore.getState().clearGlobalToast();
+		renderSidebar();
+		await user.click(screen.getByRole("button", { name: "Copy project name for Project One" }));
+		await waitFor(() => expect(writeText).toHaveBeenCalledWith("Project One"));
+		// Confirms in place (Copy -> Check swap); this path never toasts.
+		expect(await screen.findByRole("button", { name: "Project name copied" })).toBeInTheDocument();
+		expect(useUiStore.getState().globalToast).toBeNull();
+		expect(navigateMock).not.toHaveBeenCalled();
+	});
+
+	it("keeps copy available while the project is provisioning", async () => {
+		const user = userEvent.setup();
+		useUiStore.getState().setProjectProvisioning("proj-1", true);
+		try {
+			renderSidebar();
+			await user.click(screen.getByLabelText("Project actions for Project One"));
+			expect(await screen.findByRole("menuitem", { name: "Copy project name" })).not.toBeDisabled();
+		} finally {
+			useUiStore.getState().setProjectProvisioning("proj-1", false);
+		}
+	});
+
+	it("copies the project name from the row context menu", async () => {
+		const user = userEvent.setup();
+		const writeText = vi.fn().mockResolvedValue(undefined);
+		window.ao!.clipboard.writeText = writeText;
+		renderSidebar();
+		fireEvent.contextMenu(screen.getByRole("button", { name: "Project One" }));
+		await user.click(await screen.findByRole("menuitem", { name: "Copy project name" }));
+		await waitFor(() => expect(writeText).toHaveBeenCalledWith("Project One"));
+	});
+
 	it("optically centers the Project header add icon", () => {
 		renderSidebar();
 
@@ -2240,10 +2292,11 @@ describe("Sidebar", () => {
 		const actionCluster = screen.getByLabelText("Project actions for Project One").parentElement;
 
 		if (!projectRow) throw new Error("Project row button not found");
-		expect(projectRow).toHaveClass("pr-sidebar-project-actions");
+		expect(projectRow).toHaveClass("pr-sidebar-project-row-actions");
 		expect(actionCluster).toHaveAttribute("data-project-actions");
 		expect(actionCluster).toHaveClass("right-1", "gap-0.5");
-		expect(within(actionCluster as HTMLElement).getAllByRole("button")).toHaveLength(2);
+		expect(within(actionCluster as HTMLElement).getAllByRole("button")).toHaveLength(3);
+		expect(screen.getByLabelText("Copy project name for Project One")).not.toHaveClass("opacity-0");
 		expect(screen.getByLabelText("Project actions for Project One")).not.toHaveClass("opacity-0");
 	});
 

@@ -18,6 +18,7 @@ import {
 	Archive,
 	CalendarClock,
 	ChevronRight,
+	Copy,
 	File,
 	Folder,
 	FolderOpen,
@@ -117,9 +118,11 @@ import { BuildInfoTooltip } from "./BuildInfoTooltip";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { OrchestratorIcon } from "./icons";
 import { Badge } from "./ui/badge";
+import { CopyButton } from "./chat/CopyButton";
 import { cn } from "../lib/utils";
 import { recordManualWorkerOpen } from "../lib/session-management-telemetry";
 import { SettingsSaveStatus, useSettingsPage } from "./SettingsDialog";
+import { aoBridge } from "../lib/bridge";
 import { useUiStore } from "../stores/ui-store";
 import { useSidebarOrderStore } from "../stores/sidebar-order-store";
 import { applyOrder } from "../lib/sidebar-order";
@@ -1377,6 +1380,19 @@ const ProjectItem = memo(function ProjectItem({
 	const isProjectRestarting = useUiStore((state) => state.restartingProjectIds.has(projectKey));
 	const requestNewTask = useUiStore((state) => state.requestNewTask);
 	const showGlobalToast = useUiStore((state) => state.showGlobalToast);
+	// Copy the bare project name (not the host-decorated display variant).
+	// Menus have no in-place place to confirm, so they toast; the row action
+	// confirms in place via CopyButton instead.
+	const copyProjectName = () => {
+		void aoBridge.clipboard.writeText(workspace.name).then(
+			() => showGlobalToast(t("shell.projectNameCopied"), undefined, { dedupeKey: "sidebar-copy-project-name" }),
+			() =>
+				showGlobalToast(t("shell.projectNameCopyFailed"), undefined, {
+					dedupeKey: "sidebar-copy-project-name",
+					tone: "error",
+				}),
+		);
+	};
 	const projectIsDragging = isDragged;
 	// Keep completed PR sessions reachable while their runtime still exists.
 	// Only termination removes a worker from the sidebar.
@@ -1623,7 +1639,7 @@ const ProjectItem = memo(function ProjectItem({
 										// Projects header so icons and labels share one left edge.
 										SIDEBAR_ROW_CLASS,
 										!workspace.hostId && "cursor-grab active:cursor-grabbing",
-										"pr-sidebar-project-actions",
+										"pr-sidebar-project-row-actions",
 										"transition-none",
 										projectIsDragging && "!cursor-grabbing",
 										projectDragInProgress && "hover:text-muted-foreground active:text-muted-foreground",
@@ -1747,6 +1763,15 @@ const ProjectItem = memo(function ProjectItem({
 													: t("shell.spawnOrchestratorLower")}
 									</TooltipContent>
 								</Tooltip>
+								<CopyButton
+									compact
+									className={HOVER_ACTION_CLASS}
+									copiedLabel={t("shell.projectNameCopied")}
+									label={t("shell.copyProjectNameFor", {
+										name: nameWithHost,
+									})}
+									text={workspace.name}
+								/>
 								<DropdownMenu>
 									<DropdownMenuTrigger asChild>
 										<button
@@ -1767,6 +1792,10 @@ const ProjectItem = memo(function ProjectItem({
 						<DropdownMenuItem onSelect={() => selection.goSettings(workspace.id, workspace.cloudOrgId)}>
 											<Settings aria-hidden="true" />
 											{t("shell.projectSettings")}
+										</DropdownMenuItem>
+										<DropdownMenuItem onSelect={copyProjectName}>
+											<Copy aria-hidden="true" />
+											{t("shell.copyProjectName")}
 										</DropdownMenuItem>
 										<DropdownMenuItem
 											className="text-destructive focus:text-destructive [&_svg]:text-destructive focus:[&_svg]:text-destructive"
@@ -1868,6 +1897,10 @@ const ProjectItem = memo(function ProjectItem({
 				<ContextMenuItem onSelect={() => selection.goSettings(workspace.id, workspace.cloudOrgId)}>
 					<Settings aria-hidden="true" />
 					{t("shell.projectSettings")}
+				</ContextMenuItem>
+				<ContextMenuItem onSelect={copyProjectName}>
+					<Copy aria-hidden="true" />
+					{t("shell.copyProjectName")}
 				</ContextMenuItem>
 				<ContextMenuItem
 					className="text-destructive focus:text-destructive [&_svg]:text-destructive focus:[&_svg]:text-destructive"
