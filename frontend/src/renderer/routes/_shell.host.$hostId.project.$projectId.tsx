@@ -8,8 +8,8 @@ export const Route = createFileRoute("/_shell/host/$hostId/project/$projectId")(
 });
 
 // Remote twin of the project redirect (#163): the kanban board is gone, so
-// opening a hosted project lands on its top sidebar session, or home when
-// the project has no live workers.
+// opening a hosted project lands on its live orchestrator (#260) or on the
+// top worker without one, or home when the project has no live sessions.
 function HostProjectRoute() {
 	const { hostId, projectId } = Route.useParams();
 	const navigate = useNavigate();
