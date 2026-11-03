@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { aoBridge } from "../lib/bridge";
 import { formatOrchestratorStartupError } from "../lib/orchestrator-startup-error";
-import { developerModeStorageKey, windowTranslucencyStorageKey } from "../lib/window-translucency";
+import { developerModeStorageKey, readStoredWindowTranslucency, windowTranslucencyStorageKey } from "../lib/window-translucency";
 import { sessionUiKey } from "../lib/hosts";
 import type { ProjectSettingsSection as ProjectFormSection } from "../components/ProjectSettingsForm";
 import type { TerminalTarget } from "../types/terminal";
@@ -288,10 +288,6 @@ function initialDiagnostics() {
 	return getLocalStorage()?.getItem(diagnosticsStorageKey) === "true";
 }
 
-function initialWindowTranslucency() {
-	return getLocalStorage()?.getItem(windowTranslucencyStorageKey) === "true";
-}
-
 function initialTerminalCopyOnSelect() {
 	return getLocalStorage()?.getItem(terminalCopyOnSelectStorageKey) !== "false";
 }
@@ -350,7 +346,7 @@ export const useUiStore = create<UiState>((set, get) => ({
 	developerMode: initialDeveloperModeValue,
 	remoteHosts: initialRemoteHosts(),
 	diagnostics: initialDiagnostics(),
-	windowTranslucency: initialWindowTranslucency(),
+	windowTranslucency: readStoredWindowTranslucency(),
 	terminalCopyOnSelect: initialTerminalCopyOnSelect(),
 	chatSendKeyMode: initialChatSendKeyMode(),
 	restartingProjectIds: new Set<string>(),
