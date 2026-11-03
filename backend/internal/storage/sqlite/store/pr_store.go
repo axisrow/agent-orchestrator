@@ -336,6 +336,11 @@ func upsertPRWithIdentity(ctx context.Context, q *gen.Queries, pr domain.PullReq
 		return err
 	}
 	for _, existing := range candidates {
+		if existing.HeadSha == pr.HeadSHA && existing.CIPendingSince.Valid &&
+			(existing.CIState == domain.CIPending || existing.CIState == domain.CIUnknown) &&
+			(pr.CI == domain.CIPending || pr.CI == domain.CIUnknown) {
+			pr.CIPendingSince = existing.CIPendingSince.Time
+		}
 		if rejectReassignment && existing.SessionID != pr.SessionID {
 			return fmt.Errorf("pr %s already belongs to session %s", existing.URL, existing.SessionID)
 		}
@@ -707,6 +712,7 @@ func genPRParams(r domain.PullRequest) gen.UpsertPRParams {
 		CIHash:                   r.CIHash,
 		ReviewHash:               r.ReviewHash,
 		ObservedAt:               nullTime(r.ObservedAt),
+		CIPendingSince:           nullTime(r.CIPendingSince),
 		CIObservedAt:             nullTime(r.CIObservedAt),
 		ReviewObservedAt:         nullTime(r.ReviewObservedAt),
 		ReviewPartial:            r.ReviewPartial,
@@ -811,6 +817,7 @@ func prRowFromGen(p gen.PR) domain.PullRequest {
 		CIHash:                   p.CIHash,
 		ReviewHash:               p.ReviewHash,
 		ObservedAt:               timeFromNull(p.ObservedAt),
+		CIPendingSince:           timeFromNull(p.CIPendingSince),
 		CIObservedAt:             timeFromNull(p.CIObservedAt),
 		ReviewObservedAt:         timeFromNull(p.ReviewObservedAt),
 		LastSeenAt:               timeFromNull(p.LastSeenAt),

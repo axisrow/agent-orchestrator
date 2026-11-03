@@ -1065,6 +1065,7 @@
 	"pr.card.checksFailing": "Checks fehlgeschlagen",
 	"pr.card.checksLoading": "Merge-Bereitschaft wird geprüft",
 	"pr.card.checksPassing": "Checks erfolgreich",
+	"pr.card.timeUnavailable": "Zeit nicht verfügbar",
 	"pr.card.checksPending": "Checks laufen",
 	"pr.card.closed": "Pull Request geschlossen",
 	"pr.card.draft": "Pull-Request-Entwurf",

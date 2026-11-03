@@ -174,7 +174,7 @@ describe("portable leaf components", () => {
 		expect(screen.getByText("· 6s")).toBeInTheDocument();
 
 		act(() => vi.advanceTimersByTime(60_000));
-		expect(screen.getByText("· 1m")).toBeInTheDocument();
+		expect(screen.getByText("· 1m 06s")).toBeInTheDocument();
 		vi.useRealTimers();
 	});
 

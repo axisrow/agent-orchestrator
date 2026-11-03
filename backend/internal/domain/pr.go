@@ -96,6 +96,7 @@ type PullRequest struct {
 	ReviewHash   string
 
 	ObservedAt       time.Time
+	CIPendingSince   time.Time
 	CIObservedAt     time.Time
 	ReviewObservedAt time.Time
 	// LastSeenAt is the freshness cursor: when the observer last refreshed

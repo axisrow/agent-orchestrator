@@ -1069,6 +1069,7 @@
 	"pr.card.checksFailing": "Verificações falhando",
 	"pr.card.checksLoading": "Verificando se está pronto para merge",
 	"pr.card.checksPassing": "Verificações passando",
+	"pr.card.timeUnavailable": "Tempo indisponível",
 	"pr.card.checksPending": "Verificações em andamento",
 	"pr.card.closed": "Pull request fechada",
 	"pr.card.draft": "Pull request em rascunho",

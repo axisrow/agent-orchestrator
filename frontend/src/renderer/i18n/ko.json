@@ -1065,6 +1065,7 @@
 	"pr.card.checksFailing": "검사 실패",
 	"pr.card.checksLoading": "병합 가능 여부 확인 중",
 	"pr.card.checksPassing": "검사 통과",
+	"pr.card.timeUnavailable": "시간을 사용할 수 없음",
 	"pr.card.checksPending": "검사 실행 중",
 	"pr.card.closed": "풀 리퀘스트 닫힘",
 	"pr.card.draft": "초안 풀 리퀘스트",

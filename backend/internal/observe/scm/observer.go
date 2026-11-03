@@ -351,6 +351,7 @@ type refreshSelection struct {
 }
 
 type persistenceOptions struct {
+	ciFetched                   bool
 	reviewFetched               bool
 	preserveLocalMetadataHash   bool
 	preserveLocalCIHash         bool
@@ -596,6 +597,7 @@ func (o *Observer) Poll(ctx context.Context) (pollErr error) {
 		local := subj.known
 		reviewMode := reviewModes[key]
 		opts := persistenceOptions{
+			ciFetched:                   !localOnlyObservations[key] && !obs.CI.Partial,
 			reviewFetched:               reviewMode != ports.ReviewWritePreserve,
 			preserveLocalMetadataHash:   localOnlyObservations[key],
 			preserveLocalCIHash:         localOnlyObservations[key] || obs.CI.Partial,
@@ -603,7 +605,8 @@ func (o *Observer) Poll(ctx context.Context) (pollErr error) {
 			preserveLocalReviewDecision: reviewStale[key],
 		}
 		prepared := o.prepareForPersistence(obs, local, opts, now)
-		if !prepared.Changed.Metadata && !prepared.Changed.CI && !prepared.Changed.Review {
+		needsPendingStart := opts.ciFetched && prepared.CI.Summary == string(domain.CIPending) && local.CIPendingSince.IsZero()
+		if !prepared.Changed.Metadata && !prepared.Changed.CI && !prepared.Changed.Review && !needsPendingStart {
 			// No-op poll: content hashes matched, nothing is written, so the
 			// observation stamps stay frozen. Advance the last_seen freshness
 			// cursor instead — a healthy observer must keep quiet PRs reading
@@ -1862,6 +1865,21 @@ func domainFromObservation(sessionID domain.SessionID, sessionRecord domain.Sess
 	if obs.Changed.CI || ciObservedAt.IsZero() {
 		ciObservedAt = obs.ObservedAt
 	}
+	ciPendingSince := local.CIPendingSince
+	if obs.PR.HeadSHA != "" && local.HeadSHA != "" && obs.PR.HeadSHA != local.HeadSHA {
+		ciPendingSince = time.Time{}
+	}
+	if opts.ciFetched {
+		switch domain.CIState(obs.CI.Summary) {
+		case domain.CIPending:
+			if ciPendingSince.IsZero() {
+				ciPendingSince = obs.ObservedAt
+			}
+		case domain.CIUnknown, "":
+		default:
+			ciPendingSince = time.Time{}
+		}
+	}
 	// Only a successful review-thread fetch establishes a review observation:
 	// a metadata/CI-only pass (or a failed review fetch in preserve mode) must
 	// not manufacture one, or a never-fetched review storage would look
@@ -1916,6 +1934,7 @@ func domainFromObservation(sessionID domain.SessionID, sessionRecord domain.Sess
 		CIHash:                   ciHash,
 		ReviewHash:               reviewHash,
 		ObservedAt:               observedAt,
+		CIPendingSince:           ciPendingSince,
 		CIObservedAt:             ciObservedAt,
 		ReviewObservedAt:         reviewObservedAt,
 		ReviewPartial:            reviewPartial,

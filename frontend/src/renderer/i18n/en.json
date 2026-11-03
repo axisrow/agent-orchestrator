@@ -1036,6 +1036,7 @@
 	"pr.card.checksFailing": "Checks failing",
 	"pr.card.checksLoading": "Checking merge readiness",
 	"pr.card.checksPassing": "Checks passing",
+	"pr.card.timeUnavailable": "Time unavailable",
 	"pr.card.checksPending": "Checks running",
 	"pr.card.closed": "Pull request closed",
 	"pr.card.draft": "Draft pull request",

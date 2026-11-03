@@ -215,6 +215,7 @@ type PullRequestSummary struct {
 	CreatedAt        time.Time                      `json:"createdAt,omitempty"`
 	UpdatedAt        time.Time                      `json:"updatedAt"`
 	ObservedAt       time.Time                      `json:"observedAt"`
+	CIPendingSince   time.Time                      `json:"ciPendingSince,omitempty"`
 	CIObservedAt     time.Time                      `json:"ciObservedAt"`
 	ReviewObservedAt time.Time                      `json:"reviewObservedAt"`
 	// LastSeenAt is when the observer last refreshed the PR, including no-op

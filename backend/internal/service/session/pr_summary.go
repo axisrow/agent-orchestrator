@@ -210,6 +210,7 @@ func summarizePR(pr domain.PullRequest, checks []domain.PullRequestCheck, review
 		CreatedAt:        pr.CreatedAtProvider,
 		UpdatedAt:        pr.UpdatedAt,
 		ObservedAt:       pr.ObservedAt,
+		CIPendingSince:   pr.CIPendingSince,
 		CIObservedAt:     pr.CIObservedAt,
 		ReviewObservedAt: pr.ReviewObservedAt,
 		LastSeenAt:       pr.LastSeenAt,

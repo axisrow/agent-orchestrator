@@ -33,6 +33,7 @@ const summary = (overrides: Partial<SessionPRSummary> = {}): SessionPRSummary =>
 	updatedAt: freshIso(),
 	observedAt: freshIso(),
 	ciObservedAt: freshIso(),
+	ciPendingSince: freshIso(),
 	reviewObservedAt: freshIso(),
 	lastSeenAt: freshIso(),
 	...overrides,
@@ -396,7 +397,7 @@ describe("prCardPresentation", () => {
 
 	it("maps the three CI states to distinct tones: validating (with spinner flag), error, success", () => {
 		const pending = prCardPresentation(
-			summary({ ci: { autoInjectCI: true, state: "pending", failingChecks: [] }, ciObservedAt: "2026-10-01T00:00:00Z" }),
+			summary({ ci: { autoInjectCI: true, state: "pending", failingChecks: [] }, ciObservedAt: "2026-10-01T00:00:19Z", ciPendingSince: "2026-10-01T00:00:00Z" }),
 		);
 		const failing = prCardPresentation(
 			summary({
@@ -531,7 +532,11 @@ describe("prCardPresentation AO review verdict", () => {
 			summary(),
 			aoReview({ status: "running", latestRun: aoRun({ status: "running", verdict: "" }) }),
 		);
-		expect(aoRow(presentation)).toMatchObject({ label: "AO review: running", tone: "neutral", breathe: true });
+		expect(aoRow(presentation)).toMatchObject({ label: "AO review: running", tone: "neutral", breathe: true, since: "2026-06-15T00:00:00Z" });
+		const switched = prCardPresentation(summary(), aoReview({ status: "running", latestRun: aoRun({ status: "running", createdAt: "2026-06-15T00:01:00Z" }) }));
+		expect(aoRow(switched)?.since).toBe("2026-06-15T00:01:00Z");
+		expect(aoRow(prCardPresentation(summary(), aoReview({ status: "running" })))?.timeUnavailable).toBe("Time unavailable");
+		expect(aoRow(prCardPresentation(summary(), aoReview({ latestRun: aoRun() })))?.since).toBeUndefined();
 	});
 
 	it("renders a completed verdict on an older head as outdated, never current", () => {

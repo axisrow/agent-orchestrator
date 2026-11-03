@@ -542,6 +542,7 @@ type PR struct {
 	AuthorAvatarURL          string
 	ReviewPartial            bool
 	LastSeenAt               sql.NullTime
+	CIPendingSince           sql.NullTime
 }
 
 type PRCheck struct {

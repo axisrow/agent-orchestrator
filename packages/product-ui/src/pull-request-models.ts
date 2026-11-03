@@ -37,6 +37,7 @@ export type PRCardStatus = {
 	breathe?: boolean;
 	/** ISO timestamp the in-flight status began (the CI fact last changed); breathe rows render a live elapsed label from it. */
 	since?: string;
+	timeUnavailable?: string;
 	links: PRSummaryLink[];
 	tone: PRDisplayTone;
 };
