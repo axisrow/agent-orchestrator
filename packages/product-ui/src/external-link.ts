@@ -6,6 +6,7 @@ export type ExternalLinkProps = {
 	className?: string;
 	href: string;
 	stopPropagation?: boolean;
+	forceSystemBrowser?: boolean;
 	title?: string;
 };
 

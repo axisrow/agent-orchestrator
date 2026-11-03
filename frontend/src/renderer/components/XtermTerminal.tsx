@@ -626,7 +626,7 @@ export function XtermTerminal(props: XtermTerminalProps) {
 			// via the main process's window-open handler. Right-click to open a web
 			// link in the system browser instead — see the context menu below. Cmd-click
 			// follows the same escape hatch as links in the Chat surface.
-			// AO_LINKS_EXTERNAL=1 flips the default click to the system browser; the
+			// Web links open in the system browser by default; the
 			// AO Browser panel stays on the context menu in both modes.
 			if (isWebLink(uri)) {
 				if (event.altKey || event.metaKey || externalLinksDefault()) {

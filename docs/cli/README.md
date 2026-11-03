@@ -366,3 +366,5 @@ NULL configs retain their defaults. No Git discovery runs during migration, and
 no earlier migration is modified. Downgrading preserves config data; older
 versions do not support canonical claims and may drop this field when saving
 project settings.
+
+Desktop web links open in the system browser by default. Set `AO_LINKS_EXTERNAL=0` before launching the desktop app to use the built-in browser by default; the link context menu offers both choices.

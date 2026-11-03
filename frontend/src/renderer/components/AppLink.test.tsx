@@ -9,6 +9,14 @@ const url = "https://github.com/aoagents/agent-orchestrator/pull/42";
 afterEach(() => vi.restoreAllMocks());
 
 describe("AppLink", () => {
+	it("forces the system browser for the explicit inspector action", () => {
+		const open = vi.fn();
+		const external = vi.spyOn(aoBridge.app, "openExternal").mockResolvedValue(undefined);
+		render(<AppBrowserLinkContext.Provider value={open}><ProductExternalLink href={url} forceSystemBrowser>Open in System Browser</ProductExternalLink></AppBrowserLinkContext.Provider>);
+		fireEvent.click(screen.getByRole("link"));
+		expect(external).toHaveBeenCalledExactlyOnceWith(url);
+		expect(open).not.toHaveBeenCalled();
+	});
 	it("opens PR links in ao even when the product link stops propagation", () => {
 		const open = vi.fn();
 		const external = vi.spyOn(aoBridge.app, "openExternal").mockResolvedValue(undefined);

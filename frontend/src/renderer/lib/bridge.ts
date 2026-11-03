@@ -6,7 +6,7 @@ export const aoBridge: AoBridge =
 	({
 		launch: {
 			rightPanelExpanded: false,
-			linksExternal: false,
+			linksExternal: true,
 		},
 		app: {
 			getVersion: async () => "0.0.0-preview",
