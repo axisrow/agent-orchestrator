@@ -121,6 +121,12 @@ type agentAccountCommander interface {
 	StartAccountTransition(context.Context, domain.SessionID, string, domain.SessionInterfaceTransitionPolicy) (domain.SessionInterfaceTransition, error)
 }
 
+// sessionEnvCommander keeps the per-session env override optional for focused
+// service fakes.
+type sessionEnvCommander interface {
+	SetSessionEnvOverrides(ctx context.Context, id domain.SessionID, env map[string]string) error
+}
+
 // RollbackOutcome reports what happened in a rollback: either the seed row was
 // deleted, or the partially-spawned session was killed (runtime+workspace torn
 // down, row marked terminated).
@@ -981,6 +987,22 @@ func (s *Service) AcknowledgeInterfaceTransitionNotice(
 	}
 	transition, err := manager.AcknowledgeInterfaceTransitionNotice(ctx, id, transitionID)
 	return transition, toAPIError(err)
+}
+
+// SetSessionEnv replaces the session's persistent env overrides wholesale (an
+// empty map clears them). Values are stored, not served: reads happen only when
+// a launch assembles the session's runtime env. They apply on the next launch;
+// pair with resume-agent (`ao session set-config --env K=V --respawn`) to
+// relaunch an exited agent under the new env right away.
+func (s *Service) SetSessionEnv(ctx context.Context, id domain.SessionID, env map[string]string) error {
+	commander, ok := s.manager.(sessionEnvCommander)
+	if !ok {
+		return apierr.Conflict("SESSION_ENV_UNSUPPORTED", "This build cannot set per-session env overrides", nil)
+	}
+	if err := domain.ValidateEnv(env); err != nil {
+		return apierr.Invalid("SESSION_ENV_INVALID", err.Error(), nil)
+	}
+	return toAPIError(commander.SetSessionEnvOverrides(ctx, id, env))
 }
 
 func restoreModeView(mode sessionmanager.RestoreMode) RestoreModeView {

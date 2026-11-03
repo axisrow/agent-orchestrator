@@ -3267,6 +3267,20 @@ func sessionOperations() []operation {
 			},
 		},
 		{
+			method: http.MethodPut, path: "/api/v1/sessions/{sessionId}/env", id: "setSessionEnv", tag: "sessions",
+			summary:    "Replace a session's persistent env overrides (values are never served back)",
+			pathParams: []any{controllers.SessionIDParam{}},
+			reqBody:    controllers.SessionEnvRequest{},
+			resps: []respUnit{
+				{http.StatusOK, controllers.SessionEnvResponse{}},
+				{http.StatusBadRequest, envelope.APIError{}},
+				{http.StatusNotFound, envelope.APIError{}},
+				{http.StatusConflict, envelope.APIError{}},
+				{http.StatusInternalServerError, envelope.APIError{}},
+				{http.StatusNotImplemented, envelope.APIError{}},
+			},
+		},
+		{
 			method: http.MethodGet, path: "/api/v1/sessions/provider-staleness", id: "listStaleProviderSessions", tag: "sessions",
 			summary: "List running claude-code sessions whose provider differs from the effective gateway config",
 			resps: []respUnit{

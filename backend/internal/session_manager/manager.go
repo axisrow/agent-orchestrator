@@ -1548,13 +1548,14 @@ func (m *Manager) spawn(ctx context.Context, cfg ports.SpawnConfig, timings *spa
 		return domain.SessionRecord{}, 0, 0, wrapSpawnStage(id, ErrSpawnBrowser, err)
 	}
 	m.applyRoleProviderPin(ctx, env, project.ID, cfg.Kind, project.Config)
+	m.applySessionEnvOverrides(ctx, id, env)
 	m.augmentAgentRuntimeEnv(agent, env)
 	pinRuntimePermissionEnv(env, adapterConfig.Permissions)
 	if validator, ok := agent.(ports.AgentLaunchAuthValidator); ok {
 		status, authErr := validator.ValidateLaunchAuth(ctx, ws.Path, env)
 		if authErr != nil {
 			m.logger.Debug("spawn: launch authentication probe inconclusive; continuing",
-				"sessionID", id, "harness", cfg.Harness, "error", agentlaunch.RedactValues(authErr.Error(), project.Config.Env))
+				"sessionID", id, "harness", cfg.Harness, "error", agentlaunch.RedactValues(authErr.Error(), env))
 		} else if status == ports.AgentAuthStatusUnauthorized {
 			m.rollbackSeedSpawnWorkspace(ctx, rec, ws, workspaceProject, true, false)
 			return domain.SessionRecord{}, 0, 0, fmt.Errorf("spawn %s: %w", id, ports.ErrAgentAuthRequired)
@@ -1637,7 +1638,7 @@ func (m *Manager) spawn(ctx context.Context, cfg ports.SpawnConfig, timings *spa
 	timings.mark("runtime")
 	if err != nil {
 		m.rollbackSeedSpawnWorkspace(ctx, rec, ws, workspaceProject, true, false)
-		return domain.SessionRecord{}, 0, 0, wrapSpawnStage(id, ErrRuntimeCreate, agentlaunch.RedactError(err, project.Config.Env))
+		return domain.SessionRecord{}, 0, 0, wrapSpawnStage(id, ErrRuntimeCreate, agentlaunch.RedactError(err, env))
 	}
 
 	metadata := domain.SessionMetadata{
@@ -3672,6 +3673,7 @@ func (m *Manager) relaunchSessionWithPolicyAndGeneration(ctx context.Context, op
 		return RestoreResult{}, relaunchFailed("browser capability", fmt.Errorf("%s %s: browser capability: %w", operation, rec.ID, err))
 	}
 	m.applyRoleProviderPin(ctx, env, project.ID, rec.Kind, project.Config)
+	m.applySessionEnvOverrides(ctx, rec.ID, env)
 	m.augmentAgentRuntimeEnv(agent, env)
 	pinRuntimePermissionEnv(env, agentConfig.Permissions)
 	if validator, ok := agent.(ports.AgentLaunchAuthValidator); ok {
@@ -3806,7 +3808,7 @@ func (m *Manager) relaunchSessionWithPolicyAndGeneration(ctx context.Context, op
 	}
 	if err != nil {
 		m.cleanupSystemPromptDir(rec.ID)
-		return RestoreResult{}, relaunchFailed("runtime", fmt.Errorf("%s %s: runtime: %w", operation, rec.ID, agentlaunch.RedactError(err, project.Config.Env)))
+		return RestoreResult{}, relaunchFailed("runtime", fmt.Errorf("%s %s: runtime: %w", operation, rec.ID, agentlaunch.RedactError(err, env)))
 	}
 	// The fresh binding supersedes any pre-boot pty-host tree of this session
 	// (fork issue #115): reap it here, best-effort, without failing the launch.

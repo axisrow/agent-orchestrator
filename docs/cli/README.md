@@ -70,6 +70,7 @@ addresses change on restart.
 | `ao session restore <id>`           | `POST /api/v1/sessions/{id}/restore`           |
 | `ao session exit-agent <id>`        | `POST /api/v1/sessions/{id}/exit-agent`        |
 | `ao session respawn <id>` (alias `resume-agent`, `resume`) | `POST /api/v1/sessions/{id}/resume-agent` |
+| `ao session set-config <id> --env K=V [--respawn]` | `PUT /api/v1/sessions/{id}/env`, then `POST /api/v1/sessions/{id}/resume-agent` with `--respawn` |
 | `ao session switch-agent <id> <target-harness>` | `POST /api/v1/sessions/{id}/switch-agent` |
 | `ao session agent-switch ls <session-id>` | `GET /api/v1/sessions/{id}/agent-switches` |
 | `ao session handoff submit`         | `POST /api/v1/sessions/{id}/agent-switches/{switchId}/handoff` |

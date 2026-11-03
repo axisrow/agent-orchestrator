@@ -225,6 +225,40 @@ ao session respawn mer-3
 
 ---
 
+### ao session set-config
+
+Replace the session's persistent env overrides: KEY=VALUE pairs applied on top
+of the project, role, and provider-gateway env on every launch, so a hot LLM
+provider switch survives respawn and daemon restarts. `--env` replaces the
+whole map; `--clear-env` removes it. Values are stored but never served back
+or printed. `--respawn` relaunches an exited agent right away under the new
+env; a running agent must exit first.
+
+**Syntax:**
+```
+ao session set-config <id> [flags]
+```
+
+**Flags:**
+
+| Flag | Meaning | Default / Required |
+|---|---|---|
+| `--env KEY=VALUE` | Env override kept for every launch of this session (repeatable; replaces the whole map) | - |
+| `--clear-env` | Remove every env override from the session | - |
+| `--respawn` | Respawn the exited agent after saving | - |
+| `--json` | Output as JSON | - |
+| `-p, --project string` | Project id to scope the lookup | - |
+
+**Examples:**
+
+```bash
+ao session exit-agent mer-3
+ao session set-config mer-3 --env ANTHROPIC_BASE_URL=http://127.0.0.1:11434 --env ANTHROPIC_AUTH_TOKEN=sk-local --respawn
+ao session set-config mer-3 --clear-env
+```
+
+---
+
 ### ao session switch-agent
 
 Switch a running session to another installed agent harness. This preserves the
