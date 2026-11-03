@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
@@ -319,23 +318,19 @@ func (s *Store) SupersedePendingReports(ctx context.Context, sessionID domain.Se
 }
 
 // FailReportBatchTerminally retires the claimed batch holding token as stale
-// with the given reason — the delivery has no future attempt: the target held
-// the batch text in its message queue (fork issue #205), so retrying would
-// re-append the same content forever, or the project was archived (fork issue
-// #208) and its report recipient can never exist again. Rows are fenced by the
-// claim token like the ack path; a zero count means the claim was lost.
-func (s *Store) FailReportBatchTerminally(ctx context.Context, projectID domain.ProjectID, token, lastError string) (int, error) {
-	if projectID == "" || token == "" || lastError == "" {
+// with the journal cause the caller's branch names (the coordinator decides
+// from the real condition, not from re-parsing the reason text) and the raw
+// reason — the delivery has no future attempt: the target held the batch text
+// in its message queue (fork issue #205), so retrying would re-append the same
+// content forever, or the project was archived (fork issue #208) and its
+// report recipient can never exist again. Rows are fenced by the claim token
+// like the ack path; a zero count means the claim was lost.
+func (s *Store) FailReportBatchTerminally(ctx context.Context, projectID domain.ProjectID, token, cause, lastError string) (int, error) {
+	if projectID == "" || token == "" || cause == "" || lastError == "" {
 		return 0, domain.ErrInvalidReport
 	}
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
-	cause := domain.DeliveryEventInjectFailed
-	if strings.Contains(strings.ToLower(lastError), "project archived") {
-		// A retired batch whose recipient can never exist again (fork issue
-		// #208) is a gone recipient, not a failed injection.
-		cause = domain.DeliveryEventRecipientGone
-	}
 	var rows []gen.Delivery
 	err := s.inTx(ctx, "fail queued project report batch", func(q *gen.Queries) error {
 		var err error

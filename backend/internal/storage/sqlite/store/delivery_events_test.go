@@ -60,12 +60,27 @@ func TestDeliveryJournalRecordsTheDeliveryChain(t *testing.T) {
 	if err != nil || len(claimed) != 1 {
 		t.Fatalf("claim = %d reports err=%v", len(claimed), err)
 	}
-	if _, err = s.AcknowledgeReportBatch(ctx, sess.ProjectID, "tok-1", now.Add(time.Second)); err != nil {
+	// The visible emission and its suppression backoff are journal transitions
+	// too: emit_visible stamps the at-most-once marker, deferred parks the
+	// claim back to pending with the suppression reason.
+	if n, err := s.MarkReportBatchEmitted(ctx, sess.ProjectID, "tok-1", now); err != nil || n != 1 {
+		t.Fatalf("mark emitted = %d err=%v", n, err)
+	}
+	if n, err := s.DeferReportBatch(ctx, sess.ProjectID, "tok-1", now.Add(5*time.Second), "report batch already emitted; repeat suppressed until emit TTL"); err != nil || n != 1 {
+		t.Fatalf("defer = %d err=%v", n, err)
+	}
+	if _, err = s.ClaimPendingReportBatch(ctx, sess.ProjectID, "tok-2", now.Add(10*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.AcknowledgeReportBatch(ctx, sess.ProjectID, "tok-2", now.Add(11*time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	chain = journalChain(t, s, "rpt_chain")
 	want := []string{
 		"emitted →pending",
+		"delivery_attempt pending→claimed",
+		"emit_visible claimed→claimed",
+		"deferred claimed→pending",
 		"delivery_attempt pending→claimed",
 		"acknowledged claimed→acknowledged",
 	}
@@ -77,14 +92,18 @@ func TestDeliveryJournalRecordsTheDeliveryChain(t *testing.T) {
 			t.Fatalf("chain[%d] = %q, want %q", i, chain[i], want[i])
 		}
 	}
+	events, err := s.ListDeliveryEventsByDelivery(ctx, "rpt_chain")
+	if err != nil || events[3].Reason != "report batch already emitted; repeat suppressed until emit TTL" {
+		t.Fatalf("deferred reason = %+v err=%v", events, err)
+	}
 
 	all, err := s.ListDeliveryEventsSince(ctx, time.Time{})
-	if err != nil || len(all) != 3 {
+	if err != nil || len(all) != 6 {
 		t.Fatalf("since zero = %d events err=%v", len(all), err)
 	}
-	later, err := s.ListDeliveryEventsSince(ctx, now.Add(2*time.Second))
+	later, err := s.ListDeliveryEventsSince(ctx, now.Add(12*time.Second))
 	if err != nil || len(later) != 0 {
-		t.Fatalf("since +2s = %d events err=%v", len(later), err)
+		t.Fatalf("since +12s = %d events err=%v", len(later), err)
 	}
 	if all[0].DeliveryID != "rpt_chain" || all[0].SessionID != sess.ID || all[0].ProjectID != sess.ProjectID {
 		t.Fatalf("event identity = %+v", all[0])
@@ -144,7 +163,7 @@ func TestDeliveryJournalTerminalOutcomesCarryCauses(t *testing.T) {
 	if _, ok, err := s.ClaimReport(ctx, "rpt_gone", "tok-gone", now); err != nil || !ok {
 		t.Fatalf("claim gone ok=%v err=%v", ok, err)
 	}
-	if n, err := s.FailReportBatchTerminally(ctx, sess.ProjectID, "tok-gone", "project archived: no report recipient can exist (fork issue #208)"); err != nil || n != 1 {
+	if n, err := s.FailReportBatchTerminally(ctx, sess.ProjectID, "tok-gone", domain.DeliveryEventRecipientGone, "project archived: no report recipient can exist (fork issue #208)"); err != nil || n != 1 {
 		t.Fatalf("fail archived = %d err=%v", n, err)
 	}
 	chain = journalChain(t, s, "rpt_gone")
@@ -164,7 +183,7 @@ func TestDeliveryJournalTerminalOutcomesCarryCauses(t *testing.T) {
 	if _, ok, err := s.ClaimReport(ctx, "rpt_queued", "tok-queued", now); err != nil || !ok {
 		t.Fatalf("claim queued ok=%v err=%v", ok, err)
 	}
-	if n, err := s.FailReportBatchTerminally(ctx, sess.ProjectID, "tok-queued", "the prompt text is held in the target's message queue; flush the queue before delivering"); err != nil || n != 1 {
+	if n, err := s.FailReportBatchTerminally(ctx, sess.ProjectID, "tok-queued", domain.DeliveryEventInjectFailed, "the prompt text is held in the target's message queue; flush the queue before delivering"); err != nil || n != 1 {
 		t.Fatalf("fail queued = %d err=%v", n, err)
 	}
 	chain = journalChain(t, s, "rpt_queued")
