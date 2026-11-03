@@ -33,7 +33,7 @@ export function AppLink({ href, onClick, onBrowserOpen, inAppLink, filePath, onF
 				onClick?.(event);
 				if (event.defaultPrevented || !href || !browserLink) return;
 				event.preventDefault();
-				// AO_LINKS_EXTERNAL=1 flips the default click to the system browser;
+				// Web links open in the system browser by default;
 				// the AO Browser panel stays on the context menu in both modes.
 				if (webLink && externalLinksDefault()) {
 					void openLinkInSystemBrowser(href);

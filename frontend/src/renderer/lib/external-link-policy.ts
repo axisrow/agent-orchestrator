@@ -76,7 +76,7 @@ export function isWorkspaceHtmlLink(url: string, workspacePaths: string[]): bool
 }
 
 /**
- * AO_LINKS_EXTERNAL=1: a plain click opens web links in the system browser.
+ * Web links open in the system browser by default; AO_LINKS_EXTERNAL=0 opts out.
  * The AO Browser panel stays reachable through the context menu in both modes.
  */
 export function externalLinksDefault(): boolean {

@@ -23,15 +23,15 @@ describe("AO_RIGHT_PANEL", () => {
 
 describe("AO_LINKS_EXTERNAL", () => {
 	it("enables the external default only for the documented value", () => {
-		expect(linksExternalFromEnv({})).toBe(false);
-		expect(linksExternalFromEnv({ AO_LINKS_EXTERNAL: "" })).toBe(false);
+		expect(linksExternalFromEnv({})).toBe(true);
+		expect(linksExternalFromEnv({ AO_LINKS_EXTERNAL: "" })).toBe(true);
 		expect(linksExternalFromEnv({ AO_LINKS_EXTERNAL: "0" })).toBe(false);
-		expect(linksExternalFromEnv({ AO_LINKS_EXTERNAL: "true" })).toBe(false);
+		expect(linksExternalFromEnv({ AO_LINKS_EXTERNAL: "true" })).toBe(true);
 		expect(linksExternalFromEnv({ AO_LINKS_EXTERNAL: "1" })).toBe(true);
 	});
 
 	it("maps the env value to the preload argv flag", () => {
-		expect(linksExternalPreloadArgs({})).toEqual([]);
+		expect(linksExternalPreloadArgs({})).toEqual([LINKS_EXTERNAL_ARG]);
 		expect(linksExternalPreloadArgs({ AO_LINKS_EXTERNAL: "1" })).toEqual([LINKS_EXTERNAL_ARG]);
 	});
 
