@@ -607,7 +607,8 @@ func (o *Observer) Poll(ctx context.Context) (pollErr error) {
 			preserveLocalReviewDecision: reviewStale[key],
 		}
 		prepared := o.prepareForPersistence(obs, local, opts, now)
-		if !prepared.Changed.Metadata && !prepared.Changed.CI && !prepared.Changed.Review && !(opts.ciFetched && prepared.CI.Summary == string(domain.CIPending) && local.CIPendingSince.IsZero()) {
+		needsPendingStart := opts.ciFetched && prepared.CI.Summary == string(domain.CIPending) && local.CIPendingSince.IsZero()
+		if !prepared.Changed.Metadata && !prepared.Changed.CI && !prepared.Changed.Review && !needsPendingStart {
 			// No-op poll: content hashes matched, nothing is written, so the
 			// observation stamps stay frozen. Advance the last_seen freshness
 			// cursor instead — a healthy observer must keep quiet PRs reading
