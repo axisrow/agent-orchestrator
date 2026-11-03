@@ -66,7 +66,7 @@ export function SessionFileTab({
 							"grid size-icon-sm place-items-center rounded-sm text-passive hover:bg-interactive-hover hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent/50",
 							dirty
 								? "pointer-events-auto opacity-100"
-								: "pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100",
+								: "pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-has-[:focus-visible]:pointer-events-auto group-has-[:focus-visible]:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100",
 						)}
 						onClick={(event) => {
 							event.stopPropagation();
@@ -78,10 +78,10 @@ export function SessionFileTab({
 							<>
 								<span
 									aria-hidden="true"
-									className="size-2 rounded-full bg-foreground group-hover:hidden group-focus-within:hidden"
+									className="size-2 rounded-full bg-foreground group-hover:hidden group-has-[:focus-visible]:hidden"
 									data-testid="unsaved-tab-indicator"
 								/>
-								<X aria-hidden="true" className="hidden size-icon-sm group-hover:block group-focus-within:block" />
+								<X aria-hidden="true" className="hidden size-icon-sm group-hover:block group-has-[:focus-visible]:block" />
 							</>
 						) : <X className="size-icon-sm" aria-hidden="true" />}
 					</button>
