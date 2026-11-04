@@ -66,6 +66,13 @@ type Coordinator struct {
 	emitTTL    time.Duration
 	wake       chan struct{}
 	mu         sync.Mutex
+	// injectedIdle records the sessions that already had their safe-point
+	// inject in the current idle period (fork issue #242): the drain attempts
+	// one injection per wake-from-idle, and a failed attempt waits for the
+	// recipient's next turn boundary instead of re-pasting on every pass.
+	// In-memory on purpose: the chance is loop hygiene, not durable delivery
+	// state — a daemon restart re-arms every session once (the startup drain).
+	injectedIdle map[domain.SessionID]struct{}
 	// Telemetry for the issue #101 replay cycle: claims that re-deliver a batch
 	// (delivery attempt > 1) and acknowledgments whose token no longer holds it.
 	redeliveries, lostAcknowledgements atomic.Int64
@@ -101,7 +108,7 @@ func NewCoordinator(d CoordinatorDeps) *Coordinator {
 	if d.Log == nil {
 		d.Log = slog.New(slog.DiscardHandler)
 	}
-	return &Coordinator{store: d.Store, delivery: d.Delivery, log: d.Log, now: d.Now, newToken: d.NewToken, retryDelay: d.RetryDelay, emitTTL: d.EmitTTL, wake: make(chan struct{}, 1)}
+	return &Coordinator{store: d.Store, delivery: d.Delivery, log: d.Log, now: d.Now, newToken: d.NewToken, retryDelay: d.RetryDelay, emitTTL: d.EmitTTL, wake: make(chan struct{}, 1), injectedIdle: map[domain.SessionID]struct{}{}}
 }
 
 // emitQuietWindow escalates that window with the batch's durable delivery
@@ -275,6 +282,14 @@ func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.Proje
 		return true, nil
 	}
 	if !deliverableActivity(target.Activity.State) {
+		// Leaving the idle period re-arms the session's safe-point chance.
+		delete(c.injectedIdle, target.ID)
+		return true, nil
+	}
+	if _, used := c.injectedIdle[target.ID]; used {
+		// This idle period already had its injection: a failed attempt waits
+		// for the recipient's next turn boundary instead of re-pasting on
+		// every pass.
 		return true, nil
 	}
 	batch, err := c.claim(ctx, projectID)
@@ -292,33 +307,20 @@ func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.Proje
 		// error must not strand the rows claimed and invisible to scheduling.
 		return true, c.release(ctx, batch, err)
 	} else if accepted {
+		delete(c.injectedIdle, target.ID)
 		return false, nil
 	}
 	// Stuck reports ride the normal submit path in every session mode: the
 	// fork runs terminal orchestrators only, so there is no chat-mode
 	// interrupt lane to rate-limit (upstream #7435's chat branch removed).
-	visible, emitErr := c.EmitVisible(ctx, batch)
-	if emitErr != nil {
-		return true, c.release(ctx, batch, emitErr)
-	}
-	if !visible {
-		// At-most-once on the visible channel: the batch was already shown,
-		// so retry silently while the quiet window backs off — 15m, 1h, then
-		// 6h repeating. Ack fencing and its counters stay untouched. The
-		// suppression evidence is also the DB defer reason on the batch rows;
-		// this Info line keeps daemon.log greppable with the same text.
-		quiet := c.emitQuietWindow(batch.MaxDeliveryAttempts())
-		next := batch.emittedAt().Add(quiet)
-		if next.Before(c.now().UTC()) {
-			next = c.now().UTC().Add(quiet)
-		}
-		c.log.Info("report: batch already emitted; repeat suppressed until emit TTL", "batch", batch.IdempotencyKey(), "project", batch.ProjectID, "target", target.ID, "attempts", batch.MaxDeliveryAttempts())
-		_, deferErr := c.store.DeferReportBatch(ctx, batch.ProjectID, batch.Token, next, "report batch already emitted; repeat suppressed until emit TTL")
-		return true, deferErr
-	}
-	// Delivery evidence: a duplicate emission shows up as a second line with the
-	// same batch key and attempts > 1.
+	//
+	// Delivery evidence: a duplicate emission shows up as a second line with
+	// the same batch key and attempts > 1. The inject is going out: the idle
+	// period's safe-point chance is spent, whatever its outcome — the safe
+	// point itself is the drain's at-most-once mechanism (fork issue #242),
+	// so no emit quiet window gates it.
 	c.log.Info("report: batch emitted", "batch", batch.IdempotencyKey(), "project", batch.ProjectID, "target", target.ID, "reports", len(batch.Reports), "attempts", batch.MaxDeliveryAttempts())
+	c.injectedIdle[target.ID] = struct{}{}
 	if err := c.delivery.Submit(ctx, target.ID, batch.Render(), batch.IdempotencyKey()); err != nil {
 		// Fail loud (fork issue #179): an emission whose acceptance did not
 		// match is a failed delivery. It is never acked here — the batch backs
@@ -341,6 +343,9 @@ func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.Proje
 		// for the next safe-point drain.
 		return true, c.release(ctx, batch, err)
 	}
+	// Delivered: the mailbox emptied, so the session's safe-point chance is
+	// spent — a later emit while still idle is a new event with a fresh one.
+	delete(c.injectedIdle, target.ID)
 	return false, c.ackBatch(ctx, batch.ProjectID, batch.Token)
 }
 

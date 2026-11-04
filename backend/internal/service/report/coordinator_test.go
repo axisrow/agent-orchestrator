@@ -300,39 +300,62 @@ func TestCoordinatorBusyClaimBlocksRunDue(t *testing.T) {
 	}
 }
 
-// TestCoordinatorReleasedBatchReemitsAfterEmitTTL pins the post-failure path
-// that survives pull semantics until the retry teardown: a submit whose
-// semantic acceptance failed released its rows unread, and the visible channel
-// stays silent until the emit TTL allows exactly one re-emission.
-func TestCoordinatorReleasedBatchReemitsAfterEmitTTL(t *testing.T) {
+// TestCoordinatorFailedInjectWaitsForNextWakeFromIdle pins the safe-point
+// drain (fork issue #242): one inject per idle period. A submit whose semantic
+// acceptance failed spent this idle period's chance — the rows stay unread and
+// no later pass re-pastes while the recipient stays idle. The next busy->idle
+// transition re-arms the session and the mailbox delivers then.
+func TestCoordinatorFailedInjectWaitsForNextWakeFromIdle(t *testing.T) {
 	now := time.Date(2026, 10, 21, 15, 0, 0, 0, time.UTC)
+	idle := domain.Activity{State: domain.ActivityIdle, LastActivityAt: now}
 	store := newCoordinatorStore(now)
-	store.sessions = []domain.SessionRecord{{ID: "orch", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeTUI, Activity: domain.Activity{State: domain.ActivityIdle, LastActivityAt: now}}}
+	store.sessions = []domain.SessionRecord{{ID: "orch", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeTUI, Activity: idle}}
 	stuck := reportAt("stuck", "worker", now, now, "cannot continue")
 	stuck.State = domain.ReportStuck
 	store.add(stuck)
 	delivery := &coordinatorDelivery{submitErr: errors.New("composer is not empty")}
-	c := NewCoordinator(CoordinatorDeps{Store: store, Delivery: delivery, Now: func() time.Time { return now }, NewToken: func() string { return "claim" }, RetryDelay: 10 * time.Minute})
+	c := NewCoordinator(CoordinatorDeps{Store: store, Delivery: delivery, Now: func() time.Time { return now }, NewToken: func() string { return "claim" }})
 	// The refusal releases the rows unread; the failure reason stays visible.
 	_, _ = c.RunDue(context.Background())
 	if store.reports[0].DeliveryState != domain.ReportPending || store.reports[0].LastError == "" {
 		t.Fatalf("released batch = %+v", store.reports[0])
 	}
+	// Later passes while the recipient stays idle neither claim nor write:
+	// zero in-flight churn between safe points.
+	for i := 0; i < 3; i++ {
+		now = now.Add(time.Minute)
+		if delay, err := c.RunDue(context.Background()); err != nil || delay != c.retryDelay {
+			t.Fatalf("pass %d delay = %v, err = %v", i, delay, err)
+		}
+	}
+	if len(delivery.submissions) != 1 {
+		t.Fatalf("submissions = %d, want 1: a failed inject re-pasted within one idle period", len(delivery.submissions))
+	}
+	if store.reports[0].DeliveryAttempts != 1 {
+		t.Fatalf("attempts = %d, want frozen at the single failed attempt", store.reports[0].DeliveryAttempts)
+	}
 
-	// A pass inside the emit quiet window stays silent; the emit TTL elapses
-	// and exactly one re-emission carries the batch.
-	now = now.Add(16 * time.Minute)
-	delivery.submitErr = nil
-	delivery.submissions = nil
+	// A busy pass re-arms the session: the next wake-from-idle injects again.
+	now = now.Add(time.Minute)
+	store.sessions = []domain.SessionRecord{{ID: "orch", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeTUI, Activity: domain.Activity{State: domain.ActivityActive, LastActivityAt: now}}}
 	if _, err := c.RunDue(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if store.acked != 1 || len(delivery.submissions) != 1 {
-		t.Fatalf("post-TTL re-emission: acked = %d, submissions = %#v", store.acked, delivery.submissions)
+	now = now.Add(time.Minute)
+	delivery.submitErr = nil
+	store.sessions = []domain.SessionRecord{{ID: "orch", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeTUI, Activity: idle}}
+	if delay, err := c.RunDue(context.Background()); err != nil || delay >= 0 {
+		t.Fatalf("post-wake delay = %v, err = %v", delay, err)
+	}
+	if len(delivery.submissions) != 2 || store.acked != 1 {
+		t.Fatalf("wake delivery: submissions = %d, acked = %d", len(delivery.submissions), store.acked)
 	}
 }
 
-func TestCoordinatorSuppressesRepeatEmissionWithinEmitTTL(t *testing.T) {
+// TestCoordinatorFailedInjectLogsEvidence keeps the fail-loud contract of
+// fork issue #179: a failed inject warns with its durable batch id and the
+// released rows keep the failure reason in last_error.
+func TestCoordinatorFailedInjectLogsEvidence(t *testing.T) {
 	now := time.Date(2026, 10, 22, 9, 0, 0, 0, time.UTC)
 	store := newCoordinatorStore(now)
 	store.sessions = []domain.SessionRecord{{ID: "orch", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeChat, Activity: domain.Activity{State: domain.ActivityIdle, LastActivityAt: now}}}
@@ -340,89 +363,15 @@ func TestCoordinatorSuppressesRepeatEmissionWithinEmitTTL(t *testing.T) {
 	delivery := &coordinatorDelivery{submitErr: errors.New("prompt submission was not observed")}
 	var logs bytes.Buffer
 	c := NewCoordinator(CoordinatorDeps{Store: store, Delivery: delivery, Now: func() time.Time { return now }, Log: slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))})
-	// First attempt: the pane write already showed the batch before semantic
-	// acceptance failed, so the coordinator releases and the rows stay unread.
 	if _, err := c.RunDue(context.Background()); err == nil {
 		t.Fatal("first attempt should surface the submit error")
 	}
-	if len(delivery.submissions) != 1 {
-		t.Fatalf("submissions = %d, want 1", len(delivery.submissions))
-	}
-	// Fail loud (fork issue #179): the failed attempt warns with its batch id,
-	// and the released batch keeps the failure reason in last_error.
 	if got := logs.String(); !strings.Contains(got, "report: batch delivery failed") || !strings.Contains(got, "report-batch:dup") {
 		t.Fatalf("delivery failure evidence = %q", got)
 	}
 	for _, rec := range store.reports {
-		if rec.LastError == "" {
-			t.Fatalf("record = %+v, want last_error naming the failure", rec)
-		}
-	}
-	// A pass minutes later, still unacked: the visible channel stays silent
-	// and the batch waits out the emit TTL instead of re-emitting.
-	now = now.Add(2 * time.Minute)
-	delivery.submitErr = nil
-	delay, err := c.RunDue(context.Background())
-	if err != nil || delay <= 0 {
-		t.Fatalf("silent retry delay = %v, err = %v", delay, err)
-	}
-	if len(delivery.submissions) != 1 {
-		t.Fatalf("submissions = %d, want 1: repeated attempt re-emitted the batch", len(delivery.submissions))
-	}
-	if got := logs.String(); !strings.Contains(got, "repeat suppressed until emit TTL") || strings.Count(got, "report: batch emitted") != 1 {
-		t.Fatalf("suppression evidence = %q", got)
-	}
-}
-
-func TestCoordinatorEscalatesQuietWindowWithBackoff(t *testing.T) {
-	// A sleeping recipient never acks, so every visible re-emission fails
-	// acceptance and returns the batch to pending. The quiet window backs off
-	// 15m -> 1h -> 6h instead of re-emitting every TTL forever (#127) — and
-	// never stops: an unaccepted batch is undelivered work, so every step
-	// re-emits the SAME batch id (idempotent correlation, fork issue #179)
-	// until an acceptance settles it or ledger expiry retires it.
-	now := time.Date(2026, 10, 25, 8, 0, 0, 0, time.UTC)
-	store := newCoordinatorStore(now)
-	store.sessions = []domain.SessionRecord{{ID: "orch", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeChat, Activity: domain.Activity{State: domain.ActivityIdle, LastActivityAt: now}}}
-	store.add(reportAt("sleeper", "worker", now, now, "context"))
-	delivery := &coordinatorDelivery{submitErr: errors.New("prompt submission was not observed")}
-	c := NewCoordinator(CoordinatorDeps{Store: store, Delivery: delivery, Now: func() time.Time { return now }})
-	ctx := context.Background()
-	run := func(step time.Duration) {
-		now = now.Add(step)
-		c.RunDue(ctx)
-	}
-	run(0) // emission 1 at t0
-	run(15 * time.Minute)
-	if len(delivery.submissions) != 2 {
-		t.Fatalf("submissions = %d, want 2: first TTL re-emission must stay visible", len(delivery.submissions))
-	}
-	run(time.Minute) // attempts=3: quiet window grows to 1h, batch defers silently
-	if len(delivery.submissions) != 2 {
-		t.Fatalf("submissions = %d, want 2: second cycle must stay silent", len(delivery.submissions))
-	}
-	run(59 * time.Minute) // 1h past the second emission: emission 3
-	run(time.Minute)      // attempts=5: quiet window grows to 6h
-	run(6 * time.Hour)    // emission 4
-	run(time.Minute)      // attempts=7: the 6h step repeats from here on
-	if len(delivery.submissions) != 4 {
-		t.Fatalf("submissions = %d, want 4", len(delivery.submissions))
-	}
-	for i := 0; i < 3; i++ {
-		run(6 * time.Hour)
-		if len(delivery.submissions) != 5+i {
-			t.Fatalf("submissions = %d after +6h cycle %d, want %d: an unaccepted batch must keep re-emitting", len(delivery.submissions), i+1, 5+i)
-		}
-	}
-	want := delivery.submissions[0].key
-	for i, sub := range delivery.submissions {
-		if sub.key != want {
-			t.Fatalf("submission %d key = %q, want the stable batch id %q", i, sub.key, want)
-		}
-	}
-	for _, rec := range store.reports {
 		if rec.DeliveryState != domain.ReportPending || rec.LastError == "" {
-			t.Fatalf("record = %+v, want pending with the failure reason kept", rec)
+			t.Fatalf("record = %+v, want unread with the failure reason kept", rec)
 		}
 	}
 }
@@ -430,16 +379,17 @@ func TestCoordinatorEscalatesQuietWindowWithBackoff(t *testing.T) {
 // TestCoordinatorSettlesOnlyMatchedAcceptance pins the settle contract of
 // fork issues #159 and #179: the only settlement evidence is the recipient's
 // durable coordination checkpoint naming a batch's own correlation id — a
-// semantic acceptance of THIS batch whose evidence arrived after the emit
-// window closed (a TUI queued the prompt mid-turn and submitted it at the
-// turn boundary). Plain prompt activity, a truncated tail (which credits no
-// coordination id), and a coordination checkpoint naming some other id settle
-// nothing: the batch stays scheduled and re-emits instead of passing as
-// delivered.
+// semantic acceptance of THIS batch whose evidence arrived after the inject
+// (a TUI queued the prompt mid-turn and submitted it at the turn boundary).
+// Plain prompt activity, a truncated tail (which credits no coordination id),
+// and a coordination checkpoint naming some other id settle nothing: the batch
+// stays unread and the next safe-point drain settles it instead of re-emitting
+// accepted content.
 func TestCoordinatorSettlesOnlyMatchedAcceptance(t *testing.T) {
 	now := time.Date(2026, 10, 26, 7, 42, 0, 0, time.UTC)
+	idle := domain.Activity{State: domain.ActivityIdle, LastActivityAt: now}
 	store := newCoordinatorStore(now)
-	orch := domain.SessionRecord{ID: "orch", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeTUI, Activity: domain.Activity{State: domain.ActivityIdle, LastActivityAt: now}}
+	orch := domain.SessionRecord{ID: "orch", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeTUI, Activity: idle}
 	store.sessions = []domain.SessionRecord{orch}
 	store.add(reportAt("loop", "worker", now, now, "context"))
 	delivery := &coordinatorDelivery{submitErr: errors.New("prompt submission was not observed")}
@@ -452,11 +402,12 @@ func TestCoordinatorSettlesOnlyMatchedAcceptance(t *testing.T) {
 	if batchKey == "" {
 		t.Fatal("claimed batch lost its durable batch id")
 	}
-	// Minutes later the retry stays silent and defers: the loop's resting state.
+	// Minutes later the drain stays silent: this idle period already had its
+	// inject, and the rows simply wait unread.
 	now = now.Add(2 * time.Minute)
 	delivery.submitErr = nil
 	if delay, err := c.RunDue(ctx); err != nil || delay <= 0 {
-		t.Fatalf("suppressed retry delay = %v, err = %v", delay, err)
+		t.Fatalf("silent drain delay = %v, err = %v", delay, err)
 	}
 	if len(delivery.submissions) != 1 {
 		t.Fatalf("submissions = %d, want 1", len(delivery.submissions))
@@ -492,21 +443,27 @@ func TestCoordinatorSettlesOnlyMatchedAcceptance(t *testing.T) {
 	}
 	// A coordination checkpoint from a superseded runtime generation still
 	// carries THIS batch's acceptance: daemon restarts rotate the launch id,
-	// and the replay must settle accepted content instead of re-emitting it
-	// (fork issue #184). Lineage rotations clear the checkpoint, so a surviving
-	// stale-generation checkpoint always names an accepted batch.
+	// and the next safe-point drain must settle accepted content instead of
+	// re-emitting it (fork issue #184). Lineage rotations clear the checkpoint,
+	// so a surviving stale-generation checkpoint always names an accepted
+	// batch. A turn happened in between, so the busy pass re-arms the session.
 	orch.Metadata = domain.SessionMetadata{
 		ConversationCheckpointState:      domain.ConversationCheckpointCoordination,
 		ConversationCheckpointGeneration: "stale-launch",
 		ConversationCheckpointTurnID:     batchKey,
 		RuntimeLaunchID:                  "live-launch",
 	}
-	store.sessions = []domain.SessionRecord{orch}
-	if n, err := c.SettleEmittedReports(ctx, "orch"); err != nil || n != 1 {
-		t.Fatalf("settle with stale-generation checkpoint = %d, err = %v, want 1 report settled", n, err)
+	store.sessions = []domain.SessionRecord{{ID: "orch", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeTUI, Activity: domain.Activity{State: domain.ActivityActive, LastActivityAt: now}, Metadata: orch.Metadata}}
+	if _, err := c.RunDue(ctx); err != nil {
+		t.Fatal(err)
 	}
-	if store.reports[0].DeliveryState != domain.ReportAcknowledged || store.reports[0].ClaimToken != "activity-ack" {
-		t.Fatalf("record = %+v, want acknowledged under the synthetic token", store.reports[0])
+	orch.Activity = idle
+	store.sessions = []domain.SessionRecord{orch}
+	if delay, err := c.RunDue(ctx); err != nil || delay >= 0 {
+		t.Fatalf("replay drain delay = %v, err = %v, want an idle schedule", delay, err)
+	}
+	if store.reports[0].DeliveryState != domain.ReportAcknowledged {
+		t.Fatalf("record = %+v, want acknowledged by the replay drain without a re-emission", store.reports[0])
 	}
 	// The drain pass finds nothing left to deliver.
 	if delay, err := c.RunDue(ctx); err != nil || delay >= 0 {
@@ -517,8 +474,16 @@ func TestCoordinatorSettlesOnlyMatchedAcceptance(t *testing.T) {
 	}
 	// The same contract holds on the live generation: the checkpoint naming
 	// THIS batch's correlation id is the late semantic acceptance of a fresh
-	// batch, acknowledged without a live claim token.
+	// batch, acknowledged by the replay drain instead of a re-emission. A turn
+	// happened in between, so the recipient's busy pass re-arms its safe-point
+	// chance before the settled replay runs.
 	store.add(reportAt("second", "worker", now, now, "more context"))
+	store.sessions = []domain.SessionRecord{{ID: "orch", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeTUI, Activity: domain.Activity{State: domain.ActivityActive, LastActivityAt: now}}}
+	if _, err := c.RunDue(ctx); err != nil {
+		t.Fatal(err)
+	}
+	orch.Activity = idle
+	store.sessions = []domain.SessionRecord{orch}
 	delivery.submitErr = errors.New("prompt submission was not observed")
 	if _, err := c.RunDue(ctx); err == nil {
 		t.Fatal("second batch first attempt should surface the submit error")
@@ -529,12 +494,20 @@ func TestCoordinatorSettlesOnlyMatchedAcceptance(t *testing.T) {
 		ConversationCheckpointTurnID:     store.reports[1].DeliveryBatchID,
 		RuntimeLaunchID:                  "live-launch",
 	}
+	store.sessions = []domain.SessionRecord{{ID: "orch", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeTUI, Activity: domain.Activity{State: domain.ActivityActive, LastActivityAt: now}, Metadata: orch.Metadata}}
+	if _, err := c.RunDue(ctx); err != nil {
+		t.Fatal(err)
+	}
+	orch.Activity = idle
 	store.sessions = []domain.SessionRecord{orch}
-	if n, err := c.SettleEmittedReports(ctx, "orch"); err != nil || n != 1 {
-		t.Fatalf("settle = %d, err = %v, want 1 report settled", n, err)
+	if delay, err := c.RunDue(ctx); err != nil || delay >= 0 {
+		t.Fatalf("post-settle drain delay = %v, err = %v, want an idle schedule", delay, err)
 	}
 	if store.reports[1].DeliveryState != domain.ReportAcknowledged {
 		t.Fatalf("record = %+v, want the second batch acknowledged", store.reports[1])
+	}
+	if len(delivery.submissions) != 2 {
+		t.Fatalf("submissions = %d, want 2: settled batches were re-emitted", len(delivery.submissions))
 	}
 }
 
@@ -630,10 +603,9 @@ func TestSettleEmittedReportsGatesOnLiveOrchestrator(t *testing.T) {
 	}
 }
 
-// TestCoordinatorExhaustedBatchStillReemits pins the backoff's far end: even
-// a batch worn past the whole quiet ladder is undelivered work, so it stays
-// scheduled at the repeating 6h step instead of going silent forever — the
-// fail-loud contract of fork issue #179.
+// TestCoordinatorExhaustedBatchStillReemits pins the pull answer to a worn
+// batch: even a batch with a long delivery history is just unread work — the
+// drain attempts it at the next safe point exactly like a fresh one.
 func TestCoordinatorExhaustedBatchStillReemits(t *testing.T) {
 	now := time.Date(2026, 10, 26, 10, 0, 0, 0, time.UTC)
 	store := newCoordinatorStore(now)
@@ -644,26 +616,14 @@ func TestCoordinatorExhaustedBatchStillReemits(t *testing.T) {
 	store.add(worn)
 	delivery := &coordinatorDelivery{}
 	c := NewCoordinator(CoordinatorDeps{Store: store, Delivery: delivery, Now: func() time.Time { return now }})
-	// Inside the 6h quiet window the worn batch waits silently; the pass
-	// reports the drain cadence while unread rows remain.
-	delay, err := c.RunDue(context.Background())
-	if err != nil || delay != c.retryDelay {
-		t.Fatalf("silent drain delay = %v, err = %v, want the drain cadence", delay, err)
+	if delay, err := c.RunDue(context.Background()); err != nil || delay >= 0 {
+		t.Fatalf("drain delay = %v, err = %v", delay, err)
 	}
-	if len(delivery.submissions) != 0 {
-		t.Fatalf("submissions = %d, want 0 inside the quiet window", len(delivery.submissions))
+	if len(delivery.submissions) != 1 || delivery.submissions[0].key != "report-batch:worn" {
+		t.Fatalf("submissions = %#v, want one drain injection of batch %q", delivery.submissions, "report-batch:worn")
 	}
-	rec := store.reports[0]
-	if rec.DeliveryState != domain.ReportPending || rec.LastError == "" {
-		t.Fatalf("record = %+v, want pending with the suppression reason kept", rec)
-	}
-	// Past the step the same batch re-emits: silence is never terminal.
-	now = now.Add(6 * time.Hour)
-	if _, err := c.RunDue(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if len(delivery.submissions) != 1 || delivery.submissions[0].key != rec.DeliveryBatchID {
-		t.Fatalf("submissions = %#v, want one re-emission of batch %q", delivery.submissions, rec.DeliveryBatchID)
+	if store.acked != 1 {
+		t.Fatalf("acked = %d, want 1", store.acked)
 	}
 }
 
@@ -753,36 +713,6 @@ func TestCoordinatorEmissionLogsEvidence(t *testing.T) {
 		if !strings.Contains(logs.String(), want) {
 			t.Fatalf("emission evidence missing %q: %q", want, logs.String())
 		}
-	}
-}
-
-func TestCoordinatorReemitsOnceAfterEmitTTL(t *testing.T) {
-	now := time.Date(2026, 10, 22, 10, 0, 0, 0, time.UTC)
-	store := newCoordinatorStore(now)
-	store.sessions = []domain.SessionRecord{{ID: "orch", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeChat, Activity: domain.Activity{State: domain.ActivityIdle, LastActivityAt: now}}}
-	store.add(reportAt("noshow", "worker", now, now, "context"))
-	delivery := &coordinatorDelivery{submitErr: errors.New("prompt submission was not observed")}
-	c := NewCoordinator(CoordinatorDeps{Store: store, Delivery: delivery, Now: func() time.Time { return now }})
-	if _, err := c.RunDue(context.Background()); err == nil {
-		t.Fatal("first attempt should surface the submit error")
-	}
-	// After the no-show TTL expires exactly one re-emission is allowed.
-	now = now.Add(20 * time.Minute)
-	if _, err := c.RunDue(context.Background()); err == nil {
-		t.Fatal("re-emission should surface the submit error again")
-	}
-	if len(delivery.submissions) != 2 {
-		t.Fatalf("submissions = %d, want 2 after the emit TTL expired", len(delivery.submissions))
-	}
-	// The marker was refreshed by the re-emission: a pass inside the new
-	// window stays silent instead of emitting on every pass.
-	now = now.Add(time.Minute)
-	delivery.submitErr = nil
-	if delay, err := c.RunDue(context.Background()); err != nil || delay <= 0 {
-		t.Fatalf("post-re-emission delay = %v, err = %v", delay, err)
-	}
-	if len(delivery.submissions) != 2 {
-		t.Fatalf("submissions = %d, want 2: refreshed marker did not suppress the repeat", len(delivery.submissions))
 	}
 }
 
