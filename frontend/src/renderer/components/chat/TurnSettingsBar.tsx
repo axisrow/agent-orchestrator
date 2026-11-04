@@ -490,7 +490,7 @@ function ModelEffortPicker({
 					<span className="min-w-0 max-w-[38ch] truncate">{groupLabel}</span>
 				</OptionMenuTrigger>
 			<OptionMenuContent align="start" className={CHAT_MENU_CLASS} onCloseAutoFocus={restoreComposerFocus}>
-				<OptionMenuSub>
+				<OptionMenuSub closeOnSelect>
 					<OptionMenuSubTrigger label="Model" value={modelLabel} />
 					{/* Scroll on an inner strip: the surface utility caps height but wheel
 					    events do not reliably reach an outer overflow on nested submenus. */}
@@ -514,7 +514,7 @@ function ModelEffortPicker({
 				</OptionMenuSub>
 
 				{efforts.length > 0 || savedEffort ? (
-					<OptionMenuSub>
+					<OptionMenuSub closeOnSelect>
 						<OptionMenuSubTrigger
 							label={t("settings.models.effort")}
 							value={effortDisplayLabel({ value: savedEffort, choices: effortChoices, followLabel: t("settings.models.effort"), t, defaultEffort })}
@@ -680,7 +680,7 @@ function EffortOptionSubmenu({
 	const { t } = useTranslation();
 	const followLabel = t("settings.models.effort");
 	return (
-		<OptionMenuSub>
+		<OptionMenuSub closeOnSelect>
 			<OptionMenuSubTrigger label={followLabel} value={effortDisplayLabel({ ...acpEffortProps(option), followLabel, t })} />
 			<OptionMenuSubContent className={CHAT_MENU_CLASS}>
 				<EffortMenuItems {...acpEffortMenuProps(option)} compact onChange={(value) => onChange(option.id, { value })} />
@@ -822,7 +822,7 @@ function MoreOptionsSubmenu({
 	onChange: (optionId: string, value: ChatConfigOptionValue) => void;
 }) {
 	return (
-		<OptionMenuSub>
+		<OptionMenuSub closeOnSelect>
 			<OptionMenuSubTrigger label="More" />
 			<OptionMenuSubContent className={CHAT_MENU_CLASS}>
 				{options.map((option) => (
@@ -849,7 +849,7 @@ function OptionSubmenu({
 }) {
 	const current = optionCurrentLabel(option);
 	return (
-		<OptionMenuSub>
+		<OptionMenuSub closeOnSelect>
 			<OptionMenuSubTrigger label={label ?? option.name} value={current} />
 			<OptionMenuSubContent
 				scrollable={scrollable}
