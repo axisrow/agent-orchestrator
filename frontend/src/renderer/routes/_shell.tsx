@@ -325,7 +325,6 @@ function ShellLayout() {
 	const requestNewShellTerminal = useUiStore((state) => state.requestNewShellTerminal);
 	const newShellTerminalNonce = useUiStore((state) => state.newShellTerminalNonce);
 	const setActiveShellTerminal = useUiStore((state) => state.setActiveShellTerminal);
-	const openShellTerminal = useOpenShellTerminal();
 	// Single subscription for sidebar clearance + drag strip (macOS no-ops inside the hook).
 	const isFullScreen = useWindowFullScreen();
 	const windowZoomFactor = useWindowZoomFactor();
@@ -362,6 +361,7 @@ function ShellLayout() {
 		useUiStore.getState().openGlobalSettings("shortcuts", { preserveProject: true });
 	}, []);
 	const routeParams = useParams({ strict: false }) as { hostId?: string; projectId?: string; sessionId?: string };
+	const openShellTerminal = useOpenShellTerminal(routeParams.hostId);
 	const routeParamsRef = useRef(routeParams);
 	routeParamsRef.current = routeParams;
 	const remoteHostsEnabled = useUiStore((state) => state.developerMode && state.remoteHosts);
@@ -1225,10 +1225,10 @@ const replacementErrorCount = Object.keys(orchestratorReplacementErrors).length;
 		() =>
 			aoBridge.app.onNewShellTerminalShortcut(() => {
 				// The project board is not a terminal surface — ⌘T here used to yank
-				// users into the standalone /terminals route (#4772). Sessions and the
-				// dedicated terminals view keep the shortcut; explicit UI can still
-				// open shells from the board.
-				if (!routeParams.hostId && (routeParams.sessionId || isTerminalsRoute)) {
+				// users into the standalone /terminals route (#4772). Sessions (local
+				// and remote alike) and the dedicated local terminals view keep the
+				// shortcut; explicit UI can still open shells from the board.
+				if (routeParams.sessionId || (isTerminalsRoute && !routeParams.hostId)) {
 					requestNewShellTerminal();
 				}
 			}),
@@ -1247,9 +1247,11 @@ const replacementErrorCount = Object.keys(orchestratorReplacementErrors).length;
 	useEffect(() => {
 		if (handledShellNonceRef.current === newShellTerminalNonce) return;
 		handledShellNonceRef.current = newShellTerminalNonce;
-		if (routeParams.hostId) return;
+		// Remote hosts without a session on screen have no session context to open
+		// beside; the local terminals route still routes through the navigate below.
+		if (routeParams.hostId && !routeParams.sessionId) return;
 		const shell = openShellTerminal.open({
-			projectId: scopedProjectId,
+			projectId: routeParams.hostId ? routeParams.projectId : scopedProjectId,
 			sessionId: routeParams.sessionId,
 			cloud: scopedSession?.cloud,
 		});
@@ -1266,6 +1268,7 @@ const replacementErrorCount = Object.keys(orchestratorReplacementErrors).length;
 		routeParams.sessionId,
 		routeParams.hostId,
 		navigate,
+		routeParams.projectId,
 		setActiveShellTerminal,
 	]);
 
