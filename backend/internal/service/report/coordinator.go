@@ -25,9 +25,10 @@ import (
 // refreshes the marker) is allowed so a true no-show is not lost forever.
 const ReportEmitTTL = 15 * time.Minute
 
-// ReportExpiryAge is the delivery ledger's terminal expiry: a report still
-// pending a week after creation is retired as stale instead of polling the
-// dispatcher forever. Claimed rows ride out their own attempt first.
+// ReportExpiryAge is the delivery ledger's default terminal expiry: a report
+// still unread a week after creation is retired as stale instead of polling
+// the drain forever (fork issue #242). The daemon makes it configurable via
+// AO_DELIVERY_EXPIRY_DAYS; claimed rows ride out their own attempt first.
 const ReportExpiryAge = 7 * 24 * time.Hour
 
 // ErrReportDeliveryModeUnsupported reports a target without semantic delivery.
@@ -64,6 +65,7 @@ type Coordinator struct {
 	newToken   func() string
 	retryDelay time.Duration
 	emitTTL    time.Duration
+	expiryAge  time.Duration
 	wake       chan struct{}
 	mu         sync.Mutex
 	// injectedIdle records the sessions that already had their safe-point
@@ -86,6 +88,9 @@ type CoordinatorDeps struct {
 	NewToken   func() string
 	RetryDelay time.Duration
 	EmitTTL    time.Duration
+	// ExpiryAge is how long an unread report stays deliverable before the
+	// ledger retires it as stale (fork issue #242). Zero uses ReportExpiryAge.
+	ExpiryAge time.Duration
 	// Log receives delivery evidence lines (emissions, suppressions, anomalies).
 	// A nil Log discards, keeping tests and embedders quiet by default.
 	Log *slog.Logger
@@ -105,10 +110,13 @@ func NewCoordinator(d CoordinatorDeps) *Coordinator {
 	if d.EmitTTL <= 0 {
 		d.EmitTTL = ReportEmitTTL
 	}
+	if d.ExpiryAge <= 0 {
+		d.ExpiryAge = ReportExpiryAge
+	}
 	if d.Log == nil {
 		d.Log = slog.New(slog.DiscardHandler)
 	}
-	return &Coordinator{store: d.Store, delivery: d.Delivery, log: d.Log, now: d.Now, newToken: d.NewToken, retryDelay: d.RetryDelay, emitTTL: d.EmitTTL, wake: make(chan struct{}, 1), injectedIdle: map[domain.SessionID]struct{}{}}
+	return &Coordinator{store: d.Store, delivery: d.Delivery, log: d.Log, now: d.Now, newToken: d.NewToken, retryDelay: d.RetryDelay, emitTTL: d.EmitTTL, expiryAge: d.ExpiryAge, wake: make(chan struct{}, 1), injectedIdle: map[domain.SessionID]struct{}{}}
 }
 
 // emitQuietWindow escalates that window with the batch's durable delivery
@@ -200,7 +208,7 @@ func (c *Coordinator) RunDue(ctx context.Context) (time.Duration, error) {
 	// Ledger housekeeping runs once per pass, before draining: expired reports
 	// leave the mailbox instead of resurfacing every pass forever. A failure
 	// never blocks delivery — it only postpones expiry.
-	if expired, err := c.store.ExpireStaleReportDeliveries(ctx, c.now().UTC().Add(-ReportExpiryAge)); err != nil {
+	if expired, err := c.store.ExpireStaleReportDeliveries(ctx, c.now().UTC().Add(-c.expiryAge)); err != nil {
 		c.log.Warn("report: stale expiry failed", "err", err)
 	} else if expired > 0 {
 		c.log.Info("report: expired stale deliveries", "reports", expired)

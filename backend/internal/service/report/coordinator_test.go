@@ -699,6 +699,32 @@ func TestCoordinatorArchivedProjectRetiresPendingBatch(t *testing.T) {
 	}
 }
 
+// TestCoordinatorExpiryAgeIsConfigurable pins the configurable ledger expiry
+// (fork issue #242): a custom age retires unread rows at its own cutoff while
+// the default stays untouched for coordinators without one.
+func TestCoordinatorExpiryAgeIsConfigurable(t *testing.T) {
+	now := time.Date(2026, 11, 2, 9, 0, 0, 0, time.UTC)
+	store := newCoordinatorStore(now)
+	store.sessions = []domain.SessionRecord{{ID: "orch", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeTUI, Activity: domain.Activity{State: domain.ActivityIdle, LastActivityAt: now}}}
+	old := reportAt("old", "worker", now.Add(-48*time.Hour), now.Add(-48*time.Hour), "context")
+	recent := reportAt("recent", "worker", now.Add(-2*time.Hour), now.Add(-2*time.Hour), "fresher context")
+	store.add(old, recent)
+	delivery := &coordinatorDelivery{}
+	c := NewCoordinator(CoordinatorDeps{Store: store, Delivery: delivery, Now: func() time.Time { return now }, ExpiryAge: 24 * time.Hour})
+	if delay, err := c.RunDue(context.Background()); err != nil || delay >= 0 {
+		t.Fatalf("drain delay = %v, err = %v", delay, err)
+	}
+	if store.reports[0].DeliveryState != domain.ReportStale {
+		t.Fatalf("old = %+v, want stale at the custom cutoff", store.reports[0])
+	}
+	if store.reports[1].DeliveryState != domain.ReportAcknowledged {
+		t.Fatalf("recent = %+v, want delivered inside the window", store.reports[1])
+	}
+	if NewCoordinator(CoordinatorDeps{}).expiryAge != ReportExpiryAge {
+		t.Fatalf("default expiry age = %v, want %v", NewCoordinator(CoordinatorDeps{}).expiryAge, ReportExpiryAge)
+	}
+}
+
 func TestCoordinatorEmissionLogsEvidence(t *testing.T) {
 	now := time.Date(2026, 10, 22, 12, 30, 0, 0, time.UTC)
 	store := newCoordinatorStore(now)
