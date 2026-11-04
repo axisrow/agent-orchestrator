@@ -668,29 +668,40 @@ func TestCoordinatorEmissionLogsEvidence(t *testing.T) {
 	}
 }
 
-func TestCoordinatorFencedAckRequeueDoesNotReemit(t *testing.T) {
+// TestCoordinatorLostAckReinjectsAtNextSafePoint pins the documented
+// crash-window trade-off (fork issue #242): a successful inject whose
+// acknowledgment lost the claim (the fence dropped it, #104) reports the loss
+// loudly, and after the restart requeue puts the rows back into the mailbox
+// the next safe-point drain deliberately re-injects them exactly once —
+// the chance marker is spent at the inject, not at the acknowledgment.
+func TestCoordinatorLostAckReinjectsAtNextSafePoint(t *testing.T) {
 	now := time.Date(2026, 10, 22, 11, 0, 0, 0, time.UTC)
 	store := newCoordinatorStore(now)
 	store.sessions = []domain.SessionRecord{{ID: "orch", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeChat, Activity: domain.Activity{State: domain.ActivityIdle, LastActivityAt: now}}}
 	store.add(reportAt("fenced", "worker", now, now, "context"))
 	delivery := &coordinatorDelivery{}
 	c := NewCoordinator(CoordinatorDeps{Store: store, Delivery: delivery, Now: func() time.Time { return now }})
-	if _, err := c.RunDue(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if len(delivery.submissions) != 1 {
-		t.Fatalf("submissions = %d, want 1", len(delivery.submissions))
-	}
-	// #104 fencing loses the ack and a daemon restart requeues the claimed
-	// batch; this idle period already had its inject, so the re-claim must not
-	// show the same content a second time.
+	// The inject went out, the fence dropped the ack: loud loss, not silence.
 	store.fenceAcks = true
+	if _, err := c.RunDue(context.Background()); !errors.Is(err, ErrReportBatchLost) {
+		t.Fatalf("RunDue err = %v, want ErrReportBatchLost", err)
+	}
+	if len(delivery.submissions) != 1 || c.LostAcknowledgements() != 1 {
+		t.Fatalf("submissions = %d, lost acks = %d, want one inject and one loud loss", len(delivery.submissions), c.LostAcknowledgements())
+	}
+	// A daemon restart requeues the claimed rows; the recovered mailbox
+	// re-injects at the next safe point and the acknowledgment lands.
+	store.fenceAcks = false
 	store.requeue()
 	if _, err := c.RunDue(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if len(delivery.submissions) != 1 {
-		t.Fatalf("submissions = %d, want 1: requeued batch was re-emitted", len(delivery.submissions))
+	if len(delivery.submissions) != 2 || store.acked != 1 {
+		t.Fatalf("re-injection: submissions = %d, acked = %d, want exactly one more inject, acknowledged", len(delivery.submissions), store.acked)
+	}
+	// The drained mailbox idles.
+	if delay, err := c.RunDue(context.Background()); err != nil || delay >= 0 {
+		t.Fatalf("post-recovery delay = %v, err = %v, want an idle mailbox", delay, err)
 	}
 }
 
