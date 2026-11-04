@@ -123,14 +123,12 @@ func TestRestartInterruptedBatchReinjectsOnceAtNextSafePoint(t *testing.T) {
 	ctx := context.Background()
 	f.addReport(t, "rpt_lost")
 
-	// Crash window: claim and emission are durable, the ack never lands.
+	// Crash window: the turn claimed the batch, the pane write went out, and
+	// the acknowledgment never landed.
 	c := f.newCoordinator()
 	batch, err := c.PreparePiggyback(ctx, f.orch)
 	if err != nil || len(batch.Reports) != 1 {
 		t.Fatalf("prepare = %#v, err = %v", batch, err)
-	}
-	if visible, err := c.EmitVisible(ctx, batch); err != nil || !visible {
-		t.Fatalf("emit visible = %v, err = %v", visible, err)
 	}
 	f.requeue(t)
 
@@ -232,10 +230,7 @@ func TestRestartAcceptedBatchDoesNotRideAlongTwice(t *testing.T) {
 	if err != nil || len(batch.Reports) != 1 {
 		t.Fatalf("prepare = %#v, err = %v", batch, err)
 	}
-	if visible, err := c.EmitVisible(ctx, batch); err != nil || !visible {
-		t.Fatalf("emit visible = %v, err = %v", visible, err)
-	}
-	// The turn was refused after the content was shown: pending, emitted.
+	// The turn was refused after the content was shown: pending, unread.
 	// ReleasePiggyback returns the cause itself by contract.
 	if err := c.ReleasePiggyback(ctx, batch, errors.New("turn refused")); err == nil {
 		t.Fatal("release should report the refusal cause")

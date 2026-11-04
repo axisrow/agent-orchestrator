@@ -94,16 +94,6 @@ func (s *Store) ListReportsByProject(ctx context.Context, id domain.ProjectID) (
 	return s.reportsWithOutputs(ctx, rows)
 }
 
-// ListPendingReportSchedule returns the earliest pending work regardless of
-// availability so a coordinator can restore the original deadline after restart.
-func (s *Store) ListPendingReportSchedule(ctx context.Context, limit int64) ([]domain.ReportRecord, error) {
-	rows, err := s.qr.ListPendingReportSchedule(ctx, limit)
-	if err != nil {
-		return nil, fmt.Errorf("list report schedule: %w", err)
-	}
-	return s.reportsWithOutputs(ctx, rows)
-}
-
 // ClaimPendingReportBatch atomically claims every pending report for a project.
 // A due, attention, or piggyback trigger therefore includes earlier batch work.
 func (s *Store) ClaimPendingReportBatch(ctx context.Context, projectID domain.ProjectID, token string, at time.Time) ([]domain.ReportRecord, error) {
@@ -181,28 +171,6 @@ func (s *Store) AcknowledgeReportBatch(ctx context.Context, projectID domain.Pro
 	return len(rows), nil
 }
 
-// AcknowledgeAcceptedReportBatches settles shown pending reports of a project
-// whose delivery batch id matches the recipient's accepted coordination id —
-// the durable evidence of a semantic acceptance of that batch, possibly after
-// the emit window closed. Batches the checkpoint does not name, never-shown
-// reports, and rows claimed by an in-flight delivery attempt stay untouched.
-func (s *Store) AcknowledgeAcceptedReportBatches(ctx context.Context, projectID domain.ProjectID, acceptedBatchID string, at time.Time) (int, error) {
-	if projectID == "" || acceptedBatchID == "" || at.IsZero() {
-		return 0, domain.ErrInvalidReport
-	}
-	rows, err := s.runDeliveryBatchTransition(ctx, "acknowledge accepted reports", at,
-		func(q *gen.Queries) ([]gen.Delivery, error) {
-			return q.AcknowledgeAcceptedPendingReports(ctx, gen.AcknowledgeAcceptedPendingReportsParams{
-				ProjectID: string(projectID), DeliveryBatchID: acceptedBatchID, AcknowledgedAt: nullTime(at),
-			})
-		},
-		string(domain.ReportPending), string(domain.ReportAcknowledged), domain.DeliveryEventAcknowledged, "")
-	if err != nil {
-		return 0, fmt.Errorf("acknowledge accepted reports for project %s: %w", projectID, err)
-	}
-	return len(rows), nil
-}
-
 // ReleaseReportBatch returns the matching project batch to pending without
 // moving any report's original deadline later.
 func (s *Store) ReleaseReportBatch(ctx context.Context, projectID domain.ProjectID, token string, at time.Time, lastError string) (int, error) {
@@ -218,53 +186,6 @@ func (s *Store) ReleaseReportBatch(ctx context.Context, projectID domain.Project
 		string(domain.ReportClaimed), string(domain.ReportPending), domain.DeliveryEventReleased, lastError)
 	if err != nil {
 		return 0, fmt.Errorf("release project report batch: %w", err)
-	}
-	return len(rows), nil
-}
-
-// DeferReportBatch coalesces a throttled urgent retry until it may request the
-// next interruption. Unlike failure release, this intentionally moves its
-// delivery availability later.
-func (s *Store) DeferReportBatch(ctx context.Context, projectID domain.ProjectID, token string, at time.Time, lastError string) (int, error) {
-	if projectID == "" || token == "" || at.IsZero() {
-		return 0, domain.ErrInvalidReport
-	}
-	rows, err := s.runDeliveryBatchTransition(ctx, "defer project report batch", at,
-		func(q *gen.Queries) ([]gen.Delivery, error) {
-			return q.DeferReportBatch(ctx, gen.DeferReportBatchParams{
-				ProjectID: string(projectID), ClaimToken: token, AvailableAt: at, LastError: lastError,
-			})
-		},
-		string(domain.ReportClaimed), string(domain.ReportPending), domain.DeliveryEventDeferred, lastError)
-	if err != nil {
-		return 0, fmt.Errorf("defer project report batch: %w", err)
-	}
-	return len(rows), nil
-}
-
-// MarkReportBatchEmitted stamps the claimed batch holding token with the
-// moment its content became visible to the client. The stamp fences like the
-// ack path and is refreshed on each re-emission past the emit TTL.
-func (s *Store) MarkReportBatchEmitted(ctx context.Context, projectID domain.ProjectID, token string, at time.Time) (int, error) {
-	if projectID == "" || token == "" || at.IsZero() {
-		return 0, domain.ErrInvalidReport
-	}
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-	var rows []gen.Delivery
-	err := s.inTx(ctx, "mark report batch emitted", func(q *gen.Queries) error {
-		var err error
-		rows, err = q.MarkReportBatchEmitted(ctx, gen.MarkReportBatchEmittedParams{
-			ProjectID: string(projectID), ClaimToken: token, EmittedAt: nullTime(at),
-		})
-		if err != nil {
-			return err
-		}
-		return journalDeliveryEvents(ctx, q, rows,
-			string(domain.ReportClaimed), string(domain.ReportClaimed), domain.DeliveryEventEmitVisible, "", at)
-	})
-	if err != nil {
-		return 0, fmt.Errorf("mark report batch emitted: %w", err)
 	}
 	return len(rows), nil
 }
@@ -388,67 +309,6 @@ func (s *Store) ListPendingDeliveryProjects(ctx context.Context) ([]domain.Proje
 		out[i] = domain.ProjectID(id)
 	}
 	return out, nil
-}
-
-// ListPendingReports returns reports eligible for a later delivery batch.
-func (s *Store) ListPendingReports(ctx context.Context, at time.Time, limit int64) ([]domain.ReportRecord, error) {
-	rows, err := s.qr.ListPendingReports(ctx, gen.ListPendingReportsParams{AvailableAt: at, Limit: limit})
-	if err != nil {
-		return nil, fmt.Errorf("list pending reports: %w", err)
-	}
-	return s.reportsWithOutputs(ctx, rows)
-}
-
-// ClaimReport atomically fences one pending report to a delivery attempt token.
-func (s *Store) ClaimReport(ctx context.Context, id, token string, at time.Time) (domain.ReportRecord, bool, error) {
-	return s.updateReportClaim(ctx, id, token, at, "claim",
-		string(domain.ReportPending), string(domain.ReportClaimed), domain.DeliveryEventDeliveryAttempt, "",
-		func(q *gen.Queries) (gen.Delivery, error) {
-			return q.ClaimReport(ctx, gen.ClaimReportParams{ID: id, ClaimToken: token, ClaimedAt: nullTime(at)})
-		})
-}
-
-// AcknowledgeReport completes only the delivery attempt holding the current token.
-func (s *Store) AcknowledgeReport(ctx context.Context, id, token string, at time.Time) (domain.ReportRecord, bool, error) {
-	return s.updateReportClaim(ctx, id, token, at, "acknowledge",
-		string(domain.ReportClaimed), string(domain.ReportAcknowledged), domain.DeliveryEventAcknowledged, "",
-		func(q *gen.Queries) (gen.Delivery, error) {
-			return q.AcknowledgeReport(ctx, gen.AcknowledgeReportParams{ID: id, ClaimToken: token, AcknowledgedAt: nullTime(at)})
-		})
-}
-
-// ReleaseReport returns the matching token's claim to pending with retry metadata.
-func (s *Store) ReleaseReport(ctx context.Context, id, token string, availableAt time.Time, lastError string) (domain.ReportRecord, bool, error) {
-	return s.updateReportClaim(ctx, id, token, availableAt, "release",
-		string(domain.ReportClaimed), string(domain.ReportPending), domain.DeliveryEventReleased, lastError,
-		func(q *gen.Queries) (gen.Delivery, error) {
-			return q.ReleaseReport(ctx, gen.ReleaseReportParams{ID: id, ClaimToken: token, AvailableAt: availableAt, LastError: lastError})
-		})
-}
-
-func (s *Store) updateReportClaim(ctx context.Context, id, token string, at time.Time, action, fromState, toState, cause, reason string, update func(*gen.Queries) (gen.Delivery, error)) (domain.ReportRecord, bool, error) {
-	if id == "" || token == "" || at.IsZero() {
-		return domain.ReportRecord{}, false, domain.ErrInvalidReport
-	}
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-	var row gen.Delivery
-	err := s.inTx(ctx, action+" report", func(q *gen.Queries) error {
-		var err error
-		row, err = update(q)
-		if err != nil {
-			return err
-		}
-		return journalDeliveryEvents(ctx, q, []gen.Delivery{row}, fromState, toState, cause, reason, at)
-	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return domain.ReportRecord{}, false, nil
-	}
-	if err != nil {
-		return domain.ReportRecord{}, false, fmt.Errorf("%s report %s: %w", action, id, err)
-	}
-	rec, err := s.reportWithOutputs(ctx, row)
-	return rec, err == nil, err
 }
 
 // RequeueClaimedReports atomically recovers claims owned by a prior daemon process.

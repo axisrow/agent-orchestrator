@@ -398,10 +398,6 @@ func TestCoordinatorSettlesOnlyMatchedAcceptance(t *testing.T) {
 	if _, err := c.RunDue(ctx); err == nil {
 		t.Fatal("first attempt should surface the submit error")
 	}
-	batchKey := store.reports[0].DeliveryBatchID
-	if batchKey == "" {
-		t.Fatal("claimed batch lost its durable batch id")
-	}
 	// Minutes later the drain stays silent: this idle period already had its
 	// inject, and the rows simply wait unread.
 	now = now.Add(2 * time.Minute)
@@ -412,47 +408,12 @@ func TestCoordinatorSettlesOnlyMatchedAcceptance(t *testing.T) {
 	if len(delivery.submissions) != 1 {
 		t.Fatalf("submissions = %d, want 1", len(delivery.submissions))
 	}
-	// Prompt activity alone — a human prompt (the truncated-tail signature: no
-	// opening tag, no coordination credit) and an empty checkpoint — settles
-	// nothing.
-	for _, state := range []domain.ConversationCheckpointState{domain.ConversationCheckpointEmpty, domain.ConversationCheckpointPrompt} {
-		orch.Metadata = domain.SessionMetadata{ConversationCheckpointState: state, ConversationCheckpointTurnID: "tail-turn-id"}
-		store.sessions = []domain.SessionRecord{orch}
-		if n, err := c.SettleEmittedReports(ctx, "orch"); err != nil || n != 0 {
-			t.Fatalf("settle with checkpoint state %q = %d, err = %v, want 0", state, n, err)
-		}
-	}
-	if store.reports[0].DeliveryState != domain.ReportPending {
-		t.Fatalf("record = %+v, want the batch still pending", store.reports[0])
-	}
-	// A coordination checkpoint naming some OTHER batch's id settles nothing:
-	// after the generation gate came out, the correlation-id match is the only
-	// remaining settle proof.
-	orch.Metadata = domain.SessionMetadata{
-		ConversationCheckpointState:      domain.ConversationCheckpointCoordination,
-		ConversationCheckpointGeneration: "live-launch",
-		ConversationCheckpointTurnID:     "report-batch:rpt_some_other_batch",
-		RuntimeLaunchID:                  "live-launch",
-	}
-	store.sessions = []domain.SessionRecord{orch}
-	if n, err := c.SettleEmittedReports(ctx, "orch"); err != nil || n != 0 {
-		t.Fatalf("settle with foreign coordination turn id = %d, err = %v, want 0", n, err)
-	}
-	if store.reports[0].DeliveryState != domain.ReportPending {
-		t.Fatalf("record = %+v, want the batch still pending", store.reports[0])
-	}
-	// A coordination checkpoint from a superseded runtime generation still
-	// carries THIS batch's acceptance: daemon restarts rotate the launch id,
-	// and the next safe-point drain must settle accepted content instead of
-	// re-emitting it (fork issue #184). Lineage rotations clear the checkpoint,
-	// so a surviving stale-generation checkpoint always names an accepted
-	// batch. A turn happened in between, so the busy pass re-arms the session.
-	orch.Metadata = domain.SessionMetadata{
-		ConversationCheckpointState:      domain.ConversationCheckpointCoordination,
-		ConversationCheckpointGeneration: "stale-launch",
-		ConversationCheckpointTurnID:     batchKey,
-		RuntimeLaunchID:                  "live-launch",
-	}
+	// Plain prompt activity — a human prompt (the truncated-tail signature: no
+	// opening tag, no coordination credit) — settles nothing: the claim-time
+	// replay check needs a coordination checkpoint, so the safe-point drain
+	// re-injects (the recipient never accepted this batch). A turn happened in
+	// between, so the busy pass re-arms the session first.
+	orch.Metadata = domain.SessionMetadata{ConversationCheckpointState: domain.ConversationCheckpointPrompt, ConversationCheckpointTurnID: "tail-turn-id"}
 	store.sessions = []domain.SessionRecord{{ID: "orch", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeTUI, Activity: domain.Activity{State: domain.ActivityActive, LastActivityAt: now}, Metadata: orch.Metadata}}
 	if _, err := c.RunDue(ctx); err != nil {
 		t.Fatal(err)
@@ -460,23 +421,21 @@ func TestCoordinatorSettlesOnlyMatchedAcceptance(t *testing.T) {
 	orch.Activity = idle
 	store.sessions = []domain.SessionRecord{orch}
 	if delay, err := c.RunDue(ctx); err != nil || delay >= 0 {
-		t.Fatalf("replay drain delay = %v, err = %v, want an idle schedule", delay, err)
+		t.Fatalf("re-inject drain delay = %v, err = %v", delay, err)
 	}
 	if store.reports[0].DeliveryState != domain.ReportAcknowledged {
-		t.Fatalf("record = %+v, want acknowledged by the replay drain without a re-emission", store.reports[0])
+		t.Fatalf("record = %+v, want delivered by the safe-point re-inject", store.reports[0])
 	}
-	// The drain pass finds nothing left to deliver.
-	if delay, err := c.RunDue(ctx); err != nil || delay >= 0 {
-		t.Fatalf("post-settle delay = %v, err = %v, want an idle schedule", delay, err)
+	if len(delivery.submissions) != 2 {
+		t.Fatalf("submissions = %d, want 2", len(delivery.submissions))
 	}
-	if len(delivery.submissions) != 1 {
-		t.Fatalf("submissions = %d, want 1: a settled batch was re-emitted", len(delivery.submissions))
-	}
-	// The same contract holds on the live generation: the checkpoint naming
-	// THIS batch's correlation id is the late semantic acceptance of a fresh
-	// batch, acknowledged by the replay drain instead of a re-emission. A turn
-	// happened in between, so the recipient's busy pass re-arms its safe-point
-	// chance before the settled replay runs.
+
+	// A coordination checkpoint naming some OTHER batch's id settles nothing
+	// either: the correlation-id match is the only acceptance proof. A fresh
+	// batch whose inject failed waits unread; once the checkpoint names THIS
+	// batch's own id — from a superseded runtime generation, as a daemon
+	// restart rotates the launch id without touching the checkpoint (fork
+	// issue #184) — the safe-point drain settles it without re-emitting.
 	store.add(reportAt("second", "worker", now, now, "more context"))
 	store.sessions = []domain.SessionRecord{{ID: "orch", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeTUI, Activity: domain.Activity{State: domain.ActivityActive, LastActivityAt: now}}}
 	if _, err := c.RunDue(ctx); err != nil {
@@ -484,13 +443,23 @@ func TestCoordinatorSettlesOnlyMatchedAcceptance(t *testing.T) {
 	}
 	orch.Activity = idle
 	store.sessions = []domain.SessionRecord{orch}
+	orch.Metadata = domain.SessionMetadata{
+		ConversationCheckpointState:      domain.ConversationCheckpointCoordination,
+		ConversationCheckpointGeneration: "live-launch",
+		ConversationCheckpointTurnID:     "report-batch:rpt_some_other_batch",
+		RuntimeLaunchID:                  "live-launch",
+	}
+	store.sessions = []domain.SessionRecord{{ID: "orch", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeTUI, Activity: idle, Metadata: orch.Metadata}}
 	delivery.submitErr = errors.New("prompt submission was not observed")
 	if _, err := c.RunDue(ctx); err == nil {
 		t.Fatal("second batch first attempt should surface the submit error")
 	}
+	if store.reports[1].DeliveryState != domain.ReportPending {
+		t.Fatalf("record = %+v, want the second batch still unread", store.reports[1])
+	}
 	orch.Metadata = domain.SessionMetadata{
 		ConversationCheckpointState:      domain.ConversationCheckpointCoordination,
-		ConversationCheckpointGeneration: "live-launch",
+		ConversationCheckpointGeneration: "stale-launch",
 		ConversationCheckpointTurnID:     store.reports[1].DeliveryBatchID,
 		RuntimeLaunchID:                  "live-launch",
 	}
@@ -506,8 +475,8 @@ func TestCoordinatorSettlesOnlyMatchedAcceptance(t *testing.T) {
 	if store.reports[1].DeliveryState != domain.ReportAcknowledged {
 		t.Fatalf("record = %+v, want the second batch acknowledged", store.reports[1])
 	}
-	if len(delivery.submissions) != 2 {
-		t.Fatalf("submissions = %d, want 2: settled batches were re-emitted", len(delivery.submissions))
+	if len(delivery.submissions) != 3 {
+		t.Fatalf("submissions = %d, want 3: settled batches were re-emitted", len(delivery.submissions))
 	}
 }
 
@@ -557,49 +526,6 @@ func TestCoordinatorExpiresStalePendingReports(t *testing.T) {
 	}
 	if len(delivery.submissions) != 1 {
 		t.Fatalf("submissions = %d, want 1: a stale report re-emitted", len(delivery.submissions))
-	}
-}
-
-func TestSettleEmittedReportsGatesOnLiveOrchestrator(t *testing.T) {
-	now := time.Date(2026, 10, 26, 9, 0, 0, 0, time.UTC)
-	store := newCoordinatorStore(now)
-	shown := reportAt("shown", "worker", now, now, "context")
-	shown.EmittedAt = now
-	shown.DeliveryBatchID = "report-batch:shown"
-	store.add(shown)
-	elsewhere := reportAt("elsewhere", "worker2", now, now, "other project")
-	elsewhere.ProjectID = "q"
-	store.add(elsewhere)
-	orch := domain.SessionRecord{
-		ID: "orch", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeTUI,
-		Metadata: domain.SessionMetadata{
-			ConversationCheckpointState:      domain.ConversationCheckpointCoordination,
-			ConversationCheckpointGeneration: "launch",
-			ConversationCheckpointTurnID:     "report-batch:shown",
-			RuntimeLaunchID:                  "launch",
-		},
-	}
-	store.sessions = []domain.SessionRecord{
-		orch,
-		{ID: "gone", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeTUI, IsTerminated: true},
-	}
-	c := NewCoordinator(CoordinatorDeps{Store: store, Delivery: &coordinatorDelivery{}, Now: func() time.Time { return now }})
-	ctx := context.Background()
-	// Activity on a non-recipient session, a terminated orchestrator, and an
-	// unknown session settles nothing.
-	for _, target := range []domain.SessionID{"elsewhere", "gone", "missing"} {
-		if n, err := c.SettleEmittedReports(ctx, target); err != nil || n != 0 {
-			t.Fatalf("settle %s = %d, err = %v, want 0", target, n, err)
-		}
-	}
-	if n, err := c.SettleEmittedReports(ctx, "orch"); err != nil || n != 1 {
-		t.Fatalf("settle orch = %d, err = %v, want 1", n, err)
-	}
-	if store.reports[0].DeliveryState != domain.ReportAcknowledged {
-		t.Fatalf("shown batch = %+v, want acknowledged", store.reports[0])
-	}
-	if store.reports[1].DeliveryState != domain.ReportPending {
-		t.Fatalf("other project = %+v, want untouched", store.reports[1])
 	}
 }
 
@@ -756,7 +682,8 @@ func TestCoordinatorFencedAckRequeueDoesNotReemit(t *testing.T) {
 		t.Fatalf("submissions = %d, want 1", len(delivery.submissions))
 	}
 	// #104 fencing loses the ack and a daemon restart requeues the claimed
-	// batch; the re-claim must not show the same content a second time.
+	// batch; this idle period already had its inject, so the re-claim must not
+	// show the same content a second time.
 	store.fenceAcks = true
 	store.requeue()
 	if _, err := c.RunDue(context.Background()); err != nil {
@@ -764,47 +691,6 @@ func TestCoordinatorFencedAckRequeueDoesNotReemit(t *testing.T) {
 	}
 	if len(delivery.submissions) != 1 {
 		t.Fatalf("submissions = %d, want 1: requeued batch was re-emitted", len(delivery.submissions))
-	}
-}
-
-func TestEmitVisibleAtMostOncePerTTL(t *testing.T) {
-	now := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
-	store := newCoordinatorStore(now)
-	store.sessions = []domain.SessionRecord{{ID: "orch", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeChat}}
-	store.add(reportAt("piggy", "worker", now, now.Add(time.Hour), "context"))
-	c := NewCoordinator(CoordinatorDeps{Store: store, Delivery: &coordinatorDelivery{}, Now: func() time.Time { return now }, NewToken: func() string { return "tok" }})
-	ctx := context.Background()
-	batch, err := c.PreparePiggyback(ctx, "orch")
-	if err != nil || len(batch.Reports) != 1 {
-		t.Fatalf("prepare = %#v, err = %v", batch, err)
-	}
-	if visible, err := c.EmitVisible(ctx, batch); err != nil || !visible {
-		t.Fatalf("first emit visible = %v, err = %v", visible, err)
-	}
-	if store.reports[0].EmittedAt != now {
-		t.Fatalf("emitted marker = %v, want %v", store.reports[0].EmittedAt, now)
-	}
-	// A re-claim of the same batch inside the window must ride along silently.
-	if err := c.ReleasePiggyback(ctx, batch, errors.New("turn refused")); err != nil && !strings.Contains(err.Error(), "turn refused") {
-		t.Fatal(err)
-	}
-	batch, err = c.PreparePiggyback(ctx, "orch")
-	if err != nil || len(batch.Reports) != 1 {
-		t.Fatalf("re-prepare = %#v, err = %v", batch, err)
-	}
-	if visible, err := c.EmitVisible(ctx, batch); err != nil || visible {
-		t.Fatalf("repeat emit visible = %v, err = %v", visible, err)
-	}
-	if visible, err := c.EmitVisible(ctx, batch); err != nil || visible {
-		t.Fatalf("suppressed batch re-marked visible = %v, err = %v", visible, err)
-	}
-	// Past the TTL one re-emission is allowed and refreshes the marker.
-	now = now.Add(20 * time.Minute)
-	if visible, err := c.EmitVisible(ctx, batch); err != nil || !visible {
-		t.Fatalf("post-TTL emit visible = %v, err = %v", visible, err)
-	}
-	if got := store.reports[0].EmittedAt; !got.Equal(now) {
-		t.Fatalf("emitted marker = %v, want refreshed to %v", got, now)
 	}
 }
 
@@ -944,33 +830,6 @@ func (s *coordinatorStore) ReleaseReportBatch(_ context.Context, project domain.
 	}
 	return count, nil
 }
-func (s *coordinatorStore) DeferReportBatch(ctx context.Context, project domain.ProjectID, token string, at time.Time, reason string) (int, error) {
-	count, err := s.ReleaseReportBatch(ctx, project, token, at, reason)
-	if err != nil {
-		return count, err
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for i := range s.reports {
-		if s.reports[i].ProjectID == project && s.reports[i].DeliveryState == domain.ReportPending && s.reports[i].DeliveryBatchID != "" && s.reports[i].AvailableAt.Before(at) {
-			s.reports[i].AvailableAt = at
-		}
-	}
-	return count, nil
-}
-func (s *coordinatorStore) MarkReportBatchEmitted(_ context.Context, project domain.ProjectID, token string, at time.Time) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	count := 0
-	for i := range s.reports {
-		if s.reports[i].ProjectID == project && s.reports[i].DeliveryState == domain.ReportClaimed && s.reports[i].ClaimToken == token {
-			s.reports[i].EmittedAt = at
-			count++
-		}
-	}
-	return count, nil
-}
-
 func (s *coordinatorStore) FailReportBatchTerminally(_ context.Context, project domain.ProjectID, token, cause, reason string) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -982,23 +841,6 @@ func (s *coordinatorStore) FailReportBatchTerminally(_ context.Context, project 
 			count++
 		}
 	}
-	return count, nil
-}
-
-func (s *coordinatorStore) AcknowledgeAcceptedReportBatches(_ context.Context, project domain.ProjectID, acceptedBatchID string, at time.Time) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	count := 0
-	for i := range s.reports {
-		if s.reports[i].ProjectID == project && s.reports[i].DeliveryState == domain.ReportPending && !s.reports[i].EmittedAt.IsZero() && s.reports[i].DeliveryBatchID == acceptedBatchID {
-			s.reports[i].DeliveryState, s.reports[i].AcknowledgedAt = domain.ReportAcknowledged, at
-			// The synthetic token mirrors the real settle query: acknowledged
-			// rows must carry one for the delivery-state CHECK.
-			s.reports[i].ClaimToken = "activity-ack"
-			count++
-		}
-	}
-	s.acked += count
 	return count, nil
 }
 

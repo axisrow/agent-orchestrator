@@ -20,11 +20,6 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 )
 
-// ReportEmitTTL bounds the at-most-once window on the visible channel: a batch
-// shown once stays silent until this TTL expires, then one re-emission (which
-// refreshes the marker) is allowed so a true no-show is not lost forever.
-const ReportEmitTTL = 15 * time.Minute
-
 // ReportExpiryAge is the delivery ledger's default terminal expiry: a report
 // still unread a week after creation is retired as stale instead of polling
 // the drain forever (fork issue #242). The daemon makes it configurable via
@@ -43,10 +38,7 @@ type DeliveryStore interface {
 	ClaimPendingReportBatch(context.Context, domain.ProjectID, string, time.Time) ([]domain.ReportRecord, error)
 	AcknowledgeReportBatch(context.Context, domain.ProjectID, string, time.Time) (int, error)
 	ReleaseReportBatch(context.Context, domain.ProjectID, string, time.Time, string) (int, error)
-	DeferReportBatch(context.Context, domain.ProjectID, string, time.Time, string) (int, error)
-	MarkReportBatchEmitted(context.Context, domain.ProjectID, string, time.Time) (int, error)
 	FailReportBatchTerminally(ctx context.Context, projectID domain.ProjectID, token, cause, lastError string) (int, error)
-	AcknowledgeAcceptedReportBatches(context.Context, domain.ProjectID, string, time.Time) (int, error)
 	ExpireStaleReportDeliveries(context.Context, time.Time) (int, error)
 }
 
@@ -64,7 +56,6 @@ type Coordinator struct {
 	now        func() time.Time
 	newToken   func() string
 	retryDelay time.Duration
-	emitTTL    time.Duration
 	expiryAge  time.Duration
 	wake       chan struct{}
 	mu         sync.Mutex
@@ -87,11 +78,10 @@ type CoordinatorDeps struct {
 	Now        func() time.Time
 	NewToken   func() string
 	RetryDelay time.Duration
-	EmitTTL    time.Duration
 	// ExpiryAge is how long an unread report stays deliverable before the
 	// ledger retires it as stale (fork issue #242). Zero uses ReportExpiryAge.
 	ExpiryAge time.Duration
-	// Log receives delivery evidence lines (emissions, suppressions, anomalies).
+	// Log receives delivery evidence lines (emissions, anomalies).
 	// A nil Log discards, keeping tests and embedders quiet by default.
 	Log *slog.Logger
 }
@@ -107,50 +97,13 @@ func NewCoordinator(d CoordinatorDeps) *Coordinator {
 	if d.RetryDelay <= 0 {
 		d.RetryDelay = 5 * time.Second
 	}
-	if d.EmitTTL <= 0 {
-		d.EmitTTL = ReportEmitTTL
-	}
 	if d.ExpiryAge <= 0 {
 		d.ExpiryAge = ReportExpiryAge
 	}
 	if d.Log == nil {
 		d.Log = slog.New(slog.DiscardHandler)
 	}
-	return &Coordinator{store: d.Store, delivery: d.Delivery, log: d.Log, now: d.Now, newToken: d.NewToken, retryDelay: d.RetryDelay, emitTTL: d.EmitTTL, expiryAge: d.ExpiryAge, wake: make(chan struct{}, 1), injectedIdle: map[domain.SessionID]struct{}{}}
-}
-
-// emitQuietWindow escalates that window with the batch's durable delivery
-// attempts — 15m, 1h, then 6h repeating. A sleeping recipient never acks, so a
-// flat TTL re-emits the same batch visibly every cycle (fork issue #127); the
-// backoff quiets that without ever stopping: an unaccepted batch is
-// undelivered work, and going silent would repeat the #177 truncation losses
-// it is meant to surface (fork issue #179). Ledger expiry is the only exit.
-func (c *Coordinator) emitQuietWindow(attempts int64) time.Duration {
-	switch {
-	case attempts > 4:
-		return 6 * time.Hour
-	case attempts > 2:
-		return time.Hour
-	default:
-		return c.emitTTL
-	}
-}
-
-// EmitVisible gates the batch's single visible emission inside the at-most-once
-// window: a batch already shown within its escalating quiet window stays
-// silent, and the marker is stamped before the emission attempt so every later
-// failure keeps the promise. Piggyback callers append context only when this
-// returns true.
-func (c *Coordinator) EmitVisible(ctx context.Context, batch PreparedBatch) (bool, error) {
-	if at := batch.emittedAt(); !at.IsZero() {
-		if c.now().UTC().Sub(at) < c.emitQuietWindow(batch.MaxDeliveryAttempts()) {
-			return false, nil
-		}
-	}
-	if _, err := c.store.MarkReportBatchEmitted(ctx, batch.ProjectID, batch.Token, c.now().UTC()); err != nil {
-		return false, err
-	}
-	return true, nil
+	return &Coordinator{store: d.Store, delivery: d.Delivery, log: d.Log, now: d.Now, newToken: d.NewToken, retryDelay: d.RetryDelay, expiryAge: d.ExpiryAge, wake: make(chan struct{}, 1), injectedIdle: map[domain.SessionID]struct{}{}}
 }
 
 // Wake asks the coordinator to inspect durable scheduling state.
@@ -478,56 +431,6 @@ func (c *Coordinator) PreparePiggyback(ctx context.Context, target domain.Sessio
 	return batch, nil
 }
 
-// SettleEmittedReports retires shown pending batches of the target's project
-// only when the recipient's durable conversation checkpoint names a batch's
-// own correlation id: that checkpoint is the semantic acceptance of THIS batch
-// — the exit for an acceptance whose evidence arrived after the emit window
-// closed, e.g. a TUI that queued the prompt mid-turn and submitted it at the
-// turn boundary (fork issue #159). Plain prompt activity settles nothing: a
-// batch whose delivery never matched its coordination id — the signature of a
-// truncated pty write (fork issue #177) — must stay scheduled and re-emit
-// rather than pass as delivered (fork issue #179). The orchestrator-only gate
-// mirrors activeOrchestrator — batches are delivered to the project's
-// orchestrator, so activity anywhere else settles nothing — and never-emitted
-// batches always stay scheduled.
-func (c *Coordinator) SettleEmittedReports(ctx context.Context, target domain.SessionID) (int, error) {
-	if c == nil || c.store == nil || target == "" {
-		return 0, nil
-	}
-	rec, ok, err := c.store.GetSession(ctx, target)
-	if err != nil || !ok {
-		return 0, err
-	}
-	if rec.Kind != domain.KindOrchestrator || rec.IsTerminated {
-		return 0, nil
-	}
-	// The evidence mirror of semanticMessageAccepted, minus its live-generation
-	// requirement: a coordination checkpoint naming a batch's correlation id is
-	// the durable acceptance of THAT batch, and a daemon restart rotates the
-	// runtime generation without touching the checkpoint. Requiring the live
-	// launch id turned every acceptance whose settle raced a restart back into
-	// an undelivered batch — the replay then re-delivered accepted content
-	// (fork issue #184). Lineage rotations clear the checkpoint instead of
-	// leaving a foreign one, so a surviving stale-generation checkpoint always
-	// names a batch the current lineage accepted. A truncated tail still
-	// credits no coordination id and settles nothing (fork issues #177, #179).
-	accepted := rec.Metadata.ConversationCheckpointTurnID
-	if rec.Metadata.ConversationCheckpointState != domain.ConversationCheckpointCoordination {
-		accepted = ""
-	}
-	if accepted == "" {
-		return 0, nil
-	}
-	n, err := c.store.AcknowledgeAcceptedReportBatches(ctx, rec.ProjectID, accepted, c.now().UTC())
-	if err != nil {
-		return 0, err
-	}
-	if n > 0 {
-		c.log.Info("report: accepted batches settled by matched semantic acceptance", "project", rec.ProjectID, "target", target, "batch", accepted, "reports", n)
-	}
-	return n, nil
-}
-
 // settleAcceptedBatch retires the claimed batch when the target orchestrator's
 // durable coordination checkpoint names its correlation id. It is the
 // dispatcher-side half of the restart dedup (fork issue #184): an acceptance
@@ -658,6 +561,8 @@ func reportSessionLink(r domain.ReportRecord) string {
 }
 
 // emittedAt is the durable visible-emission marker shared by the batch rows.
+// Pull semantics no longer stamp it: delivery completes at the safe point, so
+// the marker survives only as legacy row data (fork issue #242).
 func (b PreparedBatch) emittedAt() time.Time {
 	var latest time.Time
 	for _, report := range b.Reports {

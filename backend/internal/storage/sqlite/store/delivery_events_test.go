@@ -60,14 +60,10 @@ func TestDeliveryJournalRecordsTheDeliveryChain(t *testing.T) {
 	if err != nil || len(claimed) != 1 {
 		t.Fatalf("claim = %d reports err=%v", len(claimed), err)
 	}
-	// The visible emission and its suppression backoff are journal transitions
-	// too: emit_visible stamps the at-most-once marker, deferred parks the
-	// claim back to pending with the suppression reason.
-	if n, err := s.MarkReportBatchEmitted(ctx, sess.ProjectID, "tok-1", now); err != nil || n != 1 {
-		t.Fatalf("mark emitted = %d err=%v", n, err)
-	}
-	if n, err := s.DeferReportBatch(ctx, sess.ProjectID, "tok-1", now.Add(5*time.Second), "report batch already emitted; repeat suppressed until emit TTL"); err != nil || n != 1 {
-		t.Fatalf("defer = %d err=%v", n, err)
+	// A failed inject releases its claim back to unread — a journaled
+	// transition — and the next safe-point drain claims and delivers.
+	if n, err := s.ReleaseReportBatch(ctx, sess.ProjectID, "tok-1", now.Add(5*time.Second), "composer is not empty"); err != nil || n != 1 {
+		t.Fatalf("release = %d err=%v", n, err)
 	}
 	if _, err = s.ClaimPendingReportBatch(ctx, sess.ProjectID, "tok-2", now.Add(10*time.Second)); err != nil {
 		t.Fatal(err)
@@ -79,8 +75,7 @@ func TestDeliveryJournalRecordsTheDeliveryChain(t *testing.T) {
 	want := []string{
 		"emitted →pending",
 		"delivery_attempt pending→claimed",
-		"emit_visible claimed→claimed",
-		"deferred claimed→pending",
+		"released claimed→pending",
 		"delivery_attempt pending→claimed",
 		"acknowledged claimed→acknowledged",
 	}
@@ -93,12 +88,12 @@ func TestDeliveryJournalRecordsTheDeliveryChain(t *testing.T) {
 		}
 	}
 	events, err := s.ListDeliveryEventsByDelivery(ctx, "rpt_chain")
-	if err != nil || events[3].Reason != "report batch already emitted; repeat suppressed until emit TTL" {
-		t.Fatalf("deferred reason = %+v err=%v", events, err)
+	if err != nil || events[2].Reason != "composer is not empty" {
+		t.Fatalf("released reason = %+v err=%v", events, err)
 	}
 
 	all, err := s.ListDeliveryEventsSince(ctx, time.Time{})
-	if err != nil || len(all) != 6 {
+	if err != nil || len(all) != 5 {
 		t.Fatalf("since zero = %d events err=%v", len(all), err)
 	}
 	later, err := s.ListDeliveryEventsSince(ctx, now.Add(12*time.Second))
@@ -160,8 +155,8 @@ func TestDeliveryJournalTerminalOutcomesCarryCauses(t *testing.T) {
 	if _, err = s.CreateReport(ctx, claimed); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, err := s.ClaimReport(ctx, "rpt_gone", "tok-gone", now); err != nil || !ok {
-		t.Fatalf("claim gone ok=%v err=%v", ok, err)
+	if _, err = s.ClaimPendingReportBatch(ctx, sess.ProjectID, "tok-gone", now); err != nil {
+		t.Fatal(err)
 	}
 	if n, err := s.FailReportBatchTerminally(ctx, sess.ProjectID, "tok-gone", domain.DeliveryEventRecipientGone, "project archived: no report recipient can exist (fork issue #208)"); err != nil || n != 1 {
 		t.Fatalf("fail archived = %d err=%v", n, err)
@@ -180,8 +175,8 @@ func TestDeliveryJournalTerminalOutcomesCarryCauses(t *testing.T) {
 	if _, err = s.CreateReport(ctx, queued); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, err := s.ClaimReport(ctx, "rpt_queued", "tok-queued", now); err != nil || !ok {
-		t.Fatalf("claim queued ok=%v err=%v", ok, err)
+	if _, err = s.ClaimPendingReportBatch(ctx, sess.ProjectID, "tok-queued", now); err != nil {
+		t.Fatal(err)
 	}
 	if n, err := s.FailReportBatchTerminally(ctx, sess.ProjectID, "tok-queued", domain.DeliveryEventInjectFailed, "the prompt text is held in the target's message queue; flush the queue before delivering"); err != nil || n != 1 {
 		t.Fatalf("fail queued = %d err=%v", n, err)
@@ -204,10 +199,10 @@ func TestDeliveryJournalTerminalOutcomesCarryCauses(t *testing.T) {
 	if _, err = s.CreateReport(ctx, deferred); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, err := s.ClaimReport(ctx, "rpt_deferred", "tok-deferred", now); err != nil || !ok {
-		t.Fatalf("claim deferred ok=%v err=%v", ok, err)
+	if _, err = s.ClaimPendingReportBatch(ctx, sess.ProjectID, "tok-deferred", now); err != nil {
+		t.Fatal(err)
 	}
-	if _, _, err = s.ReleaseReport(ctx, "rpt_deferred", "tok-deferred", now.Add(time.Minute), "boom"); err != nil {
+	if _, err = s.ReleaseReportBatch(ctx, sess.ProjectID, "tok-deferred", now.Add(time.Minute), "boom"); err != nil {
 		t.Fatal(err)
 	}
 	chain = journalChain(t, s, "rpt_deferred")
@@ -240,8 +235,8 @@ func TestDeliveryJournalRecordsRestartRequeue(t *testing.T) {
 	if _, err = s.CreateReport(ctx, rec); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, err := s.ClaimReport(ctx, "rpt_requeue", "tok-restart", now); err != nil || !ok {
-		t.Fatalf("claim ok=%v err=%v", ok, err)
+	if _, err := s.ClaimPendingReportBatch(ctx, sess.ProjectID, "tok-restart", now); err != nil {
+		t.Fatal(err)
 	}
 	if n, err := s.RequeueClaimedReports(ctx); err != nil || n != 1 {
 		t.Fatalf("requeue = %d err=%v", n, err)

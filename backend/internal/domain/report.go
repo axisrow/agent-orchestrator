@@ -145,8 +145,9 @@ type ReportRecord struct {
 	ClaimedAt          time.Time
 	DeliveryAttempts   int64
 	AcknowledgedAt     time.Time
-	// EmittedAt is the durable at-most-once marker: the last moment the
-	// owning batch's content became visible on the recipient's channel.
+	// EmittedAt is a push-era legacy marker (the last moment the owning
+	// batch's content became visible). Pull semantics deliver at safe points
+	// and no longer stamp it; the column stays for schema stability.
 	EmittedAt       time.Time
 	LastError       string
 	DeliveryBatchID string
