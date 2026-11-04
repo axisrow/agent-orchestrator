@@ -34,6 +34,15 @@ WHERE delivery_state = 'pending'
 ORDER BY available_at, created_at, id
 LIMIT ?;
 
+-- name: ListPendingDeliveryProjects :many
+-- Pull-semantics drain pass: every project currently holding unread report
+-- rows, once each. Availability plays no part - under pull semantics every
+-- unread row is due; the recipient's activity state decides when the drain
+-- actually injects.
+SELECT DISTINCT project_id FROM deliveries
+WHERE kind = 'report' AND delivery_state = 'pending'
+ORDER BY project_id;
+
 -- name: ListPendingReportsByProjectSchedule :many
 SELECT * FROM deliveries
 WHERE project_id = ? AND delivery_state = 'pending'
@@ -119,12 +128,14 @@ RETURNING *;
 
 -- name: ExpireStalePendingReports :many
 -- Terminal expiry of the delivery ledger: pending report rows older than the
--- cutoff stop retrying forever and stay readable as stale. Claims in flight
--- are untouched; their own attempt fences them.
+-- cutoff stop waiting for a safe-point drain forever and stay readable as
+-- stale. Claims in flight are untouched; their own attempt fences them.
 -- (ASCII-only comment: a unicode dash here breaks sqlc v1.31.1 query parsing.)
--- RETURNING * feeds the delivery-events journal (expired cause per row).
+-- RETURNING * feeds the delivery-events journal (expired cause per row); the
+-- stamped last_error is the terminal sweep's readable cause.
 UPDATE deliveries
-SET delivery_state = 'stale'
+SET delivery_state = 'stale',
+    last_error = 'expired unread past the delivery ledger window'
 WHERE kind = 'report' AND delivery_state = 'pending'
   AND created_at < sqlc.arg(cutoff)
 RETURNING *;

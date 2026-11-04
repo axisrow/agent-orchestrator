@@ -375,6 +375,21 @@ func (s *Store) ExpireStaleReportDeliveries(ctx context.Context, cutoff time.Tim
 	return len(rows), nil
 }
 
+// ListPendingDeliveryProjects returns every project currently holding unread
+// report rows, once each — the coordinator's pull drain pass input. The rows
+// themselves are loaded by the claim.
+func (s *Store) ListPendingDeliveryProjects(ctx context.Context) ([]domain.ProjectID, error) {
+	ids, err := s.qr.ListPendingDeliveryProjects(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list pending delivery projects: %w", err)
+	}
+	out := make([]domain.ProjectID, len(ids))
+	for i, id := range ids {
+		out[i] = domain.ProjectID(id)
+	}
+	return out, nil
+}
+
 // ListPendingReports returns reports eligible for a later delivery batch.
 func (s *Store) ListPendingReports(ctx context.Context, at time.Time, limit int64) ([]domain.ReportRecord, error) {
 	rows, err := s.qr.ListPendingReports(ctx, gen.ListPendingReportsParams{AvailableAt: at, Limit: limit})

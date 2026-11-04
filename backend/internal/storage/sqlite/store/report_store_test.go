@@ -31,7 +31,7 @@ func TestReportStorePersistsOutputsAndDeadlinesAcrossRestart(t *testing.T) {
 			{Kind: domain.ReportOutputPRCreated, Reference: "https://github.com/o/r/pull/1"},
 		},
 		CreatedAt: now, DeliveryState: domain.ReportPending,
-		AvailableAt: now.Add(domain.ReportBatchFallback), RepeatCount: 1,
+		AvailableAt: now.Add(domain.ReportSettlementWindow), RepeatCount: 1,
 	}
 	if _, err = s.CreateReport(ctx, want); err != nil {
 		t.Fatal(err)
@@ -105,7 +105,7 @@ func TestReportStoreSupersedesUndeliveredOnNewPrompt(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC().Truncate(time.Second)
-	old := domain.ReportRecord{ID: "rpt_old", SessionID: sess.ID, ProjectID: sess.ProjectID, Message: "phase-1 assessment done", CreatedAt: now, DeliveryState: domain.ReportPending, AvailableAt: now.Add(domain.ReportBatchFallback), RepeatCount: 1}
+	old := domain.ReportRecord{ID: "rpt_old", SessionID: sess.ID, ProjectID: sess.ProjectID, Message: "phase-1 assessment done", CreatedAt: now, DeliveryState: domain.ReportPending, AvailableAt: now.Add(domain.ReportSettlementWindow), RepeatCount: 1}
 	if _, err = s.CreateReport(ctx, old); err != nil {
 		t.Fatal(err)
 	}

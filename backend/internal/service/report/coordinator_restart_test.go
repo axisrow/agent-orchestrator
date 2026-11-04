@@ -54,7 +54,7 @@ func newRestartFixture(t *testing.T) *restartFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	orch, err := s.CreateSession(ctx, domain.SessionRecord{ProjectID: "ao", Kind: domain.KindOrchestrator, Mode: domain.SessionModeChat, Harness: domain.HarnessClaudeCode, Activity: domain.Activity{State: domain.ActivityActive, LastActivityAt: now}, CreatedAt: now, UpdatedAt: now})
+	orch, err := s.CreateSession(ctx, domain.SessionRecord{ProjectID: "ao", Kind: domain.KindOrchestrator, Mode: domain.SessionModeChat, Harness: domain.HarnessClaudeCode, Activity: domain.Activity{State: domain.ActivityIdle, LastActivityAt: now}, CreatedAt: now, UpdatedAt: now})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -46,9 +46,9 @@ func deliveryID(message, prefix string) (string, bool) {
 const (
 	// MaxReportTextCharacters is the hard limit for free-form messages and structured notes.
 	MaxReportTextCharacters = 1000
-	// ReportBatchFallback is the fixed informational-report fallback deadline.
-	ReportBatchFallback = time.Hour
-	// ReportSettlementWindow is the fixed window opened by a done report.
+	// ReportSettlementWindow is the fixed window opened by a done report. It
+	// survives only as the row's durable settlement_deadline fact; delivery
+	// itself is immediate under pull semantics (fork issue #242).
 	ReportSettlementWindow = 5 * time.Minute
 )
 
@@ -105,12 +105,15 @@ type ReportDeliveryState string
 
 // Report delivery states.
 const (
+	// ReportPending is the mailbox's unread state: the report sits in the
+	// recipient's ledger until a safe-point drain delivers it (fork issue
+	// #242). Nothing is in flight while unread — there is nothing to retry.
 	ReportPending      ReportDeliveryState = "pending"
 	ReportClaimed      ReportDeliveryState = "claimed"
 	ReportAcknowledged ReportDeliveryState = "acknowledged"
-	// ReportStale is terminal: a pending report that expired without delivery
-	// (delivery-ledger expiry). It stays readable in projections but the
-	// dispatcher never claims it again.
+	// ReportStale is terminal: a report that expired unread or whose delivery
+	// failed for good. It stays readable in projections but the drain never
+	// claims it again.
 	ReportStale ReportDeliveryState = "stale"
 )
 

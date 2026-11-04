@@ -20,10 +20,6 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 )
 
-// ReportOrchestratorBackoff reschedules a due batch whose project has no
-// active orchestrator, instead of retrying it every tick forever.
-const ReportOrchestratorBackoff = time.Minute
-
 // ReportEmitTTL bounds the at-most-once window on the visible channel: a batch
 // shown once stays silent until this TTL expires, then one re-emission (which
 // refreshes the marker) is allowed so a true no-show is not lost forever.
@@ -42,7 +38,7 @@ type DeliveryStore interface {
 	ListSessions(context.Context, domain.ProjectID) ([]domain.SessionRecord, error)
 	GetProject(context.Context, string) (domain.ProjectRecord, bool, error)
 	GetSession(context.Context, domain.SessionID) (domain.SessionRecord, bool, error)
-	ListPendingReportSchedule(context.Context, int64) ([]domain.ReportRecord, error)
+	ListPendingDeliveryProjects(context.Context) ([]domain.ProjectID, error)
 	ClaimPendingReportBatch(context.Context, domain.ProjectID, string, time.Time) ([]domain.ReportRecord, error)
 	AcknowledgeReportBatch(context.Context, domain.ProjectID, string, time.Time) (int, error)
 	ReleaseReportBatch(context.Context, domain.ProjectID, string, time.Time, string) (int, error)
@@ -186,38 +182,46 @@ func (c *Coordinator) run(ctx context.Context) {
 	}
 }
 
-// RunDue performs bounded due delivery and returns the delay until the next
-// durable deadline. Tests call it directly with fake time.
+// RunDue performs one pull drain pass and returns how long the caller should
+// wait before the next pass. Tests call it directly with fake time.
 func (c *Coordinator) RunDue(ctx context.Context) (time.Duration, error) {
 	if c == nil || c.store == nil || c.delivery == nil {
 		return -1, errors.New("report coordinator dependencies are required")
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	// Ledger housekeeping runs once per cycle, before scheduling: expired
-	// reports leave the schedule instead of resurfacing every silent-retry
-	// step forever. A failure never blocks delivery — it only postpones expiry.
+	// Ledger housekeeping runs once per pass, before draining: expired reports
+	// leave the mailbox instead of resurfacing every pass forever. A failure
+	// never blocks delivery — it only postpones expiry.
 	if expired, err := c.store.ExpireStaleReportDeliveries(ctx, c.now().UTC().Add(-ReportExpiryAge)); err != nil {
 		c.log.Warn("report: stale expiry failed", "err", err)
 	} else if expired > 0 {
 		c.log.Info("report: expired stale deliveries", "reports", expired)
 	}
-	for {
-		pending, err := c.store.ListPendingReportSchedule(ctx, 1)
+	projects, err := c.store.ListPendingDeliveryProjects(ctx)
+	if err != nil {
+		return c.retryDelay, err
+	}
+	if len(projects) == 0 {
+		return -1, nil
+	}
+	// One drain attempt per project holding unread rows. A skip (busy or
+	// temporarily recipient-less project) is not an error: the row simply
+	// stays unread until the next pass finds a safe point.
+	unreadRemains := false
+	for _, projectID := range projects {
+		skipped, err := c.deliverProject(ctx, projectID)
 		if err != nil {
 			return c.retryDelay, err
 		}
-		if len(pending) == 0 {
-			return -1, nil
-		}
-		now := c.now().UTC()
-		if pending[0].AvailableAt.After(now) {
-			return pending[0].AvailableAt.Sub(now), nil
-		}
-		if err := c.deliverProject(ctx, pending[0].ProjectID); err != nil {
-			return c.retryDelay, err
-		}
+		unreadRemains = unreadRemains || skipped
 	}
+	if unreadRemains {
+		// Keep the drain cadence so a recipient waking from idle is noticed
+		// within seconds. Wake() shortens this on new emits.
+		return c.retryDelay, nil
+	}
+	return -1, nil
 }
 
 // ErrReportBatchLost reports an acknowledgment whose claim token no longer
@@ -240,17 +244,42 @@ func (c *Coordinator) ackBatch(ctx context.Context, projectID domain.ProjectID, 
 	return nil
 }
 
-func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.ProjectID) error {
+// deliverProject runs one drain attempt for a project's unread reports under
+// pull semantics (fork issue #242): a recipient that is mid-turn or blocked is
+// left unread — nothing is claimed, nothing is in flight, nothing retries.
+// It reports whether the project still holds unread rows after the attempt.
+// A recipient that can never exist (archived project, fork issue #208) is
+// terminalized on first sight: stale with the recipient_gone cause, zero
+// retries, one bell event from the terminal sweep. A temporarily absent
+// orchestrator (daemon restart, session being replaced) also just leaves the
+// rows unread — absence is never a terminal outcome; the configurable ledger
+// expiry is the only exit for a recipient that never returns.
+func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.ProjectID) (bool, error) {
+	if c.projectArchived(ctx, projectID) {
+		batch, err := c.claim(ctx, projectID)
+		if err != nil || len(batch.Reports) == 0 {
+			return false, err
+		}
+		reason := "project archived: no report recipient can exist (fork issue #208)"
+		if _, failErr := c.store.FailReportBatchTerminally(ctx, projectID, batch.Token, domain.DeliveryEventRecipientGone, reason); failErr != nil {
+			return true, failErr
+		}
+		c.log.Warn("report: batch retired terminally; project archived", "project", projectID, "batch", batch.IdempotencyKey(), "reports", len(batch.Reports), "attempts", batch.MaxDeliveryAttempts())
+		return false, nil
+	}
 	target, ok, err := c.activeOrchestrator(ctx, projectID)
 	if err != nil {
-		return err
+		return true, err
 	}
 	if !ok {
-		return c.deferWithoutOrchestrator(ctx, projectID)
+		return true, nil
+	}
+	if !deliverableActivity(target.Activity.State) {
+		return true, nil
 	}
 	batch, err := c.claim(ctx, projectID)
 	if err != nil || len(batch.Reports) == 0 {
-		return err
+		return false, err
 	}
 	// The replay path consults the recipient's durable acceptance before
 	// re-delivering: a checkpoint that names this batch's correlation id is
@@ -261,16 +290,16 @@ func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.Proje
 	if accepted, err := c.settleAcceptedBatch(ctx, target, batch); err != nil {
 		// Every other post-claim failure releases the claim; a transient store
 		// error must not strand the rows claimed and invisible to scheduling.
-		return c.release(ctx, batch, err)
+		return true, c.release(ctx, batch, err)
 	} else if accepted {
-		return nil
+		return false, nil
 	}
 	// Stuck reports ride the normal submit path in every session mode: the
 	// fork runs terminal orchestrators only, so there is no chat-mode
 	// interrupt lane to rate-limit (upstream #7435's chat branch removed).
 	visible, emitErr := c.EmitVisible(ctx, batch)
 	if emitErr != nil {
-		return c.release(ctx, batch, emitErr)
+		return true, c.release(ctx, batch, emitErr)
 	}
 	if !visible {
 		// At-most-once on the visible channel: the batch was already shown,
@@ -285,7 +314,7 @@ func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.Proje
 		}
 		c.log.Info("report: batch already emitted; repeat suppressed until emit TTL", "batch", batch.IdempotencyKey(), "project", batch.ProjectID, "target", target.ID, "attempts", batch.MaxDeliveryAttempts())
 		_, deferErr := c.store.DeferReportBatch(ctx, batch.ProjectID, batch.Token, next, "report batch already emitted; repeat suppressed until emit TTL")
-		return deferErr
+		return true, deferErr
 	}
 	// Delivery evidence: a duplicate emission shows up as a second line with the
 	// same batch key and attempts > 1.
@@ -299,47 +328,29 @@ func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.Proje
 		c.log.Warn("report: batch delivery failed", "batch", batch.IdempotencyKey(), "project", batch.ProjectID, "target", target.ID, "attempts", batch.MaxDeliveryAttempts(), "err", err)
 		if errors.Is(err, ports.ErrPromptHeldQueued) {
 			// The target TUI queued the batch text instead of submitting a
-			// prompt (fork issue #205). Backing off would re-emit the same
+			// prompt (fork issue #205). Retrying would re-emit the same
 			// batch onto that queue forever; retire it terminally instead.
 			// The already-queued copies need a manual flush (ctrl+x ctrl+s in
 			// the session); new reports flow again once the queue is clear.
 			if _, failErr := c.store.FailReportBatchTerminally(ctx, batch.ProjectID, batch.Token, domain.DeliveryEventInjectFailed, err.Error()); failErr != nil {
-				return errors.Join(err, failErr)
+				return true, errors.Join(err, failErr)
 			}
-			return err
+			return false, err
 		}
-		return c.retryLater(ctx, batch, err)
+		// Any other refusal: the rows return to the mailbox unread and wait
+		// for the next safe-point drain.
+		return true, c.release(ctx, batch, err)
 	}
-	return c.ackBatch(ctx, batch.ProjectID, batch.Token)
+	return false, c.ackBatch(ctx, batch.ProjectID, batch.Token)
 }
 
-// deferWithoutOrchestrator routes a due batch whose project has no active
-// orchestrator. It claims the batch so the attempt is durable and visible
-// (delivery_attempts, last_error) and reschedules instead of leaving a silent
-// pending head that starves every other project's due work. An archived
-// project (fork issue #208) is a recipient that can never exist again: its
-// batch retires terminally instead of deferring, because archiving is an owner
-// action and no restart can bring a recipient back. A live project's absence
-// is temporary — a daemon restart or a terminated orchestrator the owner may
-// resume or replace — so its batch keeps retrying at the orchestrator backoff
-// and is never terminalized for the absence alone; the ledger's weekly expiry
-// stays the only exit for a recipient that never returns.
-func (c *Coordinator) deferWithoutOrchestrator(ctx context.Context, projectID domain.ProjectID) error {
-	batch, err := c.claim(ctx, projectID)
-	if err != nil || len(batch.Reports) == 0 {
-		return err
-	}
-	if c.projectArchived(ctx, projectID) {
-		reason := "project archived: no report recipient can exist (fork issue #208)"
-		if _, failErr := c.store.FailReportBatchTerminally(ctx, projectID, batch.Token, domain.DeliveryEventRecipientGone, reason); failErr != nil {
-			return failErr
-		}
-		c.log.Warn("report: batch retired terminally; project archived", "project", projectID, "batch", batch.IdempotencyKey(), "reports", len(batch.Reports), "attempts", batch.MaxDeliveryAttempts())
-		return nil
-	}
-	c.log.Warn("report: project has no active orchestrator; delivery deferred", "project", projectID, "batch", batch.IdempotencyKey(), "reports", len(batch.Reports), "attempts", batch.MaxDeliveryAttempts(), "retry", ReportOrchestratorBackoff)
-	_, err = c.store.DeferReportBatch(ctx, projectID, batch.Token, c.now().UTC().Add(ReportOrchestratorBackoff), "project has no active orchestrator")
-	return err
+// deliverableActivity reports whether a recipient's current activity is a safe
+// inject point (fork issue #242): idle, or parked at an empty prompt waiting
+// for its next instruction. Mid-turn and blocked-on-a-decision surfaces are
+// left unread — writing to them queues or swallows the batch, which the
+// mailbox has no reason to risk.
+func deliverableActivity(state domain.ActivityState) bool {
+	return state == domain.ActivityIdle || state == domain.ActivityWaitingInput
 }
 
 // projectArchived reports whether the owner closed the project (fork issue
@@ -545,17 +556,6 @@ func (c *Coordinator) release(ctx context.Context, batch PreparedBatch, cause er
 	if releaseErr != nil {
 		c.log.Warn("report: batch release failed", "batch", batch.IdempotencyKey(), "project", batch.ProjectID, "err", releaseErr)
 		return errors.Join(cause, releaseErr)
-	}
-	return cause
-}
-
-// retryLater queues a refused submission behind every report that is already
-// due. Schedule selection takes the earliest pending report across projects,
-// so an orchestrator that keeps refusing must not hold that place.
-func (c *Coordinator) retryLater(ctx context.Context, batch PreparedBatch, cause error) error {
-	_, deferErr := c.store.DeferReportBatch(ctx, batch.ProjectID, batch.Token, c.now().UTC().Add(c.retryDelay), cause.Error())
-	if deferErr != nil {
-		return errors.Join(cause, deferErr)
 	}
 	return cause
 }

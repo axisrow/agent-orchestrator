@@ -456,17 +456,19 @@ func (q *Queries) DeferReportBatch(ctx context.Context, arg DeferReportBatchPara
 
 const expireStalePendingReports = `-- name: ExpireStalePendingReports :many
 UPDATE deliveries
-SET delivery_state = 'stale'
+SET delivery_state = 'stale',
+    last_error = 'expired unread past the delivery ledger window'
 WHERE kind = 'report' AND delivery_state = 'pending'
   AND created_at < ?1
 RETURNING id, kind, session_id, project_id, recipient_session_id, state, note, message, created_at, delivery_state, available_at, settlement_deadline, repeat_count, claim_token, claimed_at, delivery_attempts, acknowledged_at, last_error, emitted_at, delivery_batch_id
 `
 
 // Terminal expiry of the delivery ledger: pending report rows older than the
-// cutoff stop retrying forever and stay readable as stale. Claims in flight
-// are untouched; their own attempt fences them.
+// cutoff stop waiting for a safe-point drain forever and stay readable as
+// stale. Claims in flight are untouched; their own attempt fences them.
 // (ASCII-only comment: a unicode dash here breaks sqlc v1.31.1 query parsing.)
-// RETURNING * feeds the delivery-events journal (expired cause per row).
+// RETURNING * feeds the delivery-events journal (expired cause per row); the
+// stamped last_error is the terminal sweep's readable cause.
 func (q *Queries) ExpireStalePendingReports(ctx context.Context, cutoff time.Time) ([]Delivery, error) {
 	rows, err := q.db.QueryContext(ctx, expireStalePendingReports, cutoff)
 	if err != nil {
@@ -616,6 +618,39 @@ func (q *Queries) GetReportInterrupt(ctx context.Context, sessionID string) (tim
 	var last_interrupted_at time.Time
 	err := row.Scan(&last_interrupted_at)
 	return last_interrupted_at, err
+}
+
+const listPendingDeliveryProjects = `-- name: ListPendingDeliveryProjects :many
+SELECT DISTINCT project_id FROM deliveries
+WHERE kind = 'report' AND delivery_state = 'pending'
+ORDER BY project_id
+`
+
+// Pull-semantics drain pass: every project currently holding unread report
+// rows, once each. Availability plays no part - under pull semantics every
+// unread row is due; the recipient's activity state decides when the drain
+// actually injects.
+func (q *Queries) ListPendingDeliveryProjects(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listPendingDeliveryProjects)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var project_id string
+		if err := rows.Scan(&project_id); err != nil {
+			return nil, err
+		}
+		items = append(items, project_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listPendingReportSchedule = `-- name: ListPendingReportSchedule :many
