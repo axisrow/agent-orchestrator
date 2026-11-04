@@ -560,19 +560,6 @@ func reportSessionLink(r domain.ReportRecord) string {
 	return "[" + label + "](" + href + ")"
 }
 
-// emittedAt is the durable visible-emission marker shared by the batch rows.
-// Pull semantics no longer stamp it: delivery completes at the safe point, so
-// the marker survives only as legacy row data (fork issue #242).
-func (b PreparedBatch) emittedAt() time.Time {
-	var latest time.Time
-	for _, report := range b.Reports {
-		if report.EmittedAt.After(latest) {
-			latest = report.EmittedAt
-		}
-	}
-	return latest
-}
-
 func coalesceReports(in []domain.ReportRecord) []domain.ReportRecord {
 	out := make([]domain.ReportRecord, 0, len(in))
 	indexes := map[string]int{}
