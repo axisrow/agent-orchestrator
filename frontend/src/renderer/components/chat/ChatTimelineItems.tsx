@@ -700,7 +700,7 @@ export function HumanMessage({
 										aria-label="Edit user message"
 										className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-[scale,background-color,color] duration-150 ease-out hover:bg-interactive-hover hover:text-foreground active:scale-[0.96] motion-reduce:transition-none motion-reduce:active:scale-100"
 									>
-										<Pencil aria-hidden="true" className="size-3" />
+										<Pencil aria-hidden="true" className="size-3.5" />
 									</button>
 								</TooltipTrigger>
 								<TooltipContent side="bottom">Edit user message</TooltipContent>
@@ -921,7 +921,7 @@ export function AssistantMessage({
 									aria-label="Roll back to here"
 									className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-[scale,background-color,color] duration-150 ease-out hover:bg-interactive-hover hover:text-foreground active:scale-[0.96] disabled:pointer-events-none disabled:opacity-40 motion-reduce:transition-none motion-reduce:active:scale-100"
 								>
-									<Undo2 aria-hidden="true" className="size-3" />
+									<Undo2 aria-hidden="true" className="size-3.5" />
 								</button>
 							</TooltipTrigger>
 							<TooltipContent side="bottom">Roll back to here</TooltipContent>
