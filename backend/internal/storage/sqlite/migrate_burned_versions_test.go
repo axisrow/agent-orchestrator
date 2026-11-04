@@ -239,6 +239,7 @@ var shippedMigrations = map[int64]string{
 	9013:              "9013_app_settings_process_inventory.sql",
 	9014:              "9014_orphan_workers_notification.sql",
 	9015:              "9015_app_settings_scm_proxy_url.sql",
+	20261104175252404: "20261104175252404_pr_ci_state_none.sql",
 }
 
 // burnedVersion reports version numbers that must never be (re)used: they
