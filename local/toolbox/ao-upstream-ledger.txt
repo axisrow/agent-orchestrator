@@ -384,3 +384,30 @@ b325d24b741297bf89296e76501d7e09018c4a04 skipped feat: add first run project pro
 f3eb9a0636529612535d6792a0e2bed612950337 skipped fix(chat): show one current Plan card and stop its spinner once the turn ends (#7413) — фича #7159 под fix-сабжектами, решение владельца 2026-11-04
 227e94ac0e0ce0f3c85ffd2461247c5db5b0e068 skipped feat: local share links — contract (random IDs, active-only slots, direct uploads, public details) and desktop share flow (#7479)
 a1fe965e70040389de8317fe097c1535a411275d taken fix(chat): accept excerpts from agent messages outside any turn (#6629)
+e59fdf6e8b2babf5c750a6d7d1278d67fcac1cc5 skipped fix(updater): keep the macOS update helper from cancelling the install (#7620) — модуль автообновления выпилен целиком 2026-10-29, update-helper снесён с ним
+d02af7090f884d9cba13e75ef49ac56abb826972 skipped [side-chats-выпилены-в-форке] fix: name sidechat tabs from the first message (#7675)
+a8d77e91b9c369d5a6cd32a8b67dea613927d7aa skipped fix: make Stay Awake responsive and recover after charging (#7686) — стоит на скипнутом рефакторинге #6903 (useStayAwake/NavRowHighlight/Connect-Mobile); форк носит старую архитектуру useAwake
+47eb8667305ba56e00f09e4d376856c3513ba5af skipped feat: show keybinds in tooltips, drop redundant ones (#7707)
+cb4606f72b78e9c28682ed95a65e7313c22c2361 taken fix(chat): remove the orange model reroute indicator (#7709) — юнион: форк-архитектура (nativeModelMenu, без unified/AgentModelPicker) + снос Shuffle-марки и импорта; mark=-пропа в форке нет
+fd302b3545b5e5da65ca7f501f8e7e5773f2ee83 taken fix: close only the selected composer submenu (#7715) — юнион: механизм CloseSubmenu/closeOnSelect на форк-версии option-menu (без skipFocusHopToSibling/onPointerLeave/steady — сознательно скипнуты); AgentSwitchPicker rm (компоненты нет в форке)
+8efec7378c86f669bc6ec557a33afd9a580a77f4 skipped refactor(ui): one Button for every action; ghost hover pill; no press scale (#7710)
+e43b0792aa0ca4900ba53928011737094a4b7c76 taken fix(sidebar): truncate remote host badge in narrow sidebars (#7717) — юнион: truncate-бейджи апстрима + switchLabel форка в SessionRow
+3bf4270425b7da255f15fae8b0bc3238a4c8fcc7 taken fix(desktop): open a terminal with Cmd+T on remote sessions (#7683) — юнион: remote-сессии через useOpenShellTerminal(hostId) + сохранён форк-роут /terminals (isTerminalsRoute в шорткате, navigate в нонсе)
+f7907457e8fcf808a24cd3abdf5fe52820d93e70 skipped fix: open artifact files with ao preview and add Open in AO Browser for HTML (#7590) — artifact-preview/Browser-семейство (владелец 2026-10-29: превью-семейство не портировать никогда); сидит на artifact preview origin из скипнутых #7098/#7101/#7104/#7278
+2ac80ebc4e43506a03088b9883c1c4f50176e622 skipped fix: drop the divider under the new chat page's top bar (#7722) — NewChatPage.tsx в форке снесён, правило было бы мёртвым CSS
+efc9b1e0d21593032bd07f0b75c1e9d5070bcc13 taken fix(chat): stop reserving a blank row under user messages (#7733)
+254454f3e79fed4e8f4e98ad9c8e365f840517e2 skipped fix(dictation): add speech usage string to the app's Info.plist (#7732) — продолжение скипнутой dictation #7611 (NSSpeechRecognitionUsageDescription без фичи мёртв)
+94a599f1fa7a05367e5ccad1957d6458ff5678a8 taken fix(chat): 14px reply action icons, duration after the actions (#7735) — юнион: size-3.5 на Pencil/Undo2/compact-CopyButton + snapshot; TurnDuration-перестановка и её тесты не взяты (в форк-версии TurnActions/TurnOutcome их нет)
+d2c3de5c71e9003d588182490b6a532821051492 taken fix(chat): calmer scroll markers with a clear current position (#7736)
+24e213daea19ec5268dbe95f838f2820a057845d taken fix(editor): skip the Cursor Agent shim and toast launch failures (#7730) — юнион: shim-skip + toast через mutateAsync на форк-структуре кнопки (TopbarActionError/inline-ошибка убраны, fork-styling и Tooltip-триггер сохранены)
+2974a8fdc70952c82e997023a05447fd2f1ff231 skipped new left sidebar design (#7365)
+2c599c51bb814c1d7065777348ff2916aed1e36c taken fix(desktop): remove drag-to-open strip on the closed inspector edge (#7741) — юнион: рейка убрана, в тесте оставлено форк-имя кнопки Open inspector panel (не апстримное Open Browser)
+404e8f58a6ddd64616243854575a5e537fd2edd5 taken fix(chat): light the whole Worked-for row at once on hover (#7723) — юнион: transition-colors снят, inline-TurnDuration наследует цвет триггера; форковый active:transform-none триггера сохранён
+c641439b1cefebc0a8f09e848ed83879835a2764 skipped feat(chat): set composer controls at the 13px dense-control size (#7743)
+313230de5e07461d6b76afc804fc3efc987d66ba skipped feat(chat): mark bypass permissions as a risk and show the permission caret (#7742)
+cba0c29f463179c539f664001028f6afe6fa8560 taken fix(desktop): stop the window jolt when opening menus with no browser page (#7749) — юнион: hasLivePageBelow-гейт поверх форк-опций (additionalArguments); allowShellDebugging апстрима не взят (в форке нет)
+959b41cf34a1fcc8758c8d5b1e13a0dd1eb3ded5 taken fix(opencode-v2): keep migrating when a legacy entry vanishes mid-copy (#7716)
+9d3cdf07e977421b3134d40d769ee7d097bd14ae skipped fix: return from settings with topbar and keyboard back (#7746) — settings-page-оверлея в форке нет (форк на SettingsDialog), settingsPage не существует
+cbd688bf92fc26c5929846b22ae8c7e7dcb8b26e skipped feat(desktop): another member's cloud session files are view only (#7665)
+cf321a61ebe82df869cccdfd5ca10e75d9cd3bc0 skipped fix(release): point macOS download links at the published dmg names (#7755) — релизная инфраструктура выпилена с апдейтером (release-latest-guard.yml/build-mac-dmg удалены); форк обновляется rebuild'ом
+bf73ae98bd4eec68e18371c5a6c01b4086d48570 skipped feat(artifacts): live-refresh an open local artifact when its file changes (#7662)
