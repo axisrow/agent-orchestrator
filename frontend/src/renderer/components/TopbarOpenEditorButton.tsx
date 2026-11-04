@@ -6,7 +6,7 @@ import { useSessionShortcut } from "../hooks/useAppShortcut";
 import { useEditorHandoffState, useOpenSessionTarget, workspaceCheckFailed, editorHandoffErrorMessage } from "../hooks/useEditorHandoff";
 import { aoBridge } from "../lib/bridge";
 import { useUiStore } from "../stores/ui-store";
-import { TopbarActionError, TopbarButton } from "./TopbarButton";
+import { TopbarButton } from "./TopbarButton";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -128,8 +128,12 @@ export function TopbarOpenEditorButton({
 		}
 	};
 	const launch = (targetId?: OpenTargetId) => {
-		open.reset();
-		open.mutate({ sessionId, projectId, ...(targetId ? { targetId } : {}) });
+		const target = targetId ? targets.find((entry) => entry.id === targetId) : preferred;
+		// Report from the promise: mutate callbacks are dropped if the button
+		// unmounts (e.g. a session switch) while the launch is in flight.
+		open.mutateAsync({ sessionId, projectId, ...(targetId ? { targetId } : {}) }).catch((error: unknown) => {
+			showGlobalToast(t("editor.openInTarget", { name: target?.name ?? "" }), error instanceof Error ? error.message : undefined, "error");
+		});
 	};
 	// ⌘O opens the workspace in the preferred editor, or in the first available
 	// target (file manager, terminal) when no editor is installed.
@@ -138,7 +142,6 @@ export function TopbarOpenEditorButton({
 		if (preferred) launch();
 		else if (targets[0]) launch(targets[0].id);
 	});
-	const launchError = open.error instanceof Error ? open.error.message : null;
 	const waitingLabel = stateQuery.isPending
 		? t("editor.preparingWorkspace")
 		: (workspaceCheckFailed(state) ? t("editor.checkingWorkspace") : null);
@@ -154,14 +157,6 @@ export function TopbarOpenEditorButton({
 
 	return (
 		<>
-			{/* Only a launch the user just attempted earns inline topbar space. An
-			    unavailable workspace is a standing state: the controls are disabled
-			    and the reason lives in the main button's tooltip. */}
-			{launchError ? (
-				<TopbarActionError className="max-w-content-max truncate" title={launchError}>
-					{launchError}
-				</TopbarActionError>
-			) : null}
 			<div
 				className="inline-flex items-center gap-0 rounded-md transition-colors hover:bg-interactive-hover data-[state=open]:bg-interactive-hover"
 				data-state={menuOpen ? "open" : "closed"}
