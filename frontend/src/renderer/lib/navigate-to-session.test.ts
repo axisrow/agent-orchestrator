@@ -56,19 +56,38 @@ describe("projectLandingSessionId", () => {
 		])).toBe("newer");
 	});
 
-	it("skips a terminated orchestrator and lands on the top live worker", () => {
+	it("lands on a terminated orchestrator over live workers — its view carries Restore (#260 reopen)", () => {
 		expect(projectLandingSessionId([
 			session({ id: "dead-boss", kind: "orchestrator", isTerminated: true, lastUserMessageAt: "2026-06-06T00:00:00Z" }),
 			session({ id: "gone", status: "terminated", lastUserMessageAt: "2026-04-04T00:00:00Z" }),
 			session({ id: "worker-1", lastUserMessageAt: "2026-01-01T00:00:00Z" }),
-		])).toBe("worker-1");
+		])).toBe("dead-boss");
 	});
 
-	it("returns undefined when nothing is live", () => {
-		expect(projectLandingSessionId([])).toBeUndefined();
+	it("prefers the live orchestrator over a newer terminated one — the icon's target", () => {
 		expect(projectLandingSessionId([
-			session({ id: "boss", kind: "orchestrator", isTerminated: true }),
-			session({ id: "gone", status: "terminated" }),
-		])).toBeUndefined();
+			session({ id: "boss-dead", kind: "orchestrator", isTerminated: true, createdAt: "2026-03-03T00:00:00Z" }),
+			session({ id: "boss-live", kind: "orchestrator", createdAt: "2026-01-01T00:00:00Z" }),
+			session({ id: "worker-1", lastUserMessageAt: "2026-05-05T00:00:00Z" }),
+		])).toBe("boss-live");
+	});
+
+	it("lands on the newest orchestrator when several are terminated", () => {
+		expect(projectLandingSessionId([
+			session({ id: "boss-old", kind: "orchestrator", isTerminated: true, createdAt: "2026-01-01T00:00:00Z" }),
+			session({ id: "boss-new", kind: "orchestrator", isTerminated: true, createdAt: "2026-02-02T00:00:00Z" }),
+			session({ id: "worker-1", lastUserMessageAt: "2026-05-05T00:00:00Z" }),
+		])).toBe("boss-new");
+	});
+
+	it("returns undefined only when the project has no sessions at all", () => {
+		expect(projectLandingSessionId([])).toBeUndefined();
+	});
+
+	it("falls back to the top live worker only when no orchestrator session exists", () => {
+		expect(projectLandingSessionId([
+			session({ id: "gone", status: "terminated", lastUserMessageAt: "2026-04-04T00:00:00Z" }),
+			session({ id: "worker-1", lastUserMessageAt: "2026-01-01T00:00:00Z" }),
+		])).toBe("worker-1");
 	});
 });

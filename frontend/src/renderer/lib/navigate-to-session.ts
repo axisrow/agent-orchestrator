@@ -1,7 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useCallback } from "react";
 import { LOCAL_HOST, type HostId } from "./hosts";
-import { newestActiveOrchestrator, sessionIsActive, sortedWorkerSessions, type WorkspaceSession } from "../types/workspace";
+import { newestActiveOrchestrator, newestOrchestrator, sessionIsActive, sortedWorkerSessions, type WorkspaceSession } from "../types/workspace";
 
 export type SessionNavigateTarget =
 	| { to: "/projects/$projectId/sessions/$sessionId"; params: { projectId: string; sessionId: string } }
@@ -15,10 +15,13 @@ export function projectNavigateTarget(projectId: string, host: HostId = LOCAL_HO
 
 /** Id of the session a project click lands on now that the kanban board is
  * gone (#163): the project's live orchestrator — the same session its sidebar
- * icon opens (#260) — or, with none live, the top of the worker order (most
- * recently messaged first). */
+ * icon opens (#260) — or, when the newest orchestrator is terminated, that
+ * orchestrator's own view (it carries Restore, so it is not a dead end —
+ * the title click must reach the orchestrator, not an unrelated worker;
+ * #260 reopen) — or, with no orchestrator session at all, the top of the
+ * worker order (most recently messaged first). */
 export function projectLandingSessionId(sessions: WorkspaceSession[]): string | undefined {
-	return newestActiveOrchestrator(sessions)?.id ?? sortedWorkerSessions(sessions.filter(sessionIsActive))[0]?.id;
+	return newestActiveOrchestrator(sessions)?.id ?? newestOrchestrator(sessions)?.id ?? sortedWorkerSessions(sessions.filter(sessionIsActive))[0]?.id;
 }
 
 export function sessionNavigateTarget(projectId: string | undefined, sessionId: string, host: HostId = LOCAL_HOST): SessionNavigateTarget {
