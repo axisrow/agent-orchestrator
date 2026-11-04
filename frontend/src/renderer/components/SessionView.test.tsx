@@ -4564,7 +4564,6 @@ describe("SessionView", () => {
 		expect(inspectorOpen("sess-1")).toBe(false);
 		expect(screen.getByTestId("panel-inspector")).toHaveAttribute("data-state", "collapsed");
 		expect(screen.getByTestId("panel-inspector")).toHaveAttribute("inert");
-		expect(screen.getByTestId("inspector-collapsed-rail")).toBeInTheDocument();
 
 		act(() => appShortcutBus.emit({ id: "toggle-inspector" }));
 
@@ -4624,7 +4623,6 @@ describe("SessionView", () => {
 		expect(pane).toHaveAttribute("data-state", "collapsed");
 		expect(pane).toHaveAttribute("hidden");
 		expect(screen.getByTestId("inspector-resize-handle")).toHaveClass("hidden");
-		expect(screen.getByTestId("inspector-collapsed-rail")).toBeInTheDocument();
 	});
 
 	it("keeps inspector chrome visible from the first render of the opening transition", () => {
@@ -4654,7 +4652,6 @@ describe("SessionView", () => {
 		act(() => appShortcutBus.emit({ id: "toggle-inspector" }));
 
 		expect(screen.getByTestId("inspector-resize-handle")).toHaveClass("hidden");
-		expect(screen.getByTestId("inspector-collapsed-rail")).toBeInTheDocument();
 		expect(screen.getByTestId("panel-inspector")).toHaveAttribute("aria-hidden", "false");
 	});
 
@@ -5112,7 +5109,6 @@ describe("SessionView", () => {
 	it("starts the orchestrator Browser closed and opens it with the shared inspector toggle", () => {
 		render(<SessionView sessionId="sess-orch" />);
 		expect(inspectorOpen("sess-orch")).toBe(false);
-		expect(screen.queryByTestId("inspector-collapsed-rail")).not.toBeInTheDocument();
 		expect(screen.getByRole("button", { name: "Open inspector panel" })).toHaveAttribute("aria-pressed", "false");
 		act(() => appShortcutBus.emit({ id: "toggle-inspector" }));
 		expect(inspectorOpen("sess-orch")).toBe(true);
