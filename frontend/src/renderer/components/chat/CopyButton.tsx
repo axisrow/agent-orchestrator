@@ -10,7 +10,6 @@ import { cn } from "../../lib/utils";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Copy } from "lucide-react";
 import { aoBridge } from "../../lib/bridge";
-import { cn } from "../../lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 
 /** Long enough to be noticed, short enough that a second copy reads as a second copy. */

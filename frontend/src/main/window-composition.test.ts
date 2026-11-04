@@ -34,7 +34,6 @@ function setup(platform: NodeJS.Platform = "win32", _allowShellDebugging = false
 		WebContentsView: FakeWebContentsView as never,
 		preload: "/preload.js",
 		platform,
-		platform,
 		hasLivePageBelow,
 	});
 	return {
