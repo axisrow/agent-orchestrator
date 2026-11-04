@@ -61,6 +61,7 @@ var forkLocalMigrations = []string{
 	"orphan_workers_notification",
 	"app_settings_scm_proxy_url",
 	"delivery_ledger",
+	"delivery_events",
 	"review_run_github_review_state",
 	"session_review_only",
 	"pr_last_seen_at",

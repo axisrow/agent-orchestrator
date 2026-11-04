@@ -378,3 +378,9 @@ ca08ac681e6449c8f8d4ba1cf5b89c38fb51c522 taken fix(codex): align account login e
 4ab770fb4664f660c39aab2039074a133e0e7124 skipped ci: reduce queue pressure with guarded PR and native jobs (#7661)
 00c2fbae60afdd604eab452d85bc714ded1eaa3a taken [DU ja/zh-CN docs: снос форка сохранён] fix(desktop): finish visible Orchestrator name changes (#7578)
 6ca521d35bb3768c2cad4fa5a347b0c02c96f764 skipped ci: run release latest guard outside forks and sync app version (#7084)
+362fc6a273d50352a62b33809cf58b9c204478a6 skipped feat(desktop): share cloud sessions with a short link (#7407)
+b325d24b741297bf89296e76501d7e09018c4a04 skipped feat: add first run project prompt (#7569)
+31e10704d48663c96521b3c330be81972563f5cc taken fix(chat): re-sign the bundled Node when it crashes on Intel Macs (#7676)
+f3eb9a0636529612535d6792a0e2bed612950337 skipped fix(chat): show one current Plan card and stop its spinner once the turn ends (#7413) — фича #7159 под fix-сабжектами, решение владельца 2026-11-04
+227e94ac0e0ce0f3c85ffd2461247c5db5b0e068 skipped feat: local share links — contract (random IDs, active-only slots, direct uploads, public details) and desktop share flow (#7479)
+a1fe965e70040389de8317fe097c1535a411275d taken fix(chat): accept excerpts from agent messages outside any turn (#6629)
