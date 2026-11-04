@@ -330,6 +330,13 @@ func (p *Provider) fetchJobLogTail(ctx context.Context, owner, repo string, jobI
 func ciSummaryFromGraphQL(pr map[string]any) domain.CIState {
 	roll := statusRollup(pr)
 	if roll == nil {
+		// A PR always has at least one commit, so a missing rollup with a
+		// present commit means GitHub returned no status blob at all: the head
+		// commit has no checks (issue #170). Without a commit the payload is
+		// incomplete, so stay unknown.
+		if hasCommits(pr) {
+			return domain.CINone
+		}
 		return domain.CIUnknown
 	}
 	contexts, _ := roll["contexts"].(map[string]any)
@@ -345,6 +352,12 @@ func ciSummaryFromGraphQL(pr map[string]any) domain.CIState {
 		state := mapRollupState(str(roll["state"]))
 		if state == domain.CIFailing && mergeStateStatusClean(pr) {
 			return domain.CIPassing
+		}
+		if state == domain.CIUnknown && !pageInfoHasMore(contexts) {
+			// Zero contexts with no decidable aggregate state is the terminal
+			// "no checks" verdict (issue #170): a re-poll of the same commit
+			// cannot produce a different answer.
+			return domain.CINone
 		}
 		return state
 	}
@@ -686,6 +699,15 @@ func jobIDForCheck(pr map[string]any, name string) int64 {
 		return int64(num(n["databaseId"]))
 	}
 	return 0
+}
+
+// hasCommits reports whether the GraphQL pullRequest payload carries at
+// least one commit node. Paired with statusRollup it distinguishes "the
+// commit exists and has no status blob" (no checks) from "the payload is
+// incomplete" (unknown).
+func hasCommits(pr map[string]any) bool {
+	commits, _ := pr["commits"].(map[string]any)
+	return len(nodes(commits["nodes"])) > 0
 }
 
 // statusRollup extracts the commits[0].commit.statusCheckRollup blob

@@ -330,6 +330,35 @@ describe("prCardPresentation", () => {
 		expect(presentation.readiness?.detail).toBe("Waiting for the latest checks and review state.");
 	});
 
+	it("treats an empty check rollup as terminal no-checks, not an eternal load (issue #170)", () => {
+		const presentation = prCardPresentation(
+			summary({
+				ci: { autoInjectCI: true, state: "none", failingChecks: [] },
+			}),
+		);
+
+		// The verdict comes from the remaining facts (mergeable + approval), not
+		// from an in-flight load.
+		expect(presentation.readiness).toMatchObject({ label: "Mergeable", tone: "success" });
+		expect(presentation.statusRows?.find((row) => row.key === "ci")).toMatchObject({ label: "No checks", breathe: false });
+		for (const row of [presentation.primary, ...presentation.supporting, ...presentation.statusRows ?? []]) {
+			expect(row.breathe).toBe(false);
+		}
+	});
+
+	it("keeps the review verdict primary while the no-checks row stays terminal", () => {
+		const presentation = prCardPresentation(
+			summary({
+				ci: { autoInjectCI: true, state: "none", failingChecks: [] },
+				review: { decision: "review_required", hasUnresolvedHumanComments: false, unresolvedBy: [] },
+				mergeability: { state: "blocked", reasons: ["review_required"], prUrl: "https://github.com/acme/repo/pull/7" },
+			}),
+		);
+
+		expect(presentation.primary).toMatchObject({ key: "review", label: "Review required" });
+		expect(presentation.supporting[0]).toMatchObject({ label: "No checks", breathe: false });
+	});
+
 	it("prioritizes failing checks over lower-priority review and merge facts", () => {
 		const presentation = prCardPresentation(
 			summary({
