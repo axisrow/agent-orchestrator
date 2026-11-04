@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createWindowComposition } from "./window-composition";
 
-function setup(platform: NodeJS.Platform = "win32") {
+function setup(platform: NodeJS.Platform = "win32", _allowShellDebugging = false, hasLivePageBelow?: () => boolean) {
 	let bounds = { x: 0, y: 0, width: 900, height: 640 };
 	let boundsChanged: (() => void) | undefined;
 	const addChildView = vi.fn();
@@ -34,6 +34,8 @@ function setup(platform: NodeJS.Platform = "win32") {
 		WebContentsView: FakeWebContentsView as never,
 		preload: "/preload.js",
 		platform,
+		platform,
+		hasLivePageBelow,
 	});
 	return {
 		addChildView,
@@ -102,6 +104,33 @@ describe("createWindowComposition", () => {
 
 			expect(view.setBounds).toHaveBeenCalledWith({ x: 0, y: 0, width: 900, height: 639 });
 			expect(view.setVisible).not.toHaveBeenCalled();
+			vi.runAllTimers();
+			expect(view.setBounds).toHaveBeenLastCalledWith({ x: 0, y: 0, width: 900, height: 640 });
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("raises the shell without the nudge when no live page is below it on macOS", () => {
+		const { addChildView, composition, view } = setup("darwin", false, () => false);
+		(view.setBounds as ReturnType<typeof vi.fn>).mockClear();
+
+		composition.setOverlayOpen(true);
+
+		expect(addChildView).toHaveBeenLastCalledWith(view);
+		expect(view.setBounds).not.toHaveBeenCalled();
+	});
+
+	it("still nudges a raised shell when a browser view is added under an open overlay", () => {
+		vi.useFakeTimers();
+		try {
+			const { composition, view } = setup("darwin", false, () => false);
+			composition.setOverlayOpen(true);
+			(view.setBounds as ReturnType<typeof vi.fn>).mockClear();
+
+			composition.restackShell();
+
+			expect(view.setBounds).toHaveBeenCalledWith({ x: 0, y: 0, width: 900, height: 639 });
 			vi.runAllTimers();
 			expect(view.setBounds).toHaveBeenLastCalledWith({ x: 0, y: 0, width: 900, height: 640 });
 		} finally {
