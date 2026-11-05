@@ -163,6 +163,11 @@ func (r *Reaper) Tick(ctx context.Context) error {
 		facts ports.RuntimeFacts
 	}
 	var observations []observation
+	// The breaker population is the LIVE board: settled exits sit outside both
+	// the dead tally and the probed denominator (see settledAgentExit), so a
+	// parked-heavy board can neither hold the breaker closed forever nor mask a
+	// genuine cliff of live sessions behind a parked-inflated denominator.
+	probed := 0
 	dead := 0
 	for _, sess := range sessions {
 		if sess.IsTerminated {
@@ -172,18 +177,22 @@ func (r *Reaper) Tick(ctx context.Context) error {
 		if !ok {
 			continue
 		}
+		observations = append(observations, observation{id: sess.ID, facts: facts})
+		if settledAgentExit(sess) {
+			continue
+		}
+		probed++
 		if facts.Runtime == ports.ProbeDead {
 			dead++
 		}
-		observations = append(observations, observation{id: sess.ID, facts: facts})
 	}
 
-	if dead >= massDeadMinSessions && float64(dead) > massDeadFraction*float64(len(observations)) {
+	if dead >= massDeadMinSessions && float64(dead) > massDeadFraction*float64(probed) {
 		// 28 unrelated agents do not exit within one probe pass of each other.
 		// Whatever produced this pass is an outage, not N deaths; leave the
 		// board untouched and let the next probe decide.
 		r.logger.Error("reaper: mass-death circuit breaker tripped, reporting the pass as inconclusive",
-			"dead", dead, "probed", len(observations))
+			"dead", dead, "probed", probed)
 		for i := range observations {
 			if observations[i].facts.Runtime == ports.ProbeDead {
 				observations[i].facts.Runtime = ports.ProbeFailed
@@ -198,6 +207,21 @@ func (r *Reaper) Tick(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// settledAgentExit reports whether the session's non-termination is already a
+// deliberate, acknowledged state: the agent process is gone (activity exited)
+// and the row is parked for resume. Its dead runtime recurs on every pass by
+// construction, so it carries no mass-death information — counting it would
+// hold the breaker closed permanently on any board with a few parked sessions,
+// and then EVERY later death would be downgraded as "outage" forever (issue
+// #277: one real crash went unacknowledged for 17 minutes while 11 of 20
+// probed sessions were parked exits). Settled exits sit outside the breaker
+// population entirely — the denominator counts live sessions only, so parked
+// residents can neither close the breaker nor dilute a genuine cliff of live
+// deaths below the fraction threshold.
+func settledAgentExit(sess domain.SessionRecord) bool {
+	return sess.Activity.State == domain.ActivityExited
 }
 
 // probeOne probes a single session and returns the resulting facts. Every

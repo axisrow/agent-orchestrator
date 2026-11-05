@@ -520,6 +520,54 @@ func TestRuntimeObservation_ConfirmedRuntimeDeathTerminates(t *testing.T) {
 	}
 }
 
+// A sticky state (waiting_input/blocked) must not veto an unambiguous runtime
+// death forever: an agent killed while paused at its prompt emits no further
+// signal, so its last sticky reading would otherwise block termination for the
+// daemon's lifetime (issue #277). Stickiness still guards the recent window.
+func TestRuntimeObservation_StickyDeathAcknowledgedAfterWindow(t *testing.T) {
+	m, st, _ := newManager()
+	rec := working("mer-1")
+	rec.Activity = domain.Activity{State: domain.ActivityWaitingInput, LastActivityAt: time.Now().Add(-2 * time.Minute)}
+	st.sessions["mer-1"] = rec
+	if err := m.ApplyRuntimeObservation(ctx, "mer-1", ports.RuntimeFacts{Runtime: ports.ProbeDead, Workload: ports.ProbeFailed}); err != nil {
+		t.Fatal(err)
+	}
+	got := st.sessions["mer-1"]
+	if !got.IsTerminated || got.Activity.State != domain.ActivityExited {
+		t.Fatalf("want terminated/exited, got %+v", got)
+	}
+}
+
+func TestRuntimeObservation_StickyWithinWindowNotTerminated(t *testing.T) {
+	m, st, _ := newManager()
+	rec := working("mer-1")
+	rec.Activity = domain.Activity{State: domain.ActivityBlocked, LastActivityAt: time.Now().Add(-10 * time.Second)}
+	st.sessions["mer-1"] = rec
+	if err := m.ApplyRuntimeObservation(ctx, "mer-1", ports.RuntimeFacts{Runtime: ports.ProbeDead, Workload: ports.ProbeFailed}); err != nil {
+		t.Fatal(err)
+	}
+	if got := st.sessions["mer-1"]; got.IsTerminated {
+		t.Fatalf("recent sticky activity must still guard against a stale probe, got %+v", got)
+	}
+}
+
+// Regression (issue #277): a normal turn completion leaves the agent at its
+// prompt in waiting_input with the runtime ALIVE — that is not a death and
+// must never terminate the session.
+func TestRuntimeObservation_TurnCompletionIsNotTermination(t *testing.T) {
+	m, st, _ := newManager()
+	rec := working("mer-1")
+	rec.Activity = domain.Activity{State: domain.ActivityWaitingInput, LastActivityAt: time.Now()}
+	st.sessions["mer-1"] = rec
+	if err := m.ApplyRuntimeObservation(ctx, "mer-1", ports.RuntimeFacts{Runtime: ports.ProbeAlive, Workload: ports.ProbeAlive}); err != nil {
+		t.Fatal(err)
+	}
+	got := st.sessions["mer-1"]
+	if got.IsTerminated || got.Activity.State != domain.ActivityWaitingInput {
+		t.Fatalf("healthy turn completion changed the session: %+v", got)
+	}
+}
+
 func TestRuntimeObservation_CrashFinalizesUsageBeforeTermination(t *testing.T) {
 	m, st, _ := newManager()
 	rec := working("mer-1")
