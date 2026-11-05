@@ -1245,7 +1245,7 @@ func TestUsageBindingWaitsForPersistedCodexChildren(t *testing.T) {
 		State:           domain.UsageSourceComplete,
 	})
 
-	discovery, err := s.ListUsageDiscoveryBindings(ctx, 8)
+	discovery, err := s.ListUsageDiscoveryBindings(ctx, 0, 8)
 	if err != nil || len(discovery) != 1 || discovery[0].ID != binding.ID {
 		t.Fatalf("startup discovery bindings = %+v, err=%v", discovery, err)
 	}
@@ -1348,7 +1348,7 @@ func TestUsageBindingValidatesCodexDiscoveryStateShapes(t *testing.T) {
 				State:           domain.UsageSourceComplete,
 			})
 
-			discovery, err := s.ListUsageDiscoveryBindings(ctx, 8)
+			discovery, err := s.ListUsageDiscoveryBindings(ctx, 0, 8)
 			mustNoError(t, err)
 			if len(discovery) != 0 {
 				t.Fatalf("invalid state invented discovery bindings: %+v", discovery)
