@@ -70,16 +70,18 @@ test("renderer: hidden model-menu scrollbar keeps wheel scrolling functional @T0
 	await page.mouse.wheel(0, 400);
 
 	await expect.poll(() => scroller.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
-	await scroller.getByRole("menuitemradio").last().click();
-	await expect(page.getByRole("menu")).toHaveCount(1);
-	const trigger = page.getByRole("button", { name: "Agent, model and reasoning effort for the next message" });
+	// The fork's picker is a modal SettingsOptionMenu: plain menuitem rows that
+	// close the whole menu on select, and a filter-only search without
+	// enter-to-select; upstream's radio-menu assertions do not apply here.
+	await scroller.getByRole("menuitem").last().click();
+	await expect(page.getByRole("menu")).toHaveCount(0);
+	const trigger = dialog.getByRole("button", { name: "Model" });
 	await expect(trigger).toContainText("model-30");
-	await page.getByRole("menuitem", { name: /^Model/ }).click();
-	const search = page.getByRole("searchbox", { name: "Search models" }).last();
+	await trigger.click();
+	const search = page.getByRole("searchbox", { name: "Search model" });
 	await search.fill("model-29");
-	await expect(page.getByRole("menuitemradio", { name: /model-29/ })).toHaveAttribute("data-search-active", "true");
-	await expect(search).toBeFocused();
-	await search.press("Enter");
+	await expect(scroller.getByRole("menuitem")).toHaveCount(1);
+	await scroller.getByRole("menuitem").click();
+	await expect(page.getByRole("menu")).toHaveCount(0);
 	await expect(trigger).toContainText("model-29");
-	await expect(page.getByRole("menu")).toHaveCount(1);
 });
