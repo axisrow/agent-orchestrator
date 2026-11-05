@@ -539,6 +539,8 @@ export interface ChatWorkspaceProps {
 	promoteQueuedTurnPendingTurnId?: string;
 	cancelQueuedTurnPendingTurnId?: string;
 	editQueuedTurnPendingTurnId?: string;
+	/** Off where another flow owns an unanswered send, such as a pending launch. */
+	parkUnsentSends?: boolean;
 }
 
 type ChatWorkspaceActivation =
@@ -667,6 +669,7 @@ function ChatWorkspaceContent({
 	hasOlder,
 	loadingOlder,
 	onLoadOlder,
+	parkUnsentSends = true,
 	excerptsEnabled = false,
 	onSend,
 	onDecide,
@@ -1882,6 +1885,7 @@ function ChatWorkspaceContent({
 										assetSessionId={snapshot.sessionId}
 										remoteHost={Boolean(activeRemoteHostId)}
 										acceptedClientMessageIds={acceptedClientMessageIds}
+										parkUnsentSends={parkUnsentSends}
 									/>
 								</div>
 								{compactStartup ? <OrchestratorStartupStatus {...compactStartup} /> : null}
