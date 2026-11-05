@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
@@ -216,6 +217,60 @@ func TestTick_SmallBoardMassDeathStillConcludes(t *testing.T) {
 	for _, id := range []domain.SessionID{"mer-1", "mer-2"} {
 		if got := lcm.observed[id]; got.Runtime != ports.ProbeDead {
 			t.Fatalf("session %s runtime = %q, want %q", id, got.Runtime, ports.ProbeDead)
+		}
+	}
+}
+
+func parkedExited(id domain.SessionID) domain.SessionRecord {
+	rec := handledSession(id)
+	rec.Activity = domain.Activity{State: domain.ActivityExited, LastActivityAt: time.Now().Add(-time.Hour)}
+	return rec
+}
+
+// Parked exits (agent gone, row kept for resume) probe dead on every pass by
+// construction. They must not count toward the mass-death breaker: a board
+// that legitimately holds several parked sessions would otherwise trip the
+// breaker forever and downgrade every later real death as "outage" (issue
+// #277: one crash went unacknowledged for 17 minutes behind 11 parked exits).
+func TestTick_ParkedExitedSessionsDoNotHoldBreakerClosed(t *testing.T) {
+	lcm := &fakeLCM{}
+	rows := []domain.SessionRecord{parkedExited("park-1"), parkedExited("park-2"), parkedExited("park-3"), parkedExited("park-4"), parkedExited("park-5")}
+	crashed := handledSession("mer-9")
+	rows = append(rows, crashed)
+	r := New(lcm, fakeSessions{rows: rows}, perHandleRuntime{}, Config{Logger: quietLogger()})
+	if err := r.Tick(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(lcm.observed) != len(rows) {
+		t.Fatalf("observed %d sessions, want %d", len(lcm.observed), len(rows))
+	}
+	if got := lcm.observed["mer-9"]; got.Runtime != ports.ProbeDead {
+		t.Fatalf("new death downgraded to %q; parked exits must not hold the breaker closed", got.Runtime)
+	}
+}
+
+// A genuine cliff — most of the live population dying in one pass — still
+// trips the breaker even when parked exits are on the board: the exclusion
+// removes only the settled residents from the tally, not the outage signal.
+func TestTick_GenuineMassDeathAmongParkedExitsStillTrips(t *testing.T) {
+	lcm := &fakeLCM{}
+	var rows []domain.SessionRecord
+	for _, id := range []domain.SessionID{"park-1", "park-2", "park-3", "park-4", "park-5"} {
+		rows = append(rows, parkedExited(id))
+	}
+	for _, id := range []domain.SessionID{"mer-1", "mer-2", "mer-3", "mer-4", "mer-5", "mer-6"} {
+		rows = append(rows, handledSession(id))
+	}
+	r := New(lcm, fakeSessions{rows: rows}, perHandleRuntime{}, Config{Logger: quietLogger()})
+	if err := r.Tick(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(lcm.observed) != len(rows) {
+		t.Fatalf("observed %d sessions, want %d", len(lcm.observed), len(rows))
+	}
+	for id, got := range lcm.observed {
+		if got.Runtime != ports.ProbeFailed {
+			t.Fatalf("session %s runtime = %q, want %q (cliff must stay inconclusive)", id, got.Runtime, ports.ProbeFailed)
 		}
 	}
 }

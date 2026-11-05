@@ -172,7 +172,7 @@ func (r *Reaper) Tick(ctx context.Context) error {
 		if !ok {
 			continue
 		}
-		if facts.Runtime == ports.ProbeDead {
+		if facts.Runtime == ports.ProbeDead && !settledAgentExit(sess) {
 			dead++
 		}
 		observations = append(observations, observation{id: sess.ID, facts: facts})
@@ -198,6 +198,18 @@ func (r *Reaper) Tick(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// settledAgentExit reports whether the session's non-termination is already a
+// deliberate, acknowledged state: the agent process is gone (activity exited)
+// and the row is parked for resume. Its dead runtime recurs on every pass by
+// construction, so it carries no mass-death information — counting it would
+// hold the breaker closed permanently on any board with a few parked sessions,
+// and then EVERY later death would be downgraded as "outage" forever (issue
+// #277: one real crash went unacknowledged for 17 minutes while 11 of 20
+// probed sessions were parked exits).
+func settledAgentExit(sess domain.SessionRecord) bool {
+	return sess.Activity.State == domain.ActivityExited
 }
 
 // probeOne probes a single session and returns the resulting facts. Every
