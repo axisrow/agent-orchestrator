@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"strings"
@@ -271,6 +272,30 @@ func TestTick_GenuineMassDeathAmongParkedExitsStillTrips(t *testing.T) {
 	for id, got := range lcm.observed {
 		if got.Runtime != ports.ProbeFailed {
 			t.Fatalf("session %s runtime = %q, want %q (cliff must stay inconclusive)", id, got.Runtime, ports.ProbeFailed)
+		}
+	}
+}
+
+// The cliff test above with the DENOMINATOR the reviewer called out: parked
+// exits sit outside the fraction's denominator too, so a cliff of live
+// sessions trips the breaker even on a board where parked residents make the
+// total probed count bury the live deaths below half (issue #277 review).
+func TestTick_CliffOfLiveSessionsOnParkedHeavyBoardStillTrips(t *testing.T) {
+	lcm := &fakeLCM{}
+	var rows []domain.SessionRecord
+	for i := 0; i < 15; i++ {
+		rows = append(rows, parkedExited(domain.SessionID(fmt.Sprintf("park-%d", i+1))))
+	}
+	for _, id := range []domain.SessionID{"mer-1", "mer-2", "mer-3", "mer-4", "mer-5", "mer-6"} {
+		rows = append(rows, handledSession(id))
+	}
+	r := New(lcm, fakeSessions{rows: rows}, perHandleRuntime{}, Config{Logger: quietLogger()})
+	if err := r.Tick(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []domain.SessionID{"mer-1", "mer-2", "mer-3", "mer-4", "mer-5", "mer-6"} {
+		if got := lcm.observed[id]; got.Runtime != ports.ProbeFailed {
+			t.Fatalf("session %s runtime = %q, want %q (parked-heavy board must not bury a live cliff)", id, got.Runtime, ports.ProbeFailed)
 		}
 	}
 }
