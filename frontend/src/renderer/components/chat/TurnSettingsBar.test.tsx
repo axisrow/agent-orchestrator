@@ -129,6 +129,10 @@ describe.each(["native", "ACP submenu", "ACP standalone"] as const)("%s model se
 		}
 		expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
 		expect(screen.queryAllByRole("menu")).toHaveLength(path === "ACP standalone" ? 0 : 1);
+		// Fork's OptionMenu is radix-modal: while a menu is open the app subtree is
+		// pointer-events:none and aria-hidden, so close it before reopening here.
+		// (Upstream's nonmodal OptionMenu can query the trigger mid-open; ours can't.)
+		await user.keyboard("{Escape}");
 		await open();
 		expect(screen.getByRole("searchbox")).toHaveValue("");
 		expect(screen.getAllByRole("menuitemradio")).toHaveLength(100);
@@ -1742,15 +1746,20 @@ it("presents Antigravity model variants as Codex-style model and effort choices 
 	await user.keyboard("{ArrowDown}{ArrowRight}");
 	await user.click(await screen.findByRole("menuitemradio", { name: "Gemini 3.8 Pro" }));
 	expect(onChangeConfigOption).toHaveBeenCalledWith("model", { value: "gemini-3.8-pro-high" });
+	// closeOnSelect leaves the parent menu open (upstream nonmodal flow); the fork's
+	// modal OptionMenu locks the trigger, so close and reopen between picks.
+	await user.keyboard("{Escape}");
 	await user.click(model);
 	await user.keyboard("{ArrowDown}{ArrowDown}{ArrowRight}");
 	await user.click(await screen.findByRole("menuitemradio", { name: "Low" }));
 	expect(onChangeConfigOption).toHaveBeenCalledWith("model", { value: "gemini-3.8-flash-low" });
+	await user.keyboard("{Escape}");
 	await user.click(screen.getByRole("button", { name: "Approval policy for the next turn" }));
 	expect(screen.queryByRole("menuitemradio", { name: "Use agent permissions" })).not.toBeInTheDocument();
 	expect(screen.queryByRole("menuitemradio", { name: "Agent Mode" })).not.toBeInTheDocument();
 	await user.click(screen.getByRole("menuitemradio", { name: "Ask for approval" }));
 	expect(onChangeConfigOption).toHaveBeenCalledWith("mode", { value: "default" });
+	await user.keyboard("{Escape}");
 	await user.click(screen.getByRole("button", { name: "Approval policy for the next turn" }));
 	await user.click(screen.getByRole("menuitemradio", { name: "Auto-approve" }));
 	expect(onChangeConfigOption).toHaveBeenCalledWith("mode", { value: "yolo" });
