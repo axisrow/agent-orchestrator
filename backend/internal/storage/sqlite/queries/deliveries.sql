@@ -28,11 +28,14 @@ ORDER BY r.created_at, r.id, o.position;
 -- name: ListReportsByProject :many
 SELECT * FROM deliveries WHERE project_id = ? ORDER BY created_at, id;
 
--- name: ListPendingReportSchedule :many
-SELECT * FROM deliveries
-WHERE delivery_state = 'pending'
-ORDER BY available_at, created_at, id
-LIMIT ?;
+-- name: ListPendingDeliveryProjects :many
+-- Pull-semantics drain pass: every project currently holding unread report
+-- rows, once each. Availability plays no part - under pull semantics every
+-- unread row is due; the recipient's activity state decides when the drain
+-- actually injects.
+SELECT DISTINCT project_id FROM deliveries
+WHERE kind = 'report' AND delivery_state = 'pending'
+ORDER BY project_id;
 
 -- name: ListPendingReportsByProjectSchedule :many
 SELECT * FROM deliveries
@@ -70,23 +73,6 @@ WHERE project_id = sqlc.arg(project_id) AND delivery_state = 'claimed'
   AND claim_token = sqlc.arg(claim_token)
 RETURNING *;
 
--- name: DeferReportBatch :many
-UPDATE deliveries
-SET delivery_state = 'pending', available_at = max(available_at, sqlc.arg(available_at)),
-    claim_token = '', claimed_at = NULL, last_error = sqlc.arg(last_error)
-WHERE project_id = sqlc.arg(project_id) AND delivery_state = 'claimed'
-  AND claim_token = sqlc.arg(claim_token)
-RETURNING *;
-
--- name: MarkReportBatchEmitted :many
--- RETURNING * feeds the delivery-events journal: the visible emission is a
--- journal transition (emit_visible), not a silent stamp.
-UPDATE deliveries
-SET emitted_at = sqlc.arg(emitted_at)
-WHERE project_id = sqlc.arg(project_id) AND delivery_state = 'claimed'
-  AND claim_token = sqlc.arg(claim_token)
-RETURNING *;
-
 -- name: FailClaimedReportBatch :many
 -- Terminal outcome of a delivery whose target held the text in its message
 -- queue (fork issue #205): the batch is retired as stale with the reason in
@@ -100,31 +86,16 @@ WHERE project_id = sqlc.arg(project_id) AND delivery_state = 'claimed'
   AND claim_token = sqlc.arg(claim_token)
 RETURNING *;
 
--- name: AcknowledgeAcceptedPendingReports :many
--- The acceptance-gated settle (fork issue #179): only batches whose durable
--- correlation id is named by the recipient's current coordination checkpoint
--- settle - that checkpoint is the semantic acceptance of THIS batch, possibly
--- after the emit window closed. A truncated tail has no opening tag, credits
--- no coordination id, and plain prompt activity names no batch: such rows
--- stay pending and re-emit instead of passing as delivered.
--- The synthetic claim token exists only to satisfy the delivery-state CHECK:
--- acknowledged rows must carry a token, and nothing reads it after the ack.
-UPDATE deliveries
-SET delivery_state = 'acknowledged', acknowledged_at = sqlc.arg(acknowledged_at),
-    claim_token = 'activity-ack', claimed_at = sqlc.arg(acknowledged_at)
-WHERE project_id = sqlc.arg(project_id) AND delivery_state = 'pending'
-  AND emitted_at IS NOT NULL
-  AND delivery_batch_id = sqlc.arg(delivery_batch_id)
-RETURNING *;
-
 -- name: ExpireStalePendingReports :many
 -- Terminal expiry of the delivery ledger: pending report rows older than the
--- cutoff stop retrying forever and stay readable as stale. Claims in flight
--- are untouched; their own attempt fences them.
+-- cutoff stop waiting for a safe-point drain forever and stay readable as
+-- stale. Claims in flight are untouched; their own attempt fences them.
 -- (ASCII-only comment: a unicode dash here breaks sqlc v1.31.1 query parsing.)
--- RETURNING * feeds the delivery-events journal (expired cause per row).
+-- RETURNING * feeds the delivery-events journal (expired cause per row); the
+-- stamped last_error is the terminal sweep's readable cause.
 UPDATE deliveries
-SET delivery_state = 'stale'
+SET delivery_state = 'stale',
+    last_error = 'expired unread past the delivery ledger window'
 WHERE kind = 'report' AND delivery_state = 'pending'
   AND created_at < sqlc.arg(cutoff)
 RETURNING *;
@@ -135,9 +106,9 @@ RETURNING *;
 -- delivering them after a fresh instruction would present stale work as
 -- current status. Split into pending and claimed queries so the journal
 -- records the precise from-state per row. Claimed rows retire too: a claim
--- released by a failed cycle or restart requeue would otherwise return to
+-- released by a failed drain or restart requeue would otherwise return to
 -- pending and deliver after the new prompt. The in-flight attempt's
--- token-fenced ack and defer become no-ops, which the coordinator reports as
+-- token-fenced ack becomes a no-op, which the coordinator reports as
 -- a lost claim instead of passing as success.
 UPDATE deliveries
 SET delivery_state = 'stale', claim_token = '', claimed_at = NULL,
@@ -163,33 +134,6 @@ SELECT last_interrupted_at FROM report_worker_interrupts WHERE session_id = ?;
 INSERT INTO report_worker_interrupts (session_id, last_interrupted_at)
 VALUES (?, ?)
 ON CONFLICT(session_id) DO UPDATE SET last_interrupted_at = excluded.last_interrupted_at;
-
--- name: ListPendingReports :many
-SELECT * FROM deliveries
-WHERE delivery_state = 'pending' AND available_at <= ?
-ORDER BY created_at, id
-LIMIT ?;
-
--- name: ClaimReport :one
-UPDATE deliveries
-SET delivery_state = 'claimed', claim_token = sqlc.arg(claim_token),
-    claimed_at = sqlc.arg(claimed_at), delivery_attempts = delivery_attempts + 1,
-    last_error = ''
-WHERE id = sqlc.arg(id) AND delivery_state = 'pending' AND available_at <= sqlc.arg(claimed_at)
-RETURNING *;
-
--- name: AcknowledgeReport :one
-UPDATE deliveries
-SET delivery_state = 'acknowledged', acknowledged_at = sqlc.arg(acknowledged_at)
-WHERE id = sqlc.arg(id) AND delivery_state = 'claimed' AND claim_token = sqlc.arg(claim_token)
-RETURNING *;
-
--- name: ReleaseReport :one
-UPDATE deliveries
-SET delivery_state = 'pending', available_at = sqlc.arg(available_at),
-    claim_token = '', claimed_at = NULL, last_error = sqlc.arg(last_error)
-WHERE id = sqlc.arg(id) AND delivery_state = 'claimed' AND claim_token = sqlc.arg(claim_token)
-RETURNING *;
 
 -- name: RequeueClaimedReports :many
 -- RETURNING * feeds the delivery-events journal (restart_requeue per row).

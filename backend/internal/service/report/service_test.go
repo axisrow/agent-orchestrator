@@ -49,7 +49,7 @@ func TestListProjectIsReadOnlyAndOrdered(t *testing.T) {
 	}
 }
 
-func TestCreateDerivesOwnershipAndFixedDeliveryDeadlines(t *testing.T) {
+func TestCreateDerivesOwnershipAndImmediateAvailability(t *testing.T) {
 	now := time.Date(2026, 9, 7, 1, 2, 3, 0, time.UTC)
 	tests := []struct {
 		name      string
@@ -57,12 +57,12 @@ func TestCreateDerivesOwnershipAndFixedDeliveryDeadlines(t *testing.T) {
 		available time.Time
 		settles   time.Time
 	}{
-		{name: "free form batches for one hour", input: CreateInput{Message: "status"}, available: now.Add(time.Hour)},
-		{name: "output only batches for one hour", input: CreateInput{Outputs: []domain.ReportOutput{{Kind: domain.ReportOutputArtifact, Reference: "result"}}}, available: now.Add(time.Hour)},
-		{name: "checkpoint batches for one hour", input: CreateInput{State: domain.ReportCheckpoint, Note: "checkpoint"}, available: now.Add(time.Hour)},
-		{name: "needs input is immediate", input: CreateInput{State: domain.ReportNeedsInput, Note: "decision"}, available: now},
-		{name: "stuck is immediate", input: CreateInput{State: domain.ReportStuck, Note: "blocked"}, available: now},
-		{name: "done settles for five minutes", input: CreateInput{State: domain.ReportDone, Note: "finished"}, available: now.Add(5 * time.Minute), settles: now.Add(5 * time.Minute)},
+		{name: "free form lands immediately", input: CreateInput{Message: "status"}, available: now},
+		{name: "output only lands immediately", input: CreateInput{Outputs: []domain.ReportOutput{{Kind: domain.ReportOutputArtifact, Reference: "result"}}}, available: now},
+		{name: "checkpoint lands immediately", input: CreateInput{State: domain.ReportCheckpoint, Note: "checkpoint"}, available: now},
+		{name: "needs input lands immediately", input: CreateInput{State: domain.ReportNeedsInput, Note: "decision"}, available: now},
+		{name: "stuck lands immediately", input: CreateInput{State: domain.ReportStuck, Note: "blocked"}, available: now},
+		{name: "done lands immediately with its settle fact", input: CreateInput{State: domain.ReportDone, Note: "finished"}, available: now, settles: now.Add(5 * time.Minute)},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

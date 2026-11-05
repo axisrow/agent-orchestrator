@@ -182,6 +182,7 @@ const (
 	CIPending = contract.CIPending
 	CIPassing = contract.CIPassing
 	CIFailing = contract.CIFailing
+	CINone    = contract.CINone
 )
 
 // ReviewDecision is the aggregate human-review verdict on a PR.

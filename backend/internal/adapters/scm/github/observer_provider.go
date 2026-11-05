@@ -606,10 +606,16 @@ func scmObservationFromGraphQL(ref ports.SCMPRRef, pr map[string]any) ports.SCMO
 // failure-class run whose name's latest run is green. An empty view falls
 // back to the aggregate, but a FAILURE verdict is dropped when the provider
 // reports mergeStateStatus CLEAN (the same stale-aggregate pattern;
-// UNSTABLE/BLOCKED keep it).
+// UNSTABLE/BLOCKED keep it). An empty view with no decidable aggregate is
+// the terminal "no checks" verdict (issue #170): a commit with neither
+// check runs nor status contexts will never produce a different answer on
+// re-poll, so it must not read as an in-flight load.
 func ciSummaryFromRollupState(pr map[string]any) domain.CIState {
 	roll := statusRollup(pr)
 	if roll == nil {
+		if hasCommits(pr) {
+			return domain.CINone
+		}
 		return domain.CIUnknown
 	}
 	contexts, _ := roll["contexts"].(map[string]any)
@@ -618,6 +624,9 @@ func ciSummaryFromRollupState(pr map[string]any) domain.CIState {
 		state := mapRollupState(str(roll["state"]))
 		if state == domain.CIFailing && mergeStateStatusClean(pr) {
 			return domain.CIPassing
+		}
+		if state == domain.CIUnknown && !pageInfoHasMore(contexts) {
+			return domain.CINone
 		}
 		return state
 	}

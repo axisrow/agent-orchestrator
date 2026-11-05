@@ -206,9 +206,11 @@ func TestProvisioningSendPiggybacksReportsOnlyOnRecordedTurn(t *testing.T) {
 	}
 }
 
-// A batch shown moments ago rides along silently: the user message stays clean,
-// the suppression is logged, and the accepted turn still settles the batch.
-func TestProvisioningSendSuppressesPiggybackInsideEmitTTL(t *testing.T) {
+// A batch released by a refused turn is unread work: the next user message
+// carries it (turn-start drain, fork issue #242) and the accepted turn
+// acknowledges it. Nothing suppresses the append — acknowledging a claim
+// whose text was hidden would mark content delivered that nobody saw.
+func TestProvisioningSendPiggybacksReleasedBatchAndAcknowledgesOnAccept(t *testing.T) {
 	st, workerID := openProvisioningStore(t, domain.SessionProvisionReady)
 	ctx := context.Background()
 	now := time.Now().UTC()
@@ -224,7 +226,7 @@ func TestProvisioningSendSuppressesPiggybackInsideEmitTTL(t *testing.T) {
 	if _, err := st.CreateReport(ctx, domain.ReportRecord{
 		ID: "shown-report", SessionID: workerID, ProjectID: testProject,
 		State: domain.ReportCheckpoint, Note: "shown-report",
-		CreatedAt: now, AvailableAt: now.Add(time.Hour),
+		CreatedAt: now, AvailableAt: now,
 		DeliveryState: domain.ReportPending, RepeatCount: 1,
 	}); err != nil {
 		t.Fatal(err)
@@ -232,14 +234,11 @@ func TestProvisioningSendSuppressesPiggybackInsideEmitTTL(t *testing.T) {
 	reportCoord := reportsvc.NewCoordinator(reportsvc.CoordinatorDeps{
 		Store: st, Now: func() time.Time { return now }, NewToken: func() string { return "report-claim" },
 	})
-	// Seed the "shown once" state honestly: claim, stamp the visible-emission
-	// marker, then release the unaccepted batch back to pending.
+	// Seed the refused-turn state honestly: claim the batch, then release it
+	// back to unread when the turn is refused.
 	shown, err := reportCoord.PreparePiggyback(ctx, orchestrator.ID)
 	if err != nil || len(shown.Reports) != 1 {
 		t.Fatalf("prepare shown batch = %#v, err = %v", shown, err)
-	}
-	if visible, err := reportCoord.EmitVisible(ctx, shown); err != nil || !visible {
-		t.Fatalf("first show visible = %v, err = %v", visible, err)
 	}
 	// ReleasePiggyback returns the cause by contract; the seeded refusal is not
 	// a test failure.
@@ -254,15 +253,12 @@ func TestProvisioningSendSuppressesPiggybackInsideEmitTTL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(snapshot.Messages) != 1 || strings.Contains(snapshot.Messages[0].Text, "<ao-worker-reports>") {
-		t.Fatalf("suppressed piggyback leaked into the message: %+v", snapshot.Messages)
+	if len(snapshot.Messages) != 1 || !strings.Contains(snapshot.Messages[0].Text, "shown-report") || !strings.Contains(snapshot.Messages[0].Text, "<ao-worker-reports>") {
+		t.Fatalf("released batch did not ride the user message: %+v", snapshot.Messages)
 	}
-	if !strings.Contains(logs.String(), "worker reports piggyback suppressed within emit ttl") {
-		t.Fatalf("suppression evidence log missing: %q", logs.String())
-	}
-	settled, found, err := st.GetReport(ctx, "shown-report")
-	if err != nil || !found || settled.DeliveryState != domain.ReportAcknowledged {
-		t.Fatalf("silent ride lost the batch: %+v, found = %v, err = %v", settled, found, err)
+	accepted, found, err := st.GetReport(ctx, "shown-report")
+	if err != nil || !found || accepted.DeliveryState != domain.ReportAcknowledged {
+		t.Fatalf("accepted turn did not acknowledge the batch: %+v, found = %v, err = %v", accepted, found, err)
 	}
 }
 

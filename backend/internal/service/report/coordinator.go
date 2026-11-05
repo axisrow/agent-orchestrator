@@ -20,18 +20,10 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 )
 
-// ReportOrchestratorBackoff reschedules a due batch whose project has no
-// active orchestrator, instead of retrying it every tick forever.
-const ReportOrchestratorBackoff = time.Minute
-
-// ReportEmitTTL bounds the at-most-once window on the visible channel: a batch
-// shown once stays silent until this TTL expires, then one re-emission (which
-// refreshes the marker) is allowed so a true no-show is not lost forever.
-const ReportEmitTTL = 15 * time.Minute
-
-// ReportExpiryAge is the delivery ledger's terminal expiry: a report still
-// pending a week after creation is retired as stale instead of polling the
-// dispatcher forever. Claimed rows ride out their own attempt first.
+// ReportExpiryAge is the delivery ledger's default terminal expiry: a report
+// still unread a week after creation is retired as stale instead of polling
+// the drain forever (fork issue #242). The daemon makes it configurable via
+// AO_DELIVERY_EXPIRY_DAYS; claimed rows ride out their own attempt first.
 const ReportExpiryAge = 7 * 24 * time.Hour
 
 // ErrReportDeliveryModeUnsupported reports a target without semantic delivery.
@@ -42,14 +34,11 @@ type DeliveryStore interface {
 	ListSessions(context.Context, domain.ProjectID) ([]domain.SessionRecord, error)
 	GetProject(context.Context, string) (domain.ProjectRecord, bool, error)
 	GetSession(context.Context, domain.SessionID) (domain.SessionRecord, bool, error)
-	ListPendingReportSchedule(context.Context, int64) ([]domain.ReportRecord, error)
+	ListPendingDeliveryProjects(context.Context) ([]domain.ProjectID, error)
 	ClaimPendingReportBatch(context.Context, domain.ProjectID, string, time.Time) ([]domain.ReportRecord, error)
 	AcknowledgeReportBatch(context.Context, domain.ProjectID, string, time.Time) (int, error)
 	ReleaseReportBatch(context.Context, domain.ProjectID, string, time.Time, string) (int, error)
-	DeferReportBatch(context.Context, domain.ProjectID, string, time.Time, string) (int, error)
-	MarkReportBatchEmitted(context.Context, domain.ProjectID, string, time.Time) (int, error)
 	FailReportBatchTerminally(ctx context.Context, projectID domain.ProjectID, token, cause, lastError string) (int, error)
-	AcknowledgeAcceptedReportBatches(context.Context, domain.ProjectID, string, time.Time) (int, error)
 	ExpireStaleReportDeliveries(context.Context, time.Time) (int, error)
 }
 
@@ -67,9 +56,16 @@ type Coordinator struct {
 	now        func() time.Time
 	newToken   func() string
 	retryDelay time.Duration
-	emitTTL    time.Duration
+	expiryAge  time.Duration
 	wake       chan struct{}
 	mu         sync.Mutex
+	// injectedIdle records the sessions that already had their safe-point
+	// inject in the current idle period (fork issue #242): the drain attempts
+	// one injection per wake-from-idle, and a failed attempt waits for the
+	// recipient's next turn boundary instead of re-pasting on every pass.
+	// In-memory on purpose: the chance is loop hygiene, not durable delivery
+	// state — a daemon restart re-arms every session once (the startup drain).
+	injectedIdle map[domain.SessionID]struct{}
 	// Telemetry for the issue #101 replay cycle: claims that re-deliver a batch
 	// (delivery attempt > 1) and acknowledgments whose token no longer holds it.
 	redeliveries, lostAcknowledgements atomic.Int64
@@ -82,8 +78,10 @@ type CoordinatorDeps struct {
 	Now        func() time.Time
 	NewToken   func() string
 	RetryDelay time.Duration
-	EmitTTL    time.Duration
-	// Log receives delivery evidence lines (emissions, suppressions, anomalies).
+	// ExpiryAge is how long an unread report stays deliverable before the
+	// ledger retires it as stale (fork issue #242). Zero uses ReportExpiryAge.
+	ExpiryAge time.Duration
+	// Log receives delivery evidence lines (emissions, anomalies).
 	// A nil Log discards, keeping tests and embedders quiet by default.
 	Log *slog.Logger
 }
@@ -99,47 +97,13 @@ func NewCoordinator(d CoordinatorDeps) *Coordinator {
 	if d.RetryDelay <= 0 {
 		d.RetryDelay = 5 * time.Second
 	}
-	if d.EmitTTL <= 0 {
-		d.EmitTTL = ReportEmitTTL
+	if d.ExpiryAge <= 0 {
+		d.ExpiryAge = ReportExpiryAge
 	}
 	if d.Log == nil {
 		d.Log = slog.New(slog.DiscardHandler)
 	}
-	return &Coordinator{store: d.Store, delivery: d.Delivery, log: d.Log, now: d.Now, newToken: d.NewToken, retryDelay: d.RetryDelay, emitTTL: d.EmitTTL, wake: make(chan struct{}, 1)}
-}
-
-// emitQuietWindow escalates that window with the batch's durable delivery
-// attempts — 15m, 1h, then 6h repeating. A sleeping recipient never acks, so a
-// flat TTL re-emits the same batch visibly every cycle (fork issue #127); the
-// backoff quiets that without ever stopping: an unaccepted batch is
-// undelivered work, and going silent would repeat the #177 truncation losses
-// it is meant to surface (fork issue #179). Ledger expiry is the only exit.
-func (c *Coordinator) emitQuietWindow(attempts int64) time.Duration {
-	switch {
-	case attempts > 4:
-		return 6 * time.Hour
-	case attempts > 2:
-		return time.Hour
-	default:
-		return c.emitTTL
-	}
-}
-
-// EmitVisible gates the batch's single visible emission inside the at-most-once
-// window: a batch already shown within its escalating quiet window stays
-// silent, and the marker is stamped before the emission attempt so every later
-// failure keeps the promise. Piggyback callers append context only when this
-// returns true.
-func (c *Coordinator) EmitVisible(ctx context.Context, batch PreparedBatch) (bool, error) {
-	if at := batch.emittedAt(); !at.IsZero() {
-		if c.now().UTC().Sub(at) < c.emitQuietWindow(batch.MaxDeliveryAttempts()) {
-			return false, nil
-		}
-	}
-	if _, err := c.store.MarkReportBatchEmitted(ctx, batch.ProjectID, batch.Token, c.now().UTC()); err != nil {
-		return false, err
-	}
-	return true, nil
+	return &Coordinator{store: d.Store, delivery: d.Delivery, log: d.Log, now: d.Now, newToken: d.NewToken, retryDelay: d.RetryDelay, expiryAge: d.ExpiryAge, wake: make(chan struct{}, 1), injectedIdle: map[domain.SessionID]struct{}{}}
 }
 
 // Wake asks the coordinator to inspect durable scheduling state.
@@ -186,38 +150,46 @@ func (c *Coordinator) run(ctx context.Context) {
 	}
 }
 
-// RunDue performs bounded due delivery and returns the delay until the next
-// durable deadline. Tests call it directly with fake time.
+// RunDue performs one pull drain pass and returns how long the caller should
+// wait before the next pass. Tests call it directly with fake time.
 func (c *Coordinator) RunDue(ctx context.Context) (time.Duration, error) {
 	if c == nil || c.store == nil || c.delivery == nil {
 		return -1, errors.New("report coordinator dependencies are required")
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	// Ledger housekeeping runs once per cycle, before scheduling: expired
-	// reports leave the schedule instead of resurfacing every silent-retry
-	// step forever. A failure never blocks delivery — it only postpones expiry.
-	if expired, err := c.store.ExpireStaleReportDeliveries(ctx, c.now().UTC().Add(-ReportExpiryAge)); err != nil {
+	// Ledger housekeeping runs once per pass, before draining: expired reports
+	// leave the mailbox instead of resurfacing every pass forever. A failure
+	// never blocks delivery — it only postpones expiry.
+	if expired, err := c.store.ExpireStaleReportDeliveries(ctx, c.now().UTC().Add(-c.expiryAge)); err != nil {
 		c.log.Warn("report: stale expiry failed", "err", err)
 	} else if expired > 0 {
 		c.log.Info("report: expired stale deliveries", "reports", expired)
 	}
-	for {
-		pending, err := c.store.ListPendingReportSchedule(ctx, 1)
+	projects, err := c.store.ListPendingDeliveryProjects(ctx)
+	if err != nil {
+		return c.retryDelay, err
+	}
+	if len(projects) == 0 {
+		return -1, nil
+	}
+	// One drain attempt per project holding unread rows. A skip (busy or
+	// temporarily recipient-less project) is not an error: the row simply
+	// stays unread until the next pass finds a safe point.
+	unreadRemains := false
+	for _, projectID := range projects {
+		skipped, err := c.deliverProject(ctx, projectID)
 		if err != nil {
 			return c.retryDelay, err
 		}
-		if len(pending) == 0 {
-			return -1, nil
-		}
-		now := c.now().UTC()
-		if pending[0].AvailableAt.After(now) {
-			return pending[0].AvailableAt.Sub(now), nil
-		}
-		if err := c.deliverProject(ctx, pending[0].ProjectID); err != nil {
-			return c.retryDelay, err
-		}
+		unreadRemains = unreadRemains || skipped
 	}
+	if unreadRemains {
+		// Keep the drain cadence so a recipient waking from idle is noticed
+		// within seconds. Wake() shortens this on new emits.
+		return c.retryDelay, nil
+	}
+	return -1, nil
 }
 
 // ErrReportBatchLost reports an acknowledgment whose claim token no longer
@@ -240,17 +212,50 @@ func (c *Coordinator) ackBatch(ctx context.Context, projectID domain.ProjectID, 
 	return nil
 }
 
-func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.ProjectID) error {
+// deliverProject runs one drain attempt for a project's unread reports under
+// pull semantics (fork issue #242): a recipient that is mid-turn or blocked is
+// left unread — nothing is claimed, nothing is in flight, nothing retries.
+// It reports whether the project still holds unread rows after the attempt.
+// A recipient that can never exist (archived project, fork issue #208) is
+// terminalized on first sight: stale with the recipient_gone cause, zero
+// retries, one bell event from the terminal sweep. A temporarily absent
+// orchestrator (daemon restart, session being replaced) also just leaves the
+// rows unread — absence is never a terminal outcome; the configurable ledger
+// expiry is the only exit for a recipient that never returns.
+func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.ProjectID) (bool, error) {
+	if c.projectArchived(ctx, projectID) {
+		batch, err := c.claim(ctx, projectID)
+		if err != nil || len(batch.Reports) == 0 {
+			return false, err
+		}
+		reason := "project archived: no report recipient can exist (fork issue #208)"
+		if _, failErr := c.store.FailReportBatchTerminally(ctx, projectID, batch.Token, domain.DeliveryEventRecipientGone, reason); failErr != nil {
+			return true, failErr
+		}
+		c.log.Warn("report: batch retired terminally; project archived", "project", projectID, "batch", batch.IdempotencyKey(), "reports", len(batch.Reports), "attempts", batch.MaxDeliveryAttempts())
+		return false, nil
+	}
 	target, ok, err := c.activeOrchestrator(ctx, projectID)
 	if err != nil {
-		return err
+		return true, err
 	}
 	if !ok {
-		return c.deferWithoutOrchestrator(ctx, projectID)
+		return true, nil
+	}
+	if !deliverableActivity(target.Activity.State) {
+		// Leaving the idle period re-arms the session's safe-point chance.
+		delete(c.injectedIdle, target.ID)
+		return true, nil
+	}
+	if _, used := c.injectedIdle[target.ID]; used {
+		// This idle period already had its injection: a failed attempt waits
+		// for the recipient's next turn boundary instead of re-pasting on
+		// every pass.
+		return true, nil
 	}
 	batch, err := c.claim(ctx, projectID)
 	if err != nil || len(batch.Reports) == 0 {
-		return err
+		return false, err
 	}
 	// The replay path consults the recipient's durable acceptance before
 	// re-delivering: a checkpoint that names this batch's correlation id is
@@ -261,35 +266,22 @@ func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.Proje
 	if accepted, err := c.settleAcceptedBatch(ctx, target, batch); err != nil {
 		// Every other post-claim failure releases the claim; a transient store
 		// error must not strand the rows claimed and invisible to scheduling.
-		return c.release(ctx, batch, err)
+		return true, c.release(ctx, batch, err)
 	} else if accepted {
-		return nil
+		delete(c.injectedIdle, target.ID)
+		return false, nil
 	}
 	// Stuck reports ride the normal submit path in every session mode: the
 	// fork runs terminal orchestrators only, so there is no chat-mode
 	// interrupt lane to rate-limit (upstream #7435's chat branch removed).
-	visible, emitErr := c.EmitVisible(ctx, batch)
-	if emitErr != nil {
-		return c.release(ctx, batch, emitErr)
-	}
-	if !visible {
-		// At-most-once on the visible channel: the batch was already shown,
-		// so retry silently while the quiet window backs off — 15m, 1h, then
-		// 6h repeating. Ack fencing and its counters stay untouched. The
-		// suppression evidence is also the DB defer reason on the batch rows;
-		// this Info line keeps daemon.log greppable with the same text.
-		quiet := c.emitQuietWindow(batch.MaxDeliveryAttempts())
-		next := batch.emittedAt().Add(quiet)
-		if next.Before(c.now().UTC()) {
-			next = c.now().UTC().Add(quiet)
-		}
-		c.log.Info("report: batch already emitted; repeat suppressed until emit TTL", "batch", batch.IdempotencyKey(), "project", batch.ProjectID, "target", target.ID, "attempts", batch.MaxDeliveryAttempts())
-		_, deferErr := c.store.DeferReportBatch(ctx, batch.ProjectID, batch.Token, next, "report batch already emitted; repeat suppressed until emit TTL")
-		return deferErr
-	}
-	// Delivery evidence: a duplicate emission shows up as a second line with the
-	// same batch key and attempts > 1.
+	//
+	// Delivery evidence: a duplicate emission shows up as a second line with
+	// the same batch key and attempts > 1. The inject is going out: the idle
+	// period's safe-point chance is spent, whatever its outcome — the safe
+	// point itself is the drain's at-most-once mechanism (fork issue #242),
+	// so no emit quiet window gates it.
 	c.log.Info("report: batch emitted", "batch", batch.IdempotencyKey(), "project", batch.ProjectID, "target", target.ID, "reports", len(batch.Reports), "attempts", batch.MaxDeliveryAttempts())
+	c.injectedIdle[target.ID] = struct{}{}
 	if err := c.delivery.Submit(ctx, target.ID, batch.Render(), batch.IdempotencyKey()); err != nil {
 		// Fail loud (fork issue #179): an emission whose acceptance did not
 		// match is a failed delivery. It is never acked here — the batch backs
@@ -299,47 +291,32 @@ func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.Proje
 		c.log.Warn("report: batch delivery failed", "batch", batch.IdempotencyKey(), "project", batch.ProjectID, "target", target.ID, "attempts", batch.MaxDeliveryAttempts(), "err", err)
 		if errors.Is(err, ports.ErrPromptHeldQueued) {
 			// The target TUI queued the batch text instead of submitting a
-			// prompt (fork issue #205). Backing off would re-emit the same
+			// prompt (fork issue #205). Retrying would re-emit the same
 			// batch onto that queue forever; retire it terminally instead.
 			// The already-queued copies need a manual flush (ctrl+x ctrl+s in
 			// the session); new reports flow again once the queue is clear.
 			if _, failErr := c.store.FailReportBatchTerminally(ctx, batch.ProjectID, batch.Token, domain.DeliveryEventInjectFailed, err.Error()); failErr != nil {
-				return errors.Join(err, failErr)
+				return true, errors.Join(err, failErr)
 			}
-			return err
+			return false, err
 		}
-		return c.retryLater(ctx, batch, err)
+		// Any other refusal: the rows return to the mailbox unread and wait
+		// for the next safe-point drain.
+		return true, c.release(ctx, batch, err)
 	}
-	return c.ackBatch(ctx, batch.ProjectID, batch.Token)
+	// Delivered: the mailbox emptied, so the session's safe-point chance is
+	// spent — a later emit while still idle is a new event with a fresh one.
+	delete(c.injectedIdle, target.ID)
+	return false, c.ackBatch(ctx, batch.ProjectID, batch.Token)
 }
 
-// deferWithoutOrchestrator routes a due batch whose project has no active
-// orchestrator. It claims the batch so the attempt is durable and visible
-// (delivery_attempts, last_error) and reschedules instead of leaving a silent
-// pending head that starves every other project's due work. An archived
-// project (fork issue #208) is a recipient that can never exist again: its
-// batch retires terminally instead of deferring, because archiving is an owner
-// action and no restart can bring a recipient back. A live project's absence
-// is temporary — a daemon restart or a terminated orchestrator the owner may
-// resume or replace — so its batch keeps retrying at the orchestrator backoff
-// and is never terminalized for the absence alone; the ledger's weekly expiry
-// stays the only exit for a recipient that never returns.
-func (c *Coordinator) deferWithoutOrchestrator(ctx context.Context, projectID domain.ProjectID) error {
-	batch, err := c.claim(ctx, projectID)
-	if err != nil || len(batch.Reports) == 0 {
-		return err
-	}
-	if c.projectArchived(ctx, projectID) {
-		reason := "project archived: no report recipient can exist (fork issue #208)"
-		if _, failErr := c.store.FailReportBatchTerminally(ctx, projectID, batch.Token, domain.DeliveryEventRecipientGone, reason); failErr != nil {
-			return failErr
-		}
-		c.log.Warn("report: batch retired terminally; project archived", "project", projectID, "batch", batch.IdempotencyKey(), "reports", len(batch.Reports), "attempts", batch.MaxDeliveryAttempts())
-		return nil
-	}
-	c.log.Warn("report: project has no active orchestrator; delivery deferred", "project", projectID, "batch", batch.IdempotencyKey(), "reports", len(batch.Reports), "attempts", batch.MaxDeliveryAttempts(), "retry", ReportOrchestratorBackoff)
-	_, err = c.store.DeferReportBatch(ctx, projectID, batch.Token, c.now().UTC().Add(ReportOrchestratorBackoff), "project has no active orchestrator")
-	return err
+// deliverableActivity reports whether a recipient's current activity is a safe
+// inject point (fork issue #242): idle, or parked at an empty prompt waiting
+// for its next instruction. Mid-turn and blocked-on-a-decision surfaces are
+// left unread — writing to them queues or swallows the batch, which the
+// mailbox has no reason to risk.
+func deliverableActivity(state domain.ActivityState) bool {
+	return state == domain.ActivityIdle || state == domain.ActivityWaitingInput
 }
 
 // projectArchived reports whether the owner closed the project (fork issue
@@ -454,56 +431,6 @@ func (c *Coordinator) PreparePiggyback(ctx context.Context, target domain.Sessio
 	return batch, nil
 }
 
-// SettleEmittedReports retires shown pending batches of the target's project
-// only when the recipient's durable conversation checkpoint names a batch's
-// own correlation id: that checkpoint is the semantic acceptance of THIS batch
-// — the exit for an acceptance whose evidence arrived after the emit window
-// closed, e.g. a TUI that queued the prompt mid-turn and submitted it at the
-// turn boundary (fork issue #159). Plain prompt activity settles nothing: a
-// batch whose delivery never matched its coordination id — the signature of a
-// truncated pty write (fork issue #177) — must stay scheduled and re-emit
-// rather than pass as delivered (fork issue #179). The orchestrator-only gate
-// mirrors activeOrchestrator — batches are delivered to the project's
-// orchestrator, so activity anywhere else settles nothing — and never-emitted
-// batches always stay scheduled.
-func (c *Coordinator) SettleEmittedReports(ctx context.Context, target domain.SessionID) (int, error) {
-	if c == nil || c.store == nil || target == "" {
-		return 0, nil
-	}
-	rec, ok, err := c.store.GetSession(ctx, target)
-	if err != nil || !ok {
-		return 0, err
-	}
-	if rec.Kind != domain.KindOrchestrator || rec.IsTerminated {
-		return 0, nil
-	}
-	// The evidence mirror of semanticMessageAccepted, minus its live-generation
-	// requirement: a coordination checkpoint naming a batch's correlation id is
-	// the durable acceptance of THAT batch, and a daemon restart rotates the
-	// runtime generation without touching the checkpoint. Requiring the live
-	// launch id turned every acceptance whose settle raced a restart back into
-	// an undelivered batch — the replay then re-delivered accepted content
-	// (fork issue #184). Lineage rotations clear the checkpoint instead of
-	// leaving a foreign one, so a surviving stale-generation checkpoint always
-	// names a batch the current lineage accepted. A truncated tail still
-	// credits no coordination id and settles nothing (fork issues #177, #179).
-	accepted := rec.Metadata.ConversationCheckpointTurnID
-	if rec.Metadata.ConversationCheckpointState != domain.ConversationCheckpointCoordination {
-		accepted = ""
-	}
-	if accepted == "" {
-		return 0, nil
-	}
-	n, err := c.store.AcknowledgeAcceptedReportBatches(ctx, rec.ProjectID, accepted, c.now().UTC())
-	if err != nil {
-		return 0, err
-	}
-	if n > 0 {
-		c.log.Info("report: accepted batches settled by matched semantic acceptance", "project", rec.ProjectID, "target", target, "batch", accepted, "reports", n)
-	}
-	return n, nil
-}
-
 // settleAcceptedBatch retires the claimed batch when the target orchestrator's
 // durable coordination checkpoint names its correlation id. It is the
 // dispatcher-side half of the restart dedup (fork issue #184): an acceptance
@@ -545,17 +472,6 @@ func (c *Coordinator) release(ctx context.Context, batch PreparedBatch, cause er
 	if releaseErr != nil {
 		c.log.Warn("report: batch release failed", "batch", batch.IdempotencyKey(), "project", batch.ProjectID, "err", releaseErr)
 		return errors.Join(cause, releaseErr)
-	}
-	return cause
-}
-
-// retryLater queues a refused submission behind every report that is already
-// due. Schedule selection takes the earliest pending report across projects,
-// so an orchestrator that keeps refusing must not hold that place.
-func (c *Coordinator) retryLater(ctx context.Context, batch PreparedBatch, cause error) error {
-	_, deferErr := c.store.DeferReportBatch(ctx, batch.ProjectID, batch.Token, c.now().UTC().Add(c.retryDelay), cause.Error())
-	if deferErr != nil {
-		return errors.Join(cause, deferErr)
 	}
 	return cause
 }
@@ -642,17 +558,6 @@ func reportSessionLink(r domain.ReportRecord) string {
 	label := strings.NewReplacer("\\", "\\\\", "[", "\\[", "]", "\\]", "\n", " ").Replace(reportDisplayNameOrID(r))
 	href := "ao://sessions/" + url.PathEscape(string(r.ProjectID)) + "/" + url.PathEscape(string(r.SessionID))
 	return "[" + label + "](" + href + ")"
-}
-
-// emittedAt is the durable visible-emission marker shared by the batch rows.
-func (b PreparedBatch) emittedAt() time.Time {
-	var latest time.Time
-	for _, report := range b.Reports {
-		if report.EmittedAt.After(latest) {
-			latest = report.EmittedAt
-		}
-	}
-	return latest
 }
 
 func coalesceReports(in []domain.ReportRecord) []domain.ReportRecord {

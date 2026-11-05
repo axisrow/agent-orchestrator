@@ -70,7 +70,9 @@ func ClassifyDeliveryCause(lastError string) (class string, zombie bool) {
 		}
 	}
 	if lastError == "" {
-		return "unknown", false
+		// Pull semantics (fork issue #242): an unread row carries no failure
+		// text — it simply has not reached a safe-point drain yet.
+		return "unread backlog", false
 	}
 	if len(lastError) > 200 {
 		return lastError[:200], false

@@ -1282,7 +1282,7 @@ type SessionPRFacts struct {
 	URL            string                `json:"url"`
 	Number         int                   `json:"number"`
 	State          string                `json:"state" enum:"draft,open,merged,closed"`
-	CI             domain.CIState        `json:"ci" enum:"unknown,pending,passing,failing"`
+	CI             domain.CIState        `json:"ci" enum:"unknown,pending,passing,failing,none"`
 	Review         domain.ReviewDecision `json:"review" enum:"none,approved,changes_requested,review_required"`
 	Mergeability   domain.Mergeability   `json:"mergeability" enum:"unknown,mergeable,conflicting,blocked,unstable"`
 	ReviewComments bool                  `json:"reviewComments"`
@@ -1323,7 +1323,7 @@ type SessionPRSummary struct {
 
 // SessionPRCISummary is the CI status block for a session PR summary.
 type SessionPRCISummary struct {
-	State         domain.CIState          `json:"state" enum:"unknown,pending,passing,failing"`
+	State         domain.CIState          `json:"state" enum:"unknown,pending,passing,failing,none"`
 	FailingChecks []SessionPRFailingCheck `json:"failingChecks"`
 	AutoInjectCI  bool                    `json:"autoInjectCI"`
 }

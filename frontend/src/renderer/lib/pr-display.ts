@@ -28,7 +28,7 @@ function detectProviderFromUrl(url: string): "github" | "gitlab" {
 }
 
 const prStateRank: Record<PRState, number> = { open: 0, draft: 1, merged: 2, closed: 3 };
-const ciStates = new Set<SessionPRSummary["ci"]["state"]>(["unknown", "pending", "passing", "failing"]);
+const ciStates = new Set<SessionPRSummary["ci"]["state"]>(["unknown", "pending", "passing", "failing", "none"]);
 const reviewDecisions = new Set<SessionPRSummary["review"]["decision"]>([
 	"none",
 	"approved",
@@ -219,6 +219,10 @@ export function prCardPresentation(pr: SessionPRSummary, aoReview?: PRReviewStat
 			supporting.push(cardStatus("ci", "pr.card.checksPending", "validating", undefined, [], prChecksUrl(pr), true, pr.ciPendingSince ?? undefined));
 		} else if (pr.ci.state === "unknown") {
 			supporting.push(cardStatus("ci", "pr.card.checksLoading", "passive", undefined, [], prChecksUrl(pr), true));
+		} else if (pr.ci.state === "none") {
+			// Terminal provider verdict, not a load (issue #170): the head commit
+			// has no checks, so this row must never breathe.
+			supporting.push(cardStatus("ci", "pr.card.noChecks", "passive", undefined, [], prChecksUrl(pr)));
 		}
 	}
 	if (pr.state === "open") {
@@ -232,6 +236,8 @@ export function prCardPresentation(pr: SessionPRSummary, aoReview?: PRReviewStat
 			statusRows.push(cardStatus("ci", "pr.card.checksFailing", "error", undefined, [], prChecksUrl(pr)));
 		} else if (mergeReasons(pr).includes("github_checks_unavailable")) {
 			statusRows.push(cardStatus("ci", "pr.card.checksUnavailable", "warning", undefined, [], prChecksUrl(pr)));
+		} else if (pr.ci.state === "none") {
+			statusRows.push(cardStatus("ci", "pr.card.noChecks", "passive", undefined, [], prChecksUrl(pr)));
 		} else if (pr.ci.state === "pending" || pr.ci.state === "unknown") {
 			statusRows.push(cardStatus("ci", pr.ci.state === "pending" ? "pr.card.checksPending" : "pr.card.checksLoading", pr.ci.state === "pending" ? "validating" : "passive", undefined, [], prChecksUrl(pr), true, pr.ci.state === "pending" ? pr.ciPendingSince ?? undefined : undefined));
 		}
@@ -278,6 +284,7 @@ function cardStatus(
 		| "pr.card.mergeUnavailable"
 		| "pr.card.checksPending"
 		| "pr.card.checksLoading"
+		| "pr.card.noChecks"
 		| "pr.card.checksUnavailable"
 		| "pr.card.draft"
 		| "pr.card.readyToMerge"
@@ -302,7 +309,9 @@ function cardStatus(
 export function prCanMerge(pr: SessionPRSummary): boolean {
 	return (
 		pr.state === "open" &&
-		pr.ci.state === "passing" &&
+		// "none" means the provider confirmed the head commit has no checks:
+		// nothing can run or fail, so it cannot hold the merge back (issue #170).
+		(pr.ci.state === "passing" || pr.ci.state === "none") &&
 		pr.mergeability.state === "mergeable" &&
 		reviewAllowsMerge(pr.review.decision) &&
 		!pr.review.hasUnresolvedHumanComments
@@ -591,6 +600,8 @@ function ciLabel(state: SessionPRSummary["ci"]["state"]): string {
 			return appI18n.t("pr.ci.failing");
 		case "pending":
 			return appI18n.t("pr.ci.pending");
+		case "none":
+			return appI18n.t("pr.ci.noChecks");
 		case "unknown":
 			return appI18n.t("pr.ci.checking");
 	}
@@ -604,6 +615,7 @@ function ciTone(state: SessionPRSummary["ci"]["state"]): PRDisplayTone {
 			return "error";
 		case "pending":
 			return "validating";
+		case "none":
 		case "unknown":
 			return "passive";
 	}

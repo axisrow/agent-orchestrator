@@ -115,21 +115,17 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (domain.ReportR
 	}
 
 	now := s.now().UTC()
-	var availableAt time.Time
+	// Pull semantics (fork issue #242): a report lands in the recipient's
+	// mailbox immediately. The settle window is no longer a delivery delay —
+	// it survives only as the done row's durable settlement_deadline fact.
 	var settlementDeadline time.Time
-	switch input.State {
-	case domain.ReportDone:
+	if input.State == domain.ReportDone {
 		settlementDeadline = now.Add(domain.ReportSettlementWindow)
-		availableAt = settlementDeadline
-	case domain.ReportNeedsInput, domain.ReportStuck:
-		availableAt = now
-	default:
-		availableAt = now.Add(domain.ReportBatchFallback)
 	}
 	rec := domain.ReportRecord{
 		ID: s.newID(), SessionID: session.ID, ProjectID: session.ProjectID,
 		State: input.State, Note: input.Note, Message: input.Message, Outputs: input.Outputs,
-		CreatedAt: now, DeliveryState: domain.ReportPending, AvailableAt: availableAt,
+		CreatedAt: now, DeliveryState: domain.ReportPending, AvailableAt: now,
 		SettlementDeadline: settlementDeadline, RepeatCount: 1,
 	}
 	created, err := s.store.CreateReport(ctx, rec)
