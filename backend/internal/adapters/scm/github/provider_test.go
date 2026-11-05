@@ -1325,6 +1325,49 @@ func TestCISummaryFromGraphQLRunningOutranksSettledFailure(t *testing.T) {
 	}
 }
 
+// TestSCMObservationEmptyRollupIsNoChecks pins issue #170: a commit with no
+// check runs and no status contexts is a terminal "no checks" verdict, not a
+// loading state. With mergeStateStatus CLEAN the same observation must keep
+// mergeability mergeable — a docs-only PR in a repo without CI is mergeable,
+// and the card must not wait forever for checks that will never exist.
+func TestSCMObservationEmptyRollupIsNoChecks(t *testing.T) {
+	pr := rollupPR("")
+	pr["mergeable"] = "MERGEABLE"
+	pr["mergeStateStatus"] = "CLEAN"
+	obs := scmObservationFromGraphQL(ports.SCMPRRef{Repo: ports.SCMRepo{Provider: "github", Host: "github.com", Owner: "octocat", Name: "hello", Repo: "octocat/hello"}, Number: 42}, pr)
+	if obs.CI.Summary != string(domain.CINone) {
+		t.Fatalf("observer CI summary = %q, want none for an empty rollup", obs.CI.Summary)
+	}
+	if obs.Mergeability.State != string(domain.MergeMergeable) {
+		t.Fatalf("mergeability = %q, want mergeable with no checks and CLEAN", obs.Mergeability.State)
+	}
+}
+
+// TestCISummaryFromGraphQLEmptyRollupIsNoChecks pins the same verdict on the
+// per-URL Observe path so both classification paths agree: a nil rollup with
+// a present commit is "no checks"; an incomplete payload (no commits) stays
+// unknown.
+func TestCISummaryFromGraphQLEmptyRollupIsNoChecks(t *testing.T) {
+	noChecks := ciSummaryFromGraphQL(rollupPR(""))
+	if noChecks != domain.CINone {
+		t.Fatalf("ciSummaryFromGraphQL(empty rollup) = %q, want none", noChecks)
+	}
+
+	nilRollupWithCommit := map[string]any{
+		"commits": map[string]any{"nodes": []any{
+			map[string]any{"commit": map[string]any{"oid": "abc123"}},
+		}},
+	}
+	if got := ciSummaryFromGraphQL(nilRollupWithCommit); got != domain.CINone {
+		t.Fatalf("ciSummaryFromGraphQL(nil rollup with commit) = %q, want none", got)
+	}
+
+	incomplete := map[string]any{"commits": map[string]any{"nodes": []any{}}}
+	if got := ciSummaryFromGraphQL(incomplete); got != domain.CIUnknown {
+		t.Fatalf("ciSummaryFromGraphQL(no commits) = %q, want unknown", got)
+	}
+}
+
 func TestSCMObservationUsesRollupStateWhenContextsPaginated(t *testing.T) {
 	fx := basePRFixture()
 	var pr map[string]any

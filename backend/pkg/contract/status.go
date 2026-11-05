@@ -58,6 +58,9 @@ const (
 	CIPending CIState = "pending"
 	CIPassing CIState = "passing"
 	CIFailing CIState = "failing"
+	// CINone is a terminal verdict from a successful provider fetch: the head
+	// commit has no check runs and no status contexts, so nothing is loading.
+	CINone CIState = "none"
 )
 
 // ReviewDecision is the aggregate human-review verdict on a pull request.

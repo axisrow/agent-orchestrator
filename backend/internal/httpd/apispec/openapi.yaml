@@ -18307,6 +18307,7 @@ components:
           - pending
           - passing
           - failing
+          - none
           type: string
       required:
       - state
@@ -18330,6 +18331,7 @@ components:
           - pending
           - passing
           - failing
+          - none
           type: string
         mergeability:
           enum:
