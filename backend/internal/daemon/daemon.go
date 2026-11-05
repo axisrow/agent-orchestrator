@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -751,9 +752,10 @@ func Run() error {
 		}
 	}})
 	reportCoordinator = reportsvc.NewCoordinator(reportsvc.CoordinatorDeps{
-		Store:    store,
-		Delivery: reportSemanticDelivery{chat: chatSvc, sessions: reportSessions, store: store},
-		Log:      log,
+		Store:     store,
+		Delivery:  reportSemanticDelivery{chat: chatSvc, sessions: reportSessions, store: store},
+		Log:       log,
+		ExpiryAge: reportExpiryAgeFromEnv(os.Getenv),
 	})
 	chatSvc.SetReportCoordinator(reportCoordinator)
 	// PR merge notices (fork issue #243): lifecycle one-shot project facts ride
@@ -1516,6 +1518,23 @@ func (d reportSemanticDelivery) Interrupt(ctx context.Context, id domain.Session
 		return nil
 	}
 	return err
+}
+
+// reportExpiryAgeEnv is how long an unread report stays deliverable before the
+// ledger retires it as stale (fork issue #242), in whole days. Zero or
+// unparseable values keep the coordinator default.
+const reportExpiryAgeEnv = "AO_DELIVERY_EXPIRY_DAYS"
+
+func reportExpiryAgeFromEnv(getenv func(string) string) time.Duration {
+	raw := strings.TrimSpace(getenv(reportExpiryAgeEnv))
+	if raw == "" {
+		return reportsvc.ReportExpiryAge
+	}
+	days, err := strconv.Atoi(raw)
+	if err != nil || days <= 0 {
+		return reportsvc.ReportExpiryAge
+	}
+	return time.Duration(days) * 24 * time.Hour
 }
 
 func installedAgentHarness(target systeminstall.Target) (string, bool) {

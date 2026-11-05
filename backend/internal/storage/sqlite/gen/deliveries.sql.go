@@ -11,115 +11,6 @@ import (
 	"time"
 )
 
-const acknowledgeAcceptedPendingReports = `-- name: AcknowledgeAcceptedPendingReports :many
-UPDATE deliveries
-SET delivery_state = 'acknowledged', acknowledged_at = ?1,
-    claim_token = 'activity-ack', claimed_at = ?1
-WHERE project_id = ?2 AND delivery_state = 'pending'
-  AND emitted_at IS NOT NULL
-  AND delivery_batch_id = ?3
-RETURNING id, kind, session_id, project_id, recipient_session_id, state, note, message, created_at, delivery_state, available_at, settlement_deadline, repeat_count, claim_token, claimed_at, delivery_attempts, acknowledged_at, last_error, emitted_at, delivery_batch_id
-`
-
-type AcknowledgeAcceptedPendingReportsParams struct {
-	AcknowledgedAt  sql.NullTime
-	ProjectID       string
-	DeliveryBatchID string
-}
-
-// The acceptance-gated settle (fork issue #179): only batches whose durable
-// correlation id is named by the recipient's current coordination checkpoint
-// settle - that checkpoint is the semantic acceptance of THIS batch, possibly
-// after the emit window closed. A truncated tail has no opening tag, credits
-// no coordination id, and plain prompt activity names no batch: such rows
-// stay pending and re-emit instead of passing as delivered.
-// The synthetic claim token exists only to satisfy the delivery-state CHECK:
-// acknowledged rows must carry a token, and nothing reads it after the ack.
-func (q *Queries) AcknowledgeAcceptedPendingReports(ctx context.Context, arg AcknowledgeAcceptedPendingReportsParams) ([]Delivery, error) {
-	rows, err := q.db.QueryContext(ctx, acknowledgeAcceptedPendingReports, arg.AcknowledgedAt, arg.ProjectID, arg.DeliveryBatchID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Delivery{}
-	for rows.Next() {
-		var i Delivery
-		if err := rows.Scan(
-			&i.ID,
-			&i.Kind,
-			&i.SessionID,
-			&i.ProjectID,
-			&i.RecipientSessionID,
-			&i.State,
-			&i.Note,
-			&i.Message,
-			&i.CreatedAt,
-			&i.DeliveryState,
-			&i.AvailableAt,
-			&i.SettlementDeadline,
-			&i.RepeatCount,
-			&i.ClaimToken,
-			&i.ClaimedAt,
-			&i.DeliveryAttempts,
-			&i.AcknowledgedAt,
-			&i.LastError,
-			&i.EmittedAt,
-			&i.DeliveryBatchID,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const acknowledgeReport = `-- name: AcknowledgeReport :one
-UPDATE deliveries
-SET delivery_state = 'acknowledged', acknowledged_at = ?1
-WHERE id = ?2 AND delivery_state = 'claimed' AND claim_token = ?3
-RETURNING id, kind, session_id, project_id, recipient_session_id, state, note, message, created_at, delivery_state, available_at, settlement_deadline, repeat_count, claim_token, claimed_at, delivery_attempts, acknowledged_at, last_error, emitted_at, delivery_batch_id
-`
-
-type AcknowledgeReportParams struct {
-	AcknowledgedAt sql.NullTime
-	ID             string
-	ClaimToken     string
-}
-
-func (q *Queries) AcknowledgeReport(ctx context.Context, arg AcknowledgeReportParams) (Delivery, error) {
-	row := q.db.QueryRowContext(ctx, acknowledgeReport, arg.AcknowledgedAt, arg.ID, arg.ClaimToken)
-	var i Delivery
-	err := row.Scan(
-		&i.ID,
-		&i.Kind,
-		&i.SessionID,
-		&i.ProjectID,
-		&i.RecipientSessionID,
-		&i.State,
-		&i.Note,
-		&i.Message,
-		&i.CreatedAt,
-		&i.DeliveryState,
-		&i.AvailableAt,
-		&i.SettlementDeadline,
-		&i.RepeatCount,
-		&i.ClaimToken,
-		&i.ClaimedAt,
-		&i.DeliveryAttempts,
-		&i.AcknowledgedAt,
-		&i.LastError,
-		&i.EmittedAt,
-		&i.DeliveryBatchID,
-	)
-	return i, err
-}
-
 const acknowledgeReportBatch = `-- name: AcknowledgeReportBatch :many
 UPDATE deliveries
 SET delivery_state = 'acknowledged', acknowledged_at = ?1
@@ -261,49 +152,6 @@ func (q *Queries) ClaimPendingReportsByBatch(ctx context.Context, arg ClaimPendi
 	return items, nil
 }
 
-const claimReport = `-- name: ClaimReport :one
-UPDATE deliveries
-SET delivery_state = 'claimed', claim_token = ?1,
-    claimed_at = ?2, delivery_attempts = delivery_attempts + 1,
-    last_error = ''
-WHERE id = ?3 AND delivery_state = 'pending' AND available_at <= ?2
-RETURNING id, kind, session_id, project_id, recipient_session_id, state, note, message, created_at, delivery_state, available_at, settlement_deadline, repeat_count, claim_token, claimed_at, delivery_attempts, acknowledged_at, last_error, emitted_at, delivery_batch_id
-`
-
-type ClaimReportParams struct {
-	ClaimToken string
-	ClaimedAt  sql.NullTime
-	ID         string
-}
-
-func (q *Queries) ClaimReport(ctx context.Context, arg ClaimReportParams) (Delivery, error) {
-	row := q.db.QueryRowContext(ctx, claimReport, arg.ClaimToken, arg.ClaimedAt, arg.ID)
-	var i Delivery
-	err := row.Scan(
-		&i.ID,
-		&i.Kind,
-		&i.SessionID,
-		&i.ProjectID,
-		&i.RecipientSessionID,
-		&i.State,
-		&i.Note,
-		&i.Message,
-		&i.CreatedAt,
-		&i.DeliveryState,
-		&i.AvailableAt,
-		&i.SettlementDeadline,
-		&i.RepeatCount,
-		&i.ClaimToken,
-		&i.ClaimedAt,
-		&i.DeliveryAttempts,
-		&i.AcknowledgedAt,
-		&i.LastError,
-		&i.EmittedAt,
-		&i.DeliveryBatchID,
-	)
-	return i, err
-}
-
 const createReport = `-- name: CreateReport :one
 INSERT INTO deliveries (
     id, session_id, project_id, state, note, message, created_at, available_at,
@@ -389,84 +237,21 @@ func (q *Queries) CreateReportOutput(ctx context.Context, arg CreateReportOutput
 	return err
 }
 
-const deferReportBatch = `-- name: DeferReportBatch :many
-UPDATE deliveries
-SET delivery_state = 'pending', available_at = max(available_at, ?1),
-    claim_token = '', claimed_at = NULL, last_error = ?2
-WHERE project_id = ?3 AND delivery_state = 'claimed'
-  AND claim_token = ?4
-RETURNING id, kind, session_id, project_id, recipient_session_id, state, note, message, created_at, delivery_state, available_at, settlement_deadline, repeat_count, claim_token, claimed_at, delivery_attempts, acknowledged_at, last_error, emitted_at, delivery_batch_id
-`
-
-type DeferReportBatchParams struct {
-	AvailableAt interface{}
-	LastError   string
-	ProjectID   string
-	ClaimToken  string
-}
-
-func (q *Queries) DeferReportBatch(ctx context.Context, arg DeferReportBatchParams) ([]Delivery, error) {
-	rows, err := q.db.QueryContext(ctx, deferReportBatch,
-		arg.AvailableAt,
-		arg.LastError,
-		arg.ProjectID,
-		arg.ClaimToken,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Delivery{}
-	for rows.Next() {
-		var i Delivery
-		if err := rows.Scan(
-			&i.ID,
-			&i.Kind,
-			&i.SessionID,
-			&i.ProjectID,
-			&i.RecipientSessionID,
-			&i.State,
-			&i.Note,
-			&i.Message,
-			&i.CreatedAt,
-			&i.DeliveryState,
-			&i.AvailableAt,
-			&i.SettlementDeadline,
-			&i.RepeatCount,
-			&i.ClaimToken,
-			&i.ClaimedAt,
-			&i.DeliveryAttempts,
-			&i.AcknowledgedAt,
-			&i.LastError,
-			&i.EmittedAt,
-			&i.DeliveryBatchID,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const expireStalePendingReports = `-- name: ExpireStalePendingReports :many
 UPDATE deliveries
-SET delivery_state = 'stale'
+SET delivery_state = 'stale',
+    last_error = 'expired unread past the delivery ledger window'
 WHERE kind = 'report' AND delivery_state = 'pending'
   AND created_at < ?1
 RETURNING id, kind, session_id, project_id, recipient_session_id, state, note, message, created_at, delivery_state, available_at, settlement_deadline, repeat_count, claim_token, claimed_at, delivery_attempts, acknowledged_at, last_error, emitted_at, delivery_batch_id
 `
 
 // Terminal expiry of the delivery ledger: pending report rows older than the
-// cutoff stop retrying forever and stay readable as stale. Claims in flight
-// are untouched; their own attempt fences them.
+// cutoff stop waiting for a safe-point drain forever and stay readable as
+// stale. Claims in flight are untouched; their own attempt fences them.
 // (ASCII-only comment: a unicode dash here breaks sqlc v1.31.1 query parsing.)
-// RETURNING * feeds the delivery-events journal (expired cause per row).
+// RETURNING * feeds the delivery-events journal (expired cause per row); the
+// stamped last_error is the terminal sweep's readable cause.
 func (q *Queries) ExpireStalePendingReports(ctx context.Context, cutoff time.Time) ([]Delivery, error) {
 	rows, err := q.db.QueryContext(ctx, expireStalePendingReports, cutoff)
 	if err != nil {
@@ -618,103 +403,29 @@ func (q *Queries) GetReportInterrupt(ctx context.Context, sessionID string) (tim
 	return last_interrupted_at, err
 }
 
-const listPendingReportSchedule = `-- name: ListPendingReportSchedule :many
-SELECT id, kind, session_id, project_id, recipient_session_id, state, note, message, created_at, delivery_state, available_at, settlement_deadline, repeat_count, claim_token, claimed_at, delivery_attempts, acknowledged_at, last_error, emitted_at, delivery_batch_id FROM deliveries
-WHERE delivery_state = 'pending'
-ORDER BY available_at, created_at, id
-LIMIT ?
+const listPendingDeliveryProjects = `-- name: ListPendingDeliveryProjects :many
+SELECT DISTINCT project_id FROM deliveries
+WHERE kind = 'report' AND delivery_state = 'pending'
+ORDER BY project_id
 `
 
-func (q *Queries) ListPendingReportSchedule(ctx context.Context, limit int64) ([]Delivery, error) {
-	rows, err := q.db.QueryContext(ctx, listPendingReportSchedule, limit)
+// Pull-semantics drain pass: every project currently holding unread report
+// rows, once each. Availability plays no part - under pull semantics every
+// unread row is due; the recipient's activity state decides when the drain
+// actually injects.
+func (q *Queries) ListPendingDeliveryProjects(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listPendingDeliveryProjects)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Delivery{}
+	items := []string{}
 	for rows.Next() {
-		var i Delivery
-		if err := rows.Scan(
-			&i.ID,
-			&i.Kind,
-			&i.SessionID,
-			&i.ProjectID,
-			&i.RecipientSessionID,
-			&i.State,
-			&i.Note,
-			&i.Message,
-			&i.CreatedAt,
-			&i.DeliveryState,
-			&i.AvailableAt,
-			&i.SettlementDeadline,
-			&i.RepeatCount,
-			&i.ClaimToken,
-			&i.ClaimedAt,
-			&i.DeliveryAttempts,
-			&i.AcknowledgedAt,
-			&i.LastError,
-			&i.EmittedAt,
-			&i.DeliveryBatchID,
-		); err != nil {
+		var project_id string
+		if err := rows.Scan(&project_id); err != nil {
 			return nil, err
 		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listPendingReports = `-- name: ListPendingReports :many
-SELECT id, kind, session_id, project_id, recipient_session_id, state, note, message, created_at, delivery_state, available_at, settlement_deadline, repeat_count, claim_token, claimed_at, delivery_attempts, acknowledged_at, last_error, emitted_at, delivery_batch_id FROM deliveries
-WHERE delivery_state = 'pending' AND available_at <= ?
-ORDER BY created_at, id
-LIMIT ?
-`
-
-type ListPendingReportsParams struct {
-	AvailableAt time.Time
-	Limit       int64
-}
-
-func (q *Queries) ListPendingReports(ctx context.Context, arg ListPendingReportsParams) ([]Delivery, error) {
-	rows, err := q.db.QueryContext(ctx, listPendingReports, arg.AvailableAt, arg.Limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Delivery{}
-	for rows.Next() {
-		var i Delivery
-		if err := rows.Scan(
-			&i.ID,
-			&i.Kind,
-			&i.SessionID,
-			&i.ProjectID,
-			&i.RecipientSessionID,
-			&i.State,
-			&i.Note,
-			&i.Message,
-			&i.CreatedAt,
-			&i.DeliveryState,
-			&i.AvailableAt,
-			&i.SettlementDeadline,
-			&i.RepeatCount,
-			&i.ClaimToken,
-			&i.ClaimedAt,
-			&i.DeliveryAttempts,
-			&i.AcknowledgedAt,
-			&i.LastError,
-			&i.EmittedAt,
-			&i.DeliveryBatchID,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
+		items = append(items, project_id)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -1005,66 +716,6 @@ func (q *Queries) ListStuckDeliveryCandidates(ctx context.Context, arg ListStuck
 	return items, nil
 }
 
-const markReportBatchEmitted = `-- name: MarkReportBatchEmitted :many
-UPDATE deliveries
-SET emitted_at = ?1
-WHERE project_id = ?2 AND delivery_state = 'claimed'
-  AND claim_token = ?3
-RETURNING id, kind, session_id, project_id, recipient_session_id, state, note, message, created_at, delivery_state, available_at, settlement_deadline, repeat_count, claim_token, claimed_at, delivery_attempts, acknowledged_at, last_error, emitted_at, delivery_batch_id
-`
-
-type MarkReportBatchEmittedParams struct {
-	EmittedAt  sql.NullTime
-	ProjectID  string
-	ClaimToken string
-}
-
-// RETURNING * feeds the delivery-events journal: the visible emission is a
-// journal transition (emit_visible), not a silent stamp.
-func (q *Queries) MarkReportBatchEmitted(ctx context.Context, arg MarkReportBatchEmittedParams) ([]Delivery, error) {
-	rows, err := q.db.QueryContext(ctx, markReportBatchEmitted, arg.EmittedAt, arg.ProjectID, arg.ClaimToken)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Delivery{}
-	for rows.Next() {
-		var i Delivery
-		if err := rows.Scan(
-			&i.ID,
-			&i.Kind,
-			&i.SessionID,
-			&i.ProjectID,
-			&i.RecipientSessionID,
-			&i.State,
-			&i.Note,
-			&i.Message,
-			&i.CreatedAt,
-			&i.DeliveryState,
-			&i.AvailableAt,
-			&i.SettlementDeadline,
-			&i.RepeatCount,
-			&i.ClaimToken,
-			&i.ClaimedAt,
-			&i.DeliveryAttempts,
-			&i.AcknowledgedAt,
-			&i.LastError,
-			&i.EmittedAt,
-			&i.DeliveryBatchID,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const putReportInterrupt = `-- name: PutReportInterrupt :exec
 INSERT INTO report_worker_interrupts (session_id, last_interrupted_at)
 VALUES (?, ?)
@@ -1079,54 +730,6 @@ type PutReportInterruptParams struct {
 func (q *Queries) PutReportInterrupt(ctx context.Context, arg PutReportInterruptParams) error {
 	_, err := q.db.ExecContext(ctx, putReportInterrupt, arg.SessionID, arg.LastInterruptedAt)
 	return err
-}
-
-const releaseReport = `-- name: ReleaseReport :one
-UPDATE deliveries
-SET delivery_state = 'pending', available_at = ?1,
-    claim_token = '', claimed_at = NULL, last_error = ?2
-WHERE id = ?3 AND delivery_state = 'claimed' AND claim_token = ?4
-RETURNING id, kind, session_id, project_id, recipient_session_id, state, note, message, created_at, delivery_state, available_at, settlement_deadline, repeat_count, claim_token, claimed_at, delivery_attempts, acknowledged_at, last_error, emitted_at, delivery_batch_id
-`
-
-type ReleaseReportParams struct {
-	AvailableAt time.Time
-	LastError   string
-	ID          string
-	ClaimToken  string
-}
-
-func (q *Queries) ReleaseReport(ctx context.Context, arg ReleaseReportParams) (Delivery, error) {
-	row := q.db.QueryRowContext(ctx, releaseReport,
-		arg.AvailableAt,
-		arg.LastError,
-		arg.ID,
-		arg.ClaimToken,
-	)
-	var i Delivery
-	err := row.Scan(
-		&i.ID,
-		&i.Kind,
-		&i.SessionID,
-		&i.ProjectID,
-		&i.RecipientSessionID,
-		&i.State,
-		&i.Note,
-		&i.Message,
-		&i.CreatedAt,
-		&i.DeliveryState,
-		&i.AvailableAt,
-		&i.SettlementDeadline,
-		&i.RepeatCount,
-		&i.ClaimToken,
-		&i.ClaimedAt,
-		&i.DeliveryAttempts,
-		&i.AcknowledgedAt,
-		&i.LastError,
-		&i.EmittedAt,
-		&i.DeliveryBatchID,
-	)
-	return i, err
 }
 
 const releaseReportBatch = `-- name: ReleaseReportBatch :many
@@ -1326,9 +929,9 @@ type SupersedeSessionPendingReportsParams struct {
 // delivering them after a fresh instruction would present stale work as
 // current status. Split into pending and claimed queries so the journal
 // records the precise from-state per row. Claimed rows retire too: a claim
-// released by a failed cycle or restart requeue would otherwise return to
+// released by a failed drain or restart requeue would otherwise return to
 // pending and deliver after the new prompt. The in-flight attempt's
-// token-fenced ack and defer become no-ops, which the coordinator reports as
+// token-fenced ack becomes a no-op, which the coordinator reports as
 // a lost claim instead of passing as success.
 func (q *Queries) SupersedeSessionPendingReports(ctx context.Context, arg SupersedeSessionPendingReportsParams) ([]Delivery, error) {
 	rows, err := q.db.QueryContext(ctx, supersedeSessionPendingReports, arg.Reason, arg.SessionID)

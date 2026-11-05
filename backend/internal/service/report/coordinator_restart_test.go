@@ -54,7 +54,7 @@ func newRestartFixture(t *testing.T) *restartFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	orch, err := s.CreateSession(ctx, domain.SessionRecord{ProjectID: "ao", Kind: domain.KindOrchestrator, Mode: domain.SessionModeChat, Harness: domain.HarnessClaudeCode, Activity: domain.Activity{State: domain.ActivityActive, LastActivityAt: now}, CreatedAt: now, UpdatedAt: now})
+	orch, err := s.CreateSession(ctx, domain.SessionRecord{ProjectID: "ao", Kind: domain.KindOrchestrator, Mode: domain.SessionModeChat, Harness: domain.HarnessClaudeCode, Activity: domain.Activity{State: domain.ActivityIdle, LastActivityAt: now}, CreatedAt: now, UpdatedAt: now})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,44 +111,34 @@ func TestRestartAcknowledgedBatchIsNotRedelivered(t *testing.T) {
 	}
 }
 
-// A batch whose delivery the restart interrupted (claim + emission landed, the
-// acknowledgment never did) is delivered exactly once after start: silent
-// inside the emit quiet window, one re-emission past it (issue #184, acceptance 2).
-func TestRestartInterruptedBatchReplaysExactlyOnce(t *testing.T) {
+// A batch whose delivery the restart interrupted (claim and emission landed,
+// the acknowledgment never did) is unread work again after the recovery
+// requeue: the first safe-point drain re-injects it exactly once, and the
+// acknowledged batch never rides again. The crash window can show the content
+// twice — the pull mailbox's documented trade for never losing a report
+// (fork issue #242).
+func TestRestartInterruptedBatchReinjectsOnceAtNextSafePoint(t *testing.T) {
 	f := newRestartFixture(t)
 	defer f.store.Close()
 	ctx := context.Background()
 	f.addReport(t, "rpt_lost")
 
-	// Crash window: claim and emission are durable, the ack never lands.
-	now := f.now
+	// Crash window: the turn claimed the batch, the pane write went out, and
+	// the acknowledgment never landed.
 	c := f.newCoordinator()
 	batch, err := c.PreparePiggyback(ctx, f.orch)
 	if err != nil || len(batch.Reports) != 1 {
 		t.Fatalf("prepare = %#v, err = %v", batch, err)
 	}
-	if visible, err := c.EmitVisible(ctx, batch); err != nil || !visible {
-		t.Fatalf("emit visible = %v, err = %v", visible, err)
-	}
 	f.requeue(t)
 
-	// Fresh daemon, same store: inside the quiet window the batch stays silent.
-	if _, err := f.newCoordinator().RunDue(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if len(f.delivery.submissions) != 0 {
-		t.Fatalf("post-restart submissions inside quiet window = %d, want 0", len(f.delivery.submissions))
-	}
-	// Past the quiet window exactly one re-emission carries the batch. The
-	// in-window suppression cycle claimed once (attempts 1 -> 2), so its own
-	// escalated quiet window (1h) is what now has to elapse.
-	now = now.Add(61 * time.Minute)
-	f.now = now
+	// Fresh daemon, same store: the recipient is idle, so the first drain pass
+	// delivers the recovered batch exactly once.
 	if _, err := f.newCoordinator().RunDue(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.delivery.submissions) != 1 {
-		t.Fatalf("post-quiet submissions = %d, want 1 (exactly-once replay)", len(f.delivery.submissions))
+		t.Fatalf("post-restart submissions = %d, want 1", len(f.delivery.submissions))
 	}
 	if got := f.delivery.submissions[0]; got == "" || got != batch.Render() {
 		t.Fatalf("replayed content mismatch")
@@ -166,8 +156,8 @@ func TestRestartInterruptedBatchReplaysExactlyOnce(t *testing.T) {
 
 // A batch the recipient already accepted survives a daemon restart as accepted:
 // its durable coordination checkpoint names the batch id even though the
-// relaunch rotated the runtime launch id, so the post-restart replay settles
-// it from the ledger instead of re-emitting accepted content
+// relaunch rotated the runtime launch id, so the post-restart drain settles it
+// from the ledger instead of re-emitting accepted content
 // (issue #184, acceptance 1 for the settle-missed case).
 func TestRestartAcceptedBatchSettlesInsteadOfReemitting(t *testing.T) {
 	f := newRestartFixture(t)
@@ -183,8 +173,8 @@ func TestRestartAcceptedBatchSettlesInsteadOfReemitting(t *testing.T) {
 		t.Fatal("first attempt should surface the submit failure")
 	}
 	rec, _, err := f.store.GetReport(ctx, "rpt_accepted")
-	if err != nil || rec.DeliveryState != domain.ReportPending || rec.EmittedAt.IsZero() {
-		t.Fatalf("shown batch = %+v, err = %v, want pending with an emission marker", rec, err)
+	if err != nil || rec.DeliveryState != domain.ReportPending {
+		t.Fatalf("shown batch = %+v, err = %v, want pending unread", rec, err)
 	}
 	batchID := rec.DeliveryBatchID
 
@@ -204,8 +194,8 @@ func TestRestartAcceptedBatchSettlesInsteadOfReemitting(t *testing.T) {
 	f.requeue(t)
 
 	// Restart relaunches the runtime under a new launch id; the leftover
-	// checkpoint is the only surviving acceptance evidence. Past the emit
-	// quiet window the replay consults it and settles instead of re-emitting.
+	// checkpoint is the only surviving acceptance evidence. The first drain
+	// pass consults it and settles instead of re-emitting.
 	now := f.now.Add(61 * time.Minute)
 	f.now = now
 	orchRec, _, _ = f.store.GetSession(ctx, f.orch)
@@ -240,10 +230,7 @@ func TestRestartAcceptedBatchDoesNotRideAlongTwice(t *testing.T) {
 	if err != nil || len(batch.Reports) != 1 {
 		t.Fatalf("prepare = %#v, err = %v", batch, err)
 	}
-	if visible, err := c.EmitVisible(ctx, batch); err != nil || !visible {
-		t.Fatalf("emit visible = %v, err = %v", visible, err)
-	}
-	// The turn was refused after the content was shown: pending, emitted.
+	// The turn was refused after the content was shown: pending, unread.
 	// ReleasePiggyback returns the cause itself by contract.
 	if err := c.ReleasePiggyback(ctx, batch, errors.New("turn refused")); err == nil {
 		t.Fatal("release should report the refusal cause")

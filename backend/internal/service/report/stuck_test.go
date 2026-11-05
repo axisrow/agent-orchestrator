@@ -22,7 +22,7 @@ func TestClassifyDeliveryCause(t *testing.T) {
 		{"report batch already emitted; repeat suppressed until emit TTL", "repeat suppressed until emit TTL", true},
 		{"session: prompt text is held in the target's message queue", "queued-input", true},
 		{"session: semantic message acceptance unsupported: prompt submission was not observed", "queued-input", true},
-		{"", "unknown", false},
+		{"", "unread backlog", false},
 		{"delivery claim recovered after daemon restart", "delivery claim recovered after daemon restart", false},
 	}
 	for _, tc := range cases {

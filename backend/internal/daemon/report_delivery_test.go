@@ -3,8 +3,10 @@ package daemon
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
+	reportsvc "github.com/aoagents/agent-orchestrator/backend/internal/service/report"
 )
 
 type reportDeliverySession struct {
@@ -49,5 +51,27 @@ func TestReportSemanticDeliveryUsesAcceptedTUIBoundary(t *testing.T) {
 	}
 	if sessions.interrupted != "ao-1" {
 		t.Fatalf("interrupted = %q", sessions.interrupted)
+	}
+}
+
+// TestReportExpiryAgeFromEnv pins the configurable unread expiry knob
+// (fork issue #242): whole days override the default; garbage and non-positive
+// values keep it.
+func TestReportExpiryAgeFromEnv(t *testing.T) {
+	cases := []struct {
+		raw  string
+		want time.Duration
+	}{
+		{"", reportsvc.ReportExpiryAge},
+		{"14", 14 * 24 * time.Hour},
+		{" 3 ", 3 * 24 * time.Hour},
+		{"0", reportsvc.ReportExpiryAge},
+		{"-2", reportsvc.ReportExpiryAge},
+		{"soon", reportsvc.ReportExpiryAge},
+	}
+	for _, tc := range cases {
+		if got := reportExpiryAgeFromEnv(func(string) string { return tc.raw }); got != tc.want {
+			t.Fatalf("reportExpiryAgeFromEnv(%q) = %v, want %v", tc.raw, got, tc.want)
+		}
 	}
 }

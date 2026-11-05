@@ -12,18 +12,16 @@ const (
 	DeliveryEventEmitted = "emitted"
 	// DeliveryEventDeliveryAttempt is a delivery attempt claiming the row.
 	DeliveryEventDeliveryAttempt = "delivery_attempt"
-	// DeliveryEventEmitVisible stamps the at-most-once visible emission.
-	DeliveryEventEmitVisible = "emit_visible"
 	// DeliveryEventAcknowledged is the terminal success: the content reached
-	// the recipient's channel and was accepted (delivered and settled are one
-	// durable fact on the current pipeline).
+	// the recipient's channel and was accepted. Under pull semantics the
+	// drain's inject completes delivery, so acknowledged is the only live
+	// success cause (fork issue #242).
 	DeliveryEventAcknowledged = "acknowledged"
-	// DeliveryEventReleased returns a claim to pending after a failed cycle.
+	// DeliveryEventReleased returns a claim to pending after a failed inject;
+	// the rows go back to unread and wait for the next safe point.
 	DeliveryEventReleased = "released"
-	// DeliveryEventDeferred postpones a claim's next availability.
-	DeliveryEventDeferred = "deferred"
-	// DeliveryEventExpired is the terminal ledger expiry (pending past the
-	// window, currently 7d).
+	// DeliveryEventExpired is the terminal ledger expiry (unread past the
+	// configured window, seven days by default).
 	DeliveryEventExpired = "expired"
 	// DeliveryEventRepromptSuperseded is the terminal retirement of a worker's
 	// undelivered reports when a new prompt reaches the session (fork issue

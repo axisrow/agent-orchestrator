@@ -121,29 +121,6 @@ func (s *Service) SetReportCoordinator(coordinator *reportsvc.Coordinator) {
 	s.reports = coordinator
 }
 
-// SettleEmittedReports retires shown report batches the recipient's durable
-// checkpoint names by correlation id — semantic acceptances of the batches
-// themselves (fork issues #159, #179). Session Manager calls it after a
-// pane-delivered prompt; Chat's own accepted-send paths call the same
-// coordinator method inline.
-func (s *Service) SettleEmittedReports(ctx context.Context, id domain.SessionID) error {
-	if s.reports == nil {
-		return nil
-	}
-	if _, err := s.reports.SettleEmittedReports(ctx, id); err != nil {
-		return fmt.Errorf("settle emitted reports for %s: %w", id, err)
-	}
-	return nil
-}
-
-// settleEmittedReports is the best-effort inline form: a settle failure never
-// fails the accepted prompt that triggered it.
-func (s *Service) settleEmittedReports(ctx context.Context, id domain.SessionID) {
-	if err := s.SettleEmittedReports(ctx, id); err != nil {
-		s.log.Warn("settle emitted worker reports failed", "session", id, "err", err)
-	}
-}
-
 // controllerGate serializes start/stop for one session without making provider
 // I/O for that session block lookups or commands for every other Chat session.
 type controllerGate chan struct{}
@@ -1298,23 +1275,17 @@ func (s *Service) Send(
 	var reports reportsvc.PreparedBatch
 	if s.reports != nil && msg.Origin != domain.MessageOriginAutomation {
 		var err error
+		// Turn-start drain (fork issue #242): unread worker reports ride the
+		// user's message in one semantic turn. What is claimed here is what
+		// gets appended — acknowledging a claim whose text was suppressed
+		// would mark content delivered that the recipient never saw.
 		reports, err = s.reports.PreparePiggyback(ctx, id)
 		if err != nil {
 			return domain.ConversationTurn{}, fmt.Errorf("prepare worker reports: %w", err)
 		}
-		visible, err := s.reports.EmitVisible(ctx, reports)
-		if err != nil {
-			return domain.ConversationTurn{}, fmt.Errorf("gate worker reports: %w", err)
-		}
-		// At-most-once on the visible channel: a batch shown within the emit
-		// TTL rides along silently; its acceptance ack still settles it.
-		if visible {
-			if len(reports.Reports) > 0 {
-				s.log.Info("worker reports piggybacked into user message", "batch", reports.IdempotencyKey(), "session", id, "reports", len(reports.Reports), "attempts", reports.MaxDeliveryAttempts())
-			}
+		if len(reports.Reports) > 0 {
+			s.log.Info("worker reports piggybacked into user message", "batch", reports.IdempotencyKey(), "session", id, "reports", len(reports.Reports), "attempts", reports.MaxDeliveryAttempts())
 			msg.Text = reports.AppendToUserMessage(msg.Text)
-		} else {
-			s.log.Debug("worker reports piggyback suppressed within emit ttl", "batch", reports.IdempotencyKey(), "session", id)
 		}
 	}
 	var turn domain.ConversationTurn
@@ -2627,7 +2598,6 @@ func (s *Service) relayChatTurn(
 			if err == nil {
 				if turn.ID != "" {
 					s.startBackgroundWake(id)
-					s.settleEmittedReports(ctx, id)
 				}
 				return turn.ID, nil
 			}
@@ -2650,7 +2620,6 @@ func (s *Service) relayChatTurn(
 		if err != nil {
 			return "", err
 		}
-		s.settleEmittedReports(ctx, id)
 		return turn.ID, nil
 	}
 }
