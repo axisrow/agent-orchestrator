@@ -61,6 +61,45 @@ sed -n '/^classify_upstream_subject()/,/^}/p' "$sync" > "$tmp/cls.sh"
 	[ "$(classify_upstream_subject "perf(api): speed up list")" = "skip" ] || exit 1
 ) || { echo "!! classify_upstream_subject классифицирует неверно" >&2; exit 1; }
 
+# 4b. Пик, все пути которого отсутствуют в форке и среди них есть модификация,
+#     скипается автоматически (класс инцидента nightly 2026-10-31..11-05:
+#     пять красных прогонов на cherry-pick фикса в выпиленный модуль
+#     апдейтера). Чистые добавления и пики по существующим путям НЕ скипаются.
+sed -n '/^pick_paths_absent_in_fork()/,/^}/p' "$sync" > "$tmp/absent.sh"
+[ -s "$tmp/absent.sh" ] || { echo "!! pick_paths_absent_in_fork не извлекается из ao-sync.sh" >&2; exit 1; }
+git init -q "$tmp/up"
+printf 'k\n' > "$tmp/up/keeper.txt"
+mkdir -p "$tmp/up/gone"
+printf 'x\n' > "$tmp/up/gone/old.swift"
+git -C "$tmp/up" add -A
+git -C "$tmp/up" -c user.name=t -c user.email=t@t commit -qm base
+printf 'y\n' > "$tmp/up/gone/old.swift"
+git -C "$tmp/up" add -A
+git -C "$tmp/up" -c user.name=t -c user.email=t@t commit -qm touch-gone
+absent_sha="$(git -C "$tmp/up" rev-parse HEAD)"
+mkdir -p "$tmp/up/fresh"
+printf 'n\n' > "$tmp/up/fresh/new.txt"
+git -C "$tmp/up" add -A
+git -C "$tmp/up" -c user.name=t -c user.email=t@t commit -qm add-new
+addonly_sha="$(git -C "$tmp/up" rev-parse HEAD)"
+printf 'k2\n' > "$tmp/up/keeper.txt"
+git -C "$tmp/up" add -A
+git -C "$tmp/up" -c user.name=t -c user.email=t@t commit -qm touch-keeper
+present_sha="$(git -C "$tmp/up" rev-parse HEAD)"
+# зеркало форка: keeper.txt есть, gone/ и fresh/ отсутствуют
+mkdir -p "$tmp/fork"
+printf 'k\n' > "$tmp/fork/keeper.txt"
+(
+	cd "$tmp/up"
+	# shellcheck disable=SC1090,SC2034
+	source "$tmp/absent.sh"
+	REPO_ROOT="$tmp/fork"
+	pick_paths_absent_in_fork "$absent_sha" || exit 1
+	if pick_paths_absent_in_fork "$addonly_sha" || pick_paths_absent_in_fork "$present_sha"; then
+		exit 1
+	fi
+) || { echo "!! pick_paths_absent_in_fork классифицирует неверно" >&2; exit 1; }
+
 # 5. Инварианты канонизации fork-миграций (класс инцидента 2026-10-21: в
 #    CANONICAL_LIST фиксера не хватало записи — settle выдал «канон» и
 #    переименовал уже применённую живой БД миграцию, раннер повторил SQL,
