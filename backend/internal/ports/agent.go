@@ -162,6 +162,13 @@ type AgentAuthDiagnosticsChecker interface {
 	AuthStatusWithDiagnostics(context.Context) (AgentAuthStatus, domain.AgentAccountIdentity, []domain.AgentAuthDiagnostic, error)
 }
 
+// AgentAuthCacheInvalidator is implemented by an adapter that remembers what its
+// own authentication checks found, so a recheck after a login sees the login
+// instead of the answer from before it.
+type AgentAuthCacheInvalidator interface {
+	InvalidateAuthCache()
+}
+
 // Agent is the contract every CLI coding agent adapter (claude-code, codex, …)
 // must satisfy. It supplies the argv and process configuration the Session
 // Manager needs to launch, restore, and read back a native agent session.
