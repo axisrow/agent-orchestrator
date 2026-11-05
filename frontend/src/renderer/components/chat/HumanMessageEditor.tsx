@@ -17,7 +17,6 @@ export interface HumanMessageEditorProps {
 	onAbandonRecovery?: () => void;
 	sendBlocked?: boolean;
 	busy: boolean;
-	reconstructedContext?: boolean;
 	error?: string;
 	onDraftChange?: (text: string) => void;
 	onCancel: () => void;
@@ -33,7 +32,6 @@ export function HumanMessageEditor({
 	onAbandonRecovery,
 	sendBlocked = false,
 	busy,
-	reconstructedContext = false,
 	error,
 	onDraftChange,
 	onCancel,
@@ -42,7 +40,7 @@ export function HumanMessageEditor({
 	const { t } = useTranslation();
 	const [draft, setDraft] = useState(text);
 	const textarea = useRef<HTMLTextAreaElement>(null);
-	const reconstructedContextId = useId();
+	const branchNoteId = useId();
 	const sendDisabled =
 		pending || sendBlocked || busy || draft.trim().length === 0 || (locked && !recoveryLabel);
 	const busyMessage = busy ? t("chat.edit.stopCurrentTurn") : undefined;
@@ -91,7 +89,7 @@ export function HumanMessageEditor({
 			}}
 			onKeyDown={onKeyDown}
 			aria-label={t("chat.edit.label")}
-			aria-describedby={reconstructedContext ? reconstructedContextId : undefined}
+			aria-describedby={error || busyMessage ? undefined : branchNoteId}
 			disabled={pending || locked}
 			autoFocus
 			rows={2}
@@ -103,11 +101,6 @@ export function HumanMessageEditor({
 			imageLabel={t("chat.edit.image")}
 			className="mt-2"
 		/>
-		{reconstructedContext ? (
-			<p id={reconstructedContextId} className="px-1.5 text-pretty text-xs text-muted-foreground">
-				{t("chat.edit.reconstructedContext")}
-			</p>
-		) : null}
 		<div className="mt-2 flex min-h-7 items-center justify-end gap-1.5">
 			{error ? (
 				<span role="alert" className="mr-auto text-xs text-destructive">
@@ -115,7 +108,11 @@ export function HumanMessageEditor({
 				</span>
 			) : busyMessage ? (
 				<span className="mr-auto text-xs text-muted-foreground">{busyMessage}</span>
-			) : null}
+			) : (
+				<span id={branchNoteId} className="mr-auto text-pretty text-xs text-muted-foreground">
+					{t("chat.edit.branchNote")}
+				</span>
+			)}
 			{onAbandonRecovery ? (
 				<Button
 					type="button"
