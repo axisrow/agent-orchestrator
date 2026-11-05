@@ -9,7 +9,9 @@
 #
 #   fixes-only (дефолт; --fixes-only — то же самое явно):
 #     fetch → backup-тег → классификация fork/main..origin/main по ЛЕДЖЕРУ
-#     (local/toolbox/ao-upstream-ledger.txt) → cherry-pick -x только
+#     (local/toolbox/ao-upstream-ledger.txt) и по путям (пик, все пути
+#     которого отсутствуют в форке, — авто-skip, см.
+#     pick_paths_absent_in_fork) → cherry-pick -x только
 #     типизированных fix-коммитов → остальное в леджер как skipped →
 #     быстрые проверки-ловушки → гейты. Леджер — строка
 #     «<sha> <taken|skipped> <subject>» на каждый разобранный апстрим-коммит,
@@ -228,6 +230,30 @@ classify_upstream_subject() {
   esac
 }
 
+# Пик, ВСЕ пути которого отсутствуют в дереве форка и среди них есть
+# модификация (M), физически неприменим: каждый M-путь — вечный
+# modify/delete при cherry-pick (класс инцидента nightly 2026-10-31..11-05:
+# пять красных прогонов на cherry-pick фикса в выпиленный модуль апдейтера
+# frontend/native/update-helper/). Это продолжение скипнутой фичи —
+# автосклассификация без вопроса владельцу (скип-политика пиков). Смешанные
+# пики (есть и существующие пути) не скипаются — конфликт останавливает цикл
+# и уходит владельцу, как и раньше; чистые добавления новых файлов тоже —
+# пик бы применился, его судят гейты. Потолок: фикс «только новые файлы в
+# выпиленном каталоге» скипается зря — виден в леджере, редкий класс.
+pick_paths_absent_in_fork() {
+  local has_modify=0 status path
+  while IFS=$'\t' read -r status path; do
+    [ -n "$path" ] || continue
+    if [ -e "$REPO_ROOT/$path" ]; then
+      return 1
+    fi
+    case "$status" in
+      M) has_modify=1 ;;
+    esac
+  done < <(git diff-tree --no-renames -r --name-status "$1" | grep -vE '^000000 ')
+  [ "$has_modify" -eq 1 ]
+}
+
 # Список конфликтующих файлов текущего cherry-pick со сторонами (UU/AA):
 # сторона форка = merge-base..HEAD, сторона фикса = merge-base..<sha>.
 print_pick_conflicts() {
@@ -251,7 +277,10 @@ if [ "$MODE" = "fixes-only" ]; then
   while IFS=$'\t' read -r sha subject; do
     [ -n "$sha" ] || continue
     if grep -q "^$sha " "$LEDGER"; then continue; fi
-    if [ "$(classify_upstream_subject "$subject")" = "take" ]; then
+    if pick_paths_absent_in_fork "$sha"; then
+      echo "$sha skipped $subject" >> "$LEDGER"
+      echo "   skip (все пути пика отсутствуют в форке): $sha $subject"
+    elif [ "$(classify_upstream_subject "$subject")" = "take" ]; then
       echo "==> cherry-pick $sha $subject"
       if git cherry-pick -x "$sha"; then
         echo "$sha taken $subject" >> "$LEDGER"
