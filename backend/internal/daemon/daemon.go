@@ -1282,6 +1282,7 @@ func Run() error {
 		startupReconcileDone = done
 		go func() {
 			defer close(done)
+			defer lcStack.StartReaperLoop()
 			if reconcileErr := reconcilePersistentChatHosts(ctx, cfg.DataDir, store, cfg.AppRunID); reconcileErr != nil {
 				log.Error("persistent chat host reconciliation on boot failed", "err", reconcileErr)
 			}

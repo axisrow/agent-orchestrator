@@ -55,6 +55,8 @@ type lifecycleStack struct {
 	// service deletes artifacts through it so a delete holds the capture lock.
 	ArtifactVersions *artifactversions.Capturer
 	runtimeReaper    *reaper.Reaper
+	reaperStart      chan struct{}
+	reaperStartOnce  sync.Once
 	reaperDone       <-chan struct{}
 	activityDone     <-chan struct{}
 	turnFailureDone  <-chan struct{}
@@ -79,8 +81,9 @@ func startLifecycle(ctx context.Context, dataDir string, store *sqlite.Store, ru
 		lifecycle.WithUrgentNudgeGate(urgentNudgeWaitingInputSafe(agents)),
 		lifecycle.WithDataDir(dataDir),
 	)
-	rp := reaper.New(lcm, store, runtime, reaper.Config{Logger: logger})
-	activityPoller := activityobserver.New(store, lcm, runtime, agents, activityobserver.Config{Logger: logger})
+	reaperStart := make(chan struct{})
+	rp := reaper.New(lcm, store, runtime, reaper.Config{Logger: logger, StartAfter: reaperStart})
+	activityPoller := activityobserver.New(store, lcm, runtime, agents, activityobserver.Config{Logger: logger, DataDir: dataDir})
 	turnFailurePoller := activityobserver.NewTurnFailureObserver(store, lcm, agents, activityobserver.TurnFailureConfig{Logger: logger})
 	artifactVersions := artifactversions.New(store, dataDir, logger)
 	artifactsPoller := artifactsobserver.New(store, lcm, artifactVersions, artifactsobserver.Config{Logger: logger})
@@ -88,6 +91,7 @@ func startLifecycle(ctx context.Context, dataDir string, store *sqlite.Store, ru
 		LCM:              lcm,
 		ArtifactVersions: artifactVersions,
 		runtimeReaper:    rp,
+		reaperStart:      reaperStart,
 		reaperDone:       rp.Start(ctx),
 		activityDone:     activityPoller.Start(ctx),
 		turnFailureDone:  turnFailurePoller.Start(ctx),
@@ -135,9 +139,17 @@ func urgentNudgeWaitingInputSafe(agents ports.AgentResolver) func(domain.AgentHa
 
 // ReconcileRuntime runs the same conservative runtime/workload observation as
 // the periodic reaper. The daemon calls it after session-manager reconciliation
-// so exits missed while AO was stopped are folded before the API starts serving.
+// so exits missed while AO was stopped are folded after the startup check has
+// kept those sessions stopped and resumable. The periodic loop starts after it.
 func (l *lifecycleStack) ReconcileRuntime(ctx context.Context) error {
 	return l.runtimeReaper.Tick(ctx)
+}
+
+// StartReaperLoop lets the periodic reaper run. The boot goroutine defers it,
+// so it runs after ReconcileRuntime, and a panic before that pass cannot leave
+// the reaper off for good.
+func (l *lifecycleStack) StartReaperLoop() {
+	l.reaperStartOnce.Do(func() { close(l.reaperStart) })
 }
 
 // activeTurnSteering resolves the per-harness active-turn steering capability
