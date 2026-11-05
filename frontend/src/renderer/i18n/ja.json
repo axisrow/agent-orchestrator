@@ -1899,6 +1899,7 @@
 	"status.draft": "下書き PR",
 	"status.exited": "終了済み",
 	"status.idle": "アイドル",
+	"status.merge_blocked": "マージがブロックされています",
 	"status.mergeable": "準備完了",
 	"status.merged": "マージ済み",
 	"status.needs_input": "入力が必要",

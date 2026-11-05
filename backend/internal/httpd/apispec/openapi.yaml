@@ -14324,6 +14324,7 @@ components:
           - draft
           - ci_failed
           - review_pending
+          - merge_blocked
           - changes_requested
           - commented
           - approved
@@ -14339,6 +14340,7 @@ components:
           - draft
           - ci_failed
           - review_pending
+          - merge_blocked
           - changes_requested
           - commented
           - approved

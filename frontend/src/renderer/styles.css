@@ -295,6 +295,7 @@
 	--color-status-validating: var(--bridge-status-validating);
 	--color-status-in-review: var(--bridge-status-in-review);
 	--color-status-ready: var(--bridge-status-ready);
+	--color-status-blocked: var(--bridge-status-blocked);
 	--color-status-merged: var(--bridge-status-merged);
 	--color-status-idle: var(--bridge-status-idle);
 	--color-status-exited: var(--bridge-status-exited);

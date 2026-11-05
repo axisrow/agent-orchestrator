@@ -43,6 +43,7 @@ describe("session presentation", () => {
 		["approved", "merge"],
 		["needs_input", "action"],
 		["review_pending", "pending"],
+		["merge_blocked", "pending"],
 		["working", "working"],
 		["terminated", "done"],
 	] as const)("maps %s to the %s attention zone", (status, zone) => {
@@ -58,6 +59,9 @@ describe("session presentation", () => {
 		["ci_failed", "text-status-exited", "bg-status-exited"],
 		["changes_requested", "text-status-needs-you", "bg-status-needs-you"],
 		["review_pending", "text-status-in-review", "bg-status-in-review"],
+		// Merge gated keeps its own tone: never the ready green a bare
+		// `mergeable` provider fact would have painted before (#272).
+		["merge_blocked", "text-status-blocked", "bg-status-blocked"],
 		["draft", "text-status-in-review", "bg-status-in-review"],
 		["pr_open", "text-status-in-review", "bg-status-in-review"],
 		["approved", "text-status-ready", "bg-status-ready"],
@@ -66,6 +70,10 @@ describe("session presentation", () => {
 		["unknown", "text-status-unknown", "bg-status-unknown"],
 	] as const)("pairs the %s text tone with a matching dot tone", (status, className, dotClassName) => {
 		expect(getSessionStatusView(status)).toMatchObject({ className, dotClassName });
+	});
+
+	it("labels the merge-blocked status for hover text", () => {
+		expect(getSessionStatusView("merge_blocked").label).toBe("Merge blocked");
 	});
 
 	it("falls back to the unknown tone for an unrecognized status", () => {

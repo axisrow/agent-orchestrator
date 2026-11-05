@@ -88,19 +88,27 @@ func TestDeriveSCMStatusPipelineAndWorstWins(t *testing.T) {
 		{"closed ignored", []contract.PRFacts{{Closed: true}}, ""},
 		{"merged", []contract.PRFacts{{Merged: true}}, contract.StatusMerged},
 		{"open", []contract.PRFacts{{}}, contract.StatusPROpen},
-		{"review pending", []contract.PRFacts{{Review: contract.ReviewRequired}}, contract.StatusReviewPending},
-		{"review pending with provider merge blocker", []contract.PRFacts{{Review: contract.ReviewRequired, Mergeability: contract.MergeBlocked}}, contract.StatusReviewPending},
+		// A required review gates the merge even when the provider reports
+		// mergeable (no conflicts): gated facts must never read as ready -- see
+		// issue #272.
+		{"ci passing, review required, mergeable", []contract.PRFacts{{CI: contract.CIPassing, Review: contract.ReviewRequired, Mergeability: contract.MergeMergeable}}, contract.StatusMergeBlocked},
+		{"review required alone", []contract.PRFacts{{Review: contract.ReviewRequired}}, contract.StatusMergeBlocked},
+		{"provider merge blocker alone", []contract.PRFacts{{Mergeability: contract.MergeBlocked}}, contract.StatusMergeBlocked},
+		{"provider merge blocker with approved review", []contract.PRFacts{{Mergeability: contract.MergeBlocked, Review: contract.ReviewApproved}}, contract.StatusMergeBlocked},
 		{"approved", []contract.PRFacts{{Review: contract.ReviewApproved}}, contract.StatusApproved},
 		{"mergeable", []contract.PRFacts{{Mergeability: contract.MergeMergeable}}, contract.StatusMergeable},
-		{"merge blocked", []contract.PRFacts{{Mergeability: contract.MergeBlocked}}, contract.StatusPROpen},
-		{"merge blocked with approved review", []contract.PRFacts{{Mergeability: contract.MergeBlocked, Review: contract.ReviewApproved}}, contract.StatusPROpen},
+		{"mergeable with approved review", []contract.PRFacts{{Review: contract.ReviewApproved, Mergeability: contract.MergeMergeable}}, contract.StatusMergeable},
 		{"changes requested", []contract.PRFacts{{Review: contract.ReviewChangesRequest}}, contract.StatusChangesRequested},
+		{"conflicting", []contract.PRFacts{{Mergeability: contract.MergeConflicting}}, contract.StatusPROpen},
+		{"conflicting with approved review", []contract.PRFacts{{Mergeability: contract.MergeConflicting, Review: contract.ReviewApproved}}, contract.StatusApproved},
 		// A COMMENTED review's unresolved thread is not a formal changes-requested
 		// decision, so it must not be reported as one -- see issue #5765.
 		{"review required with unresolved comments", []contract.PRFacts{{Review: contract.ReviewRequired, ReviewComments: true}}, contract.StatusCommented},
 		{"unresolved comments alone", []contract.PRFacts{{ReviewComments: true}}, contract.StatusCommented},
 		{"draft", []contract.PRFacts{{Draft: true}}, contract.StatusDraft},
+		{"draft while mergeable", []contract.PRFacts{{Draft: true, Mergeability: contract.MergeMergeable}}, contract.StatusDraft},
 		{"CI failed", []contract.PRFacts{{CI: contract.CIFailing}}, contract.StatusCIFailed},
+		{"CI failed while mergeable", []contract.PRFacts{{CI: contract.CIFailing, Mergeability: contract.MergeMergeable}}, contract.StatusCIFailed},
 		{
 			"worst wins",
 			[]contract.PRFacts{

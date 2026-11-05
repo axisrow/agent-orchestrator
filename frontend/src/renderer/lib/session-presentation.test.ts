@@ -99,6 +99,7 @@ describe("session presentation", () => {
 		["changes_requested", "action", "Needs you"],
 		["unknown", "action", "Needs you"],
 		["review_pending", "pending", "In review"],
+		["merge_blocked", "pending", "In review"],
 		["pr_open", "pending", "In review"],
 		["draft", "pending", "In review"],
 		["working", "working", "Working"],
@@ -122,6 +123,9 @@ describe("session presentation", () => {
 		["draft", "bg-status-in-review", "In review"],
 		["pr_open", "bg-status-in-review", "In review"],
 		["review_pending", "bg-status-in-review", "In review"],
+		// Merge gated (required review not submitted, provider BLOCKED) gets its
+		// own tone: never the ready green a bare `mergeable` fact implies (#272).
+		["merge_blocked", "bg-status-blocked", "Merge blocked"],
 		["approved", "bg-status-ready", "Ready to merge"],
 		["mergeable", "bg-status-ready", "Ready to merge"],
 		["merged", "bg-status-merged", "Merged"],
@@ -132,6 +136,12 @@ describe("session presentation", () => {
 			breathe: false,
 			title,
 		});
+	});
+
+	it("paints the dot from the SCM status before the aggregate status", () => {
+		expect(
+			getSessionStatusDotView(sessionWith({ status: "merge_blocked", scmStatus: "merge_blocked" })).className,
+		).toBe("bg-status-blocked");
 	});
 
 	it.each([

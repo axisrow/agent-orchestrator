@@ -6,11 +6,15 @@ type SessionStatus string
 
 // The display statuses the dashboard renders.
 const (
-	StatusWorking          SessionStatus = "working"
-	StatusPROpen           SessionStatus = "pr_open"
-	StatusDraft            SessionStatus = "draft"
-	StatusCIFailed         SessionStatus = "ci_failed"
-	StatusReviewPending    SessionStatus = "review_pending"
+	StatusWorking       SessionStatus = "working"
+	StatusPROpen        SessionStatus = "pr_open"
+	StatusDraft         SessionStatus = "draft"
+	StatusCIFailed      SessionStatus = "ci_failed"
+	StatusReviewPending SessionStatus = "review_pending"
+	// StatusMergeBlocked marks an open PR whose merge is gated (required review
+	// not submitted, or the provider reports the merge blocked). Kept distinct
+	// from StatusMergeable so gated PRs never render with the ready tone.
+	StatusMergeBlocked     SessionStatus = "merge_blocked"
 	StatusChangesRequested SessionStatus = "changes_requested"
 	// StatusCommented marks a pull request with an unresolved comment
 	// thread from a review that did not formally request changes.

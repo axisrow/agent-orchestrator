@@ -3918,3 +3918,36 @@ func TestCIPendingSinceTransitions(t *testing.T) {
 		t.Fatal("new commit did not restart timer")
 	}
 }
+
+// A review-only refresh rebuilds the observation from the stored row. When the
+// stored mergeability summary says "mergeable" but the stored provider facts
+// derive a merge gate (a required review), the derived BLOCKED must survive:
+// the summary came from a metadata-only fetch that never saw the requirement,
+// and wiping it reported a gated PR as mergeable -- see issue #272.
+func TestMergeabilityObservationFromLocalKeepsDerivedBlockers(t *testing.T) {
+	pr := domain.PullRequest{
+		CI:                       domain.CIPassing,
+		Review:                   domain.ReviewRequired,
+		Mergeability:             domain.MergeMergeable,
+		ProviderMergeable:        "MERGEABLE",
+		ProviderMergeStateStatus: "CLEAN",
+	}
+	got := mergeabilityObservationFromLocal(pr)
+	if got.State != string(domain.MergeBlocked) {
+		t.Fatalf("state = %q, want blocked", got.State)
+	}
+	if len(got.Blockers) != 1 || got.Blockers[0] != "review_required" {
+		t.Fatalf("blockers = %v, want [review_required]", got.Blockers)
+	}
+	if got.Mergeable {
+		t.Fatal("gated PR reported mergeable")
+	}
+
+	// Without concrete blockers the stored summary still wins over a local
+	// unknown derivation.
+	stored := domain.PullRequest{Mergeability: domain.MergeMergeable}
+	got = mergeabilityObservationFromLocal(stored)
+	if got.State != string(domain.MergeMergeable) || !got.Mergeable {
+		t.Fatalf("state = %q mergeable=%v, want stored mergeable=true", got.State, got.Mergeable)
+	}
+}

@@ -2034,9 +2034,12 @@ func mergeabilityObservationFromLocal(pr domain.PullRequest) ports.SCMMergeabili
 		return ports.SCMMergeabilityObservation{State: string(domain.MergeUnknown)}
 	}
 	out := mergeabilityFromProviderFacts(pr.ProviderMergeable, pr.ProviderMergeStateStatus, string(pr.CI), string(pr.Review), pr.Draft)
-	if pr.Mergeability != "" && out.State != string(pr.Mergeability) {
-		out = ports.SCMMergeabilityObservation{State: string(pr.Mergeability)}
-	} else if pr.Mergeability != "" {
+	// Concrete blockers derived from provider facts (a required review, a
+	// draft, failing CI, conflicts) outrank the stored mergeability summary:
+	// a metadata-only fetch recorded it without seeing review requirements, so
+	// letting it overwrite a derived BLOCKED wiped the blockers and reported a
+	// review-gated PR as mergeable -- see issue #272.
+	if len(out.Blockers) == 0 && pr.Mergeability != "" {
 		out.State = string(pr.Mergeability)
 	}
 	switch domain.Mergeability(out.State) {

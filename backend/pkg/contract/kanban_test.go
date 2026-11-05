@@ -82,6 +82,19 @@ func TestDeriveKanbanColumnSinglePR(t *testing.T) {
 			want: contract.KanbanReady,
 		},
 		{
+			// The provider reports mergeable (no conflicts) while branch
+			// protection still holds the PR for a required review: the gate wins,
+			// the PR is a person's review, not ready -- see issue #272.
+			name: "mergeable with required review is not ready",
+			pr:   contract.KanbanPRFacts{URL: "pr/1", Review: contract.ReviewRequired, Mergeability: contract.MergeMergeable},
+			want: contract.KanbanNeedsReview,
+		},
+		{
+			name: "provider merge block is not ready",
+			pr:   contract.KanbanPRFacts{URL: "pr/1", Mergeability: contract.MergeBlocked},
+			want: contract.KanbanNeedsReview,
+		},
+		{
 			name: "human approval is ready",
 			pr: contract.KanbanPRFacts{
 				URL:            "pr/1",

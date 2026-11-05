@@ -2235,6 +2235,7 @@
 	"status.draft": "Draft PR",
 	"status.exited": "Exited",
 	"status.idle": "Idle",
+	"status.merge_blocked": "Merge blocked",
 	"status.mergeable": "Ready",
 	"status.merged": "Merged",
 	"status.needs_input": "Input needed",

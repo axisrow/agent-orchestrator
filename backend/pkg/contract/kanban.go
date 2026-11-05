@@ -112,6 +112,12 @@ func derivePRKanbanColumn(session KanbanSessionFacts, pr KanbanPRFacts) KanbanCo
 	// release the PR from Validating -- see aoOwnsNextStep above.
 	case session.AutoReview && !approvedByAO(pr):
 		return KanbanValidating
+	// A merge gate outranks bare mergeability: the provider reports `mergeable`
+	// (no conflicts) even while branch protection holds the PR for a required
+	// review, so reading `mergeable` first placed gated PRs in Ready -- see
+	// issue #272.
+	case pr.Review == ReviewRequired || pr.Mergeability == MergeBlocked:
+		return KanbanNeedsReview
 	case pr.Mergeability == MergeMergeable:
 		return KanbanReady
 	// Fallthrough: the PR is in its review cycle and no AO loop is turning it,

@@ -41,6 +41,7 @@ const englishLabels: Record<SessionPresentationMessageKey, string> = {
 	"status.changes_requested": "Changes requested",
 	"status.commented": "Commented",
 	"status.review_pending": "Review pending",
+	"status.merge_blocked": "Merge blocked",
 	"status.draft": "Draft PR",
 	"status.pr_open": "PR open",
 	"status.approved": "Approved",
@@ -237,6 +238,10 @@ const sessionStatusStyles: Record<SessionStatus, Omit<SessionStatusView, "label"
 	changes_requested: { className: "text-status-needs-you", dotClassName: "bg-status-needs-you" },
 	commented: { className: "text-status-in-review", dotClassName: "bg-status-in-review" },
 	review_pending: { className: "text-status-in-review", dotClassName: "bg-status-in-review" },
+	// Merge gated (required review not submitted, or the provider reports the
+	// merge blocked): its own tone, never the ready green -- mergeability alone
+	// does not mean mergeable (#272).
+	merge_blocked: { className: "text-status-blocked", dotClassName: "bg-status-blocked" },
 	draft: { className: "text-status-in-review", dotClassName: "bg-status-in-review" },
 	pr_open: { className: "text-status-in-review", dotClassName: "bg-status-in-review" },
 	approved: { className: "text-status-ready", dotClassName: "bg-status-ready" },
@@ -457,6 +462,7 @@ export function attentionZone(input: SessionStatus | SessionStatusModel): Attent
 		case "unknown":
 			return "action";
 		case "review_pending":
+		case "merge_blocked":
 		case "pr_open":
 		case "draft":
 			return "pending";
