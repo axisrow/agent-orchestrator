@@ -2041,6 +2041,7 @@ func (m *Manager) MarkTerminated(ctx context.Context, id domain.SessionID) error
 		case terminationApplied, terminationAlreadyApplied:
 			m.reapSessionContainers(ctx, id)
 			m.teardownReviewer(ctx, id)
+			m.finalizeTerminatedReports(ctx, id)
 			return nil
 		case terminationLaunchChanged:
 			return fmt.Errorf("lifecycle: runtime launch changed while terminating session %q", id)
@@ -2050,6 +2051,32 @@ func (m *Manager) MarkTerminated(ctx context.Context, id domain.SessionID) error
 			// finalization commit against the same durable revision.
 			continue
 		}
+	}
+}
+
+// finalizeTerminatedReports retires a terminated session's undelivered report
+// batches terminally (fork issue #279): a source that will never turn again
+// must not leave its reports cycling through the recipient's safe-point drain
+// until the ledger expiry. It rides the same hook as reapSessionContainers, so
+// every termination path (kill, teardown, replacement, tracker-driven) is
+// covered once. Best effort: a store without the ledger surface skips
+// silently, and a failure never blocks termination — the ledger expiry stays
+// the fallback. Claimed rows retire too; the in-flight attempt's token-fenced
+// ack becomes a lost claim, which the coordinator reports loudly.
+func (m *Manager) finalizeTerminatedReports(ctx context.Context, id domain.SessionID) {
+	finalizer, ok := m.store.(interface {
+		SupersedeSessionReports(ctx context.Context, sessionID domain.SessionID, cause, reason string) (int, error)
+	})
+	if !ok {
+		return
+	}
+	retired, err := finalizer.SupersedeSessionReports(ctx, id, domain.DeliveryEventSourceTerminated, domain.ReportTerminatedReason)
+	if err != nil {
+		slog.Default().Warn("lifecycle: terminate report finalization failed", "session", id, "err", err)
+		return
+	}
+	if retired > 0 {
+		slog.Default().Info("lifecycle: terminated session's undelivered reports retired", "session", id, "reports", retired)
 	}
 }
 

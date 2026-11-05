@@ -68,3 +68,34 @@ func TestReportRecordValidatesSettlementDeadline(t *testing.T) {
 		t.Fatal("expected missing settlement deadline to fail")
 	}
 }
+
+func TestCoordinationDeliveryIDInsidePasteEnvelope(t *testing.T) {
+	batch := "report-batch:rpt_2eb7cf6b-eda1-41e5-af37-79d7db88f3ec"
+	wrapped := "  <pasted_content id=\"a656\"> " + WrapReportDelivery(batch, "body") + " </pasted_content>"
+	id, ok := CoordinationDeliveryID(wrapped)
+	if !ok || id != batch {
+		t.Fatalf("CoordinationDeliveryID(wrapped) = %q, %v; want %q", id, ok, batch)
+	}
+
+	// A marker beyond the scan head is quoted prompt content, not a delivery.
+	deep := "intro " + strings.Repeat("x", reportDeliveryScanHead) + WrapReportDelivery(batch, "body")
+	if got, ok := CoordinationDeliveryID(deep); ok {
+		t.Fatalf("deep marker parsed as %q, want refusal", got)
+	}
+
+	// Forbidden id characters stay rejected wherever the marker sits.
+	hostile := "<pasted_content> " + WrapReportDelivery("bad id;drop table", "body")
+	if got, ok := CoordinationDeliveryID(hostile); ok {
+		t.Fatalf("hostile id parsed as %q, want refusal", got)
+	}
+
+	if !IsAOCoordinationPrompt(wrapped) {
+		t.Fatal("wrapped report prompt not classified as coordination")
+	}
+	if !IsAOCoordinationPrompt("<pasted_content id=\"a1\"> <ao-handoff-request switch-id=\"s\">") {
+		t.Fatal("wrapped handoff prompt not classified as coordination")
+	}
+	if IsAOCoordinationPrompt("plain user question about <ao-report-delivery> internals") {
+		t.Fatal("ordinary question classified as coordination")
+	}
+}

@@ -850,10 +850,7 @@ func (p nativeHistoryCheckpoint) mismatches(
 }
 
 func nativeHistoryCoordinationMessage(text string) bool {
-	text = strings.TrimSpace(text)
-	_, coordination := domain.CoordinationDeliveryID(text)
-	return coordination || strings.HasPrefix(text, "<ao-handoff-request") ||
-		strings.HasPrefix(text, "AO transferred the previous agent's context in hidden system instructions.")
+	return domain.IsAOCoordinationPrompt(text)
 }
 
 func nativeHistoryTextMatches(checkpoint, replayed string) bool {

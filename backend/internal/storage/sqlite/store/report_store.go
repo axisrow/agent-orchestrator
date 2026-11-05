@@ -199,7 +199,19 @@ func (s *Store) ReleaseReportBatch(ctx context.Context, projectID domain.Project
 // come back as a post-prompt delivery. The in-flight attempt's token-fenced
 // ack and defer become no-ops, which the coordinator reports as a lost claim.
 func (s *Store) SupersedePendingReports(ctx context.Context, sessionID domain.SessionID, reason string) (int, error) {
-	if sessionID == "" || reason == "" {
+	return s.supersedeSessionReports(ctx, sessionID, domain.DeliveryEventRepromptSuperseded, reason)
+}
+
+// SupersedeSessionReports is the generic terminal retirement of one session's
+// undelivered deliveries: the caller names the journal cause class (a fresh
+// prompt supersedes; the source's termination finalizes, fork issue #279),
+// the reason travels verbatim into last_error and the journal.
+func (s *Store) SupersedeSessionReports(ctx context.Context, sessionID domain.SessionID, cause, reason string) (int, error) {
+	return s.supersedeSessionReports(ctx, sessionID, cause, reason)
+}
+
+func (s *Store) supersedeSessionReports(ctx context.Context, sessionID domain.SessionID, cause, reason string) (int, error) {
+	if sessionID == "" || reason == "" || cause == "" {
 		return 0, domain.ErrInvalidReport
 	}
 	s.writeMu.Lock()
@@ -216,7 +228,7 @@ func (s *Store) SupersedePendingReports(ctx context.Context, sessionID domain.Se
 			return err
 		}
 		if err := journalDeliveryEvents(ctx, q, pending,
-			string(domain.ReportPending), string(domain.ReportStale), domain.DeliveryEventRepromptSuperseded, reason, time.Now().UTC()); err != nil {
+			string(domain.ReportPending), string(domain.ReportStale), cause, reason, time.Now().UTC()); err != nil {
 			return err
 		}
 		claimed, err := q.SupersedeSessionClaimedReports(ctx, gen.SupersedeSessionClaimedReportsParams{
@@ -226,7 +238,7 @@ func (s *Store) SupersedePendingReports(ctx context.Context, sessionID domain.Se
 			return err
 		}
 		if err := journalDeliveryEvents(ctx, q, claimed,
-			string(domain.ReportClaimed), string(domain.ReportStale), domain.DeliveryEventRepromptSuperseded, reason, time.Now().UTC()); err != nil {
+			string(domain.ReportClaimed), string(domain.ReportStale), cause, reason, time.Now().UTC()); err != nil {
 			return err
 		}
 		retired = len(pending) + len(claimed)

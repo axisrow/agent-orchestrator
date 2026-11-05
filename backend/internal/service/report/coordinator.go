@@ -26,6 +26,13 @@ import (
 // AO_DELIVERY_EXPIRY_DAYS; claimed rows ride out their own attempt first.
 const ReportExpiryAge = 7 * 24 * time.Hour
 
+// ReportDeliveryAttemptLimit bounds a batch's safe-point attempts: a batch
+// whose deliveries keep failing their acceptance handshake must not replay at
+// every safe point forever (fork issue #279). The first attempt plus two
+// retries, then the drain retires the batch terminally; the ledger expiry
+// stays the only other exit.
+const ReportDeliveryAttemptLimit = 3
+
 // ErrReportDeliveryModeUnsupported reports a target without semantic delivery.
 var ErrReportDeliveryModeUnsupported = errors.New("report delivery requires a semantic conversation")
 
@@ -269,6 +276,19 @@ func (c *Coordinator) deliverProject(ctx context.Context, projectID domain.Proje
 		return true, c.release(ctx, batch, err)
 	} else if accepted {
 		delete(c.injectedIdle, target.ID)
+		return false, nil
+	}
+	// A batch whose earlier attempts never produced a recorded acceptance
+	// stops replaying at safe points once its bounded attempts are spent
+	// (fork issue #279): the drain retires it terminally instead of re-pasting
+	// the same content at every turn boundary. The recipient already holds a
+	// copy from each failed attempt; a third is noise, not delivery.
+	if batch.MaxDeliveryAttempts() >= ReportDeliveryAttemptLimit {
+		reason := fmt.Sprintf("delivery attempts exhausted without acceptance (%d recorded)", batch.MaxDeliveryAttempts())
+		if _, failErr := c.store.FailReportBatchTerminally(ctx, batch.ProjectID, batch.Token, domain.DeliveryEventRetryLimit, reason); failErr != nil {
+			return true, failErr
+		}
+		c.log.Warn("report: batch retired terminally; retry limit", "batch", batch.IdempotencyKey(), "project", batch.ProjectID, "reports", len(batch.Reports), "attempts", batch.MaxDeliveryAttempts())
 		return false, nil
 	}
 	// Stuck reports ride the normal submit path in every session mode: the
