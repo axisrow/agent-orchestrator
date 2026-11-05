@@ -411,3 +411,8 @@ cba0c29f463179c539f664001028f6afe6fa8560 taken fix(desktop): stop the window jol
 cbd688bf92fc26c5929846b22ae8c7e7dcb8b26e skipped feat(desktop): another member's cloud session files are view only (#7665)
 cf321a61ebe82df869cccdfd5ca10e75d9cd3bc0 skipped fix(release): point macOS download links at the published dmg names (#7755) — релизная инфраструктура выпилена с апдейтером (release-latest-guard.yml/build-mac-dmg удалены); форк обновляется rebuild'ом
 bf73ae98bd4eec68e18371c5a6c01b4086d48570 skipped feat(artifacts): live-refresh an open local artifact when its file changes (#7662)
+f7c1092a3cbc278daeab0c0414ddbd1ad010fc4d taken fix(shell): keep the macOS titlebar strip as wide as the sidebar (#7768)
+84ce8d35cf1fe040d4be95b703895e8208c2868b skipped feat(desktop): offer Republish for a published file that changed (#7758)
+b27c37f1d8b5549882460b10fe3ad5058f79e6c2 skipped feat(sidebar): pin projects to the top (#7752)
+d5981655bfbd4dfabafb7c91f5af3d4793e596e3 skipped feat(desktop): share sessions and projects with teams (#7511)
+6430fe3b6a97582c8e129eb6149aa565c046615b taken fix(desktop): match the startup loader to the shell background (#7772) — юнион: bg-sidebar, screenRef не взят (в форк-версии его нет)
