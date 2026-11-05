@@ -1926,6 +1926,7 @@
 	"status.draft": "PR en brouillon",
 	"status.exited": "Terminé",
 	"status.idle": "Inactif",
+	"status.merge_blocked": "Fusion bloquée",
 	"status.mergeable": "Prêt",
 	"status.merged": "Fusionné",
 	"status.needs_input": "Saisie requise",

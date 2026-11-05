@@ -77,14 +77,14 @@ func TestDeriveStatusStackedChildExemptFromAggregation(t *testing.T) {
 }
 
 func TestDeriveStatusMergedParentOpenChildStaysOnChild(t *testing.T) {
-	// Parent merged, child now unblocked and review_pending: still alive, status
-	// follows the open child.
+	// Parent merged, child now unblocked and waiting on its required review:
+	// still alive, status follows the open child.
 	prs := []domain.PRFacts{
 		{URL: "root", SourceBranch: "ao/abc", TargetBranch: "main", Merged: true},
 		{URL: "child", SourceBranch: "ao/abc/x", TargetBranch: "main", Review: domain.ReviewRequired},
 	}
-	if got := deriveStatus(live(), prs, statusNow, true); got != domain.StatusReviewPending {
-		t.Fatalf("got %q want review_pending", got)
+	if got := deriveStatus(live(), prs, statusNow, true); got != domain.StatusMergeBlocked {
+		t.Fatalf("got %q want merge_blocked", got)
 	}
 }
 

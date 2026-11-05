@@ -1899,6 +1899,7 @@
 	"status.draft": "Entwurfs-PR",
 	"status.exited": "Beendet",
 	"status.idle": "Inaktiv",
+	"status.merge_blocked": "Merge blockiert",
 	"status.mergeable": "Bereit",
 	"status.merged": "Gemerged",
 	"status.needs_input": "Eingabe erforderlich",

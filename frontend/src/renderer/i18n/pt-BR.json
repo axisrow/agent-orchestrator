@@ -1926,6 +1926,7 @@
 	"status.draft": "PR em rascunho",
 	"status.exited": "Encerrado",
 	"status.idle": "Inativo",
+	"status.merge_blocked": "Merge bloqueado",
 	"status.mergeable": "Pronto",
 	"status.merged": "Mesclado",
 	"status.needs_input": "Entrada necessária",

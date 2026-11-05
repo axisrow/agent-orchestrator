@@ -143,6 +143,7 @@ Status is derived from durable runtime, PR, CI, and review facts. The renderer c
 | Validating | `--color-status-validating` / #facc15 | checks or verification in progress |
 | Review / caution | `--color-status-in-review` / #f59e0b | review pending, changes requested |
 | Ready / success | `--color-status-ready` / #4ade80 | mergeable, approved, completed actionable success |
+| Merge blocked | `--color-status-blocked` / #22d3ee | merge gated: required review not submitted, or the provider reports the merge blocked; never the ready tone (#272) |
 | Merged | `--color-status-merged` / #c084fc | historical terminal completion state |
 | Failure | `--color-status-exited` / `--destructive` | failed CI, destructive or failed operation |
 | Idle / unknown | muted or passive tokens | neutral, not a hidden failure |

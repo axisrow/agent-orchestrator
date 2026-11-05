@@ -29,15 +29,21 @@ const (
 	// thread from a review that did not formally request changes (e.g. a
 	// GitHub COMMENTED review). It is distinct from StatusChangesRequested,
 	// which is reserved for a formal provider decision.
-	StatusCommented  SessionStatus = "commented"
-	StatusApproved   SessionStatus = "approved"
-	StatusMergeable  SessionStatus = "mergeable"
-	StatusMerged     SessionStatus = "merged"
-	StatusNeedsInput SessionStatus = "needs_input"
-	StatusExited     SessionStatus = "exited"
-	StatusIdle       SessionStatus = "idle"
-	StatusTerminated SessionStatus = "terminated"
-	StatusNoSignal   SessionStatus = "no_signal"
+	StatusCommented SessionStatus = "commented"
+	StatusApproved  SessionStatus = "approved"
+	StatusMergeable SessionStatus = "mergeable"
+	// StatusMergeBlocked marks an open PR whose merge is gated: a required
+	// review has not been submitted, or the provider itself reports the merge
+	// as blocked. It exists so no surface paints such a PR with the ready tone
+	// -- the provider reports `mergeable` (no conflicts) for these PRs too, so
+	// mergeability alone must never read as "ready to merge" (issue #272).
+	StatusMergeBlocked SessionStatus = "merge_blocked"
+	StatusMerged       SessionStatus = "merged"
+	StatusNeedsInput   SessionStatus = "needs_input"
+	StatusExited       SessionStatus = "exited"
+	StatusIdle         SessionStatus = "idle"
+	StatusTerminated   SessionStatus = "terminated"
+	StatusNoSignal     SessionStatus = "no_signal"
 )
 
 // SessionFacts are the durable-agnostic facts used to derive session status.
@@ -241,7 +247,7 @@ func statusSeverity(status SessionStatus) int {
 		return 2
 	case StatusDraft:
 		return 3
-	case StatusReviewPending:
+	case StatusReviewPending, StatusMergeBlocked:
 		return 4
 	case StatusPROpen:
 		return 5
@@ -268,12 +274,16 @@ func prPipelineStatus(pr PRFacts) SessionStatus {
 		return StatusChangesRequested
 	case pr.ReviewComments:
 		return StatusCommented
+	// Merge gates come before bare mergeability: the provider reports
+	// `mergeable` (no conflicts) even while branch protection still holds the
+	// PR for a required review, so reading `mergeable` first painted gated PRs
+	// ready -- see issue #272.
+	case pr.Review == ReviewRequired:
+		return StatusMergeBlocked
 	case pr.Mergeability == MergeMergeable:
 		return StatusMergeable
-	case pr.Review == ReviewRequired:
-		return StatusReviewPending
 	case pr.Mergeability == MergeBlocked:
-		return StatusPROpen
+		return StatusMergeBlocked
 	case pr.Review == ReviewApproved:
 		return StatusApproved
 	default:

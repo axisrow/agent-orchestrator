@@ -1899,6 +1899,7 @@
 	"status.draft": "초안 PR",
 	"status.exited": "종료됨",
 	"status.idle": "유휴",
+	"status.merge_blocked": "병합 차단됨",
 	"status.mergeable": "준비 완료",
 	"status.merged": "병합됨",
 	"status.needs_input": "입력 필요",

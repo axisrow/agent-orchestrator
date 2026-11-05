@@ -1926,6 +1926,7 @@
 	"status.draft": "PR en borrador",
 	"status.exited": "Finalizado",
 	"status.idle": "Inactivo",
+	"status.merge_blocked": "Fusión bloqueada",
 	"status.mergeable": "Listo",
 	"status.merged": "Fusionado",
 	"status.needs_input": "Se necesita entrada",

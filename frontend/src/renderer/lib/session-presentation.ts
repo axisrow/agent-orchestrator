@@ -83,18 +83,22 @@ export function getSessionStatusDotView(
 	const sectionStatus: SessionStatus =
 		closedWithoutMerge ? "exited" : (session.scmStatus ?? session.status);
 	const toneStatus = sectionStatus === "idle" && working ? "working" : sectionStatus;
+	// Merge blocked carries its own tone: routing it through the zone would
+	// paint a gated PR with the in-review amber, and the tone exists precisely
+	// so a gated PR never shares ready/in-review/needs-you (#272).
+	const ownTone = toneStatus === "idle" || toneStatus === "merged" || toneStatus === "merge_blocked";
 	const className =
 		closedWithoutMerge
 			? getSessionStatusView("exited", t).dotClassName
 			: toneStatus === "exited"
 				? "bg-passive"
-				: toneStatus === "idle" || toneStatus === "merged"
+				: ownTone
 					? getSessionStatusView(toneStatus, t).dotClassName
 					: getAttentionZoneView(toneStatus, t).dotClassName;
 	// The tooltip names the same branch that picked the colour, so the text
 	// always explains the tone actually painted.
 	const toneLabel =
-		toneStatus === "exited" || toneStatus === "idle" || toneStatus === "merged"
+		toneStatus === "exited" || ownTone
 			? getSessionStatusView(toneStatus, t).label
 			: getAttentionZoneView(toneStatus, t).label;
 

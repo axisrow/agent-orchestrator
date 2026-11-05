@@ -1954,6 +1954,7 @@
 	"status.draft": "草稿 PR",
 	"status.exited": "已退出",
 	"status.idle": "空闲",
+	"status.merge_blocked": "合并被阻止",
 	"status.mergeable": "可合并",
 	"status.merged": "已合并",
 	"status.needs_input": "需要输入",
