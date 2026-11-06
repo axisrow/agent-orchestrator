@@ -425,7 +425,10 @@ const SummaryView = memo(function SummaryView({
 		<SessionInspectorSummaryView
 			activity={
 				<>
-					{session.cloud ? null : <PromptOverrideIndicator hostId={hostId} session={session} />}
+					{/* Prompt overrides are local-daemon config; a remote session's
+					    effective override lives on its own host, and the global
+					    user-config client would answer with the wrong daemon's data. */}
+					{!session.cloud && (!hostId || hostId === "local") ? <PromptOverrideIndicator hostId={hostId} session={session} /> : null}
 					<ActivityTimeline hostId={hostId} prs={prSummaries} session={session} />
 					{hostId || !accountsPreview ? null : <SessionAccountSummary session={session} />}
 					<ResumeAgentControl
