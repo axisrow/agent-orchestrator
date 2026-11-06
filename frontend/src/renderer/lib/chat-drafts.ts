@@ -1160,7 +1160,7 @@ export function clearUncertainChatComposerDelivery(
  */
 export function isParkableChatComposerDelivery(delivery: ChatComposerDelivery | undefined): delivery is ChatComposerDelivery {
 	return delivery?.kind === "send" && delivery.state === "dispatching" &&
-		!delivery.excerpts?.length && !delivery.fileReferences?.length;
+		!delivery.excerpts?.length;
 }
 
 export function parkChatComposerDelivery(
@@ -1190,9 +1190,8 @@ export function parkChatComposerDelivery(
 				text: composer.text,
 				attachments: composer.attachments,
 				excerpts: composer.excerpts,
-				fileReferences: composer.fileReferences,
 			}
-			: { revision: composer.revision + 1, text: "", attachments: [], excerpts: [], fileReferences: [] },
+			: { revision: composer.revision + 1, text: "", attachments: [], excerpts: [] },
 	};
 	const result = persistDraftProven(next, storage);
 	return result.ok ? result : { ok: false, draft: loaded.draft };

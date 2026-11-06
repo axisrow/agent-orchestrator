@@ -31,7 +31,7 @@ export function UnsentMessageStrip(props:
 				<div className="flex h-10 w-full min-w-0 items-center gap-2.5 px-3 text-xs text-muted-foreground">
 					<Check aria-hidden="true" className="size-3.5 shrink-0" strokeWidth={2} />
 					<span className="min-w-0 flex-1 truncate">{t("chat.unsent.discarded")}</span>
-					<Button type="button" variant="quiet" size="sm" onClick={props.onUndo}>{t("chat.unsent.undo")}</Button>
+					<Button type="button" variant="ghost" size="sm" onClick={props.onUndo}>{t("chat.unsent.undo")}</Button>
 				</div>
 			</div>
 		);
@@ -57,7 +57,7 @@ export function UnsentMessageStrip(props:
 					<div className="flex shrink-0 items-center gap-0.5 whitespace-nowrap">
 						<Button
 							type="button"
-							variant="quiet"
+							variant="ghost"
 							size="icon-sm"
 							onClick={() => setExpanded((open) => !open)}
 							aria-expanded={expanded}
@@ -66,14 +66,15 @@ export function UnsentMessageStrip(props:
 						>
 							<ChevronDown aria-hidden="true" className={cn("size-3.5 shrink-0 transition-transform duration-150 motion-reduce:transition-none", expanded && "rotate-180")} strokeWidth={2} />
 						</Button>
-						<Button type="button" variant="quiet" size="sm" disabled={retryDisabled} onClick={onRetry} title={t("chat.unsent.retryHint")} className="gap-1.5">
+						<Button type="button" variant="ghost" size="sm" disabled={retryDisabled} onClick={onRetry} title={t("chat.unsent.retryHint")} className="gap-1.5">
 							<RotateCw aria-hidden="true" className="size-3.5 shrink-0" strokeWidth={2} />
 							{t("chat.unsent.retry")}
 						</Button>
 						<Button
 							type="button"
-							variant="destructive-ghost"
+							variant="ghost"
 							size="icon-sm"
+							className="text-destructive hover:text-destructive"
 							onClick={onDiscard}
 							aria-label={t("chat.unsent.discard")}
 							title={t("chat.unsent.discard")}
@@ -88,7 +89,7 @@ export function UnsentMessageStrip(props:
 					<pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words px-3 py-2.5 font-mono text-xs leading-relaxed text-muted-foreground">{text}</pre>
 					<div className="flex items-center justify-between px-3 pb-2 text-xs text-muted-foreground">
 						<span>{attachmentCount > 0 ? t("chat.unsent.attachments", { count: attachmentCount }) : null}</span>
-						<Button type="button" variant="quiet" size="sm" onClick={() => void navigator.clipboard?.writeText(text)} className="gap-1.5">
+						<Button type="button" variant="ghost" size="sm" onClick={() => void navigator.clipboard?.writeText(text)} className="gap-1.5">
 							<Copy aria-hidden="true" className="size-3.5 shrink-0" strokeWidth={2} />
 							{t("chat.unsent.copy")}
 						</Button>
