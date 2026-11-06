@@ -64,7 +64,7 @@ func hookFactLiveness(rec domain.SessionRecord) time.Time {
 // observed for threshold. The second return is the silence duration in
 // milliseconds, zero unless stalled. Read-time only: the activity state is
 // never rewritten and nothing is killed on the strength of this.
-func deriveTurnStall(rec domain.SessionRecord, lastConversationWrite time.Time, now time.Time, threshold time.Duration) (bool, int64) {
+func deriveTurnStall(rec domain.SessionRecord, lastConversationWrite, now time.Time, threshold time.Duration) (bool, int64) {
 	if rec.Activity.State != domain.ActivityActive || rec.Activity.LastActivityAt.IsZero() {
 		return false, 0
 	}

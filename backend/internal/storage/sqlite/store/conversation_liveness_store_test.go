@@ -16,7 +16,9 @@ func TestListConversationLivenessForSessions(t *testing.T) {
 	ctx := context.Background()
 	seedProject(t, s, "live")
 
-	base := time.Now().UTC().Truncate(time.Second)
+	// No Truncate: real chat writes bind time.Now() with its monotonic
+	// reading, and the MAX() aggregate carries that tail back as text.
+	base := time.Now().UTC()
 	mkSession := func(id string) domain.SessionID {
 		rec := sampleRecord("live")
 		rec.ID = domain.SessionID(id)

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -4445,10 +4446,18 @@ func (s *Store) ListConversationLivenessForSessions(ctx context.Context, ids []d
 
 // parseStoredTimestamp reads a MAX() aggregate that came back as text. Through
 // the UNION the column loses its TIMESTAMP affinity, so the driver hands back
-// Go's default String() form instead of the RFC3339 it parses natively.
+// Go's default String() form instead of the RFC3339 it parses natively — and
+// that form carries the monotonic-clock tail (" m=+..."), which Parse rejects
+// as extra text. Chat binds time.Now().UTC() without truncation, so real rows
+// always carry it: cut the tail off, then parse the wall-clock form.
 func parseStoredTimestamp(raw string) (time.Time, error) {
-	if t, err := time.Parse(time.RFC3339Nano, raw); err == nil {
+	trimmed := raw
+	if idx := strings.Index(trimmed, " m="); idx >= 0 {
+		trimmed = trimmed[:idx]
+	}
+	trimmed = strings.TrimSpace(trimmed)
+	if t, err := time.Parse(time.RFC3339Nano, trimmed); err == nil {
 		return t, nil
 	}
-	return time.Parse("2006-01-02 15:04:05.999999999 -0700 MST", raw)
+	return time.Parse("2006-01-02 15:04:05.999999999 -0700 MST", trimmed)
 }

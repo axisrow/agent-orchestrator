@@ -28,11 +28,11 @@ func TestChatProviderPreservationIsDerivedFromLiveOwnership(t *testing.T) {
 			if tc.observed != nil {
 				svc.SetChatProviderPreserver(func(id domain.SessionID) bool { return id == "s" && *tc.observed })
 			}
-			session, err := svc.toSessionWithFacts(context.Background(), domain.SessionRecord{
+			session := svc.toSessionWithFacts(context.Background(), domain.SessionRecord{
 				ID: "s", Harness: domain.HarnessPi, Mode: tc.mode, IsTerminated: tc.terminated,
 			}, nil, nil, false, "")
-			if err != nil || session.ChatProviderPreserved != tc.want {
-				t.Fatalf("preserved=%v, want %v; err=%v", session.ChatProviderPreserved, tc.want, err)
+			if session.ChatProviderPreserved != tc.want {
+				t.Fatalf("preserved=%v, want %v", session.ChatProviderPreserved, tc.want)
 			}
 		})
 	}

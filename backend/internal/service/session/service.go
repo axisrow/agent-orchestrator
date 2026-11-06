@@ -1348,10 +1348,7 @@ func (s *Service) List(ctx context.Context, filter ListFilter) ([]domain.Session
 	out := make([]domain.Session, 0, len(filtered))
 	for _, rec := range filtered {
 		facts, found := cleanupBySession[rec.ID]
-		sess, err := s.toSessionWithFacts(ctx, rec, prsBySession[rec.ID], runsBySession[rec.ID], interrupted[rec.ID], currentWorkspaceCleanup(rec, facts, found))
-		if err != nil {
-			return nil, err
-		}
+		sess := s.toSessionWithFacts(ctx, rec, prsBySession[rec.ID], runsBySession[rec.ID], interrupted[rec.ID], currentWorkspaceCleanup(rec, facts, found))
 		sess.TurnStalled, sess.TurnSilentForMs = deriveTurnStall(rec, conversationLife[rec.ID], s.now(), s.turnStallAfter)
 		if agentSwitch, ok := activeBySession[rec.ID]; ok {
 			sess.ActiveAgentSwitch = &agentSwitch
@@ -1450,7 +1447,7 @@ func (s *Service) Get(ctx context.Context, id domain.SessionID) (domain.Session,
 	return sess, nil
 }
 
-func (s *Service) toSessionWithFacts(ctx context.Context, rec domain.SessionRecord, prs []domain.PRFacts, runs []domain.CurrentHeadReviewRun, interrupted bool, cleanup domain.WorkspaceDisposition) (domain.Session, error) {
+func (s *Service) toSessionWithFacts(ctx context.Context, rec domain.SessionRecord, prs []domain.PRFacts, runs []domain.CurrentHeadReviewRun, interrupted bool, cleanup domain.WorkspaceDisposition) domain.Session {
 	// A row created before artifact_dir existed carries it as '' (the
 	// migration's default) even though session_manager always prompts the
 	// agent to write into the deterministic dataDir/artifacts/<id> path.
@@ -1525,7 +1522,7 @@ func (s *Service) toSessionWithFacts(ctx context.Context, rec domain.SessionReco
 		TerminalHandleID: rec.Metadata.RuntimeHandleID,
 		ArtifactFiles:    artifactFiles,
 		PRs:              prs,
-	}, nil
+	}
 }
 
 // toAPIError maps the session engine's sentinel errors to their REST API
@@ -1855,10 +1852,7 @@ func (s *Service) toSession(ctx context.Context, rec domain.SessionRecord) (doma
 	if err != nil {
 		return domain.Session{}, fmt.Errorf("conversation liveness %s: %w", rec.ID, err)
 	}
-	sess, err := s.toSessionWithFacts(ctx, rec, prs, runs, interrupted[rec.ID], cleanup)
-	if err != nil {
-		return domain.Session{}, err
-	}
+	sess := s.toSessionWithFacts(ctx, rec, prs, runs, interrupted[rec.ID], cleanup)
 	sess.TurnStalled, sess.TurnSilentForMs = deriveTurnStall(rec, conversationLife[rec.ID], s.now(), s.turnStallAfter)
 	return sess, nil
 }
