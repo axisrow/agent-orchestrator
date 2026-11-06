@@ -6,6 +6,7 @@ import {
 	loudNotificationsEnabled,
 	needsHumanFeedback,
 	osToastChimeControllable,
+	panelShowsNotification,
 	shouldReplaceBounce,
 	shouldSignalAttention,
 	shouldToast,
@@ -134,6 +135,45 @@ describe("bellUnreadCount", () => {
 		expect(
 			bellUnreadCount([{ type: "ready_to_merge", status: "unread" }], false),
 		).toBe(0);
+	});
+});
+
+describe("panelShowsNotification", () => {
+	// The quiet panel's keep-set (fork issue #283): the attention types and the
+	// error classes, mirroring backend/internal/domain/notification.go.
+	const LISTED_TYPES: string[] = [
+		"needs_input",
+		"ready_to_merge",
+		"review_changes_requested",
+		"orphan_workers",
+		"stuck_delivery",
+		"delivery_died",
+	];
+	const INFORMATIONAL_TYPES = ["pr_merged", "review_completed", "pr_closed_unmerged"] as const;
+
+	it("lists the attention and error types in quiet mode", () => {
+		for (const type of LISTED_TYPES) {
+			expect(panelShowsNotification({ type }, false)).toBe(true);
+		}
+	});
+
+	it("keeps the informational PR/review outcomes out of the quiet feed", () => {
+		for (const type of INFORMATIONAL_TYPES) {
+			expect(panelShowsNotification({ type }, false)).toBe(false);
+		}
+	});
+
+	// A hide-list, not an allow-list: a future action-needed type must stay
+	// visible by default, never silently dropped.
+	it("lists unknown and future types in quiet mode", () => {
+		expect(panelShowsNotification({ type: "some_future_type" }, false)).toBe(true);
+		expect(panelShowsNotification({}, false)).toBe(true);
+	});
+
+	it("lists every type in loud mode, like upstream", () => {
+		for (const type of [...LISTED_TYPES, ...INFORMATIONAL_TYPES]) {
+			expect(panelShowsNotification({ type }, true)).toBe(true);
+		}
 	});
 });
 

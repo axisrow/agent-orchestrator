@@ -97,6 +97,28 @@ export function bellUnreadCount(items: readonly { type?: string; status?: string
 }
 
 /**
+ * The notification types the quiet bell panel keeps out of the feed: terminal
+ * PR/review facts that need no action (`pr_merged`, `review_completed`,
+ * `pr_closed_unmerged`; fork issue #283). Attention and error types stay
+ * listed, and so does anything not named here — a future action-needed class
+ * must stay visible by default, so this is a hide-list, not an allow-list.
+ */
+const QUIET_PANEL_HIDDEN_TYPES: ReadonlySet<string> = new Set([
+	"pr_merged",
+	"pr_closed_unmerged",
+	"review_completed",
+]);
+
+/**
+ * Whether the bell panel lists this notification. Quiet mode (the default)
+ * hides the informational PR/review outcomes; loud mode
+ * (`AO_NO_QUIET_NOTIFICATIONS`) restores the full upstream feed.
+ */
+export function panelShowsNotification(notification: { type?: string }, loud: boolean): boolean {
+	return loud || !QUIET_PANEL_HIDDEN_TYPES.has(notification.type ?? "");
+}
+
+/**
  * Whether a new macOS dock bounce should replace the pending one. A pending
  * "critical" bounce (agent blocked on the user) is never replaced: a later
  * informational notification must not downgrade it to a one-shot bounce, or
