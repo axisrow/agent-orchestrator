@@ -1754,7 +1754,10 @@ export function SessionView({ sessionId, cloudOrgId, projectId, hostId }: Sessio
 
 	// Explicit open commands reveal once per command. A fast command's start
 	// and finish can share a React render, so either event can consume its ID.
-	// Later completion and UI changes must not override a user's close.
+	// Later completion and UI changes must not override a user's close. Only a
+	// command whose start arrived while this session was on screen counts: one
+	// begun while the user was elsewhere would otherwise pop Browser open a
+	// moment after they switch in.
 	useEffect(() => {
 		if (revealedBrowserCommandsRef.current.sessionId !== uiSessionId) {
 			revealedBrowserCommandsRef.current = { sessionId: uiSessionId, commands: new Set() };
@@ -1762,7 +1765,11 @@ export function SessionView({ sessionId, cloudOrgId, projectId, hostId }: Sessio
 		if (!hasInspector || terminated) return;
 		const activity = browserView.agentBrowserActivity;
 		if (activity && BROWSER_REVEAL_ACTIONS.has(activity.action)) {
-			if (!activity.commandId || activity.viewId !== browserView.viewId) return;
+			if (!activity.commandId || activity.viewId !== browserView.viewId || !activity.startObserved) {
+				// (Fork: no unseen badge on agent browsing — quiet by default;
+				// the unseen state stays reserved for human-feedback signals.)
+				return;
+			}
 			const commands = revealedBrowserCommandsRef.current.commands;
 			if (commands.has(activity.commandId)) return;
 			commands.add(activity.commandId);
@@ -1772,8 +1779,11 @@ export function SessionView({ sessionId, cloudOrgId, projectId, hostId }: Sessio
 			return;
 		}
 		if (!browserView.agentBrowserActive) return;
+		// Passive activity only badges Browser, including an orchestrator's.
 		if (browserOnly && !useUiStore.getState().inspectorSessions[uiSessionId]?.browserContentRevealed) {
 			setBrowserContentRevealed(uiSessionId, true);
+			// Fork keeps the ao-preview reveal: a new browser target opens the
+			// inspector on the session being viewed (see project CLAUDE.md).
 			setInspectorOpenForSession(uiSessionId, true);
 		}
 		// Quiet by default: passive agent activity no longer badges a hidden
@@ -1791,7 +1801,6 @@ export function SessionView({ sessionId, cloudOrgId, projectId, hostId }: Sessio
 		terminated,
 		browserOnly,
 		setBrowserContentRevealed,
-		setInspectorOpenForSession,
 		revealBrowserPanel,
 	]);
 

@@ -1329,6 +1329,20 @@ export function XtermTerminal(props: XtermTerminalProps) {
 			wasDragging = dragging;
 		});
 		dragStateObserver.observe(document.body, { attributes: true, attributeFilter: ["class"] });
+		// The inspector slides open or closed by animating its gap's width, so the
+		// terminal box changes on every frame of that slide. Refitting each frame
+		// reflowed the whole buffer and resized the PTY ~36 times per toggle (each
+		// a SIGWINCH redraw from the agent). Hold the grid while the slide runs and
+		// fit once when it lands; the stable-fit timer is the fallback.
+		const inspectorSliding = () =>
+			host.closest(".session-split")?.querySelector('[data-slot="inspector-gap"][data-motion="animated"]') != null;
+		const settleAfterSlide = (event: TransitionEvent) => {
+			if (event.propertyName !== "width" || fitQuietTimer === null) return;
+			if (!(event.target instanceof Element) || event.target.getAttribute("data-slot") !== "inspector-gap") return;
+			if (!event.target.closest(".session-split")?.contains(host)) return;
+			flushScheduledFit();
+		};
+		document.addEventListener("transitionend", settleAfterSlide);
 		const observer = new ResizeObserver((entries) => {
 			if (disposed) return;
 			if (callbacksRef.current.isVisible === false) {
@@ -1348,6 +1362,11 @@ export function XtermTerminal(props: XtermTerminalProps) {
 				return;
 			}
 			if (box.width <= 0 || box.height <= 0) {
+				return;
+			}
+			// Hold the grid while the inspector's gap animates; fit once when it lands.
+			if (inspectorSliding()) {
+				scheduleStableFit();
 				return;
 			}
 			const gutter = term.options.scrollback === 0 || term.options.scrollbar?.showScrollbar === false
@@ -1747,6 +1766,7 @@ export function XtermTerminal(props: XtermTerminalProps) {
 			if (fitCapTimer !== null) clearTimeout(fitCapTimer);
 			fitSettledListeners.clear();
 			observer.disconnect();
+			document.removeEventListener("transitionend", settleAfterSlide);
 			dragStateObserver.disconnect();
 			synchronizedFrames.dispose();
 			synchronizedCapability.dispose();
