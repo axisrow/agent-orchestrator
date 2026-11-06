@@ -428,21 +428,6 @@ type UserConfigSource interface {
 	GetUserConfig(ctx context.Context) (domain.AgentConfig, bool, error)
 }
 
-// userConfigForSeed returns the user-scope config for spawn-time seeding (the
-// terminate-on-merge default, fork #285). A nil source or a read error seeds
-// nothing rather than failing the spawn — the same degradation
-// buildSystemPrompt applies to unreadable overrides.
-func (m *Manager) userConfigForSeed(ctx context.Context) domain.AgentConfig {
-	if m.userConfig == nil {
-		return domain.AgentConfig{}
-	}
-	cfg, _, err := m.userConfig.GetUserConfig(ctx)
-	if err != nil {
-		return domain.AgentConfig{}
-	}
-	return cfg
-}
-
 // conversationSettingsStore is the narrow optional read boundary for deriving
 // a chat orchestrator's current approval mode during a worker spawn. Older
 // embedders without chat persistence retain project-config-only behavior.
@@ -652,6 +637,21 @@ type Manager struct {
 	// and shared worktrees are not torn down concurrently.
 	workspaceGateMu sync.Mutex
 	workspaceGates  map[domain.ProjectID]*sync.Mutex
+}
+
+// userConfigForSeed returns the user-scope config for spawn-time seeding (the
+// terminate-on-merge default, fork #285). A nil source or a read error seeds
+// nothing rather than failing the spawn — the same degradation
+// buildSystemPrompt applies to unreadable overrides.
+func (m *Manager) userConfigForSeed(ctx context.Context) domain.AgentConfig {
+	if m.userConfig == nil {
+		return domain.AgentConfig{}
+	}
+	cfg, _, err := m.userConfig.GetUserConfig(ctx)
+	if err != nil {
+		return domain.AgentConfig{}
+	}
+	return cfg
 }
 
 // acquireWorkspaceGate acquires the per-project workspace gate, returning a
