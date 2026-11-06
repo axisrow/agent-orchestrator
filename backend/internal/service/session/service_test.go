@@ -545,6 +545,10 @@ func (f *fakeStore) ListInterruptedSessions(_ context.Context, ids []domain.Sess
 	return out, nil
 }
 
+func (f *fakeStore) ListConversationLivenessForSessions(_ context.Context, _ []domain.SessionID) (map[domain.SessionID]time.Time, error) {
+	return map[domain.SessionID]time.Time{}, nil
+}
+
 func (f *fakeStore) ListChecks(_ context.Context, prURL string) ([]domain.PullRequestCheck, error) {
 	return append([]domain.PullRequestCheck(nil), f.checks[prURL]...), nil
 }

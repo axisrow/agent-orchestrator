@@ -4405,3 +4405,50 @@ func (s *Store) SettleReviewChatWork(ctx context.Context, reviewID string, now t
 		return err
 	})
 }
+
+// ListConversationLivenessForSessions returns, per requested session, the
+// newest write to any message or activity row across its chat conversations.
+// Streaming deltas and tool events both rewrite updated_at, so a live turn
+// keeps advancing the value while a turn parked on a hung API call does not;
+// the session service reads it as the Chat-side sign of life for stalled-turn
+// detection. Sessions with no conversation rows are absent from the map.
+func (s *Store) ListConversationLivenessForSessions(ctx context.Context, ids []domain.SessionID) (map[domain.SessionID]time.Time, error) {
+	out := make(map[domain.SessionID]time.Time, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	encoded, err := json.Marshal(ids)
+	if err != nil {
+		return nil, fmt.Errorf("marshal session ids: %w", err)
+	}
+	rows, err := s.qr.SelectConversationLivenessForSessions(ctx, string(encoded))
+	if err != nil {
+		return nil, fmt.Errorf("list conversation liveness for sessions: %w", err)
+	}
+	for _, row := range rows {
+		switch at := row.LastLifeAt.(type) {
+		case time.Time:
+			out[domain.SessionID(row.SessionID)] = at
+		case string:
+			parsed, parseErr := parseStoredTimestamp(at)
+			if parseErr != nil {
+				return nil, fmt.Errorf("parse conversation liveness timestamp %q: %w", at, parseErr)
+			}
+			out[domain.SessionID(row.SessionID)] = parsed
+		case nil:
+		default:
+			return nil, fmt.Errorf("unsupported conversation liveness timestamp type %T", row.LastLifeAt)
+		}
+	}
+	return out, nil
+}
+
+// parseStoredTimestamp reads a MAX() aggregate that came back as text. Through
+// the UNION the column loses its TIMESTAMP affinity, so the driver hands back
+// Go's default String() form instead of the RFC3339 it parses natively.
+func parseStoredTimestamp(raw string) (time.Time, error) {
+	if t, err := time.Parse(time.RFC3339Nano, raw); err == nil {
+		return t, nil
+	}
+	return time.Parse("2006-01-02 15:04:05.999999999 -0700 MST", raw)
+}

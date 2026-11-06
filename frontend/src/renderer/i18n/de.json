@@ -188,6 +188,7 @@
 	"activity.exited": "Beendet",
 	"activity.idle": "Inaktiv",
 	"activity.unknown": "Unbekannt",
+	"activity.noSignsOfLife": "Keine Lebenszeichen seit {{duration}}",
 	"activity.waiting_input": "Eingabe erforderlich",
 	"home.never": "Nie",
 	"cloudCredential.anthropicLoginDescription": "Melde dich im Browser mit deinem Claude-Konto an. Ist Claude Code auf diesem Rechner nicht angemeldet, nutzen lokale Sitzungen diese Anmeldung ebenfalls.",

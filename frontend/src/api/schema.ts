@@ -5005,6 +5005,9 @@ export interface components {
             terminalGeneration?: string;
             terminalHandleId?: string;
             terminateOnPrMerge: boolean;
+            /** Format: int64 */
+            turnSilentForMs?: number;
+            turnStalled: boolean;
             /** Format: date-time */
             updatedAt: string;
             /** @enum {string} */

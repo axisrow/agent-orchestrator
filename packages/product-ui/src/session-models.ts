@@ -34,6 +34,12 @@ export type SessionActivityState = (typeof SESSION_ACTIVITY_STATES)[number];
 export type SessionActivity = {
 	state: SessionActivityState;
 	lastActivityAt: string;
+	// Stalled-turn facts from the daemon (read-time derived, never persisted):
+	// the turn is active but no sign of life has arrived for the configured
+	// threshold. Absent on daemons older than the field.
+	turnStalled?: boolean;
+	/** How long the turn has been silent, in milliseconds. */
+	turnSilentForMs?: number;
 };
 
 export const KANBAN_COLUMNS = [
@@ -105,7 +111,12 @@ export function toSessionStatus(status?: string, isTerminated = false): SessionS
 }
 
 export function toSessionActivity(
-	activity?: { state?: string; lastActivityAt?: string } | null,
+	activity?: {
+		state?: string;
+		lastActivityAt?: string;
+		turnStalled?: boolean;
+		turnSilentForMs?: number;
+	} | null,
 ): SessionActivity | undefined {
 	if (!activity) {
 		return undefined;
@@ -113,6 +124,11 @@ export function toSessionActivity(
 	return {
 		state: activity.state && isSessionActivityState(activity.state) ? activity.state : "unknown",
 		lastActivityAt: activity.lastActivityAt ?? "",
+		turnStalled: activity.turnStalled === true ? true : undefined,
+		turnSilentForMs:
+			typeof activity.turnSilentForMs === "number" && activity.turnSilentForMs > 0
+				? activity.turnSilentForMs
+				: undefined,
 	};
 }
 

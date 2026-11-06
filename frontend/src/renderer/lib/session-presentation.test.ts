@@ -193,6 +193,32 @@ describe("session presentation", () => {
 		});
 	});
 
+	// Issue #281: a turn hung on an API call must not look like honest work.
+	// The tone stays with the board section; the dot freezes and the tooltip
+	// carries the silence and its duration.
+	it("freezes the dot and names the silence for a stalled turn", () => {
+		const stalled = sessionWith({
+			status: "working",
+			activity: { state: "active", lastActivityAt: "", turnStalled: true, turnSilentForMs: 60 * 60 * 1000 },
+		});
+		expect(getSessionStatusDotView(stalled)).toEqual({
+			className: "bg-status-working",
+			breathe: false,
+			title: "No signs of life 1h · Working",
+		});
+
+		// An honest streaming turn (no stall fact) keeps breathing plain Working.
+		const live = sessionWith({
+			status: "working",
+			activity: { state: "active", lastActivityAt: "" },
+		});
+		expect(getSessionStatusDotView(live)).toEqual({
+			className: "bg-status-working",
+			breathe: true,
+			title: "Working",
+		});
+	});
+
 	it("keeps board-section color while raw working activity starts the motion", () => {
 		const scmStatus = "mergeable" as const;
 

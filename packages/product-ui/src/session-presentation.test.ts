@@ -170,6 +170,20 @@ describe("session presentation", () => {
 		).toBe("translated:zone.pending · t:activity.active");
 	});
 
+	it("leads a stalled turn's hover text with the silence and its duration", () => {
+		expect(
+			sessionStatusTooltip("Working", {
+				state: "active",
+				lastActivityAt: "",
+				turnStalled: true,
+				turnSilentForMs: 12 * 60 * 1000,
+			}),
+		).toBe("No signs of life 12m · Working");
+		expect(
+			sessionStatusTooltip("In review", { state: "active", lastActivityAt: "", turnStalled: true }),
+		).toBe("No signs of life 0s · In review · Working");
+	});
+
 	it("centralizes timeline status treatment", () => {
 		expect(getSessionTimelinePillView("ci_failed")).toEqual({
 			label: "CI Failed",

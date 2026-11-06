@@ -40,6 +40,10 @@ const (
 	// it moves to a newly installed harness release. Provider prompt caches
 	// expire well within it, so the move costs no cached context.
 	DefaultVersionRefreshIdle = 10 * time.Minute
+	// DefaultTurnStallAfter is how long an active turn may show no signs of
+	// life before reads flag it as stalled for display. It bounds well under
+	// the gateway's ~60-minute API-call ceiling.
+	DefaultTurnStallAfter = 10 * time.Minute
 	// MinHarnessUpdateInterval is the shortest AO_HARNESS_UPDATE_INTERVAL accepted.
 	MinHarnessUpdateInterval = time.Hour
 	// DefaultAgent is the compatibility value used when AO_AGENT is unset. The
@@ -178,6 +182,10 @@ type Config struct {
 	// VersionRefreshIdle is how long a session must be quiet before it moves,
 	// so a warm prompt cache is not thrown away (AO_VERSION_REFRESH_IDLE).
 	VersionRefreshIdle time.Duration
+	// TurnStallAfter is how long an active turn may show no signs of life
+	// before reads flag it as stalled for display (AO_TURN_STALL_AFTER).
+	// Display-only: nothing is killed or restarted from it.
+	TurnStallAfter time.Duration
 	// TUIVersionRefresh also restarts idle terminal sessions on a newly
 	// installed release (AO_TUI_VERSION_REFRESH=off disables it).
 	TUIVersionRefresh bool
@@ -286,6 +294,7 @@ func Load() (Config, error) {
 		TUIVersionRefresh:      true,
 		UpdateWhenIdle:         true,
 		ManagedHarnessInstalls: true,
+		TurnStallAfter:         DefaultTurnStallAfter,
 	}
 
 	if raw := os.Getenv("AO_PORT"); raw != "" {
@@ -397,6 +406,13 @@ func Load() (Config, error) {
 			return Config{}, err
 		}
 		cfg.VersionRefreshIdle = d
+	}
+	if raw, present := os.LookupEnv("AO_TURN_STALL_AFTER"); present && strings.TrimSpace(raw) != "" {
+		d, err := parsePositiveDuration("AO_TURN_STALL_AFTER", strings.TrimSpace(raw))
+		if err != nil {
+			return Config{}, err
+		}
+		cfg.TurnStallAfter = d
 	}
 	if raw, present := os.LookupEnv("AO_HARNESS_UPDATE_INTERVAL"); present && strings.TrimSpace(raw) != "" {
 		d, err := parsePositiveDuration("AO_HARNESS_UPDATE_INTERVAL", strings.TrimSpace(raw))

@@ -376,6 +376,7 @@ func startSession(ctx context.Context, cfg config.Config, runtime runtimeselect.
 		OutputTypeReconciler: lcm,
 		ProviderEntries:      providerEntryLookup(store),
 		ArtifactDeleter:      artifactVersions,
+		TurnStallAfter:       cfg.TurnStallAfter,
 	})
 	// Triggering a review spawns a reviewer over the worker's worktree, resolved
 	// from the reviewer registry (distinct from the worker agent set). The
