@@ -39,7 +39,7 @@ import {
 import type { components } from "../../api/schema";
 import { interfaceTransitionIsActive, useSessionInterfaceTransitionStatus } from "../hooks/useSessionInterfaceTransition";
 import { reviewerConversationQueryKey } from "../hooks/useReviewerConversation";
-import { apiErrorMessage } from "../lib/api-client";
+import { apiClient, apiErrorMessage } from "../lib/api-client";
 import { clientForSessionHost } from "../lib/host-clients";
 import { sessionUiKey } from "../lib/hosts";
 import { projectNavigateTarget, sessionNavigateTarget } from "../lib/navigate-to-session";
@@ -54,6 +54,7 @@ import { OrchestratorChildrenSection } from "./OrchestratorChildrenSection";
 import { ProductExternalLink } from "./ProductExternalLink";
 import { CopyButton } from "./chat/CopyButton";
 import { ScriptRunPanel } from "./ScriptRunPanel";
+import { userConfigQueryKey } from "./settings/PromptOverrideDialog";
 import { useCloudScriptRuns } from "../hooks/useCloudScriptRuns";
 import { latestScriptRun } from "../lib/cloud-script-runs";
 import { ResumeAgentControl } from "./ResumeAgentControl";
@@ -109,6 +110,7 @@ import {
 import type { CloudCpAOReviewRun, CloudCpSessionReviewState, CloudCpPullRequestSummary } from "../lib/cloud-cp";
 
 type ProjectConfig = components["schemas"]["ProjectConfig"];
+type AgentConfig = components["schemas"]["AgentConfig"];
 type OpenReviewerTerminal = (target: { handleId: string; harness: string }) => void;
 type ReviewerSurface = components["schemas"]["DomainReviewerSurface"];
 
@@ -423,6 +425,10 @@ const SummaryView = memo(function SummaryView({
 		<SessionInspectorSummaryView
 			activity={
 				<>
+					{/* Prompt overrides are local-daemon config; a remote session's
+					    effective override lives on its own host, and the global
+					    user-config client would answer with the wrong daemon's data. */}
+					{!session.cloud && (!hostId || hostId === "local") ? <PromptOverrideIndicator hostId={hostId} session={session} /> : null}
 					<ActivityTimeline hostId={hostId} prs={prSummaries} session={session} />
 					{hostId || !accountsPreview ? null : <SessionAccountSummary session={session} />}
 					<ResumeAgentControl
@@ -471,6 +477,104 @@ const SummaryView = memo(function SummaryView({
 		/>
 	);
 });
+
+type PromptOverrideResolution = { scope: "project" | "user"; value: string };
+
+/**
+ * The effective prompt override a session runs with, resolving exactly like
+ * the daemon does when it builds the system prompt: the session role's field
+ * (worker → workerPromptOverride, orchestrator → orchestratorPromptOverride),
+ * project scope winning over user scope, and `undefined` when neither is set
+ * and the hardcoded baseline applies. Mirrors rolePromptOverride in
+ * backend/internal/session_manager/prompt.go, including the trim before use.
+ */
+export function resolvePromptOverrideDisplay(
+	role: "worker" | "orchestrator",
+	project: ProjectConfig | undefined,
+	user: AgentConfig | undefined,
+): PromptOverrideResolution | undefined {
+	const key = role === "orchestrator" ? "orchestratorPromptOverride" : "workerPromptOverride";
+	const projectValue = project?.[key]?.trim();
+	if (projectValue) return { scope: "project", value: projectValue };
+	const userValue = user?.[key]?.trim();
+	if (userValue) return { scope: "user", value: userValue };
+	return undefined;
+}
+
+// ponytail: first 3 non-empty lines, 120 chars each — a debugging glance at the
+// value, not the prompt; raise both when reviews ask for a fuller preview.
+const PROMPT_OVERRIDE_PREVIEW_LINES = 3;
+const PROMPT_OVERRIDE_PREVIEW_WIDTH = 120;
+
+function promptOverridePreview(value: string): string {
+	return value
+		.split("\n")
+		.map((line) => line.trim())
+		.filter((line) => line !== "")
+		.slice(0, PROMPT_OVERRIDE_PREVIEW_LINES)
+		.map((line) => (line.length > PROMPT_OVERRIDE_PREVIEW_WIDTH ? `${line.slice(0, PROMPT_OVERRIDE_PREVIEW_WIDTH - 1)}…` : line))
+		.join("\n");
+}
+
+/**
+ * Read-only debugging indicator for the prompt override a session's agent runs
+ * with (project scope wins over user scope; Default = the hardcoded baseline),
+ * with the value's first lines in a tooltip. This is not an editor — the
+ * editor stays in Settings (PromptOverrideDialog).
+ */
+function PromptOverrideIndicator({ hostId, session }: { hostId?: string; session: WorkspaceSession }) {
+	const { t } = useTranslation();
+	const projectQuery = useQuery({
+		queryKey: hostId ? ["project-config", hostId, session.workspaceId] : ["project-config", session.workspaceId],
+		queryFn: async () => {
+			if (usePreviewData) return mockProjectConfig();
+			const { data, error } = await clientForSessionHost(hostId).GET("/api/v1/projects/{id}", {
+				params: { path: { id: session.workspaceId } },
+			});
+			if (error) return undefined;
+			return projectConfig(data?.project);
+		},
+	});
+	const userQuery = useQuery({
+		queryKey: userConfigQueryKey,
+		queryFn: async () => {
+			if (usePreviewData) return {} as AgentConfig;
+			const { data, error } = await apiClient.GET("/api/v1/user-config");
+			if (error) return undefined;
+			return (data.agentConfig ?? {}) as AgentConfig;
+		},
+	});
+	const resolved = resolvePromptOverrideDisplay(
+		session.kind === "orchestrator" ? "orchestrator" : "worker",
+		projectQuery.data,
+		userQuery.data,
+	);
+	const preview = resolved ? promptOverridePreview(resolved.value) : undefined;
+	return (
+		<div className="flex min-h-8 items-center justify-between gap-3 py-1" data-testid="inspector-prompt-override">
+			<span className="min-w-0 text-sm text-settings-label">{t("inspector.promptOverride")}</span>
+			{resolved && preview ? (
+				<Tooltip>
+					<TooltipTrigger asChild>
+						<button
+							aria-label={preview}
+							className="flex min-w-0 items-center justify-end gap-1.5 rounded-xs text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+							type="button"
+						>
+							<span className="shrink-0 rounded-full border border-(--color-border-settings-input) px-1.5 py-0.5 text-[9px] leading-none text-settings-muted">
+								{t(resolved.scope === "project" ? "inspector.promptOverride.scope.project" : "inspector.promptOverride.scope.user")}
+							</span>
+							<span className="min-w-0 truncate font-mono text-xs text-settings-muted">{preview.split("\n")[0]}</span>
+						</button>
+					</TooltipTrigger>
+					<TooltipContent className="max-w-72 whitespace-pre-wrap text-pretty leading-normal">{preview}</TooltipContent>
+				</Tooltip>
+			) : projectQuery.isLoading || userQuery.isLoading ? null : (
+				<span className="shrink-0 text-xs text-settings-muted">{t("inspector.promptOverride.default")}</span>
+			)}
+		</div>
+	);
+}
 
 /**
  * The latest Setup and Cleanup runs, collapsed: a terminal session's agent
