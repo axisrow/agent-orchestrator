@@ -376,7 +376,7 @@ describe("ProjectSettingsForm", () => {
 		// The entry is a real settings row (the shared bar treatment), carries
 		// the hint under the label, and opens the shared prompt override dialog.
 		expect(row).toHaveClass("settings-row-bar");
-		expect(row).toHaveTextContent("Override the hardcoded worker and orchestrator system prompts for this project.");
+		expect(row).toHaveTextContent("Replace the built-in worker and orchestrator role prompts for this project. The Project Context block is appended automatically; template placeholders like {{project.id}} are available.");
 
 		await userEvent.click(row);
 		expect(await screen.findByRole("heading", { name: "Project agent defaults" })).toBeInTheDocument();

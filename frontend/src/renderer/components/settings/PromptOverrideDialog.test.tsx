@@ -197,6 +197,33 @@ describe.each(SCOPES)("PromptOverrideDialog (scope=%s)", (scope) => {
     await waitForValue("Orchestrator prompt override", DEFAULT_ORCH);
   });
 
+  it("hints the post-#16 semantics: role text replaced, Project Context appended, placeholders expanded", async () => {
+    fetchMock(buildGetBody(scope));
+
+    renderDialog({ scope });
+
+    // The hint is the muted span under each textarea; match spans only so
+    // ancestor containers with the same textContent don't join the match.
+    const hintSpans = () =>
+      screen.getAllByText((_content, element) =>
+        element?.tagName === "SPAN" &&
+        element.textContent?.includes("Project Context block is appended automatically") === true,
+      );
+    await waitFor(() => expect(hintSpans()).toHaveLength(2));
+    for (const span of hintSpans()) {
+      expect(span.textContent).toContain("replaces the built-in system prompt for that role");
+      for (const placeholder of [
+        "{{project.id}}",
+        "{{project.name}}",
+        "{{project.repo}}",
+        "{{project.defaultBranch}}",
+        "{{project.path}}",
+      ]) {
+        expect(span.textContent).toContain(placeholder);
+      }
+    }
+  });
+
   it("prefills the stored override when one exists (override wins over default)", async () => {
     const override = "## Custom Worker\nDo the custom thing.";
     fetchMock(buildGetBody(scope, { workerOverride: override }));
