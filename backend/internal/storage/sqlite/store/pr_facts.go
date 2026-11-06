@@ -67,6 +67,7 @@ func (s *Store) ListPRFactsForSessions(ctx context.Context, ids []domain.Session
 	return out, nil
 }
 
+//nolint:dupl // sqlc emits a distinct row type per query, so the single-session and batch mappers cannot share one body.
 func prFactsFromListRow(r gen.ListPRFactsBySessionRow) domain.PRFacts {
 	return domain.PRFacts{
 		URL:                       r.URL,
@@ -92,6 +93,7 @@ func prFactsFromListRow(r gen.ListPRFactsBySessionRow) domain.PRFacts {
 	}
 }
 
+//nolint:dupl // sqlc emits a distinct row type per query, so the single-session and batch mappers cannot share one body.
 func prFactsFromBatchRow(r gen.ListPRFactsBySessionsRow) domain.PRFacts {
 	return domain.PRFacts{
 		URL:                       r.URL,
