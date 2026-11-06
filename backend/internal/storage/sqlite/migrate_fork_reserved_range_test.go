@@ -68,6 +68,7 @@ var forkLocalMigrations = []string{
 	"notification_stuck_delivery",
 	"pr_ci_pending_since",
 	"pr_ci_state_none",
+	"conversation_turns_session_completed_index",
 	// "app_settings_scm_proxy_url" first shipped as 9014 in open PR #116; PR
 	// #113 claimed the same number in flight, so the file renumbered to 9015
 	// before merge (neither number reached an install).

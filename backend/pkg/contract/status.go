@@ -104,6 +104,12 @@ type PRFacts struct {
 	ReviewComments bool
 	SourceBranch   string
 	TargetBranch   string
+	// ChangesRequestedAddressed reports the changes request was already
+	// answered -- every review thread resolved, or a turn completed after the
+	// review was submitted. The provider keeps decision changes_requested
+	// until the reviewer re-reviews or dismisses, so the decision alone cannot
+	// tell whether the user still owes this PR anything.
+	ChangesRequestedAddressed bool
 }
 
 // StackPosition is the derived position of a pull request in its stack.
@@ -270,6 +276,13 @@ func prPipelineStatus(pr PRFacts) SessionStatus {
 	// An unresolved comment thread (pr.ReviewComments) from a COMMENTED review
 	// is real feedback, but it is not a blocking review, so it gets its own
 	// status instead of being reported under the same one -- see issue #5765.
+	// A changes request the worker already answered (every thread resolved, or
+	// a turn completed after the review) still gates the merge -- the reviewer
+	// has not re-reviewed or dismissed -- but it owes the user no red tone, so
+	// it reads as the gate it is (#288), never as a fresh call to action and
+	// never as ready.
+	case pr.Review == ReviewChangesRequest && pr.ChangesRequestedAddressed:
+		return StatusMergeBlocked
 	case pr.Review == ReviewChangesRequest:
 		return StatusChangesRequested
 	case pr.ReviewComments:

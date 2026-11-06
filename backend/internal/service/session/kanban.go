@@ -64,9 +64,10 @@ func toContractKanbanPRFacts(prs []domain.PRFacts, runs []domain.CurrentHeadRevi
 			UpdatedAt:    pr.UpdatedAt,
 			ReviewRun:    byPR[pr.URL],
 			ExternalReview: contract.KanbanExternalReviewFacts{
-				Approved:         pr.ExternalApproved,
-				ChangesRequested: pr.ExternalChangesRequested,
-				Comments:         pr.ExternalComments,
+				Approved:                  pr.ExternalApproved,
+				ChangesRequested:          pr.ExternalChangesRequested,
+				Comments:                  pr.ExternalComments,
+				ChangesRequestedAddressed: pr.ChangesRequestedAddressed,
 			},
 		}
 	}

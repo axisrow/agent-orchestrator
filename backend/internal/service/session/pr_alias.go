@@ -110,6 +110,7 @@ func mergePRFacts(current, next domain.PRFacts) domain.PRFacts {
 		next.ExternalApproved = current.ExternalApproved || next.ExternalApproved
 		next.ExternalChangesRequested = current.ExternalChangesRequested || next.ExternalChangesRequested
 		next.ExternalComments = current.ExternalComments || next.ExternalComments
+		next.ChangesRequestedAddressed = current.ChangesRequestedAddressed || next.ChangesRequestedAddressed
 		if next.SourceBranch == "" {
 			next.SourceBranch = current.SourceBranch
 		}
@@ -125,6 +126,7 @@ func mergePRFacts(current, next domain.PRFacts) domain.PRFacts {
 	current.ExternalApproved = current.ExternalApproved || next.ExternalApproved
 	current.ExternalChangesRequested = current.ExternalChangesRequested || next.ExternalChangesRequested
 	current.ExternalComments = current.ExternalComments || next.ExternalComments
+	current.ChangesRequestedAddressed = current.ChangesRequestedAddressed || next.ChangesRequestedAddressed
 	if current.SourceBranch == "" {
 		current.SourceBranch = next.SourceBranch
 	}
