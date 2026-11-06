@@ -119,7 +119,7 @@ function renderDialog(
 ) {
   const scope = (props.scope ?? "user") as Scope;
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  if (props.primedProject) {
+  if (props.scope === "project" && props.primedProject) {
     qc.setQueryData(
       projectQueryKey(props.projectId ?? "proj-1"),
       props.primedProject,
