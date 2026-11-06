@@ -416,3 +416,27 @@ f7c1092a3cbc278daeab0c0414ddbd1ad010fc4d taken fix(shell): keep the macOS titleb
 b27c37f1d8b5549882460b10fe3ad5058f79e6c2 skipped feat(sidebar): pin projects to the top (#7752)
 d5981655bfbd4dfabafb7c91f5af3d4793e596e3 skipped feat(desktop): share sessions and projects with teams (#7511)
 6430fe3b6a97582c8e129eb6149aa565c046615b taken fix(desktop): match the startup loader to the shell background (#7772) — юнион: bg-sidebar, screenRef не взят (в форк-версии его нет)
+fc92e7ec6f43fc06317cd47cdf8813956612fe50 skipped feat(chat): fold long user messages behind Show more (#7784)
+ed013abfcd61e4c946c9c622a2ed25c49456f7be skipped feat(harness): add inline Claude Code and Codex sign-in (#7163)
+236c062ebb81c627332c25275e0d3e14b1fce9e2 skipped fix(sidebar): clean light surface for the session hover card (#7795) — правка скипнутого new left sidebar design (#7365)
+c8b00b18b5d817d8d2f3c4a49525901695faca6f skipped fix(sidebar): keep the session hover card open while the pointer heads for it (#7828) — правка скипнутого new left sidebar design (#7365)
+d2e350858e66e600b76e7ec23108f188fe90c504 taken fix(chat): keep a crashed turn's failure when resume replays it as interrupted (#7589) — взята только store-правка; conversation_auto_resume_test.go удалён (файл скипнутой фичи auto-resume #6717)
+eb1d1ca64607b12d35bea73875cc9b6600e8e329 skipped feat(theme): lighter, cleaner default light theme (#7807)
+65c6d29ac1bdad8ed34f647fb0ed1f7bb1c52eb3 taken fix(chat): truncate long tool-row labels inside the chat column (#7809)
+1afe0b89a10583efa180e84d977f72f96fb81c74 skipped fix: stop agent processes when the desktop exits (#7183) — параллельная реализация fork stop-teardown (#112/#35, AO_STOP_TEARDOWN/AO_NO_ORPHANREAP оба ВЫКЛ намеренно); упдейтер-часть опирается на выпиленный auto-updater
+0581de3d84cb4133094623fb1f15a279ec425ad4 skipped fix(chat): show Worked for on every turn and settle it without a jump (#7806) — зависит от скипнутой live-work чат-структуры (#7528, ChatLiveTurn); «Worked for» на каждом turn'е в форке уже отрисован fork-веткой TurnWorkSummary
+b5b0d93771ad8a48e38a7268942123aae0ef6fa2 skipped fix(sidebar): show session status on Scratchpad rows instead of harness logos (#7819) — Scratchpad снесён в форке (a8c5e22d1d, 2026-10-30)
+3ce6779ada0c8293fb2d4390f46e75036412326c skipped fix(browser): pass Cloudflare in the panel, hide the idle agent debugger, solidify Chrome mode (#7728) — browser-extension/browser-identity/BrowserChromeSection и ru.json выпилены в форке (DU прошлых синков, леджер строка 343)
+9af5c81a291afa22b5451756e85ef8d98c48dad1 taken fix(chat): keep reloaded steers on the turn they were sent in (#7817) — юнион: одинарный аддитивный хунк (steerInput-подсчёт в activity-loop), сторона фикса
+1d540ee62c4872b67335d4c47966031ccd3dcb7f taken fix(chat): never lock the composer on a send with no answer (#7751) — ручной порт собственной дельты #7751 на fork-сторону (конфликты = фантом скипнутого new-chat/live-work стека); DU: NewChatPage.tsx, ru.json; старым тестам locked-поведения добавлен parkUnsentSends={false} (4 существующих в форке)
+762159a622ba09d18b78b9331ce20a615f5155a2 taken fix(usage): stop idle usage bindings from emitting session_updated every pass (#7279) — юниор: Kimi-тест не взят (харнес Kimi выпилен 2026-11-03), остальное сторона фикса
+6ecafb3150cbeb52529bb8b17a47d1da222e3a76 taken fix(claude): discover models with the default saved account (#7774) — юнион: fork provider-pin ветка сохранена, savedDefaultLaunchEnv-слой добавлен после роли; runtimeCredentialEnv-слой не взят (машинерия выпилена в форке); DU: model_runtime_credential_test.go
+2cc4111357bdbcfaf735726da94a7f80991e7add skipped fix(updater): discard missing macOS native staging (#7557) — автоапдейт-модуль выпилен в форке; апдейтер-фиксы апстрима не брать; teams/PeopleField тоже DU
+847ec4b1981894d238e455792134ac268c8cfe8f taken fix(browser): make the first profile the default (#7565) — DU: ru.json (локаль дропнута)
+4853db4141e519f14b77728767ddc31c6a964fa2 taken fix(lifecycle): keep terminal sessions resumable after their host dies while AO is down (#7818) — юнион: сторона фикса (reaperStart/DataDir-конфиги)
+72deae5630640693322ecf99d8f9912987c6b4e7 taken fix(chat): replace the edit replay notice with one branch line (#7835) — DU: ru.json (локаль дропнута)
+6eb2469b0dbc94ea49c499c571301bd36f8e7cf1 skipped fix(scm): ignore superseded check runs when deriving GitHub CI state (#7831) — параллельная реализация fork-фикса #274 (c620feacb9: latestRunNodesByName + nodesHideSupersededFailures + empty-rollup/placeholder #170/#230); апстрим-дедуп по (workflow,event,job) требует Actions-read — брать при живом кейсе
+b2ba4532ffabbce563bbe68030007b334aaa54e6 taken fix(chat): drop the "Image copied" toast after copying an image (#7841) — DU: ru.json (локаль дропнута)
+2efa5a7c47899e3031cbff18eb007aa7fa898ad1 taken fix(claude): read the current login and finish the login terminal (#7853) — порт: authWorkflowSucceeded с claude-code + адаптация 2 fork-call-site'ов; AgentAuthCacheInvalidator взят, AgentRuntimeAuthChecker/AgentRuntimeCredentialEnv не взяты (машинерия выпилена); HarnessSettings-тест: agy сохранён, claude-code добавлен, MiMo (скипнутый харнес) не взят
+74c6067e8cf9a11251ec71b6abf149dabd5cf52e skipped feat(topbar): simplify the session top bar and float it above the center panel (Developer Mode) (#7708)
+63581129a7cfea7c9853ad9474ac85d7bae61c55 skipped feat(chat): add shared path menu and native editor actions (#6927)
