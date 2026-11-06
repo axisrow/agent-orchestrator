@@ -188,6 +188,7 @@
 	"activity.exited": "已退出",
 	"activity.idle": "空闲",
 	"activity.unknown": "未知",
+	"activity.noSignsOfLife": "无活动迹象 {{duration}}",
 	"activity.waiting_input": "需要输入",
 	"home.never": "从未",
 	"cloudCredential.anthropicLoginDescription": "在浏览器中使用你的 Claude 账号登录。如果这台机器上的 Claude Code 尚未登录，本地会话也会使用此登录。",

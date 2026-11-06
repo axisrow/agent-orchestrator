@@ -188,6 +188,7 @@
 	"activity.exited": "Exited",
 	"activity.idle": "Idle",
 	"activity.unknown": "Unknown",
+	"activity.noSignsOfLife": "No signs of life {{duration}}",
 	"activity.waiting_input": "Input Needed",
 	"common.breadcrumb": "Breadcrumb",
 	"common.close": "Close",

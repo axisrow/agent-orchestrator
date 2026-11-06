@@ -14364,6 +14364,11 @@ components:
           type: string
         terminateOnPrMerge:
           type: boolean
+        turnSilentForMs:
+          format: int64
+          type: integer
+        turnStalled:
+          type: boolean
         updatedAt:
           format: date-time
           type: string
@@ -14394,6 +14399,7 @@ components:
       - status
       - kanbanColumn
       - displayStatus
+      - turnStalled
       - lastEventAt
       - prs
       type: object

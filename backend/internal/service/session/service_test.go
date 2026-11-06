@@ -545,6 +545,10 @@ func (f *fakeStore) ListInterruptedSessions(_ context.Context, ids []domain.Sess
 	return out, nil
 }
 
+func (f *fakeStore) ListConversationLivenessForSessions(_ context.Context, _ []domain.SessionID) (map[domain.SessionID]time.Time, error) {
+	return map[domain.SessionID]time.Time{}, nil
+}
+
 func (f *fakeStore) ListChecks(_ context.Context, prURL string) ([]domain.PullRequestCheck, error) {
 	return append([]domain.PullRequestCheck(nil), f.checks[prURL]...), nil
 }
@@ -5999,10 +6003,7 @@ func TestToSessionWithFactsRemapsTransferredAliasReviewRuns(t *testing.T) {
 		CreatedAt: rec.UpdatedAt,
 	}}
 
-	sess, err := (&Service{store: st, clock: func() time.Time { return rec.UpdatedAt.Add(2 * time.Minute) }}).toSessionWithFacts(context.Background(), rec, st.prFacts[rec.ID], st.reviewRuns[rec.ID], false, "")
-	if err != nil {
-		t.Fatal(err)
-	}
+	sess := (&Service{store: st, clock: func() time.Time { return rec.UpdatedAt.Add(2 * time.Minute) }}).toSessionWithFacts(context.Background(), rec, st.prFacts[rec.ID], st.reviewRuns[rec.ID], false, "")
 	if sess.KanbanColumn != "validating" {
 		t.Fatalf("column = %q, want validating", sess.KanbanColumn)
 	}
@@ -6057,10 +6058,7 @@ func TestToSessionWithFactsCanonicalAliasRunSupersedesOlderAliasRun(t *testing.T
 		},
 	}
 
-	sess, err := (&Service{store: st, clock: func() time.Time { return rec.UpdatedAt.Add(2 * time.Minute) }}).toSessionWithFacts(context.Background(), rec, st.prFacts[rec.ID], st.reviewRuns[rec.ID], false, "")
-	if err != nil {
-		t.Fatal(err)
-	}
+	sess := (&Service{store: st, clock: func() time.Time { return rec.UpdatedAt.Add(2 * time.Minute) }}).toSessionWithFacts(context.Background(), rec, st.prFacts[rec.ID], st.reviewRuns[rec.ID], false, "")
 	if sess.KanbanColumn != "needs_review" {
 		t.Fatalf("column = %q, want needs_review", sess.KanbanColumn)
 	}

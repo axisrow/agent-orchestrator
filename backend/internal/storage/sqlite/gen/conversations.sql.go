@@ -2844,6 +2844,64 @@ func (q *Queries) SelectConversationEditDelivery(ctx context.Context, arg Select
 	return i, err
 }
 
+const selectConversationLivenessForSessions = `-- name: SelectConversationLivenessForSessions :many
+WITH wanted_session AS (
+    SELECT CAST(j.value AS TEXT) AS session_id
+    FROM json_each(?) AS j
+),
+session_conversation AS (
+    SELECT wanted_session.session_id, conversations.id AS conversation_id
+    FROM wanted_session
+    JOIN conversations
+      ON conversations.session_id = wanted_session.session_id
+      OR conversations.current_session_id = wanted_session.session_id
+),
+conversation_life AS (
+    SELECT conversation_id, updated_at FROM conversation_messages
+    UNION ALL
+    SELECT conversation_id, updated_at FROM conversation_activities
+)
+SELECT session_conversation.session_id, MAX(conversation_life.updated_at) AS last_life_at
+FROM session_conversation
+JOIN conversation_life ON conversation_life.conversation_id = session_conversation.conversation_id
+GROUP BY session_conversation.session_id
+`
+
+type SelectConversationLivenessForSessionsRow struct {
+	SessionID  string
+	LastLifeAt interface{}
+}
+
+// Newest sign of life per session across its chat conversations: the latest
+// write to any message or activity row (streaming deltas and tool events both
+// rewrite updated_at, so a live turn keeps advancing it while a turn parked on
+// a hung API call does not). Batch form of the stalled-turn read for session
+// list reads; the JSON array of session ids keeps it one query, like the PR
+// facts batch. Session-scoped conversations map by session_id, project-scoped
+// orchestrator chats by current_session_id.
+func (q *Queries) SelectConversationLivenessForSessions(ctx context.Context, jsonEach interface{}) ([]SelectConversationLivenessForSessionsRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectConversationLivenessForSessions, jsonEach)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SelectConversationLivenessForSessionsRow{}
+	for rows.Next() {
+		var i SelectConversationLivenessForSessionsRow
+		if err := rows.Scan(&i.SessionID, &i.LastLifeAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectConversationMessageByClientID = `-- name: SelectConversationMessageByClientID :one
 SELECT id, conversation_id, turn_id, sequence, revision, role, origin, text, streaming, provider_item_id, client_message_id, created_at, updated_at, delivery_content_json, branch_id, client_payload_hash, sender_session_id, sender_project_id, sender_display_name, continuation FROM conversation_messages
 WHERE conversation_id = ? AND client_message_id = ?

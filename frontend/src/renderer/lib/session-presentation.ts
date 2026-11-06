@@ -104,7 +104,11 @@ export function getSessionStatusDotView(
 
 	return {
 		className,
-		breathe: working,
+		// Motion is the liveness signal (DESIGN.md: the pulse shows liveness), so
+		// a stalled turn — active with no signs of life past the daemon's
+		// threshold — freezes the dot instead of breathing. The colour stays with
+		// the board section; the tooltip carries "no signs of life N min".
+		breathe: working && session.activity?.turnStalled !== true,
 		title: sessionStatusTooltip(toneLabel, session.activity, translator(t)),
 	};
 }

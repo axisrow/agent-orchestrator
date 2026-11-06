@@ -559,7 +559,17 @@ type Session struct {
 	// important current fact about the session at the stage it sits in. It is
 	// derived after the column, from the facts that column reads, and ships in
 	// renderable form so clients print it without a mapping table of their own.
-	DisplayStatus     DisplayStatus         `json:"displayStatus" enum:"Working,Blocked,Exited,No signal,Interrupted,Awaiting PR,Fixing CI failures,Addressing comments,Needs review,Review scheduled,Reviewing,Review failed,Review pending,Draft,CI failing,Commented,Changes requested,Needs human review,Mergeable,Approved,Merged,Closed without merge,Terminated"`
+	DisplayStatus DisplayStatus `json:"displayStatus" enum:"Working,Blocked,Exited,No signal,Interrupted,Awaiting PR,Fixing CI failures,Addressing comments,Needs review,Review scheduled,Reviewing,Review failed,Review pending,Draft,CI failing,Commented,Changes requested,Needs human review,Mergeable,Approved,Merged,Closed without merge,Terminated"`
+	// TurnStalled reports whether the session's in-progress turn has gone
+	// quiet: the activity state is active, but no sign of life — a
+	// conversation write, a hook fact, or an activity transition — has been
+	// observed for the stall threshold (AO_TURN_STALL_AFTER, default 10
+	// minutes). Derived at read time and never persisted; it only informs
+	// display and never mutates the activity state.
+	TurnStalled bool `json:"turnStalled"`
+	// TurnSilentForMs is how long the current turn has shown no signs of life,
+	// in milliseconds. Zero when the turn is live, not active, or unknown.
+	TurnSilentForMs   int64                 `json:"turnSilentForMs,omitempty"`
 	TerminalHandleID  string                `json:"terminalHandleId,omitempty"`
 	ArtifactFiles     []SessionArtifactFile `json:"-"`
 	ActiveAgentSwitch *AgentSwitch          `json:"-"`

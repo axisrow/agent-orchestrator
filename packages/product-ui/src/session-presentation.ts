@@ -1,3 +1,4 @@
+import { formatElapsed } from "./formatting";
 import { isDisplayStatus, isKanbanColumn } from "./session-models";
 import type {
 	DisplayStatus,
@@ -12,6 +13,7 @@ export type SessionPresentationMessageKey =
 	| "session.statusChecking"
 	| "session.statusUnavailable"
 	| `activity.${SessionActivityState}`
+	| "activity.noSignsOfLife"
 	| `status.${SessionStatus}`
 	| `zone.${AttentionZone}`
 	| `column.${KanbanColumn}`
@@ -32,6 +34,7 @@ const englishLabels: Record<SessionPresentationMessageKey, string> = {
 	"activity.blocked": "Awaiting Decision",
 	"activity.exited": "Exited",
 	"activity.unknown": "Unknown",
+	"activity.noSignsOfLife": "No signs of life {{duration}}",
 	"status.working": "Working",
 	"status.idle": "Idle",
 	"status.needs_input": "Input needed",
@@ -142,7 +145,15 @@ export function getDisplayStatusLabel(
 	return translate(displayStatusLabelKeys[displayStatus]);
 }
 
-export const defaultProductUITranslator: ProductUITranslator = (key) => englishLabels[key];
+export const defaultProductUITranslator: ProductUITranslator = (key, values) => {
+	let label = englishLabels[key];
+	if (values) {
+		for (const [name, value] of Object.entries(values)) {
+			label = label.replaceAll(`{{${name}}}`, String(value));
+		}
+	}
+	return label;
+};
 
 export type AgentActivityView = {
 	state: SessionActivityState;
@@ -492,6 +503,10 @@ export function getAttentionZoneViewForZone(
  * the caller already resolved) plus what the agent is doing right now, glued
  * from existing localized labels -- no new taxonomy. The activity half is
  * dropped when the agent state is unknown or repeats the tone label.
+ *
+ * A stalled turn (active with no signs of life past the daemon's threshold)
+ * leads with the silence and its duration: that is the news a reader needs,
+ * and the tone underneath stays explained.
  */
 export function sessionStatusTooltip(
 	toneLabel: string,
@@ -500,7 +515,13 @@ export function sessionStatusTooltip(
 ): string {
 	if (!activity || activity.state === "unknown") return toneLabel;
 	const activityLabel = getAgentActivityView(activity, translate).label;
-	return activityLabel === toneLabel ? toneLabel : `${toneLabel} · ${activityLabel}`;
+	const suffix = activityLabel === toneLabel ? toneLabel : `${toneLabel} · ${activityLabel}`;
+	if (activity.turnStalled === true) {
+		return `${translate("activity.noSignsOfLife", {
+			duration: formatElapsed(activity.turnSilentForMs ?? 0),
+		})} · ${suffix}`;
+	}
+	return suffix;
 }
 
 export type SessionTimelinePillStatus = Extract<

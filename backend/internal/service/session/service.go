@@ -56,6 +56,7 @@ type Store interface {
 	ListCurrentHeadReviewRunsForSessions(ctx context.Context, ids []domain.SessionID) (map[domain.SessionID][]domain.CurrentHeadReviewRun, error)
 	ListPublishedReviewGitHubIDsByPR(ctx context.Context, prURL string) ([]string, error)
 	ListInterruptedSessions(ctx context.Context, ids []domain.SessionID) (map[domain.SessionID]bool, error)
+	ListConversationLivenessForSessions(ctx context.Context, ids []domain.SessionID) (map[domain.SessionID]time.Time, error)
 	ListPRsBySession(ctx context.Context, sessionID domain.SessionID) ([]domain.PullRequest, error)
 	ListReportedPRURLs(ctx context.Context, id domain.SessionID) ([]string, error)
 	ListRepositoryRenames(ctx context.Context) ([]domain.RepositoryRename, error)
@@ -251,6 +252,10 @@ type Service struct {
 	// artifactDeleter deletes a session's artifact files and version rows. Nil
 	// makes DeleteArtifacts fail rather than delete outside the capture lock.
 	artifactDeleter artifactDeleter
+	// turnStallAfter is the stalled-turn silence threshold applied at read
+	// time. Defaults to DefaultTurnStallAfter; daemon wiring passes the
+	// AO_TURN_STALL_AFTER override.
+	turnStallAfter time.Duration
 	// runsOnComputerLogin reports whether a new session would launch on the
 	// computer's own CLI login rather than a saved account. Nil means always.
 	runsOnComputerLogin func(context.Context, domain.AgentHarness, string) bool
@@ -311,6 +316,11 @@ type Deps struct {
 	// ArtifactDeleter deletes a session's artifacts; daemon wiring passes the
 	// shared *artifactversions.Capturer so a delete cannot race a capture.
 	ArtifactDeleter artifactDeleter
+	// TurnStallAfter is how long an active turn may show no signs of life
+	// (conversation writes, hook facts, activity transitions) before reads
+	// flag it as stalled. Zero selects DefaultTurnStallAfter. Display-only:
+	// nothing is killed or restarted on the strength of it.
+	TurnStallAfter time.Duration
 }
 
 // NewWithDeps wires a session service with optional PR-claim dependencies.
@@ -319,7 +329,10 @@ func NewWithDeps(d Deps) *Service {
 	if backgroundContext == nil {
 		backgroundContext = context.Background()
 	}
-	s := &Service{manager: d.Manager, store: d.Store, prClaimer: d.PRClaimer, scm: d.SCM, tracker: d.Tracker, clock: d.Clock, dataDir: d.DataDir, signalCapable: d.SignalCapable, telemetry: d.Telemetry, logger: d.Logger, backgroundContext: backgroundContext, agentReadiness: d.AgentReadiness, githubIdentity: d.GithubIdentity, providerEntries: d.ProviderEntries, titleRefinementSlots: make(chan struct{}, delegatedTaskTitleConcurrency), titleRefinementCancels: map[domain.SessionID]context.CancelFunc{}, outputTypeReconciler: d.OutputTypeReconciler, artifactDeleter: d.ArtifactDeleter}
+	s := &Service{manager: d.Manager, store: d.Store, prClaimer: d.PRClaimer, scm: d.SCM, tracker: d.Tracker, clock: d.Clock, dataDir: d.DataDir, signalCapable: d.SignalCapable, telemetry: d.Telemetry, logger: d.Logger, backgroundContext: backgroundContext, agentReadiness: d.AgentReadiness, githubIdentity: d.GithubIdentity, providerEntries: d.ProviderEntries, titleRefinementSlots: make(chan struct{}, delegatedTaskTitleConcurrency), titleRefinementCancels: map[domain.SessionID]context.CancelFunc{}, outputTypeReconciler: d.OutputTypeReconciler, artifactDeleter: d.ArtifactDeleter, turnStallAfter: d.TurnStallAfter}
+	if s.turnStallAfter <= 0 {
+		s.turnStallAfter = DefaultTurnStallAfter
+	}
 	if s.prClaimer == nil {
 		if w, ok := d.Store.(ports.PRClaimer); ok {
 			s.prClaimer = w
@@ -1322,6 +1335,10 @@ func (s *Service) List(ctx context.Context, filter ListFilter) ([]domain.Session
 	if err != nil {
 		return nil, fmt.Errorf("list interrupted sessions: %w", err)
 	}
+	conversationLife, err := s.store.ListConversationLivenessForSessions(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("list conversation liveness: %w", err)
+	}
 	var cleanupBySession map[domain.SessionID]domain.SessionCleanupRecord
 	if len(archived) > 0 {
 		if cleanupBySession, err = s.store.ListSessionCleanupFactsForSessions(ctx, archived); err != nil {
@@ -1331,10 +1348,8 @@ func (s *Service) List(ctx context.Context, filter ListFilter) ([]domain.Session
 	out := make([]domain.Session, 0, len(filtered))
 	for _, rec := range filtered {
 		facts, found := cleanupBySession[rec.ID]
-		sess, err := s.toSessionWithFacts(ctx, rec, prsBySession[rec.ID], runsBySession[rec.ID], interrupted[rec.ID], currentWorkspaceCleanup(rec, facts, found))
-		if err != nil {
-			return nil, err
-		}
+		sess := s.toSessionWithFacts(ctx, rec, prsBySession[rec.ID], runsBySession[rec.ID], interrupted[rec.ID], currentWorkspaceCleanup(rec, facts, found))
+		sess.TurnStalled, sess.TurnSilentForMs = deriveTurnStall(rec, conversationLife[rec.ID], s.now(), s.turnStallAfter)
 		if agentSwitch, ok := activeBySession[rec.ID]; ok {
 			sess.ActiveAgentSwitch = &agentSwitch
 		}
@@ -1432,7 +1447,7 @@ func (s *Service) Get(ctx context.Context, id domain.SessionID) (domain.Session,
 	return sess, nil
 }
 
-func (s *Service) toSessionWithFacts(ctx context.Context, rec domain.SessionRecord, prs []domain.PRFacts, runs []domain.CurrentHeadReviewRun, interrupted bool, cleanup domain.WorkspaceDisposition) (domain.Session, error) {
+func (s *Service) toSessionWithFacts(ctx context.Context, rec domain.SessionRecord, prs []domain.PRFacts, runs []domain.CurrentHeadReviewRun, interrupted bool, cleanup domain.WorkspaceDisposition) domain.Session {
 	// A row created before artifact_dir existed carries it as '' (the
 	// migration's default) even though session_manager always prompts the
 	// agent to write into the deterministic dataDir/artifacts/<id> path.
@@ -1507,7 +1522,7 @@ func (s *Service) toSessionWithFacts(ctx context.Context, rec domain.SessionReco
 		TerminalHandleID: rec.Metadata.RuntimeHandleID,
 		ArtifactFiles:    artifactFiles,
 		PRs:              prs,
-	}, nil
+	}
 }
 
 // toAPIError maps the session engine's sentinel errors to their REST API
@@ -1833,7 +1848,13 @@ func (s *Service) toSession(ctx context.Context, rec domain.SessionRecord) (doma
 	if err != nil {
 		return domain.Session{}, fmt.Errorf("interrupted turn %s: %w", rec.ID, err)
 	}
-	return s.toSessionWithFacts(ctx, rec, prs, runs, interrupted[rec.ID], cleanup)
+	conversationLife, err := s.store.ListConversationLivenessForSessions(ctx, []domain.SessionID{rec.ID})
+	if err != nil {
+		return domain.Session{}, fmt.Errorf("conversation liveness %s: %w", rec.ID, err)
+	}
+	sess := s.toSessionWithFacts(ctx, rec, prs, runs, interrupted[rec.ID], cleanup)
+	sess.TurnStalled, sess.TurnSilentForMs = deriveTurnStall(rec, conversationLife[rec.ID], s.now(), s.turnStallAfter)
+	return sess, nil
 }
 
 // currentWorkspaceCleanup is the teardown disposition recorded for an archived

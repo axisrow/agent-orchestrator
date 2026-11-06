@@ -79,7 +79,17 @@ export function toWorkspaceSession(
 	const status = statusReadiness === "ready" ? toSessionStatus(session.status, session.isTerminated) : "unknown";
 	const scmStatus = session.scmStatus ? toSessionStatus(session.scmStatus) : undefined;
 	const kanbanColumn = toKanbanColumn(session.kanbanColumn, status);
-	const activity = statusReadiness === "ready" ? toSessionActivity(session.activity) : undefined;
+	// The daemon derives stalled-turn facts at session level; they ride on the
+	// activity object the presentation layer already reads everywhere (dot,
+	// board cards, tooltips).
+	const activity =
+		statusReadiness === "ready" && session.activity
+			? toSessionActivity({
+					...session.activity,
+					turnStalled: session.turnStalled,
+					turnSilentForMs: session.turnSilentForMs,
+				})
+			: undefined;
 	if (statusReadiness === "ready" && status === "unknown") reportUnknownSessionField("status", session.status);
 	if (statusReadiness === "ready" && (!activity || activity.state === "unknown")) {
 		reportUnknownSessionField("activity", session.activity?.state);

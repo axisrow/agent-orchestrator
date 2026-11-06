@@ -188,6 +188,7 @@
 	"activity.exited": "Terminé",
 	"activity.idle": "Inactif",
 	"activity.unknown": "Inconnu",
+	"activity.noSignsOfLife": "Aucun signe de vie depuis {{duration}}",
 	"activity.waiting_input": "Saisie requise",
 	"home.never": "Jamais",
 	"cloudCredential.anthropicLoginDescription": "Connectez-vous avec votre compte Claude dans le navigateur. Si Claude Code n'est pas connecté sur cette machine, les sessions locales utiliseront aussi cette connexion.",

@@ -188,6 +188,7 @@
 	"activity.exited": "Encerrado",
 	"activity.idle": "Inativo",
 	"activity.unknown": "Desconhecido",
+	"activity.noSignsOfLife": "Sem sinais de vida há {{duration}}",
 	"activity.waiting_input": "Entrada necessária",
 	"home.never": "Nunca",
 	"cloudCredential.anthropicLoginDescription": "Entre com sua conta do Claude no navegador. Se o Claude Code não estiver conectado nesta máquina, as sessões locais também usarão este login.",

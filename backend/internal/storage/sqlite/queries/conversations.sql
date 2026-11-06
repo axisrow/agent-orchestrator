@@ -1831,3 +1831,32 @@ WHERE t.conversation_id = sqlc.arg(conversation_id)
   AND t.completed_at > sqlc.arg(after_at)
 ORDER BY t.completed_at DESC LIMIT 1;
 
+
+-- Newest sign of life per session across its chat conversations: the latest
+-- write to any message or activity row (streaming deltas and tool events both
+-- rewrite updated_at, so a live turn keeps advancing it while a turn parked on
+-- a hung API call does not). Batch form of the stalled-turn read for session
+-- list reads; the JSON array of session ids keeps it one query, like the PR
+-- facts batch. Session-scoped conversations map by session_id, project-scoped
+-- orchestrator chats by current_session_id.
+-- name: SelectConversationLivenessForSessions :many
+WITH wanted_session AS (
+    SELECT CAST(j.value AS TEXT) AS session_id
+    FROM json_each(?) AS j
+),
+session_conversation AS (
+    SELECT wanted_session.session_id, conversations.id AS conversation_id
+    FROM wanted_session
+    JOIN conversations
+      ON conversations.session_id = wanted_session.session_id
+      OR conversations.current_session_id = wanted_session.session_id
+),
+conversation_life AS (
+    SELECT conversation_id, updated_at FROM conversation_messages
+    UNION ALL
+    SELECT conversation_id, updated_at FROM conversation_activities
+)
+SELECT session_conversation.session_id, MAX(conversation_life.updated_at) AS last_life_at
+FROM session_conversation
+JOIN conversation_life ON conversation_life.conversation_id = session_conversation.conversation_id
+GROUP BY session_conversation.session_id;
