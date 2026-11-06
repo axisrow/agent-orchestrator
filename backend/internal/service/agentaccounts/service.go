@@ -337,6 +337,57 @@ func (s *Service) DefaultLaunchEnv(ctx context.Context, harness domain.AgentHarn
 	return s.providers[p].LaunchEnv(account.Home), nil
 }
 
+func (s *Service) cachedReading(id string) *reading {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.readings[id]
+}
+
+// newSessionAccount is the account a new session of p starts on: the default,
+// or, when the default is known to be signed out or to hold another login, the
+// first other account that is signed in. The session's account shows which.
+// Only a bad default costs CLI calls; a good one is answered from the cache.
+// (Fork port of the upstream helper: the local read stores into the cache and
+// returns nothing, so a fresh reading is fetched back through cachedReading.)
+func (s *Service) newSessionAccount(ctx context.Context, p domain.AgentAccountProvider) (domain.AgentAccount, error) {
+	def, err := s.defaultID(ctx, p)
+	if err != nil {
+		return domain.AgentAccount{}, err
+	}
+	account, err := s.find(ctx, def)
+	if err != nil {
+		return domain.AgentAccount{}, err
+	}
+	if r := s.cachedReading(account.ID); !r.knownUnusable() {
+		return account, nil
+	}
+	// The user may have signed it in outside AO since an old reading.
+	if r := s.cachedReading(account.ID); r == nil || s.now().Sub(r.at) > freshFor {
+		s.read(ctx, account)
+		if r := s.cachedReading(account.ID); !r.knownUnusable() {
+			return account, nil
+		}
+	}
+	accounts, err := s.accounts(ctx)
+	if err != nil {
+		return domain.AgentAccount{}, err
+	}
+	for _, other := range accounts {
+		if other.Provider != p || other.ID == account.ID || s.beingRemoved(other.ID) {
+			continue
+		}
+		r := s.cachedReading(other.ID)
+		if r == nil || r.identityErr != "" || s.now().Sub(r.at) > freshFor {
+			s.read(ctx, other)
+			r = s.cachedReading(other.ID)
+		}
+		if r != nil && r.identity.SignedIn {
+			return other, nil
+		}
+	}
+	return domain.AgentAccount{}, ports.ErrAgentAccountDefaultUnusable
+}
+
 // SetDefaultChanged late-binds what must hear that the account new sessions of
 // a provider start on, or its sign-in, may have changed (agent readiness).
 func (s *Service) SetDefaultChanged(changed func(domain.AgentAccountProvider)) {
