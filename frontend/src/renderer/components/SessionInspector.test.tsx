@@ -10,7 +10,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SessionInspector } from "./SessionInspector";
+import { SessionInspector, resolvePromptOverrideDisplay } from "./SessionInspector";
 import { TooltipProvider } from "./ui/tooltip";
 import type { SessionPRSummary } from "../hooks/useSessionScmSummary";
 import { sessionScmSummaryQueryKey } from "../hooks/useSessionScmSummary";
@@ -4699,5 +4699,112 @@ describe("SessionInspector Cloud reviews", () => {
       handleId: "cloud-reviewer-7",
       harness: "claude-code",
     });
+  });
+});
+
+describe("SessionInspector prompt override indicator", () => {
+  function mockPromptOverrideGets(
+    projectConfig: Record<string, unknown> | undefined,
+    agentConfig: Record<string, unknown> | undefined,
+  ) {
+    const common = commonGetsResponder();
+    getMock.mockImplementation(async (path: string) => {
+      if (path === "/api/v1/projects/{id}") {
+        return {
+          data: {
+            status: "ok",
+            project: {
+              id: "ws-1",
+              kind: "git",
+              name: "my-app",
+              path: "/repo",
+              repo: "my-app",
+              defaultBranch: "main",
+              config: projectConfig ?? {},
+            },
+          },
+        };
+      }
+      if (path === "/api/v1/user-config") {
+        return { data: { agentConfig: agentConfig ?? {} } };
+      }
+      return common(path);
+    });
+  }
+
+  const promptRow = () => screen.getByTestId("inspector-prompt-override");
+
+  it("resolves the effective override as project over user over baseline for both roles", () => {
+    const project = { workerPromptOverride: "project worker", orchestratorPromptOverride: "project orchestrator" };
+    const user = { workerPromptOverride: "user worker", orchestratorPromptOverride: "user orchestrator" };
+
+    expect(resolvePromptOverrideDisplay("worker", project, user)).toEqual({
+      scope: "project",
+      value: "project worker",
+    });
+    expect(resolvePromptOverrideDisplay("orchestrator", project, user)).toEqual({
+      scope: "project",
+      value: "project orchestrator",
+    });
+    expect(resolvePromptOverrideDisplay("worker", undefined, user)).toEqual({
+      scope: "user",
+      value: "user worker",
+    });
+    expect(resolvePromptOverrideDisplay("orchestrator", project, undefined)).toEqual({
+      scope: "project",
+      value: "project orchestrator",
+    });
+    expect(resolvePromptOverrideDisplay("worker", undefined, undefined)).toBeUndefined();
+    // Blank values behave as unset, like the daemon's trim-then-decide.
+    expect(
+      resolvePromptOverrideDisplay("worker", { workerPromptOverride: "   " }, { workerPromptOverride: "user worker" }),
+    ).toEqual({ scope: "user", value: "user worker" });
+  });
+
+  it("shows the project override, its scope, and a first-lines tooltip when the project scope wins", async () => {
+    mockPromptOverrideGets(
+      { workerPromptOverride: "First line of the project prompt\nSecond line\nThird line\nFourth line" },
+      { workerPromptOverride: "user prompt" },
+    );
+    renderWithQuery(<SessionInspector session={session([])} />);
+
+    const row = await screen.findByTestId("inspector-prompt-override");
+    expect(within(row).getByText("Prompt override")).toBeInTheDocument();
+    expect(within(row).getByText("Project")).toBeInTheDocument();
+    const trigger = within(row).getByRole("button");
+    expect(trigger).toHaveTextContent("First line of the project prompt");
+    await userEvent.hover(trigger);
+    const tooltip = await screen.findByRole("tooltip");
+    expect(tooltip).toHaveTextContent("First line of the project prompt");
+    expect(tooltip).toHaveTextContent("Second line");
+    expect(tooltip).toHaveTextContent("Third line");
+    expect(tooltip).not.toHaveTextContent("Fourth line");
+    await userEvent.unhover(trigger);
+  });
+
+  it("falls back to the user-scope override when the project has none", async () => {
+    mockPromptOverrideGets(undefined, { workerPromptOverride: "user prompt for the worker" });
+    renderWithQuery(<SessionInspector session={session([])} />);
+
+    const row = await screen.findByTestId("inspector-prompt-override");
+    expect(within(row).getByText("User")).toBeInTheDocument();
+    expect(within(row).getByRole("button")).toHaveTextContent("user prompt for the worker");
+  });
+
+  it("shows Default when nothing is set and reads the orchestrator field for an orchestrator", async () => {
+    mockPromptOverrideGets(undefined, undefined);
+    const { unmount } = renderWithQuery(<SessionInspector session={session([])} />);
+    expect(await within(promptRow()).findByText("Default")).toBeInTheDocument();
+    unmount();
+
+    mockPromptOverrideGets(
+      { workerPromptOverride: "project worker", orchestratorPromptOverride: "project orchestrator prompt" },
+      { workerPromptOverride: "user worker", orchestratorPromptOverride: "user orchestrator prompt" },
+    );
+    renderWithQuery(<SessionInspector session={session([], { kind: "orchestrator" })} />);
+
+    const row = await screen.findByTestId("inspector-prompt-override");
+    expect(within(row).getByText("Project")).toBeInTheDocument();
+    expect(within(row).getByRole("button")).toHaveTextContent("project orchestrator prompt");
   });
 });
