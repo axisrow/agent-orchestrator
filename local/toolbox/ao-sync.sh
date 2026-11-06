@@ -778,6 +778,26 @@ fi
 echo "==> npm install (frontend)..."
 ( cd frontend && npm install ) || { echo "!! npm install упал." >&2; exit 1; }
 
+# 6a. npm install вычищает optional peer @pierre/theme@1.1.0 из lock'а. Проверено
+#     экспериментом 2026-11-06: prune воспроизводится на npm 11.19 (node 24) и
+#     11.20 (node 26) всегда, даже сразу после npm ci, физически установившего
+#     копию; только npm ci сам lock не переписывает — поэтому CI (там только ci)
+#     этого не видит, а локальный install ломает его («Missing: @pierre/theme@1.1.0
+#     from lock file»). Блок обязателен для валидного npm ci. Корень — граф
+#     @pierre: trees@1.0.0-beta.6 пинит theming@1.0.0 с peer "^1.1.0" против
+#     топ-уровневого theme@2.0.0. Если diff lock'а — ровно этот prune (0 добав-
+#     ленных, 11 удалённых строк блока), возвращаем канонический блок; смешанный
+#     diff (легит-изменения зависимостей) не трогаем — владелец сводит руками.
+if ! git diff --quiet -- frontend/package-lock.json; then
+  PRUNE_NUMSTAT=$(git diff --numstat -- frontend/package-lock.json | awk '{print $1, $2}')
+  if [ "$PRUNE_NUMSTAT" = "0 11" ] && git diff -- frontend/package-lock.json | grep -q "pierre/trees/node_modules/@pierre/theme"; then
+    git checkout -- frontend/package-lock.json
+    echo "   OK: npm install вычистил @pierre/theme из lock — известный prune, блок возвращён."
+  else
+    echo "   !! package-lock.json изменился НЕ как известный @pierre-prune — проверь руками: легит-изменение зависимостей (оставь) или другой prune (верни блок из cc58ac638e)."
+  fi
+fi
+
 # 6b. Гейт frontend typecheck — единственная защита от класса «merge взял
 #     апстрим-версию файла и потерял часть fork-дельты». Инцидент 2026-10-10:
 #     #6439 перестроил ProjectSettingsEditor.tsx, merge-резолюция съела
