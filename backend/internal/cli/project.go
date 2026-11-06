@@ -88,6 +88,9 @@ type agentConfig struct {
 	PluginDirs                 []string          `json:"pluginDirs,omitempty"`
 	WorkerPromptOverride       string            `json:"workerPromptOverride,omitempty"`
 	OrchestratorPromptOverride string            `json:"orchestratorPromptOverride,omitempty"`
+	// TerminateOnPRMerge must round-trip through set-config so a CLI edit of
+	// another field never silently turns the merge-teardown default off.
+	TerminateOnPRMerge bool `json:"terminateOnPrMerge,omitempty"`
 }
 
 // mcpConfig mirrors domain.MCPConfig.
@@ -145,6 +148,9 @@ type projectConfig struct {
 	Orchestrator               roleOverride         `json:"orchestrator,omitempty"`
 	TrackerIntake              trackerIntakeConfig  `json:"trackerIntake,omitempty"`
 	AutoReview                 bool                 `json:"autoReview,omitempty"`
+	// TerminateOnPRMerge must round-trip through set-config so a CLI edit of
+	// another field never silently turns the merge-teardown default off.
+	TerminateOnPRMerge bool `json:"terminateOnPrMerge,omitempty"`
 	// OwnAccounts must round-trip through set-config so a CLI edit of another
 	// field never silently disables ownership detection by account.
 	OwnAccounts []string `json:"ownAccounts,omitempty"`

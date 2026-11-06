@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { appI18n } from "../i18n";
 import { GlobalSettingsForm, type GlobalSettingsSection } from "./GlobalSettingsForm";
+import { setApiBaseUrl } from "../lib/api-client";
 import { useLocaleStore } from "../stores/locale-store";
 import { useSoundNotificationsStore } from "../stores/sound-notifications-store";
 import { useTerminalShellStore } from "../stores/terminal-shell-store";
@@ -530,5 +531,45 @@ describe("GlobalSettingsForm", () => {
 		expect(screen.queryByRole("combobox", { name: "Report type" })).not.toBeInTheDocument();
 		expect(screen.queryByLabelText("Include safe diagnostics")).not.toBeInTheDocument();
 		expect(screen.queryByLabelText("Report preview")).not.toBeInTheDocument();
+	});
+});
+
+// The terminate-on-merge default (fork #285) lives in the Agent defaults
+// section and writes through PUT /api/v1/user-config, which replaces the
+// stored config wholesale — so the flip must carry the rest of the loaded
+// agentConfig with it.
+describe("GlobalSettingsForm terminate-on-merge default", () => {
+	const toggleLabel = "Archive sessions on merge";
+
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		setApiBaseUrl(null);
+	});
+
+	it("renders the row and PUTs the flip merged over the loaded agentConfig", async () => {
+		const user = userEvent.setup();
+		setApiBaseUrl("http://127.0.0.1:3001");
+		const putBodies: Record<string, unknown>[] = [];
+		vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+			const request = input instanceof Request ? input : new Request(input, init);
+			if (request.method.toUpperCase() === "PUT") {
+				putBodies.push(JSON.parse((await request.text()) || "{}"));
+			}
+			const body = request.url.endsWith("/user-config") && request.method.toUpperCase() === "PUT"
+				? { agentConfig: { model: "claude-opus-4-8", terminateOnPrMerge: true } }
+				: { agentConfig: { model: "claude-opus-4-8" }, defaultWorkerPrompt: "", defaultOrchestratorPrompt: "" };
+			return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+		}));
+
+		renderForm("general");
+
+		const toggle = await screen.findByRole("switch", { name: toggleLabel });
+		expect(toggle).toHaveAttribute("aria-checked", "false");
+		await user.click(toggle);
+		await waitFor(() => expect(putBodies.length).toBeGreaterThan(0));
+		const agentConfig = (putBodies[0].agentConfig ?? {}) as Record<string, unknown>;
+		expect(agentConfig.terminateOnPrMerge).toBe(true);
+		// Wholesale replace: the rest of the stored config must survive the flip.
+		expect(agentConfig.model).toBe("claude-opus-4-8");
 	});
 });

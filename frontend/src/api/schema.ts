@@ -4178,6 +4178,7 @@ export interface components {
             permissions?: string;
             pluginDirs?: string[];
             systemPrompt?: string;
+            terminateOnPrMerge?: boolean;
             workerPromptOverride?: string;
         };
         AgentInfo: {
@@ -6162,6 +6163,7 @@ export interface components {
             reviewers?: components["schemas"]["DomainReviewerConfig"][];
             sessionPrefix?: string;
             symlinks?: string[];
+            terminateOnPrMerge?: boolean;
             trackerIntake?: components["schemas"]["TrackerIntakeConfig"];
             worker?: components["schemas"]["RoleOverride"];
             workerPromptOverride?: string;

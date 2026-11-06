@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import type { ProjectSettingsSaveState, ProjectSettingsSection as SettingsSection } from "./ProjectSettingsForm";
 import { deriveRepoHost, deriveRepoPath, IntakeFields, intakeNeedsRule } from "./IntakeFields";
 import { ProductExternalLink } from "./ProductExternalLink";
-import { AgentModelField, ProjectAgentRoleHeader, ProjectAgentRoleRow, ProjectAutoReviewToggle, ProjectWorkersRequestReviewToggle } from "./settings/ProjectAgentRoleControls";
+import { AgentModelField, ProjectAgentRoleHeader, ProjectAgentRoleRow, ProjectAutoReviewToggle, ProjectTerminateOnMergeToggle, ProjectWorkersRequestReviewToggle } from "./settings/ProjectAgentRoleControls";
 import { SettingsOptionMenu } from "./settings/SettingsOptionMenu";
 import { Button } from "./ui/button";
 
@@ -33,6 +33,8 @@ export type ProjectSettingsDraft = {
 	orchestratorPermissions: string;
 	reviewerPermissions: string;
 	autoReview: boolean;
+	/** Local-only: project default for the per-session terminate-on-merge toggle (fork #285). */
+	terminateOnPrMerge: boolean;
 	/** Local-only: workers may ask AO to review their own PRs. */
 	workersRequestReview?: boolean;
 	/** Comma-separated GitHub accounts counted as own for PR review ownership. */
@@ -66,6 +68,8 @@ type Capabilities = {
 	reviewer: boolean;
 	requiredAgents: boolean;
 	workersRequestReview?: boolean;
+	/** Local-only: the project-scope terminate-on-merge default row. */
+	terminateOnMergeDefault?: boolean;
 	/** Local-only: the own accounts that widen PR review ownership. */
 	ownAccounts?: boolean;
 	nameLimit?: number;
@@ -204,6 +208,7 @@ export function ProjectSettingsEditor({ initialValues, section, capabilities, de
 					<ProjectSettingsSection title={t("settings.project.pullRequests")} grouped>
 						<ProjectAutoReviewToggle description={autoReviewDescription} checked={draft.autoReview} onCheckedChange={(autoReview) => patch({ autoReview })} />
 						{capabilities.workersRequestReview && <ProjectWorkersRequestReviewToggle checked={draft.workersRequestReview ?? false} onCheckedChange={(workersRequestReview) => patch({ workersRequestReview })} />}
+						{capabilities.terminateOnMergeDefault && <ProjectTerminateOnMergeToggle checked={draft.terminateOnPrMerge} onCheckedChange={(terminateOnPrMerge) => patch({ terminateOnPrMerge })} />}
 						{capabilities.ownAccounts && <ProjectSettingsInputRow id="ownAccounts" label={t("settings.project.ownAccounts")} editLabel={t("settings.field.edit", { label: t("settings.project.ownAccounts") })} editIcon={<Pencil className="settings-inline-edit-icon" aria-hidden="true" />} value={draft.ownAccounts ?? ""} placeholder={t("settings.project.ownAccountsPlaceholder")} onChange={(ownAccounts) => patch({ ownAccounts })} />}
 					</ProjectSettingsSection>
 				</>}

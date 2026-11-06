@@ -639,6 +639,21 @@ type Manager struct {
 	workspaceGates  map[domain.ProjectID]*sync.Mutex
 }
 
+// userConfigForSeed returns the user-scope config for spawn-time seeding (the
+// terminate-on-merge default, fork #285). A nil source or a read error seeds
+// nothing rather than failing the spawn — the same degradation
+// buildSystemPrompt applies to unreadable overrides.
+func (m *Manager) userConfigForSeed(ctx context.Context) domain.AgentConfig {
+	if m.userConfig == nil {
+		return domain.AgentConfig{}
+	}
+	cfg, _, err := m.userConfig.GetUserConfig(ctx)
+	if err != nil {
+		return domain.AgentConfig{}
+	}
+	return cfg
+}
+
 // acquireWorkspaceGate acquires the per-project workspace gate, returning a
 // release function that must be deferred or called when the operation finishes.
 func (m *Manager) acquireWorkspaceGate(projectID domain.ProjectID) func() {
@@ -1250,7 +1265,7 @@ func (m *Manager) spawn(ctx context.Context, cfg ports.SpawnConfig, timings *spa
 	if prep != nil {
 		rec = prep.record
 	} else {
-		seed := seedRecord(cfg, project.Config, m.clock())
+		seed := seedRecord(cfg, project.Config, m.userConfigForSeed(ctx), m.clock())
 		if mode == domain.SessionModeChat {
 			seed.Metadata.Model = cfg.AgentConfig.Model
 			seed.Metadata.Effort = cfg.AgentConfig.Effort
@@ -1348,7 +1363,7 @@ func (m *Manager) spawn(ctx context.Context, cfg ports.SpawnConfig, timings *spa
 				return domain.SessionRecord{}, 0, 0, wrapSpawnStage(id, ErrWorkspaceCreate, err)
 			}
 		}
-		seed := seedRecord(cfg, project.Config, m.clock())
+		seed := seedRecord(cfg, project.Config, m.userConfigForSeed(ctx), m.clock())
 		seed.ID = id
 		seed.Metadata.ArtifactDir = artifactDir
 		if mode == domain.SessionModeChat {
@@ -5899,7 +5914,7 @@ func normalizeWorkspacePath(p string) string {
 
 // ---- helpers ----
 
-func seedRecord(cfg ports.SpawnConfig, projectConfig domain.ProjectConfig, now time.Time) domain.SessionRecord {
+func seedRecord(cfg ports.SpawnConfig, projectConfig domain.ProjectConfig, userConfig domain.AgentConfig, now time.Time) domain.SessionRecord {
 	permissions := applySpawnAgentConfig(effectiveAgentConfig(cfg.Harness, cfg.Kind, projectConfig), cfg.AgentConfig).Permissions
 	if cfg.ReviewOnly {
 		// Pin the enforced non-bypass policy so every restore resolves to it.
@@ -5924,6 +5939,11 @@ func seedRecord(cfg ports.SpawnConfig, projectConfig domain.ProjectConfig, now t
 		RequestedOutput:   cfg.RequestedOutput,
 		OutputType:        domain.SessionOutputNone,
 		AutoReviewEnabled: projectConfig.AutoReview || cfg.ReviewOnly,
+		// The merge-completion lifecycle default: project default over the
+		// user-scope default over hardcoded false (fork #285). Seeded once here;
+		// the per-session toggle (SetTerminateOnPRMerge) stays authoritative
+		// afterwards.
+		TerminateOnPRMerge: projectConfig.TerminateOnPRMergeDefault(userConfig),
 		// A review-only session never receives review findings as turns: the
 		// verdict is collected in its review record, not routed back as a fix loop.
 		AutoInjectReview: !cfg.ReviewOnly,

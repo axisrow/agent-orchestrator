@@ -41,7 +41,7 @@ func TestSeedRecordPreservesAutomationRunIdentity(t *testing.T) {
 	rec := seedRecord(ports.SpawnConfig{
 		ProjectID: "scheduled", Kind: domain.KindWorker,
 		AutomationRunID: &runID,
-	}, domain.ProjectConfig{}, time.Date(2026, time.August, 25, 9, 0, 0, 0, time.UTC))
+	}, domain.ProjectConfig{}, domain.AgentConfig{}, time.Date(2026, time.August, 25, 9, 0, 0, 0, time.UTC))
 	if rec.AutomationRunID == nil || *rec.AutomationRunID != runID {
 		t.Fatalf("automation run id = %v, want %q", rec.AutomationRunID, runID)
 	}

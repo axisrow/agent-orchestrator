@@ -246,3 +246,26 @@ func TestProjectConfigValidateRejectsBadRoleProvider(t *testing.T) {
 		t.Fatalf("Validate() with direct pin = %v", err)
 	}
 }
+
+// TestProjectConfigTerminateOnPRMergeDefault pins the merge-teardown default
+// resolution (fork #285) at every overlap level: neither scope set, only the
+// project set, only the user set, and both set. False is the hardcoded
+// fallback, so the resolution is a plain opt-in OR.
+func TestProjectConfigTerminateOnPRMergeDefault(t *testing.T) {
+	tests := []struct {
+		name    string
+		project ProjectConfig
+		user    AgentConfig
+		want    bool
+	}{
+		{"nothing set falls through to false", ProjectConfig{}, AgentConfig{}, false},
+		{"user default only", ProjectConfig{}, AgentConfig{TerminateOnPRMerge: true}, true},
+		{"project default only", ProjectConfig{TerminateOnPRMerge: true}, AgentConfig{}, true},
+		{"both set", ProjectConfig{TerminateOnPRMerge: true}, AgentConfig{TerminateOnPRMerge: true}, true},
+	}
+	for _, tt := range tests {
+		if got := tt.project.TerminateOnPRMergeDefault(tt.user); got != tt.want {
+			t.Errorf("%s: TerminateOnPRMergeDefault() = %v, want %v", tt.name, got, tt.want)
+		}
+	}
+}
