@@ -147,6 +147,54 @@ func TestReportStoreSupersedesUndeliveredOnNewPrompt(t *testing.T) {
 	}
 }
 
+// TestReportStoreTerminationRetiresWithSourceCause pins the fork issue #279
+// terminate leg at the ledger: SupersedeSessionReports retires a session's
+// pending and claimed rows terminally and journals the source_terminated
+// cause class — a terminated source's fate is distinguishable in the journal
+// from a prompt supersession, with no pending rows left for the drain.
+func TestReportStoreTerminationRetiresWithSourceCause(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	seedProject(t, s, "ao")
+	sess, err := s.CreateSession(ctx, sampleRecord("ao"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	pending := domain.ReportRecord{ID: "rpt_term_p", SessionID: sess.ID, ProjectID: sess.ProjectID, State: domain.ReportNeedsInput, Note: "waiting", CreatedAt: now, DeliveryState: domain.ReportPending, AvailableAt: now, RepeatCount: 1}
+	if _, err = s.CreateReport(ctx, pending); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.ClaimPendingReportBatch(ctx, sess.ProjectID, "term-token", now); err != nil {
+		t.Fatal(err)
+	}
+	n, err := s.SupersedeSessionReports(ctx, sess.ID, domain.DeliveryEventSourceTerminated, domain.ReportTerminatedReason)
+	if err != nil || n != 1 {
+		t.Fatalf("retired=%d err=%v, want the claimed report retired", n, err)
+	}
+	got, ok, err := s.GetReport(ctx, pending.ID)
+	if err != nil || !ok {
+		t.Fatalf("get retired report ok=%v err=%v", ok, err)
+	}
+	if got.DeliveryState != domain.ReportStale || got.LastError != domain.ReportTerminatedReason {
+		t.Fatalf("row = %+v, want stale with the termination reason", got)
+	}
+	if err = got.Validate(); err != nil {
+		t.Fatalf("retired row violates invariants: %v", got)
+	}
+	events, err := s.ListDeliveryEventsByDelivery(ctx, pending.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := events[len(events)-1]
+	if last.ToState != string(domain.ReportStale) || last.Cause != domain.DeliveryEventSourceTerminated || last.Reason != domain.ReportTerminatedReason {
+		t.Fatalf("terminal journal event = %+v, want stale/source_terminated/termination reason", last)
+	}
+	if projects, err := s.ListPendingDeliveryProjects(ctx); err != nil || len(projects) != 0 {
+		t.Fatalf("pending projects=%v err=%v, want none", projects, err)
+	}
+}
+
 // TestReportStoreFailsQueuedBatchTerminally pins the fork issue #205 ledger
 // outcome: a batch whose target held its text in the message queue is retired
 // stale under its claim token — never pending again — and a wrong token fails

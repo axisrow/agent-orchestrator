@@ -529,27 +529,38 @@ func TestCoordinatorExpiresStalePendingReports(t *testing.T) {
 	}
 }
 
-// TestCoordinatorExhaustedBatchStillReemits pins the pull answer to a worn
-// batch: even a batch with a long delivery history is just unread work — the
-// drain attempts it at the next safe point exactly like a fresh one.
-func TestCoordinatorExhaustedBatchStillReemits(t *testing.T) {
+// TestCoordinatorExhaustedBatchRetiresTerminally pins the fork issue #279
+// answer to a worn batch: once a batch's bounded safe-point attempts are
+// spent without a recorded acceptance, the drain retires it terminally with
+// the retry_limit journal cause instead of replaying the same content at
+// every turn boundary. Low-attempt recovery (restart requeue, lost ack) still
+// re-injects — see TestCoordinatorLostAckReinjectsAtNextSafePoint.
+func TestCoordinatorExhaustedBatchRetiresTerminally(t *testing.T) {
 	now := time.Date(2026, 10, 26, 10, 0, 0, 0, time.UTC)
 	store := newCoordinatorStore(now)
 	store.sessions = []domain.SessionRecord{{ID: "orch", ProjectID: "p", Kind: domain.KindOrchestrator, Mode: domain.SessionModeTUI, Activity: domain.Activity{State: domain.ActivityIdle, LastActivityAt: now}}}
 	worn := reportAt("worn", "worker", now, now, "context")
-	worn.DeliveryAttempts = 7
+	worn.DeliveryAttempts = int64(ReportDeliveryAttemptLimit)
 	worn.EmittedAt = now.Add(-time.Hour)
 	store.add(worn)
 	delivery := &coordinatorDelivery{}
-	c := NewCoordinator(CoordinatorDeps{Store: store, Delivery: delivery, Now: func() time.Time { return now }})
+	var logs bytes.Buffer
+	c := NewCoordinator(CoordinatorDeps{Store: store, Delivery: delivery, Now: func() time.Time { return now }, Log: slog.New(slog.NewTextHandler(&logs, nil))})
 	if delay, err := c.RunDue(context.Background()); err != nil || delay >= 0 {
 		t.Fatalf("drain delay = %v, err = %v", delay, err)
 	}
-	if len(delivery.submissions) != 1 || delivery.submissions[0].key != "report-batch:worn" {
-		t.Fatalf("submissions = %#v, want one drain injection of batch %q", delivery.submissions, "report-batch:worn")
+	if len(delivery.submissions) != 0 {
+		t.Fatalf("submissions = %#v, want no re-emission of an exhausted batch", delivery.submissions)
 	}
-	if store.acked != 1 {
-		t.Fatalf("acked = %d, want 1", store.acked)
+	rec := store.reports[0]
+	if rec.DeliveryState != domain.ReportStale || rec.LastError == "" {
+		t.Fatalf("record = %+v, want terminal stale with the exhausted reason", rec)
+	}
+	if len(store.failCauses) != 1 || store.failCauses[0] != domain.DeliveryEventRetryLimit {
+		t.Fatalf("retire causes = %v, want retry_limit", store.failCauses)
+	}
+	if !strings.Contains(logs.String(), "report: batch retired terminally; retry limit") {
+		t.Fatalf("log = %q, want the retry-limit retirement line", logs.String())
 	}
 }
 

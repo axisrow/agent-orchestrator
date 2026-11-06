@@ -449,7 +449,7 @@ func hookConversationFacts(agent domain.AgentHarness, event string, payload []by
 	// AO's own handoff request and continuation kickoff are coordination turns,
 	// not the latest real user instruction. They remain in provider history but
 	// must not overwrite deterministic user intent.
-	if isAOCoordinationMessage(observedPrompt) {
+	if domain.IsAOCoordinationPrompt(observedPrompt) {
 		userPrompt = ""
 		assistant = ""
 		if event == "user-prompt-submit" || event == "stop" {
@@ -474,13 +474,6 @@ func firstHookValue(values ...string) string {
 		}
 	}
 	return ""
-}
-
-func isAOCoordinationMessage(value string) bool {
-	value = strings.TrimSpace(value)
-	_, reportDelivery := domain.CoordinationDeliveryID(value)
-	return reportDelivery || strings.HasPrefix(value, "<ao-handoff-request") ||
-		strings.HasPrefix(value, "AO transferred the previous agent's context in hidden system instructions.")
 }
 
 func capHookText(value string, limit int) string {

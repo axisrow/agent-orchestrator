@@ -1072,6 +1072,37 @@ func TestHookConversationFactsExcludesAOCoordinationUserTurns(t *testing.T) {
 	}
 }
 
+// TestHookConversationFactsCoordinationInsidePasteEnvelope pins the fork
+// issue #279 acceptance fix: claude 2.1.31x submits a multi-line AO paste
+// wrapped in its own `<pasted_content id="...">` envelope, so the AO marker
+// no longer opens the raw prompt text. The hook must still classify the
+// prompt as a coordination turn carrying the batch's durable id — otherwise
+// the delivery's semantic acceptance never lands and the coordinator replays
+// the batch at every safe point.
+func TestHookConversationFactsCoordinationInsidePasteEnvelope(t *testing.T) {
+	batch := "report-batch:rpt_2eb7cf6b-eda1-41e5-af37-79d7db88f3ec"
+	body := domain.WrapReportDelivery(batch, "Reports since your previous turn:\n\n[checkpoint] worker-1")
+	enveloped := "  <pasted_content id=\"a656\"> " + body + " </pasted_content>"
+	got := hookConversationFacts(domain.HarnessClaudeCode, "user-prompt-submit", []byte(`{"prompt":`+mustJSONString(t, enveloped)+`}`))
+	if got.CheckpointOrigin != domain.ConversationCheckpointOriginCoordination {
+		t.Fatalf("origin = %q, want coordination behind the paste envelope", got.CheckpointOrigin)
+	}
+	if got.CoordinationID != batch {
+		t.Fatalf("coordination id = %q, want %q", got.CoordinationID, batch)
+	}
+	if got.LatestUserPrompt != "" {
+		t.Fatalf("accepted report leaked into user prompt: %#v", got)
+	}
+
+	// The wrapped envelope keeps the marker at the head; text that merely
+	// mentions the marker deep in its body stays an ordinary human prompt.
+	quoted := "please explain the marker format " + strings.Repeat("x", 2048) + " <ao-report-delivery id=\"report-batch:fake\">"
+	ordinary := hookConversationFacts(domain.HarnessClaudeCode, "user-prompt-submit", []byte(`{"prompt":`+mustJSONString(t, quoted)+`}`))
+	if ordinary.CheckpointOrigin != domain.ConversationCheckpointOriginHuman || ordinary.CoordinationID != "" {
+		t.Fatalf("deep-quoting prompt became coordination: %#v", ordinary)
+	}
+}
+
 func TestHookMetadataAndConversationFactsTolerateMalformedOtherProjection(t *testing.T) {
 	t.Run("malformed usage retains conversation", func(t *testing.T) {
 		payload := []byte(`{"prompt":"continue investigating","last_assistant_message":"updated","transcriptPath":"/tmp/conversation.jsonl","model":false}`)

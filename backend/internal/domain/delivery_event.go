@@ -27,6 +27,11 @@ const (
 	// undelivered reports when a new prompt reaches the session (fork issue
 	// #240): the reports describe the previous task.
 	DeliveryEventRepromptSuperseded = "reprompt_superseded"
+	// DeliveryEventSourceTerminated is the terminal retirement of a session's
+	// undelivered reports when the session itself terminates (fork issue
+	// #279): the source will never turn again, so its reports must not keep
+	// cycling through the recipient's drain.
+	DeliveryEventSourceTerminated = "source_terminated"
 	// DeliveryEventRecipientGone is the terminal outcome for a recipient that
 	// can never exist again (archived project, fork issue #208).
 	DeliveryEventRecipientGone = "recipient_gone"
@@ -37,6 +42,11 @@ const (
 	// DeliveryEventRestartRequeue returns a claim owned by a prior daemon
 	// process to pending.
 	DeliveryEventRestartRequeue = "restart_requeue"
+	// DeliveryEventRetryLimit is the terminal outcome of a batch that
+	// exhausted its bounded delivery attempts without a recorded acceptance
+	// (fork issue #279): the drain retires it instead of replaying the same
+	// content at every safe point.
+	DeliveryEventRetryLimit = "retry_limit"
 	// DeliveryEventBackfill is the one-time migration snapshot of rows that
 	// predate the journal; their intermediate history is unknowable.
 	DeliveryEventBackfill = "backfill"

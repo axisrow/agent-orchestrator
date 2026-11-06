@@ -10,6 +10,15 @@ import (
 
 const reportDeliveryPrefix = `<ao-report-delivery id="`
 
+// reportDeliveryScanHead bounds the wrapped-marker scan below: AO-authored
+// markers must open the submitted prompt. Agent harnesses may wrap a multi-line
+// paste in their own envelope (claude 2.1.31x submits long pastes as
+// `<pasted_content id="..."> ... </pasted_content>`, fork issue #279), pushing
+// the AO marker past the first byte while leaving it at the head of the text.
+// A marker deeper than the head is quoted prompt content and cannot
+// manufacture a delivery identity.
+const reportDeliveryScanHead = 1024
+
 // WrapReportDelivery marks an AO-authored report batch so provider prompt
 // hooks can correlate semantic acceptance with its durable delivery identity.
 func WrapReportDelivery(id, message string) string {
@@ -25,10 +34,21 @@ func ReportDeliveryID(message string) (string, bool) {
 
 func deliveryID(message, prefix string) (string, bool) {
 	message = strings.TrimSpace(message)
+	start := 0
 	if !strings.HasPrefix(message, prefix) {
-		return "", false
+		// A harness paste envelope may precede the marker (fork issue #279):
+		// scan the head for a marker that still opens the submitted text.
+		head := message
+		if len(head) > reportDeliveryScanHead {
+			head = head[:reportDeliveryScanHead]
+		}
+		found := strings.Index(head, prefix)
+		if found < 0 {
+			return "", false
+		}
+		start = found
 	}
-	rest := strings.TrimPrefix(message, prefix)
+	rest := message[start+len(prefix):]
 	end := strings.Index(rest, `">`)
 	if end <= 0 || end > 128 {
 		return "", false
@@ -41,6 +61,23 @@ func deliveryID(message, prefix string) (string, bool) {
 		}
 	}
 	return id, true
+}
+
+// IsAOCoordinationPrompt reports whether a submitted prompt opens with an
+// AO-authored coordination marker: a report or session delivery id, a handoff
+// request, or the source-handoff continuation notice. Provider prompt hooks
+// use it to classify the prompt's checkpoint origin, so a harness paste
+// envelope wrapped around the marker (fork issue #279) must not hide it.
+func IsAOCoordinationPrompt(message string) bool {
+	if _, ok := CoordinationDeliveryID(message); ok {
+		return true
+	}
+	head := strings.TrimSpace(message)
+	if len(head) > reportDeliveryScanHead {
+		head = head[:reportDeliveryScanHead]
+	}
+	return strings.Contains(head, "<ao-handoff-request") ||
+		strings.HasPrefix(head, "AO transferred the previous agent's context in hidden system instructions.")
 }
 
 const (
@@ -122,6 +159,12 @@ const (
 // reports describe the previous task, and delivering them after a fresh
 // instruction would present stale work as current status (fork issue #240).
 const ReportSupersededReason = "superseded by a newer prompt to this session"
+
+// ReportTerminatedReason is the durable retirement reason recorded on a
+// session's undelivered reports when the session terminates (fork issue
+// #279): a source that will never turn again must not leave its reports
+// cycling through the recipient's drain until the ledger expiry.
+const ReportTerminatedReason = "source session terminated before delivery"
 
 // ReportRecord is the durable report and outbox persistence shape. State and
 // outputs are independent, and neither changes authoritative session state.

@@ -2437,6 +2437,48 @@ func TestMarkTerminated(t *testing.T) {
 	}
 }
 
+// TestMarkTerminatedFinalizesUndeliveredReports pins the fork issue #279
+// terminate leg: a session's pending and claimed report batches retire
+// terminally with the source_terminated journal cause, so a source that will
+// never turn again stops its reports cycling through the recipient's drain.
+type reportFinalizerStore struct {
+	fakeStore
+	superseded []string
+	causes     []string
+}
+
+func (s *reportFinalizerStore) SupersedeSessionReports(_ context.Context, sessionID domain.SessionID, cause, _ string) (int, error) {
+	s.superseded = append(s.superseded, string(sessionID))
+	s.causes = append(s.causes, cause)
+	return 2, nil
+}
+
+func TestMarkTerminatedFinalizesUndeliveredReports(t *testing.T) {
+	st := &reportFinalizerStore{fakeStore: *newFakeStore()}
+	m := New(st, nil)
+	st.sessions["w-1"] = working("w-1")
+	if err := m.MarkTerminated(ctx, "w-1"); err != nil {
+		t.Fatal(err)
+	}
+	if len(st.superseded) != 1 || st.superseded[0] != "w-1" {
+		t.Fatalf("superseded sessions = %v, want [w-1]", st.superseded)
+	}
+	if len(st.causes) != 1 || st.causes[0] != domain.DeliveryEventSourceTerminated {
+		t.Fatalf("retire causes = %v, want source_terminated", st.causes)
+	}
+
+	// A store without the ledger surface keeps termination working (best
+	// effort by contract).
+	m2, plain, _ := newManager()
+	plain.sessions["w-2"] = working("w-2")
+	if err := m2.MarkTerminated(ctx, "w-2"); err != nil {
+		t.Fatal(err)
+	}
+	if !plain.sessions["w-2"].IsTerminated {
+		t.Fatal("termination broke without the ledger surface")
+	}
+}
+
 type fakeUsageFinalizer struct {
 	store           *fakeStore
 	calls           int
