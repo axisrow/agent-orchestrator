@@ -27,6 +27,8 @@
 	"chat.removeAllAnnotations": "Remove all annotations",
 	"chat.removeAnnotation": "Remove annotation {{count}}",
 	"chat.startup.queuePlaceholder": "{{agent}} startet. Nachrichten werden der Reihe nach gesendet",
+	"chat.archived.body": "Der Verlauf bleibt erhalten. Stellen Sie die Sitzung wieder her, um fortzufahren.",
+	"chat.archived.placeholder": "Stellen Sie die Sitzung wieder her, um fortzufahren",
 	"chat.projectSetup.succeeded": "Setup erfolgreich",
 	"chat.projectSetup.succeededIn": "Setup in {{duration}} erfolgreich",
 	"chat.projectSetup.timedOut": "Setup-Schritt {{step}} hat das Zeitlimit überschritten",

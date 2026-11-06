@@ -27,6 +27,8 @@
 	"chat.removeAllAnnotations": "Remove all annotations",
 	"chat.removeAnnotation": "Remove annotation {{count}}",
 	"chat.startup.queuePlaceholder": "{{agent}} está iniciando. As mensagens são enviadas em ordem",
+	"chat.archived.body": "O histórico é mantido. Restaure a sessão para continuar.",
+	"chat.archived.placeholder": "Restaure a sessão para continuar",
 	"chat.projectSetup.succeeded": "Configuração bem-sucedida",
 	"chat.projectSetup.succeededIn": "Configuração bem-sucedida em {{duration}}",
 	"chat.projectSetup.timedOut": "A etapa {{step}} da configuração excedeu o tempo limite",

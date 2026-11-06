@@ -86,6 +86,8 @@ const visibilityMocks = vi.hoisted(() => ({
 	route: vi.fn(),
 }));
 
+const conversationCommandArgs = vi.hoisted(() => [] as unknown[][]);
+
 vi.mock("../../lib/api-client", () => ({
 	apiClient: { GET: getMock, POST: postMock },
 	getApiBaseUrl: () => "",
@@ -104,7 +106,10 @@ vi.mock("../../hooks/useConversation", () => ({
 			? { ...snapshotFor(sessionId), ...conversationState.snapshot }
 			: undefined,
 	}),
-	useConversationCommands: () => conversationCommandState,
+	useConversationCommands: (...args: unknown[]) => {
+		conversationCommandArgs.push(args);
+		return conversationCommandState;
+	},
 	useConversationConfigOptions: vi.fn((_sessionId: string, enabled: boolean) => {
 		catalogObserverState.enabled.push(enabled);
 		return configState;
@@ -243,6 +248,7 @@ beforeEach(() => {
 	conversationCommandState.pendingAcceptedTurnId = undefined;
 	conversationCommandState.acknowledgeAcceptedTurn.mockReset();
 	agentSwitchState.data = [];
+	conversationCommandArgs.length = 0;
 	catalogObserverState.enabled = [];
 	visibilityMocks.presentation.mockReset();
 	visibilityMocks.route.mockReset();
@@ -253,6 +259,16 @@ afterEach(() => {
 	vi.useRealTimers();
 });
 
+describe("SessionChatSurface recovery", () => {
+	it.each<[string, WorkspaceSession, boolean]>([
+		["a live session", session, false],
+		["a terminated session", { ...session, isTerminated: true }, true],
+		["a session read as terminated", { ...session, status: "terminated" }, true],
+	])("tells the commands whether %s can only be restored", (_name, target, terminated) => {
+		render(<Wrapper client={new QueryClient()}><SessionChatSurface session={target} /></Wrapper>);
+		expect(conversationCommandArgs.at(-1)).toEqual([target.id, undefined, terminated]);
+	});
+});
 describe("SessionChatSurface prompt suggestions", () => {
 	function settleConversation() {
 		conversationState.snapshot = {
