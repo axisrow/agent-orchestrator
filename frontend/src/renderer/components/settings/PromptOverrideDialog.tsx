@@ -4,7 +4,10 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { components } from "../../../api/schema";
 import { apiClient, apiErrorMessage } from "../../lib/api-client";
-import { projectQueryKey } from "../../hooks/useProjectQuery";
+import {
+  projectPromptOverridesQueryKey,
+  projectQueryKey,
+} from "../../hooks/useProjectQuery";
 import { captureRendererEvent } from "../../lib/telemetry";
 import {
   Dialog,
@@ -130,7 +133,11 @@ function useScopeAdapter(props: PromptOverrideDialogProps): ScopeAdapter {
     };
     return {
       scope: "project",
-      queryKey: projectQueryKey(projectId),
+      // Own nested key: this scope's query derives a PromptLoad from the raw
+      // GET envelope, a different shape from the bare Project cached under
+      // ["project", id]. Sharing that key would let whichever surface writes
+      // first poison the other (see projectPromptOverridesQueryKey).
+      queryKey: projectPromptOverridesQueryKey(projectId),
       ...sharedStrings,
       async load() {
         const { data, error } = await apiClient.GET("/api/v1/projects/{id}", {
@@ -201,6 +208,12 @@ export function PromptOverrideDialog(props: PromptOverrideDialogProps) {
 
   const adapter = useScopeAdapter(props);
   const queryClient = useQueryClient();
+  // Project scope only: the bare-Project entry the settings form, the shell
+  // prefetch, and ProjectScriptsSettings read. Invalidating it after a save
+  // keeps those surfaces in sync; prefix matching refetches the dialog's own
+  // nested overrides key too, so one call covers both.
+  const sharedProjectKey =
+    props.scope === "project" ? projectQueryKey(props.projectId) : undefined;
 
   const query = useQuery({
     queryKey: adapter.queryKey,
@@ -297,6 +310,9 @@ export function PromptOverrideDialog(props: PromptOverrideDialogProps) {
       });
       setSavedAt(Date.now());
       void queryClient.invalidateQueries({ queryKey: adapter.queryKey });
+      if (sharedProjectKey) {
+        void queryClient.invalidateQueries({ queryKey: sharedProjectKey });
+      }
     },
     onError: () => {
       void captureRendererEvent("ao.renderer.prompt_override_save_failed", {

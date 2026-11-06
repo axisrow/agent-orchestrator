@@ -5,6 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ComponentProps } from "react";
 import { PromptOverrideDialog } from "./PromptOverrideDialog";
 import { setApiBaseUrl } from "../../lib/api-client";
+import {
+  projectPromptOverridesQueryKey,
+  projectQueryKey,
+} from "../../hooks/useProjectQuery";
 
 const DEFAULT_WORKER =
   "## AO Worker Role\n\nYou are an implementation worker.\n\n## Local Git Rules\n\n- Work locally.";
@@ -106,9 +110,21 @@ function orchOverrideOf(scope: Scope, body: Record<string, unknown>) {
   return cfg.orchestratorPromptOverride;
 }
 
-function renderDialog(props: Partial<DialogProps> & { scope?: Scope }) {
+function renderDialog(
+  props: Partial<DialogProps> & {
+    scope?: Scope;
+    /** Prime ["project", id] with the bare Project ProjectSettingsForm caches. */
+    primedProject?: Record<string, unknown>;
+  },
+) {
   const scope = (props.scope ?? "user") as Scope;
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  if (props.scope === "project" && props.primedProject) {
+    qc.setQueryData(
+      projectQueryKey(props.projectId ?? "proj-1"),
+      props.primedProject,
+    );
+  }
   const full =
     scope === "user"
       ? ({
@@ -462,5 +478,41 @@ describe.each(SCOPES)("PromptOverrideDialog (scope=%s)", (scope) => {
     expect(
       screen.getByRole("button", { name: /reset to default/i }),
     ).toBeEnabled();
+  });
+});
+
+// Project-scope only: this is the regression for #293. Opening the dialog from
+// the project settings row happens with ["project", id] already holding the
+// bare Project that ProjectSettingsForm's queryFn caches. The dialog must
+// ignore that entry (its read-model lives under its own nested key) and
+// refetch the envelope, instead of parsing the bare project as a PromptLoad —
+// which yielded empty textareas and both empty-field alerts.
+describe("PromptOverrideDialog (primed cache)", () => {
+  it("opens prefilled, without empty-field warnings, when the shared project key holds the bare Project", async () => {
+    fetchMock(buildGetBody("project", { workerOverride: "## Custom Worker" }));
+    const qc = renderDialog({
+      scope: "project",
+      primedProject: {
+        id: "proj-1",
+        name: "Project One",
+        kind: "single_repo",
+        path: "/repo/project-one",
+        repo: "",
+        defaultBranch: "main",
+        config: {},
+      },
+    });
+
+    await waitForValue("Worker prompt override", "## Custom Worker");
+    await waitForValue("Orchestrator prompt override", DEFAULT_ORCH);
+    expect(screen.queryByRole("alert")).toBeNull();
+    // The read-model lives under the dialog's own nested key; the primed
+    // bare-Project entry is left to its bare-Project readers.
+    expect(
+      screen.queryByRole("button", { name: "Save" }),
+    ).toBeDisabled();
+    expect(
+      qc.getQueryData(projectPromptOverridesQueryKey("proj-1")),
+    ).toBeDefined();
   });
 });
