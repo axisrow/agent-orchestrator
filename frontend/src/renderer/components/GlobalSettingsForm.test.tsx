@@ -177,7 +177,7 @@ describe("GlobalSettingsForm", () => {
 		// Same treatment as the project-scope prompt-override row (issue #21):
 		// a real settings-row-bar row carrying the hint, opening the dialog.
 		expect(row).toHaveClass("settings-row-bar");
-		expect(row).toHaveTextContent("Override the hardcoded worker and orchestrator system prompts globally (all projects).");
+		expect(row).toHaveTextContent("Replace the built-in worker and orchestrator role prompts globally (all projects). The Project Context block is appended automatically; template placeholders like {{project.id}} are available.");
 
 		await user.click(row);
 		expect(await screen.findByRole("dialog", { name: "Agent defaults" })).toBeInTheDocument();
