@@ -269,6 +269,8 @@ function CloudAgentPicker({ role, draft, value, disabled, onChange }: ProjectAge
 function toEditorDraft(values: CloudProjectSettingsDraft): ProjectSettingsDraft {
 	return {
 		displayName: values.displayName, defaultBranch: values.defaultBranch, autoReview: values.autoReview,
+		// Cloud has no terminate-on-merge default; the capability hides the row and this keeps the draft typed.
+		terminateOnPrMerge: false,
 		sessionPrefix: values.sessionPrefix, intakeEnabled: false, intakeRepo: "", intakeAssignee: "",
 		workerAgent: values.worker.agent, orchestratorAgent: values.orchestrator.agent, reviewerHarness: values.reviewer.agent,
 		workerProvider: "", orchestratorProvider: "", reviewerProvider: "",

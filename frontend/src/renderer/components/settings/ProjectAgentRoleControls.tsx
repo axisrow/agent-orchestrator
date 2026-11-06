@@ -218,6 +218,12 @@ export function ProjectWorkersRequestReviewToggle({ checked, onCheckedChange }: 
 	return <ProjectToggleRow id="project-workers-request-review" label={t("settings.project.workersRequestReviewToggle")} description={t("settings.project.workersRequestReviewDescription")} checked={checked} onCheckedChange={onCheckedChange} />;
 }
 
+/** Project-scope default for the per-session terminate-on-merge toggle (fork #285). */
+export function ProjectTerminateOnMergeToggle({ checked, onCheckedChange }: { checked: boolean; onCheckedChange: (checked: boolean) => void }) {
+	const { t } = useTranslation();
+	return <ProjectToggleRow id="project-terminate-on-merge" label={t("settings.project.terminateOnMergeToggle")} description={t("settings.project.terminateOnMergeDescription")} checked={checked} onCheckedChange={onCheckedChange} />;
+}
+
 function ProjectToggleRow({ id, label, description, checked, onCheckedChange }: { id: string; label: string; description: string; checked: boolean; onCheckedChange: (checked: boolean) => void }) {
 	return (
 		<SettingsRow label={label} description={description}>

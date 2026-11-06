@@ -12141,6 +12141,8 @@ components:
           type: array
         systemPrompt:
           type: string
+        terminateOnPrMerge:
+          type: boolean
         workerPromptOverride:
           type: string
       type: object
@@ -17353,6 +17355,8 @@ components:
           items:
             type: string
           type: array
+        terminateOnPrMerge:
+          type: boolean
         trackerIntake:
           $ref: '#/components/schemas/TrackerIntakeConfig'
         worker:

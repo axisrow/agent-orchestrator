@@ -1,10 +1,14 @@
 import { Fragment, Suspense, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { type GlobalSettingsSection as GlobalSettingsPage, type HarnessDiagnosticsRequest, useUiStore } from "../stores/ui-store";
+import { apiClient, apiErrorMessage } from "../lib/api-client";
 import { globalSettingsItemsFor } from "./settings/settingsCatalog";
-import { PromptOverrideDialog } from "./settings/PromptOverrideDialog";
+import { PromptOverrideDialog, userConfigQueryKey } from "./settings/PromptOverrideDialog";
+import { SettingsRow } from "./settings/SettingsRow";
 import { SettingsPageTitleContext, SettingsSection } from "./settings/SettingsSection";
+import { Switch } from "./ui/switch";
 
 export type GlobalSettingsSection = GlobalSettingsPage | "all";
 
@@ -67,6 +71,7 @@ export function GlobalSettingsForm({
 							</span>
 							<Pencil className="size-icon-lg shrink-0 text-settings-muted" aria-hidden="true" />
 						</button>
+						<TerminateOnMergeDefaultRow />
 					</SettingsSection>
 				)}
 				{items.map((item) => (
@@ -77,5 +82,60 @@ export function GlobalSettingsForm({
 			</div>
 			<PromptOverrideDialog open={agentDefaultsOpen} onOpenChange={setAgentDefaultsOpen} scope="user" />
 		</SettingsPageTitleContext.Provider>
+	);
+}
+
+/**
+ * User-scope default for the per-session terminate-on-merge toggle (fork
+ * #285). A project default wins when set; the per-session switch stays
+ * authoritative after spawn. PUT /api/v1/user-config replaces the stored
+ * config wholesale, so the flip merges over the loaded agentConfig — the same
+ * round-trip PromptOverrideDialog uses for the neighboring overrides.
+ */
+function TerminateOnMergeDefaultRow() {
+	const { t } = useTranslation();
+	const queryClient = useQueryClient();
+	const query = useQuery({
+		queryKey: userConfigQueryKey,
+		queryFn: async () => {
+			const { data, error } = await apiClient.GET("/api/v1/user-config");
+			if (error) throw new Error(apiErrorMessage(error));
+			return data.agentConfig ?? {};
+		},
+	});
+	const stored = query.data;
+	const mutation = useMutation({
+		mutationFn: async (terminateOnPrMerge: boolean) => {
+			if (!stored) return;
+			const { error } = await apiClient.PUT("/api/v1/user-config", {
+				body: { agentConfig: { ...stored, terminateOnPrMerge } },
+			});
+			if (error) throw new Error(apiErrorMessage(error));
+		},
+		onSettled: () => {
+			void queryClient.invalidateQueries({ queryKey: userConfigQueryKey });
+		},
+	});
+	const error = mutation.error instanceof Error ? mutation.error.message : null;
+	return (
+		<div className="flex w-full flex-col">
+			<SettingsRow
+				className="rounded-none"
+				label={t("settings.terminateOnMergeDefaultToggle")}
+				description={error ?? t("settings.terminateOnMergeDefaultDescription")}
+			>
+				<Switch
+					aria-label={t("settings.terminateOnMergeDefaultToggle")}
+					checked={Boolean(stored?.terminateOnPrMerge)}
+					disabled={query.isLoading || mutation.isPending || !stored}
+					onCheckedChange={(checked) => mutation.mutate(checked)}
+				/>
+			</SettingsRow>
+			{error ? (
+				<p role="alert" className="px-3 pb-2 text-caption leading-4 text-error">
+					{error}
+				</p>
+			) : null}
+		</div>
 	);
 }

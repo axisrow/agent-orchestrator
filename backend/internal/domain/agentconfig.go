@@ -73,6 +73,14 @@ type AgentConfig struct {
 	// sourced from the user-scope config. Same precedence as
 	// WorkerPromptOverride: per-project > global > hardcoded default.
 	OrchestratorPromptOverride string `json:"orchestratorPromptOverride,omitempty"`
+	// TerminateOnPRMerge is the GLOBAL default for the terminate-on-merge
+	// lifecycle policy (fork #285), sourced from the user-scope config like the
+	// prompt overrides above. It seeds new worker sessions at spawn unless the
+	// project sets ProjectConfig.TerminateOnPRMerge, which wins; after spawn the
+	// per-session toggle is authoritative. This field lives on AgentConfig only
+	// so the user_config singleton (which already serializes AgentConfig)
+	// carries it for free; per-role and reviewer AgentConfig values ignore it.
+	TerminateOnPRMerge bool `json:"terminateOnPrMerge,omitempty"`
 }
 
 // MCPConfig narrows the MCP servers a session sees. It is a pointer on

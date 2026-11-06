@@ -21,7 +21,7 @@ func TestSeedRecordReviewOnlyPolicy(t *testing.T) {
 		AgentConfig: ports.AgentConfig{
 			Permissions: domain.PermissionModeBypassPermissions,
 		},
-	}, projectConfig, time.Date(2026, time.October, 31, 9, 0, 0, 0, time.UTC))
+	}, projectConfig, domain.AgentConfig{}, time.Date(2026, time.October, 31, 9, 0, 0, 0, time.UTC))
 	if !rec.ReviewOnly {
 		t.Fatalf("ReviewOnly = false, want true")
 	}
@@ -38,7 +38,7 @@ func TestSeedRecordReviewOnlyPolicy(t *testing.T) {
 
 // An ordinary spawn keeps the project-derived policy: no review-only fields.
 func TestSeedRecordOrdinarySpawnUnaffected(t *testing.T) {
-	rec := seedRecord(ports.SpawnConfig{ProjectID: "fork", Kind: domain.KindWorker}, domain.ProjectConfig{AutoReview: true}, time.Date(2026, time.October, 31, 9, 0, 0, 0, time.UTC))
+	rec := seedRecord(ports.SpawnConfig{ProjectID: "fork", Kind: domain.KindWorker}, domain.ProjectConfig{AutoReview: true}, domain.AgentConfig{}, time.Date(2026, time.October, 31, 9, 0, 0, 0, time.UTC))
 	if rec.ReviewOnly {
 		t.Fatalf("ReviewOnly = true, want false")
 	}

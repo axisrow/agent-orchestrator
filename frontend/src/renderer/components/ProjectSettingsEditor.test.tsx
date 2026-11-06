@@ -13,7 +13,7 @@ const initialValues: ProjectSettingsDraft = {
 	workerMode: "", orchestratorMode: "", reviewerMode: "",
 	workerEffort: "", orchestratorEffort: "", reviewerEffort: "",
 	workerPermissions: "auto", orchestratorPermissions: "auto", reviewerPermissions: "",
-	autoReview: true, intakeEnabled: false, intakeRepo: "", intakeAssignee: "",
+	autoReview: true, terminateOnPrMerge: false, intakeEnabled: false, intakeRepo: "", intakeAssignee: "",
 };
 
 function setup(cloud: boolean, save = vi.fn().mockResolvedValue({})) {
@@ -77,5 +77,32 @@ describe.each([false, true])("shared settings page, Cloud=%s", (cloud) => {
 		fireEvent.submit(document.getElementById("project-settings-form")!);
 		await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
 		await waitFor(() => expect(onSaveState).toHaveBeenLastCalledWith(expect.objectContaining({ phase: "saved", dirty: false, error: undefined })));
+	});
+});
+
+// The terminate-on-merge default (fork #285) is local-only: the row renders
+// where the capability enables it and autosaves the flip into the config.
+describe("project terminate-on-merge default", () => {
+	const terminateLabel = "Archive sessions on merge";
+
+	it("stays hidden without the capability", () => {
+		setup(false);
+		expect(screen.queryByRole("switch", { name: terminateLabel })).not.toBeInTheDocument();
+	});
+
+	it("renders the row and autosaves the flip", async () => {
+		const save = vi.fn().mockResolvedValue({});
+		const onSaveState = vi.fn();
+		const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+		render(<QueryClientProvider client={client}><TooltipProvider>
+			<ProjectSettingsEditor initialValues={initialValues} section="general"
+				capabilities={{ workflow: true, sessionPrefix: true, intake: false, reviewer: true, requiredAgents: true, terminateOnMergeDefault: true }}
+				details={[]} modelScope={() => ""} renderAgent={() => null} save={save} onSaveState={onSaveState} />
+		</TooltipProvider></QueryClientProvider>);
+		const toggle = screen.getByRole("switch", { name: terminateLabel });
+		expect(toggle).not.toBeChecked();
+		await userEvent.click(toggle);
+		await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+		expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ terminateOnPrMerge: true }));
 	});
 });

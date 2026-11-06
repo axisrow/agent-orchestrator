@@ -173,6 +173,7 @@ function SettingsBody({ project, projectId, hostId, hostConnected, onSaved, sect
 		reviewerEffort: config.reviewers?.[0]?.agentConfig?.effort ?? config.agentConfig?.effort ?? "",
 		reviewerPermissions: config.reviewers?.[0]?.agentConfig?.permissions ?? config.agentConfig?.permissions ?? "",
 		autoReview: config.autoReview ?? false,
+		terminateOnPrMerge: config.terminateOnPrMerge ?? false,
 		workersRequestReview: config.workersRequestReview ?? false,
 		ownAccounts: (config.ownAccounts ?? []).join(", "),
 		intakeEnabled: intake.enabled ?? false,
@@ -280,6 +281,7 @@ function SettingsBody({ project, projectId, hostId, hostConnected, onSaved, sect
 						config.trackerIntake,
 					),
 					autoReview: values.autoReview,
+					terminateOnPrMerge: values.terminateOnPrMerge || undefined,
 					workersRequestReview: values.workersRequestReview || undefined,
 					ownAccounts: splitOwnAccounts(values.ownAccounts),
 				};
@@ -352,7 +354,7 @@ function SettingsBody({ project, projectId, hostId, hostConnected, onSaved, sect
 		}
 	};
 	return <ProjectSettingsEditor initialValues={initialValues} section={section} disabled={!hostConnected}
-		capabilities={{ workflow: !isScratchProject, sessionPrefix: !isScratchProject, intake: intakeVisible, reviewer: !isScratchProject, requiredAgents: true, workersRequestReview: !isScratchProject, ownAccounts: !isScratchProject }}
+		capabilities={{ workflow: !isScratchProject, sessionPrefix: !isScratchProject, intake: intakeVisible, reviewer: !isScratchProject, requiredAgents: true, workersRequestReview: !isScratchProject, terminateOnMergeDefault: !isScratchProject, ownAccounts: !isScratchProject }}
 		details={[{ label: t("settings.project.path"), value: project.path, href: hostId ? undefined : `file://${encodeURI(project.path)}` }, { label: t("settings.project.repo"), value: project.repo || "—", href: project.repo ? repositoryHref(project.repo) : undefined }]}
 		workspaceRepos={project.kind === "workspace" ? project.workspaceRepos ?? [] : undefined} repository={project.repo}
 		modelScope={() => ""} defaultReviewer={(draft) => WORKER_DEFAULT_REVIEWERS[draft.workerAgent] ?? "claude-code"}
@@ -440,6 +442,7 @@ function scratchSupportedConfig(config: ProjectConfig): ProjectConfig {
 		defaultBranch: _defaultBranch,
 		reviewers: _reviewers,
 		autoReview: _legacyAutoReview,
+		terminateOnPrMerge: _terminateOnPrMerge,
 		workersRequestReview: _workersRequestReview,
 		ownAccounts: _ownAccounts,
 		trackerIntake: _trackerIntake,

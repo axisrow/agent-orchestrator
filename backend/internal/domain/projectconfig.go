@@ -89,6 +89,13 @@ type ProjectConfig struct {
 	// after spawn.
 	AutoReview bool `json:"autoReview,omitempty"`
 
+	// TerminateOnPRMerge is the project-scope default for the terminate-on-merge
+	// lifecycle policy (fork #285). Like AutoReview it seeds each new worker
+	// session at spawn time (project default over the user-scope
+	// AgentConfig.TerminateOnPRMerge, see TerminateOnPRMergeDefault); the
+	// per-session toggle stays authoritative afterwards.
+	TerminateOnPRMerge bool `json:"terminateOnPrMerge,omitempty"`
+
 	// OwnAccounts names GitHub accounts treated as this project's own for PR
 	// review ownership: a PR whose repository does not match the canonical repo
 	// still counts as own when its author or repository owner is listed here.
@@ -185,6 +192,17 @@ func (c ProjectConfig) MaxReviewersPerHeadLimit() int {
 		return 1
 	}
 	return c.MaxReviewersPerHead
+}
+
+// TerminateOnPRMergeDefault resolves the spawn-time seed for the per-session
+// terminate-on-merge policy (fork #285): the project default wins when set,
+// otherwise the user-scope default (user.TerminateOnPRMerge), otherwise
+// hardcoded false. Bools carry no "unset" state, so a set field is the only
+// opt-in signal and the resolved value is copied into the session record,
+// exactly like AutoReview; from then on the per-session toggle is the
+// authoritative value.
+func (c ProjectConfig) TerminateOnPRMergeDefault(user AgentConfig) bool {
+	return c.TerminateOnPRMerge || user.TerminateOnPRMerge
 }
 
 // RoleOverride overrides the harness and/or agent config for a session role.
