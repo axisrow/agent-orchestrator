@@ -658,6 +658,38 @@ func TestDeriveKanbanPresentationSinglePR(t *testing.T) {
 			wantColumn: contract.KanbanNeedsReview,
 			want:       contract.DisplayChangesRequested,
 		},
+		{
+			// Every thread resolved, or a turn completed after the review: the
+			// asks were answered, and only the reviewer's re-review or dismissal
+			// can lift the decision, so the card stops demanding changes (#288).
+			name:    "an answered external changes request no longer requests changes",
+			session: contract.KanbanSessionFacts{},
+			pr: contract.KanbanPRFacts{
+				URL:    "pr/1",
+				Review: contract.ReviewChangesRequest,
+				ExternalReview: contract.KanbanExternalReviewFacts{
+					ChangesRequested:          true,
+					ChangesRequestedAddressed: true,
+				},
+			},
+			wantColumn: contract.KanbanNeedsReview,
+			want:       contract.DisplayNeedsHumanReview,
+		},
+		{
+			name:    "an answered external changes request with unresolved comments says commented",
+			session: contract.KanbanSessionFacts{},
+			pr: contract.KanbanPRFacts{
+				URL:    "pr/1",
+				Review: contract.ReviewChangesRequest,
+				ExternalReview: contract.KanbanExternalReviewFacts{
+					ChangesRequested:          true,
+					ChangesRequestedAddressed: true,
+					Comments:                  true,
+				},
+			},
+			wantColumn: contract.KanbanNeedsReview,
+			want:       contract.DisplayCommented,
+		},
 
 		// Ready: how the pr landed, or what stands between it and the button.
 		{

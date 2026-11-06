@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
+	"github.com/aoagents/agent-orchestrator/backend/pkg/contract"
 )
 
 var statusNow = time.Date(2026, 6, 10, 12, 0, 0, 0, time.UTC)
@@ -252,5 +253,32 @@ func TestHarnessSignalsCapabilityGate(t *testing.T) {
 	}
 	if s.harnessSignals(domain.AgentHarness("amp")) {
 		t.Fatal("harnessSignals(amp) = true with codex-only predicate")
+	}
+}
+
+// The addressed fact must survive the domain-to-contract mapping: a store row
+// that says the changes request was answered turns the derived status into the
+// neutral merge gate, in both the status and the kanban derivations (#288).
+func TestDeriveStatusMapsAddressedChangesRequest(t *testing.T) {
+	pr := statusPR(domain.PRFacts{
+		Review:                    domain.ReviewChangesRequest,
+		Mergeability:              domain.MergeBlocked,
+		ExternalChangesRequested:  true,
+		ChangesRequestedAddressed: true,
+	})
+
+	if got := deriveStatus(statusRec(domain.ActivityIdle, false), pr, statusNow, true); got != domain.StatusMergeBlocked {
+		t.Fatalf("deriveStatus(addressed changes request) = %q, want %q", got, domain.StatusMergeBlocked)
+	}
+	if got := deriveSCMStatus(pr); got != domain.StatusMergeBlocked {
+		t.Fatalf("deriveSCMStatus(addressed changes request) = %q, want %q", got, domain.StatusMergeBlocked)
+	}
+
+	presentation := deriveKanbanPresentation(statusRec(domain.ActivityIdle, false), pr, nil, false, statusNow, true)
+	if presentation.Column != domain.KanbanNeedsReview {
+		t.Fatalf("kanban column = %q, want %q", presentation.Column, domain.KanbanNeedsReview)
+	}
+	if presentation.DisplayStatus != contract.DisplayNeedsHumanReview {
+		t.Fatalf("display status = %q, want %q", presentation.DisplayStatus, contract.DisplayNeedsHumanReview)
 	}
 }

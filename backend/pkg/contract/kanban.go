@@ -77,6 +77,12 @@ type KanbanExternalReviewFacts struct {
 	Approved         bool
 	ChangesRequested bool
 	Comments         bool
+	// ChangesRequestedAddressed reports the changes request was already
+	// answered -- every review thread resolved, or a turn completed after the
+	// review was submitted. The provider keeps the decision until the reviewer
+	// re-reviews or dismisses, so the verdict alone cannot tell whether the
+	// user still owes this card anything (#288).
+	ChangesRequestedAddressed bool
 }
 
 // KanbanPRFacts are the per-PR facts the column reducer reads.
@@ -410,9 +416,17 @@ func inReviewDisplayStatus(session KanbanSessionFacts, pr KanbanPRFacts, now tim
 		return DisplayCIFailing
 	case pr.ExternalReview.Comments && session.AutoInjectReview && session.Activity == ActivityActive:
 		return DisplayAddressingComments
-	case pr.ExternalReview.ChangesRequested && session.AutoInjectReview && session.Activity == ActivityActive:
+	case pr.ExternalReview.ChangesRequested && !pr.ExternalReview.ChangesRequestedAddressed &&
+		session.AutoInjectReview && session.Activity == ActivityActive:
 		return DisplayAddressingComments
-	case pr.ExternalReview.ChangesRequested:
+	// An UNANSWERED changes request keeps its red phrase. An answered one
+	// (ChangesRequestedAddressed: every review thread resolved, or a turn
+	// completed after the review) falls past the phrases above: the asks were
+	// addressed, and only the reviewer's own re-review or dismissal can lift
+	// the decision, so the card reads as the neutral review state -- live
+	// comments say commented, anything else needs (only) a human review --
+	// instead of a call to action the user already satisfied (#288).
+	case pr.ExternalReview.ChangesRequested && !pr.ExternalReview.ChangesRequestedAddressed:
 		return DisplayChangesRequested
 	case pr.ExternalReview.Comments:
 		return DisplayCommented

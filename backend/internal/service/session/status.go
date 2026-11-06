@@ -59,16 +59,17 @@ func toContractPRFacts(prs []domain.PRFacts) []contract.PRFacts {
 	facts := make([]contract.PRFacts, len(prs))
 	for i, pr := range prs {
 		facts[i] = contract.PRFacts{
-			URL:            pr.URL,
-			Draft:          pr.Draft,
-			Merged:         pr.Merged,
-			Closed:         pr.Closed,
-			CI:             pr.CI,
-			Review:         pr.Review,
-			Mergeability:   pr.Mergeability,
-			ReviewComments: pr.ReviewComments,
-			SourceBranch:   pr.SourceBranch,
-			TargetBranch:   pr.TargetBranch,
+			URL:                       pr.URL,
+			Draft:                     pr.Draft,
+			Merged:                    pr.Merged,
+			Closed:                    pr.Closed,
+			CI:                        pr.CI,
+			Review:                    pr.Review,
+			Mergeability:              pr.Mergeability,
+			ReviewComments:            pr.ReviewComments,
+			SourceBranch:              pr.SourceBranch,
+			TargetBranch:              pr.TargetBranch,
+			ChangesRequestedAddressed: pr.ChangesRequestedAddressed,
 		}
 	}
 	return facts

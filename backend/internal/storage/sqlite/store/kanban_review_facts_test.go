@@ -537,3 +537,121 @@ func TestListPRFactsForSessionsSplitExternalCommentsFromAOInjectedComments(t *te
 		t.Fatalf("AO batch comments should stay non-external while review comments remain true: %+v", facts)
 	}
 }
+
+// The provider keeps decision changes_requested until the reviewer re-reviews
+// or dismisses. Once the asks were answered -- every review thread resolved, or
+// a turn completed after the review was submitted -- the PR facts must say so,
+// or an idle session keeps a false needs-you tone forever (#288).
+func TestListPRFactsForSessionMarksAnAnsweredChangesRequest(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	seedProject(t, s, "mer")
+	r, _ := s.CreateSession(ctx, sampleRecord("mer"))
+	// The thread criteria are per PR; the turn criterion is per session. Two
+	// sessions keep the cases from bleeding into each other: session turned
+	// holds the bare-review cases, session quiet the thread ones.
+	turned, _ := s.CreateSession(ctx, sampleRecord("mer"))
+	now := time.Now().UTC().Truncate(time.Second)
+	reviewedAt := now.Add(-6 * 24 * time.Hour)
+
+	write := func(session domain.SessionID, url string, reviewPartial bool, reviewed time.Time, threads []domain.PullRequestReviewThread) {
+		t.Helper()
+		if err := s.WriteSCMObservation(ctx, domain.PullRequest{
+			URL: url, SessionID: session, Number: 1, Review: domain.ReviewChangesRequest,
+			HeadSHA: "head1", ReviewPartial: reviewPartial, UpdatedAt: now, ObservedAt: now,
+		}, nil, []domain.PullRequestReview{
+			{ID: "gh-cr-" + url, Author: "maintainer", State: domain.ReviewChangesRequest, SubmittedAt: reviewed},
+		}, threads, nil, ports.ReviewWriteReplace); err != nil {
+			t.Fatalf("write %s: %v", url, err)
+		}
+	}
+
+	// Session quiet: no completed turn ever followed the reviews, so only the
+	// thread resolution can answer them.
+	write(r.ID, "pr/resolved", false, reviewedAt, []domain.PullRequestReviewThread{
+		{ThreadID: "th-1", Path: "main.go", Line: 3, Resolved: true, UpdatedAt: now},
+		{ThreadID: "th-2", Path: "util.go", Line: 8, Resolved: true, UpdatedAt: now},
+	})
+	write(r.ID, "pr/unresolved", false, reviewedAt, []domain.PullRequestReviewThread{
+		{ThreadID: "th-3", Path: "main.go", Line: 5, Resolved: false, UpdatedAt: now},
+	})
+	// A partial thread fetch proves nothing about the threads it never saw.
+	write(r.ID, "pr/partial", true, reviewedAt, []domain.PullRequestReviewThread{
+		{ThreadID: "th-4", Path: "main.go", Line: 7, Resolved: true, UpdatedAt: now},
+	})
+
+	// Session turned: a bare request-changes review has no threads at all, so
+	// nothing to resolve -- only a completed turn can answer it.
+	write(turned.ID, "pr/bare", false, reviewedAt, nil)
+	// A fresh changes request submitted after the session's last completed
+	// turn: the worker has not answered it yet.
+	write(turned.ID, "pr/fresh", false, now, nil)
+
+	conversation, err := s.CreateConversation(ctx, "conv-1", domain.ConversationScopeSession, "mer", turned.ID, reviewedAt.Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AdoptProviderTurn(ctx, conversation.ID, turned.ID, "gen-1", "turn-before", "pt-before", reviewedAt.Add(-2*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SettleTurn(ctx, conversation.ID, "pt-before", domain.TurnStateCompleted, "", reviewedAt.Add(-time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AdoptProviderTurn(ctx, conversation.ID, turned.ID, "gen-1", "turn-after", "pt-after", reviewedAt.Add(2*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SettleTurn(ctx, conversation.ID, "pt-after", domain.TurnStateCompleted, "", reviewedAt.Add(3*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+
+	facts, err := s.ListPRFactsForSession(ctx, r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byURL := map[string]domain.PRFacts{}
+	for _, f := range facts {
+		byURL[f.URL] = f
+	}
+	for url, want := range map[string]bool{
+		"pr/resolved":   true,
+		"pr/unresolved": false,
+		"pr/partial":    false,
+	} {
+		if got := byURL[url].ChangesRequestedAddressed; got != want {
+			t.Errorf("%s addressed = %v, want %v", url, got, want)
+		}
+	}
+
+	turnedFacts, err := s.ListPRFactsForSession(ctx, turned.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	turnedByURL := map[string]domain.PRFacts{}
+	for _, f := range turnedFacts {
+		turnedByURL[f.URL] = f
+	}
+	for url, want := range map[string]bool{
+		"pr/bare":  true,
+		"pr/fresh": false,
+	} {
+		if got := turnedByURL[url].ChangesRequestedAddressed; got != want {
+			t.Errorf("%s addressed = %v, want %v", url, got, want)
+		}
+	}
+
+	batched, err := s.ListPRFactsForSessions(ctx, []domain.SessionID{r.ID, turned.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	batchedWant := map[string]bool{
+		"pr/resolved": true, "pr/unresolved": false, "pr/partial": false,
+		"pr/bare": true, "pr/fresh": false,
+	}
+	for _, id := range []domain.SessionID{r.ID, turned.ID} {
+		for _, f := range batched[id] {
+			if f.ChangesRequestedAddressed != batchedWant[f.URL] {
+				t.Errorf("batched %s addressed = %v, want %v", f.URL, f.ChangesRequestedAddressed, batchedWant[f.URL])
+			}
+		}
+	}
+}

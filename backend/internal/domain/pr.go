@@ -38,6 +38,11 @@ type PRFacts struct {
 	ExternalApproved         bool
 	ExternalChangesRequested bool
 	ExternalComments         bool
+	// ChangesRequestedAddressed reports that the changes request itself was
+	// already answered, even though the provider keeps reporting it until the
+	// reviewer re-reviews or dismisses: every review thread is resolved, or a
+	// turn completed after the changes request was submitted.
+	ChangesRequestedAddressed bool
 }
 
 // PullRequest is the app-level representation of one tracked pull request as

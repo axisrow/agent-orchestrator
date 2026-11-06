@@ -314,7 +314,7 @@ external_review AS (
     -- sqlc 1.31 truncate the tail of the generated SQL by the extra byte count
     -- (an em dash here silently cut `DESC` to `DE`), the same class of parser
     -- bug documented in queries/sessions.sql and queries/changelog.sql.
-    SELECT eligible_external_review.pr_url, eligible_external_review.state
+    SELECT eligible_external_review.pr_url, eligible_external_review.state, eligible_external_review.submitted_at
     FROM eligible_external_review
     WHERE NOT EXISTS (
         SELECT 1
@@ -373,7 +373,38 @@ SELECT
         FROM external_review
         WHERE external_review.pr_url = pr.url
           AND external_review.state = 'changes_requested'
-    ) AS external_changes_requested
+    ) AS external_changes_requested,
+    CAST(COALESCE(
+        (
+            -- Every review thread the provider reports is resolved (and at
+            -- least one exists): the reviewer's asks have been answered, even
+            -- though reviewDecision stays CHANGES_REQUESTED until they
+            -- re-review or dismiss. A partial thread fetch proves nothing, so
+            -- it never reads as resolved.
+            (
+                pr.review_partial = 0
+                AND EXISTS (
+                    SELECT 1 FROM pr_review_threads WHERE pr_review_threads.pr_url = pr.url
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM pr_review_threads
+                    WHERE pr_review_threads.pr_url = pr.url AND pr_review_threads.resolved = 0
+                )
+            )
+            -- A turn completed after the changes request proves the worker
+            -- already answered it. With no changes request on the current head
+            -- the comparison is NULL, and NULL never reads as addressed.
+            OR (
+                (SELECT MAX(conversation_turns.completed_at) FROM conversation_turns
+                 WHERE conversation_turns.handled_by_session_id = pr.session_id
+                   AND conversation_turns.state = 'completed'
+                   AND conversation_turns.rolled_back_at IS NULL)
+                > (SELECT MAX(external_review.submitted_at) FROM external_review
+                   WHERE external_review.pr_url = pr.url AND external_review.state = 'changes_requested')
+            )
+        ),
+        0
+    ) AS BOOLEAN) AS changes_requested_addressed
 FROM pr
 LEFT JOIN pr_reviews last_review ON last_review.pr_url = pr.url
     -- The newest review by provider submission time, so re-fetching a review
@@ -429,7 +460,8 @@ external_review AS (
     SELECT
         eligible_external_review.session_id,
         eligible_external_review.pr_url,
-        eligible_external_review.state
+        eligible_external_review.state,
+        eligible_external_review.submitted_at
     FROM eligible_external_review
     WHERE NOT EXISTS (
         SELECT 1
@@ -491,7 +523,38 @@ SELECT
         WHERE external_review.pr_url = pr.url
           AND external_review.session_id = pr.session_id
           AND external_review.state = 'changes_requested'
-    ) AS external_changes_requested
+    ) AS external_changes_requested,
+    CAST(COALESCE(
+        (
+            -- Every review thread the provider reports is resolved (and at
+            -- least one exists): the reviewer's asks have been answered, even
+            -- though reviewDecision stays CHANGES_REQUESTED until they
+            -- re-review or dismiss. A partial thread fetch proves nothing, so
+            -- it never reads as resolved.
+            (
+                pr.review_partial = 0
+                AND EXISTS (
+                    SELECT 1 FROM pr_review_threads WHERE pr_review_threads.pr_url = pr.url
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM pr_review_threads
+                    WHERE pr_review_threads.pr_url = pr.url AND pr_review_threads.resolved = 0
+                )
+            )
+            -- A turn completed after the changes request proves the worker
+            -- already answered it. With no changes request on the current head
+            -- the comparison is NULL, and NULL never reads as addressed.
+            OR (
+                (SELECT MAX(conversation_turns.completed_at) FROM conversation_turns
+                 WHERE conversation_turns.handled_by_session_id = pr.session_id
+                   AND conversation_turns.state = 'completed'
+                   AND conversation_turns.rolled_back_at IS NULL)
+                > (SELECT MAX(external_review.submitted_at) FROM external_review
+                   WHERE external_review.pr_url = pr.url AND external_review.state = 'changes_requested')
+            )
+        ),
+        0
+    ) AS BOOLEAN) AS changes_requested_addressed
 FROM pr
 JOIN wanted_session ON wanted_session.session_id = pr.session_id
 LEFT JOIN pr_reviews last_review ON last_review.pr_url = pr.url

@@ -99,6 +99,16 @@ func TestDeriveSCMStatusPipelineAndWorstWins(t *testing.T) {
 		{"mergeable", []contract.PRFacts{{Mergeability: contract.MergeMergeable}}, contract.StatusMergeable},
 		{"mergeable with approved review", []contract.PRFacts{{Review: contract.ReviewApproved, Mergeability: contract.MergeMergeable}}, contract.StatusMergeable},
 		{"changes requested", []contract.PRFacts{{Review: contract.ReviewChangesRequest}}, contract.StatusChangesRequested},
+		// A changes request the worker already answered (every thread resolved,
+		// or a turn completed after the review) still gates the merge -- the
+		// reviewer has not re-reviewed or dismissed -- but it must not keep the
+		// red needs-you tone (#288).
+		{"answered changes request reads as the merge gate", []contract.PRFacts{{Review: contract.ReviewChangesRequest, ChangesRequestedAddressed: true, Mergeability: contract.MergeBlocked}}, contract.StatusMergeBlocked},
+		{"answered changes request still gates a mergeable provider state", []contract.PRFacts{{Review: contract.ReviewChangesRequest, ChangesRequestedAddressed: true, Mergeability: contract.MergeMergeable}}, contract.StatusMergeBlocked},
+		{"ci failure outranks an answered changes request", []contract.PRFacts{{Review: contract.ReviewChangesRequest, ChangesRequestedAddressed: true, CI: contract.CIFailing}}, contract.StatusCIFailed},
+		{"draft outranks an answered changes request", []contract.PRFacts{{Review: contract.ReviewChangesRequest, ChangesRequestedAddressed: true, Draft: true}}, contract.StatusDraft},
+		{"conflicting with an answered changes request stays gated", []contract.PRFacts{{Review: contract.ReviewChangesRequest, ChangesRequestedAddressed: true, Mergeability: contract.MergeConflicting}}, contract.StatusMergeBlocked},
+		{"conflicting with an unanswered changes request keeps the decision", []contract.PRFacts{{Review: contract.ReviewChangesRequest, Mergeability: contract.MergeConflicting}}, contract.StatusChangesRequested},
 		{"conflicting", []contract.PRFacts{{Mergeability: contract.MergeConflicting}}, contract.StatusPROpen},
 		{"conflicting with approved review", []contract.PRFacts{{Mergeability: contract.MergeConflicting, Review: contract.ReviewApproved}}, contract.StatusApproved},
 		// A COMMENTED review's unresolved thread is not a formal changes-requested
