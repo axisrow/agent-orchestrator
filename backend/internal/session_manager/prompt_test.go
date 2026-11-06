@@ -387,6 +387,102 @@ func TestBuildSystemPrompt_EmptyGlobalFallsThroughToBaseline(t *testing.T) {
 	}
 }
 
+// TestBuildSystemPrompt_OverrideExpandsProjectPlaceholders covers #16 part 1:
+// every {{project.*}} placeholder is substituted at assembly time from the
+// project, in both roles and both override scopes.
+func TestBuildSystemPrompt_OverrideExpandsProjectPlaceholders(t *testing.T) {
+	project := promptProject{
+		ID:            "mer",
+		Name:          "Mercury",
+		Repo:          "https://github.com/acme/mercury",
+		DefaultBranch: "main",
+		Path:          "/work/mercury",
+	}
+	want := "id=mer name=Mercury repo=https://github.com/acme/mercury branch=main path=/work/mercury"
+	for _, tc := range []struct {
+		name string
+		role sessionPromptRole
+		set  func(cfg *systemPromptConfig, text string)
+	}{
+		{"worker project scope", sessionPromptRoleWorker, func(cfg *systemPromptConfig, text string) { cfg.WorkerPromptOverride = text }},
+		{"worker global scope", sessionPromptRoleWorker, func(cfg *systemPromptConfig, text string) { cfg.GlobalWorkerPromptOverride = text }},
+		{"orchestrator project scope", sessionPromptRoleOrchestrator, func(cfg *systemPromptConfig, text string) { cfg.OrchestratorPromptOverride = text }},
+		{"orchestrator global scope", sessionPromptRoleOrchestrator, func(cfg *systemPromptConfig, text string) { cfg.GlobalOrchestratorPromptOverride = text }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := systemPromptConfig{Role: tc.role, Project: project}
+			tc.set(&cfg, "id={{project.id}} name={{project.name}} repo={{project.repo}} branch={{project.defaultBranch}} path={{project.path}}")
+			got := buildSystemPromptText(cfg)
+			if !strings.Contains(got, want) {
+				t.Fatalf("placeholders not substituted, want %q in:\n%s", want, got)
+			}
+			if strings.Contains(got, "{{project.") {
+				t.Fatalf("literal placeholder leaked into prompt:\n%s", got)
+			}
+		})
+	}
+}
+
+// TestBuildSystemPrompt_OverrideKeepsUnknownPlaceholdersLiteral covers #16:
+// placeholders outside the supported set pass through untouched.
+func TestBuildSystemPrompt_OverrideKeepsUnknownPlaceholdersLiteral(t *testing.T) {
+	template := "keep {{project.unknown}} and {{project}} and {{other.thing}} as written"
+	for _, role := range []sessionPromptRole{sessionPromptRoleWorker, sessionPromptRoleOrchestrator} {
+		cfg := systemPromptConfig{Role: role, Project: promptProject{ID: "mer", Name: "Mercury"}}
+		if role == sessionPromptRoleWorker {
+			cfg.WorkerPromptOverride = template
+		} else {
+			cfg.OrchestratorPromptOverride = template
+		}
+		got := buildSystemPromptText(cfg)
+		if !strings.Contains(got, template) {
+			t.Fatalf("unknown placeholders not kept literal for role %q:\n%s", role, got)
+		}
+	}
+}
+
+// TestBuildSystemPrompt_OverrideKeepsProjectContext covers #16 part 2: an
+// override replaces the role baseline but must not drop the Project Context
+// block, for both roles and both scopes.
+func TestBuildSystemPrompt_OverrideKeepsProjectContext(t *testing.T) {
+	project := promptProject{
+		ID:            "mer",
+		Name:          "Mercury",
+		Repo:          "https://github.com/acme/mercury",
+		DefaultBranch: "main",
+		Path:          "/work/mercury",
+	}
+	want := []string{
+		"## Project Context",
+		"- Project: mer",
+		"- Name: Mercury",
+		"- Repository: https://github.com/acme/mercury",
+		"- Default branch: main",
+		"- Path: /work/mercury",
+	}
+	for _, tc := range []struct {
+		name string
+		role sessionPromptRole
+		set  func(cfg *systemPromptConfig, text string)
+	}{
+		{"worker project scope", sessionPromptRoleWorker, func(cfg *systemPromptConfig, text string) { cfg.WorkerPromptOverride = text }},
+		{"worker global scope", sessionPromptRoleWorker, func(cfg *systemPromptConfig, text string) { cfg.GlobalWorkerPromptOverride = text }},
+		{"orchestrator project scope", sessionPromptRoleOrchestrator, func(cfg *systemPromptConfig, text string) { cfg.OrchestratorPromptOverride = text }},
+		{"orchestrator global scope", sessionPromptRoleOrchestrator, func(cfg *systemPromptConfig, text string) { cfg.GlobalOrchestratorPromptOverride = text }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := systemPromptConfig{Role: tc.role, Project: project}
+			tc.set(&cfg, "## Custom Role Prompt\nThe override owns the role text.")
+			got := buildSystemPromptText(cfg)
+			for _, line := range want {
+				if !strings.Contains(got, line) {
+					t.Fatalf("override dropped project context line %q:\n%s", line, got)
+				}
+			}
+		})
+	}
+}
+
 // TestDefaultWorkerSystemPrompt_AssemblesStaticSkeleton covers the exported
 // baseline the UI prefills into the worker override editor. It must contain the
 // static sections (role+lifecycle+task-source+git, multi-PR, guard) and NOT the

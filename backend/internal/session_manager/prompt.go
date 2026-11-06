@@ -115,10 +115,8 @@ func buildSystemPromptText(cfg systemPromptConfig) string {
 	sections := make([]string, 0, 6)
 	switch cfg.Role {
 	case sessionPromptRoleOrchestrator:
-		if override := strings.TrimSpace(cfg.OrchestratorPromptOverride); override != "" {
-			sections = append(sections, override)
-		} else if global := strings.TrimSpace(cfg.GlobalOrchestratorPromptOverride); global != "" {
-			sections = append(sections, global)
+		if override, ok := rolePromptOverride(cfg, cfg.OrchestratorPromptOverride, cfg.GlobalOrchestratorPromptOverride); ok {
+			sections = append(sections, override, projectContextSection(cfg.Project))
 		} else {
 			sections = append(sections, orchestratorSystemPrompt(cfg.Project))
 		}
@@ -131,10 +129,8 @@ func buildSystemPromptText(cfg systemPromptConfig) string {
 			break
 		}
 		orchestratorID := strings.TrimSpace(cfg.OrchestratorSessionID)
-		if override := strings.TrimSpace(cfg.WorkerPromptOverride); override != "" {
-			sections = append(sections, override)
-		} else if global := strings.TrimSpace(cfg.GlobalWorkerPromptOverride); global != "" {
-			sections = append(sections, global)
+		if override, ok := rolePromptOverride(cfg, cfg.WorkerPromptOverride, cfg.GlobalWorkerPromptOverride); ok {
+			sections = append(sections, override, projectContextSection(cfg.Project))
 		} else {
 			sections = append(sections, workerSystemPrompt(cfg.Project, orchestratorID != ""))
 		}
@@ -161,6 +157,34 @@ func buildSystemPromptText(cfg systemPromptConfig) string {
 		}
 	}
 	return strings.Join(sections, "\n\n")
+}
+
+// rolePromptOverride resolves the effective role-prompt override: project
+// scope wins over the global (user-config) scope. The returned text has its
+// {{project.*}} placeholders expanded (#16); ok is false when no override is
+// configured and the built-in baseline applies.
+func rolePromptOverride(cfg systemPromptConfig, projectScope, globalScope string) (string, bool) {
+	if override := strings.TrimSpace(projectScope); override != "" {
+		return expandProjectPlaceholders(override, cfg.Project), true
+	}
+	if global := strings.TrimSpace(globalScope); global != "" {
+		return expandProjectPlaceholders(global, cfg.Project), true
+	}
+	return "", false
+}
+
+// expandProjectPlaceholders substitutes the {{project.*}} placeholders in
+// override text from cfg.Project. Values mirror projectContextSection so a
+// templated override and the appended context block cannot disagree. Unknown
+// placeholders stay literal.
+func expandProjectPlaceholders(text string, project promptProject) string {
+	return strings.NewReplacer(
+		"{{project.id}}", project.ID,
+		"{{project.name}}", projectName(project),
+		"{{project.repo}}", projectValue(project.Repo),
+		"{{project.defaultBranch}}", projectValue(project.DefaultBranch),
+		"{{project.path}}", projectValue(project.Path),
+	).Replace(text)
 }
 
 // publishingScopePrompt clarifies authority without replacing the established
