@@ -1140,7 +1140,8 @@ func indexNativeHistoryTurns(
 			ProviderInputStoredOnTurn bool   `json:"providerInputStoredOnTurn"`
 		}
 		if json.Unmarshal(activity.Detail, &steerInput) == nil && steerInput.ProviderInputText != "" {
-			fingerprint := nativeHistoryFingerprintForHarness(harness, domain.MessageRoleUser, steerInput.ProviderInputText)
+			// ponytail: fork has no Hermes adapter, so the harness-aware trim never applies; plain fingerprint covers every kept harness.
+			fingerprint := nativeHistoryMessageFingerprint(domain.MessageRoleUser, steerInput.ProviderInputText)
 			candidate.steers[fingerprint]++
 			if !steerInput.ProviderInputStoredOnTurn {
 				candidate.messages[fingerprint]++
@@ -1296,10 +1297,10 @@ func (index *nativeHistoryTurnIndex) splitTurnOwners(
 	}
 	claimed := make(map[claimKey]int)
 	claim := func(candidate *nativeHistoryTurn, text string) bool {
-		key := claimKey{candidate, nativeHistoryFingerprintForHarness(index.harness, domain.MessageRoleUser, text)}
+		key := claimKey{candidate, nativeHistoryMessageFingerprint(domain.MessageRoleUser, text)}
 		available := candidate.steers[key.fingerprint]
 		if candidate.text != "" &&
-			key.fingerprint == nativeHistoryFingerprintForHarness(index.harness, domain.MessageRoleUser, candidate.text) {
+			key.fingerprint == nativeHistoryMessageFingerprint(domain.MessageRoleUser, candidate.text) {
 			available++
 		}
 		if claimed[key] >= available {
