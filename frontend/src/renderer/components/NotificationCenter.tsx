@@ -57,7 +57,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { useCloudNotifications } from "../hooks/useCloudNotifications";
 import { clearRemoteNotification, clearRemoteNotifications, connectRemoteNotificationStreams, fetchRemoteNotificationsPage, markRemoteNotificationsRead, remoteNotificationsQueryKey, useRemoteNotificationHosts } from "../hooks/useRemoteNotifications";
-import { bellUnreadCount } from "../../shared/notification-signals";
+import { bellUnreadCount, panelShowsNotification } from "../../shared/notification-signals";
 import type { CloudCpNotification } from "../lib/cloud-cp/types";
 
 type SessionMeta = { projectId: string; projectName: string; sessionName: string };
@@ -379,8 +379,9 @@ export function NotificationCenter({ style }: NotificationCenterProps) {
 		}))),
 	].sort((a, b) => b.notification.createdAt.localeCompare(a.notification.createdAt)), [notifications, remoteItems]);
 	// Quiet by default: only human-feedback events ring the bell and badge the
-	// launcher. The feed itself still lists every notification. Loud mode
-	// (AO_NO_QUIET_NOTIFICATIONS) counts every unread row, like upstream.
+	// launcher, and the feed below keeps out the informational PR/review
+	// outcomes. Loud mode (AO_NO_QUIET_NOTIFICATIONS) restores the upstream
+	// feed and counts every unread row.
 	const loud = useLoudNotifications();
 	const unreadCount = bellUnreadCount(getCachedNotifications(unreadQuery.data), loud) +
 		remoteUnread.hosts.reduce((count, host) => count + bellUnreadCount(host.data?.notifications ?? [], loud), 0) +
@@ -709,14 +710,19 @@ export function NotificationCenter({ style }: NotificationCenterProps) {
 	const localLoading = allQuery.isLoading && localEmpty;
 	const remoteLoadFailed = remoteAll.hosts.some((host) => host.isError);
 	const remoteLoading = remoteAll.hosts.some((host) => host.isLoading);
-	// Local, remote, and Cloud rows interleave by creation time.
+	// Local, remote, and Cloud rows interleave by creation time. Quiet mode
+	// drops the informational outcomes (fork issue #283) from every surface at
+	// this one merge point, and the bell count above counts only the signal
+	// classes, so the counter can never point at a hidden row.
 	const rows = useMemo(() => {
 		const merged = [
 			...entries.map((entry) => ({ kind: "host" as const, ...entry })),
 			...visibleCloudItems.map((item) => ({ kind: "cloud" as const, item })),
 		];
-		return merged.sort((a, b) => Date.parse(b.kind === "cloud" ? b.item.createdAt : b.notification.createdAt) - Date.parse(a.kind === "cloud" ? a.item.createdAt : a.notification.createdAt));
-	}, [entries, visibleCloudItems]);
+		return merged
+			.filter((row) => panelShowsNotification(row.kind === "cloud" ? row.item : row.notification, loud))
+			.sort((a, b) => Date.parse(b.kind === "cloud" ? b.item.createdAt : b.notification.createdAt) - Date.parse(a.kind === "cloud" ? a.item.createdAt : a.notification.createdAt));
+	}, [entries, loud, visibleCloudItems]);
 	const isEmpty = rows.length === 0;
 
 	return (

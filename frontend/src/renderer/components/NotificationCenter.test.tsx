@@ -818,6 +818,8 @@ describe("NotificationCenter", () => {
 	// agent to resume, so a terminated session behind one should stay directly
 	// viewable instead of gated behind restore.
 	it("opens a terminated session directly for a PR-outcome notification, with no restore option", async () => {
+		// ready_to_merge: a PR-outcome type that stays listed in the quiet feed
+		// (pr_merged rows are hidden there since fork issue #283).
 		notificationQueryMock.mockImplementation((status: NotificationListStatus) =>
 			status === "all"
 				? {
@@ -832,8 +834,8 @@ describe("NotificationCenter", () => {
 											sessionId: "sess-dead",
 											projectId: "proj-1",
 											prUrl: "https://github.com/acme/app/pull/9",
-											type: "pr_merged",
-											title: "PR #9 merged",
+											type: "ready_to_merge",
+											title: "PR #9 is ready to merge",
 											body: "The agent session has ended.",
 											status: "read",
 											createdAt: "2026-07-19T09:00:00Z",
@@ -853,7 +855,8 @@ describe("NotificationCenter", () => {
 
 		expect(screen.queryByRole("button", { name: "Restore session" })).not.toBeInTheDocument();
 
-		await userEvent.click(screen.getByText("The agent session has ended."));
+		// A known session title rewrites the ready_to_merge body (notificationCopy).
+		await userEvent.click(screen.getByText("PR from session Old PR is ready to merge. CI passed with no blocking review feedback."));
 		expect(restoreSessionMock).not.toHaveBeenCalled();
 		expect(navigateMock).toHaveBeenCalledWith({
 			to: "/projects/$projectId/sessions/$sessionId",
@@ -940,6 +943,115 @@ describe("NotificationCenter", () => {
 		await clickOpen();
 
 		expect(screen.getByText("The agent is waiting for your response.")).not.toHaveClass("line-clamp-2");
+	});
+});
+
+// Fork issue #283: the quiet bell panel is an inbox for the user's attention,
+// so the informational PR/review outcomes stay out of the feed while the
+// attention and error types stay listed. Loud mode restores the full feed.
+describe("NotificationCenter quiet feed", () => {
+	const informationalRows: NotificationDTO[] = [
+		{
+			id: "ntf_merged",
+			sessionId: "sess-5",
+			projectId: "proj-1",
+			prUrl: "https://github.com/acme/app/pull/71",
+			type: "pr_merged",
+			title: "PR #71 merged",
+			body: "Merged with a squash.",
+			status: "unread",
+			createdAt: "2026-07-21T12:00:00Z",
+			target: { kind: "pr", sessionId: "sess-5", prUrl: "https://github.com/acme/app/pull/71" },
+		},
+		{
+			id: "ntf_review_ok",
+			sessionId: "sess-6",
+			projectId: "proj-1",
+			prUrl: "https://github.com/acme/app/pull/72",
+			type: "review_completed",
+			title: "Review complete for PR #72 — approved",
+			body: "The AO reviewer approved the pull request.",
+			status: "unread",
+			createdAt: "2026-07-21T12:05:00Z",
+			target: { kind: "pr", sessionId: "sess-6", prUrl: "https://github.com/acme/app/pull/72" },
+		},
+		{
+			id: "ntf_closed",
+			sessionId: "sess-7",
+			projectId: "proj-1",
+			prUrl: "https://github.com/acme/app/pull/73",
+			type: "pr_closed_unmerged",
+			title: "PR #73 closed without merging",
+			body: "The pull request was closed.",
+			status: "read",
+			createdAt: "2026-07-21T12:10:00Z",
+			target: { kind: "pr", sessionId: "sess-7", prUrl: "https://github.com/acme/app/pull/73" },
+		},
+		{
+			id: "ntf_died",
+			sessionId: "sess-8",
+			projectId: "proj-1",
+			prUrl: "",
+			type: "delivery_died",
+			title: "Report delivery died",
+			body: "The stuck delivery group was retired as stale.",
+			status: "unread",
+			createdAt: "2026-07-21T12:15:00Z",
+			target: { kind: "session", sessionId: "sess-8" },
+		},
+	];
+
+	function queryWith(rows: NotificationDTO[]) {
+		return (status: NotificationListStatus) =>
+			status === "all"
+				? {
+						data: {
+							pageParams: [""],
+							pages: [
+								{
+									notifications: rows,
+									nextCursor: undefined,
+									unreadCount: rows.filter((item) => item.status === "unread").length,
+									unresolvedCount: 2,
+								},
+							],
+						},
+						fetchNextPage: fetchNextPageMock,
+						hasNextPage: false,
+						isError: false,
+						isFetchNextPageError: false,
+						isFetchingNextPage: false,
+						isLoading: false,
+					}
+				: notificationQueryResult(status);
+	}
+
+	it("keeps informational outcomes out of the quiet feed and the bell count steady", async () => {
+		notificationQueryMock.mockImplementation(queryWith([...allNotifications, ...informationalRows]));
+		renderNotificationCenter();
+		await clickOpen();
+
+		expect(screen.getByText("Checkout flow needs input")).toBeInTheDocument();
+		expect(screen.getByLabelText("Fix checkout totals · PR #67")).toBeInTheDocument();
+		expect(screen.getByText("Report delivery died")).toBeInTheDocument();
+		expect(screen.queryByLabelText("PR #71 merged")).not.toBeInTheDocument();
+		expect(screen.queryByLabelText("Review complete for PR #72 — approved")).not.toBeInTheDocument();
+		expect(screen.queryByLabelText("PR #73 closed without merging")).not.toBeInTheDocument();
+		// The informational unread rows never reach the counter: the badge still
+		// counts only the needs_input row.
+		expect(screen.getByRole("button", { name: "1 unread notifications" })).toBeInTheDocument();
+	});
+
+	it("lists every type again in loud mode", async () => {
+		vi.spyOn(aoBridge.notifications, "mode").mockResolvedValue(true);
+		notificationQueryMock.mockImplementation(queryWith([...allNotifications, ...informationalRows]));
+		renderNotificationCenter();
+		await clickOpen();
+
+		expect(screen.getByLabelText("PR #71 merged")).toBeInTheDocument();
+		expect(screen.getByLabelText("Review complete for PR #72 — approved")).toBeInTheDocument();
+		expect(screen.getByLabelText("PR #73 closed without merging")).toBeInTheDocument();
+		expect(screen.getByText("Report delivery died")).toBeInTheDocument();
 	});
 });
 
