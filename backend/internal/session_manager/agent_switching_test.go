@@ -59,8 +59,6 @@ type switchTestStore struct {
 	failTransitionErr             error
 	mutationErr                   error
 	faultMutations                []ports.AgentSwitchMutation
-	operationalFaults             []ports.AgentSwitchOperationalFault
-	daemonFaults                  []ports.AgentSwitchDaemonFault
 	getSwitchErrOnceWhenRequested error
 	getSwitchErrOnce              error
 	getSwitchErrAfterAck          error
@@ -291,37 +289,21 @@ func (s *switchTestStore) FailAgentSwitchIfUnacknowledged(_ context.Context, rec
 	return true, nil
 }
 
-func (s *switchTestStore) ApplyAgentSwitchMutation(ctx context.Context, mutation ports.AgentSwitchMutation) (ports.AgentSwitchMutationResult, error) {
+func (s *switchTestStore) ApplyAgentSwitchMutation(ctx context.Context, mutation ports.AgentSwitchMutation) (bool, error) {
 	s.mu.Lock()
 	s.faultMutations = append(s.faultMutations, mutation)
 	s.mu.Unlock()
 	if s.mutationErr != nil {
-		return ports.AgentSwitchMutationResult{}, s.mutationErr
+		return false, s.mutationErr
 	}
-	changed, err := s.UpdateAgentSwitch(ctx, mutation.Record, mutation.ExpectedState, mutation.ExpectedSourceGenerationID, mutation.ExpectedTargetGenerationID)
-	return ports.AgentSwitchMutationResult{CoreChanged: changed, Enrollment: domain.AgentSwitchEnrollmentEnrolled}, err
+	return s.UpdateAgentSwitch(ctx, mutation.Record, mutation.ExpectedState, mutation.ExpectedSourceGenerationID, mutation.ExpectedTargetGenerationID)
 }
 
-func (s *switchTestStore) FailAgentSwitchIfUnacknowledgedWithFault(ctx context.Context, mutation ports.AgentSwitchMutation) (ports.AgentSwitchMutationResult, error) {
+func (s *switchTestStore) FailAgentSwitchIfUnacknowledgedMutation(ctx context.Context, mutation ports.AgentSwitchMutation) (bool, error) {
 	s.mu.Lock()
 	s.faultMutations = append(s.faultMutations, mutation)
 	s.mu.Unlock()
-	changed, err := s.FailAgentSwitchIfUnacknowledged(ctx, mutation.Record)
-	return ports.AgentSwitchMutationResult{CoreChanged: changed, Enrollment: domain.AgentSwitchEnrollmentEnrolled}, err
-}
-
-func (s *switchTestStore) EnqueueAgentSwitchOperationalFault(_ context.Context, input ports.AgentSwitchOperationalFault) (ports.AgentSwitchMutationResult, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.operationalFaults = append(s.operationalFaults, input)
-	return ports.AgentSwitchMutationResult{CoreChanged: true, Enrollment: domain.AgentSwitchEnrollmentEnrolled}, nil
-}
-
-func (s *switchTestStore) EnqueueAgentSwitchDaemonFault(_ context.Context, input ports.AgentSwitchDaemonFault) (ports.AgentSwitchMutationResult, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.daemonFaults = append(s.daemonFaults, input)
-	return ports.AgentSwitchMutationResult{CoreChanged: true, Enrollment: domain.AgentSwitchEnrollmentEnrolled}, nil
+	return s.FailAgentSwitchIfUnacknowledged(ctx, mutation.Record)
 }
 
 func (s *switchTestStore) RecordAgentHandoff(_ context.Context, id domain.AgentSwitchID, source domain.AgentGenerationID, status domain.AgentHandoffStatus, path, hash string, at time.Time) (bool, error) {
@@ -460,8 +442,8 @@ func TestAcknowledgeAgentSwitchTargetWithReadbackClassifiesChangedFalse(t *testi
 		if err != nil || !acknowledged || got.TargetAcknowledgedAt == nil {
 			t.Fatalf("duplicate acknowledgement = (%+v, %v, %v)", got, acknowledged, err)
 		}
-		if len(store.faultMutations) != 0 || len(store.operationalFaults) != 0 {
-			t.Fatalf("duplicate acknowledgement emitted faults: mutations=%+v operational=%+v", store.faultMutations, store.operationalFaults)
+		if len(store.faultMutations) != 0 {
+			t.Fatalf("duplicate acknowledgement emitted mutations: %+v", store.faultMutations)
 		}
 	})
 
@@ -2551,10 +2533,6 @@ func TestSwitchAgentTargetDeliveryFailureKeepsCommittedTargetAndFailsObservably(
 	if runtime.created != 1 || len(runtime.destroyedIDs) != 1 || runtime.destroyedIDs[0] != "proj-1" {
 		t.Fatalf("failed delivery runtime effects = creates %d destroys %v, want target retained and source destroyed", runtime.created, runtime.destroyedIDs)
 	}
-	if len(store.faultMutations) == 0 || store.faultMutations[len(store.faultMutations)-1].Fault == nil ||
-		store.faultMutations[len(store.faultMutations)-1].Fault.FailurePoint != domain.AgentSwitchFailureTUITargetHookWait {
-		t.Fatalf("delivery failure observability = %+v", store.faultMutations)
-	}
 }
 
 func TestSwitchAgentFreshPreservesAOIdentityAndDeliversArtifact(t *testing.T) {
@@ -4162,14 +4140,6 @@ func TestSwitchAgentWaitsForDelayedExactGenerationAcknowledgement(t *testing.T) 
 	}
 	if sw.State != domain.AgentSwitchCompleted || sw.TargetAcknowledgedAt == nil {
 		t.Fatalf("switch = state %q acknowledgement %v, want completed acknowledgement", sw.State, sw.TargetAcknowledgedAt)
-	}
-	for _, mutation := range store.faultMutations {
-		if mutation.Fault != nil {
-			t.Fatalf("successful switch enrolled fault %+v", *mutation.Fault)
-		}
-	}
-	if len(store.operationalFaults) != 0 || len(store.daemonFaults) != 0 {
-		t.Fatalf("successful switch enqueued operational faults: operational=%+v daemon=%+v", store.operationalFaults, store.daemonFaults)
 	}
 }
 

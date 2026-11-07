@@ -22,7 +22,7 @@ type errCapture struct{ captured CapturedError }
 
 // CapturedError is request-local observability metadata recorded when an error
 // is rendered. Err remains available for structured logging; ReportingOwner
-// decides which layer owns the Sentry report.
+// decides which layer owns the report.
 type CapturedError struct {
 	Err            error
 	Code           string

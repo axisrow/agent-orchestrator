@@ -196,6 +196,22 @@ func (m AgentSwitchTargetStartMode) Valid() bool {
 	return m == AgentSwitchTargetStartPending || m == AgentSwitchTargetStartFresh || m == AgentSwitchTargetStartResumed
 }
 
+// AgentSwitchExecution identifies which daemon-owned pass is running a switch
+// saga: an admitted live switch, a startup reconciliation, or an explicit
+// recovery. Startup reconciliation deliberately quarantines instead of rolling
+// back; explicit recovery may restore the source.
+type AgentSwitchExecution string
+
+// AgentSwitchExecution values enumerate the daemon-owned execution passes.
+const (
+	// AgentSwitchExecutionLive runs inside an admitted switch worker.
+	AgentSwitchExecutionLive AgentSwitchExecution = "live"
+	// AgentSwitchExecutionStartupReconcile runs during daemon boot.
+	AgentSwitchExecutionStartupReconcile AgentSwitchExecution = "startup_reconcile"
+	// AgentSwitchExecutionExplicitRecovery runs for an explicit recovery request.
+	AgentSwitchExecutionExplicitRecovery AgentSwitchExecution = "explicit_recovery"
+)
+
 // AgentHandoffStatus records the outcome of optional source-agent semantic
 // enrichment. Deterministic context exists independently of this status.
 type AgentHandoffStatus string
@@ -357,6 +373,11 @@ type AgentSwitch struct {
 	RequestedAt             time.Time                         `json:"requestedAt"`
 	UpdatedAt               time.Time                         `json:"updatedAt"`
 }
+
+// AgentSwitchFailurePoint is the durable failure_point column of an
+// agent_switches row. Reporting no longer writes it; existing values from
+// older daemons round-trip unchanged.
+type AgentSwitchFailurePoint string
 
 // RequiresRecovery reports whether a nonterminal switch needs an explicit,
 // ownership-safe recovery action before terminal input can reopen.

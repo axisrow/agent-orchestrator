@@ -288,12 +288,100 @@ func (s *Store) UpdateAgentSwitch(ctx context.Context, rec domain.AgentSwitch, e
 	return n > 0, nil
 }
 
+// ApplyAgentSwitchMutation atomically persists one fenced saga update,
+// including reportable terminal and recovery-marker transitions.
+func (s *Store) ApplyAgentSwitchMutation(ctx context.Context, mutation ports.AgentSwitchMutation) (bool, error) {
+	return s.applyAgentSwitchMutation(ctx, mutation, false)
+}
+
+// FailAgentSwitchIfUnacknowledgedMutation fails an unacknowledged switch under
+// the exact delivery fence, atomically.
+func (s *Store) FailAgentSwitchIfUnacknowledgedMutation(ctx context.Context, mutation ports.AgentSwitchMutation) (bool, error) {
+	return s.applyAgentSwitchMutation(ctx, mutation, true)
+}
+
+func (s *Store) applyAgentSwitchMutation(ctx context.Context, mutation ports.AgentSwitchMutation, unacknowledged bool) (bool, error) {
+	rec := mutation.Record
+	if rec.ErrorCode == "" {
+		rec.FailurePoint = ""
+	}
+	if err := validateAgentSwitchCoreMutation(mutation, unacknowledged); err != nil {
+		return false, err
+	}
+
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	tx, err := s.writeDB.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("apply agent switch mutation %s: %w", rec.ID, err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	q := s.qw.WithTx(tx)
+	if err := ensureNativeSessionRefBelongsTo(ctx, q, rec.SessionID, rec.TargetHarness, rec.TargetNativeSessionRef, "target"); err != nil {
+		return false, fmt.Errorf("apply agent switch mutation %s: %w", rec.ID, err)
+	}
+
+	var changed int64
+	if unacknowledged {
+		changed, err = q.FailAgentSwitchIfUnacknowledged(ctx, gen.FailAgentSwitchIfUnacknowledgedParams{
+			ErrorCode: string(rec.ErrorCode), FailurePoint: string(rec.FailurePoint), FailedAt: rec.UpdatedAt,
+			ID: rec.ID, SessionID: rec.SessionID,
+			ExpectedSourceGenerationID: mutation.ExpectedSourceGenerationID,
+			ExpectedTargetGenerationID: mutation.ExpectedTargetGenerationID,
+		})
+	} else {
+		changed, err = q.UpdateAgentSwitch(ctx, gen.UpdateAgentSwitchParams{
+			TargetNativeSessionRef: rec.TargetNativeSessionRef, TargetStartMode: rec.TargetStartMode,
+			NextState: rec.State, NextTargetGenerationID: rec.TargetGenerationID,
+			NextTargetRuntimeHandleID: rec.TargetRuntimeHandleID, ErrorCode: string(rec.ErrorCode),
+			FailurePoint: string(rec.FailurePoint), UpdatedAt: rec.UpdatedAt,
+			ID: rec.ID, SessionID: rec.SessionID, ExpectedState: mutation.ExpectedState,
+			ExpectedSourceGenerationID: mutation.ExpectedSourceGenerationID,
+			ExpectedTargetGenerationID: mutation.ExpectedTargetGenerationID,
+		})
+	}
+	if err != nil {
+		return false, fmt.Errorf("apply agent switch mutation %s: %w", rec.ID, err)
+	}
+	if changed == 0 {
+		if err := tx.Commit(); err != nil {
+			return false, fmt.Errorf("commit unchanged agent switch mutation %s: %w", rec.ID, err)
+		}
+		return false, nil
+	}
+	if err := s.agentSwitchFailureCommit(tx); err != nil {
+		return false, fmt.Errorf("commit agent switch mutation %s: %w", rec.ID, err)
+	}
+	return true, nil
+}
+
+func validateAgentSwitchCoreMutation(m ports.AgentSwitchMutation, unacknowledged bool) error {
+	rec := m.Record
+	if err := validateAgentSwitch(rec, false); err != nil {
+		return err
+	}
+	if !m.ExpectedState.Valid() || !domain.ValidAgentSwitchTransition(m.ExpectedState, rec.State) {
+		return fmt.Errorf("apply agent switch mutation %s: invalid transition %q -> %q", rec.ID, m.ExpectedState, rec.State)
+	}
+	if m.ExpectedSourceGenerationID == "" || rec.SourceGenerationID != m.ExpectedSourceGenerationID {
+		return fmt.Errorf("apply agent switch mutation %s: source generation does not match immutable provenance", rec.ID)
+	}
+	if unacknowledged {
+		if rec.State != domain.AgentSwitchFailed || m.ExpectedState != domain.AgentSwitchDelivering || rec.TargetGenerationID == "" || rec.TargetAcknowledgedAt != nil {
+			return fmt.Errorf("fail unacknowledged agent switch %s: exact unacknowledged delivery facts are required", rec.ID)
+		}
+	} else if m.ExpectedState == domain.AgentSwitchDelivering && rec.State == domain.AgentSwitchFailed {
+		return fmt.Errorf("apply agent switch mutation %s: delivery failure requires the acknowledgement-fenced operation", rec.ID)
+	}
+	return nil
+}
+
 // FailAgentSwitchIfUnacknowledged closes an ambiguous delivery only if the
 // exact target generation has not acknowledged it. The acknowledgement and
 // failure updates share the store write lock and opposing SQL predicates, so
 // exactly one outcome wins even when the target hook arrives at the deadline.
 func (s *Store) FailAgentSwitchIfUnacknowledged(ctx context.Context, rec domain.AgentSwitch) (bool, error) {
-	return false, fmt.Errorf("fail unacknowledged agent switch %s: reportable transition requires FailAgentSwitchIfUnacknowledgedWithFault", rec.ID)
+	return false, fmt.Errorf("fail unacknowledged agent switch %s: reportable transition requires FailAgentSwitchIfUnacknowledgedMutation", rec.ID)
 }
 
 // RecordAgentHandoff records optional semantic enrichment for the source
@@ -723,11 +811,8 @@ func validateAgentSwitch(rec domain.AgentSwitch, create bool) error {
 	if !rec.ErrorCode.Valid() {
 		return fmt.Errorf("agent switch %s: invalid error code %q", rec.ID, rec.ErrorCode)
 	}
-	if rec.FailurePoint != "" {
-		if _, ok := domain.AgentSwitchFailureTaxonomy(rec.FailurePoint); !ok {
-			return fmt.Errorf("agent switch %s: invalid failure point %q", rec.ID, rec.FailurePoint)
-		}
-	}
+	// rec.FailurePoint is a legacy reporting column: nothing writes a new value
+	// anymore, existing values round-trip unchanged.
 	recoveryRequired := rec.RequiresRecovery()
 	recoveryMarker := rec.ErrorCode.RetainedRecoveryMarker()
 	failureCode := rec.State == domain.AgentSwitchFailed && rec.ErrorCode != "" && !recoveryMarker

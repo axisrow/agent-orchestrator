@@ -39,34 +39,31 @@ func advanceAgentSwitchFixtureWithMutation(ctx context.Context, t *testing.T, s 
 func applyReportableAgentSwitchFixture(
 	ctx context.Context,
 	t *testing.T,
-	s ports.AgentSwitchFaultStore,
+	s ports.AgentSwitchStore,
 	rec domain.AgentSwitch,
 	expectedState domain.AgentSwitchState,
 	expectedTarget domain.AgentGenerationID,
 	unacknowledged bool,
 ) bool {
 	t.Helper()
-	// These compatibility fixtures exercise durable saga behavior rather than
-	// enrollment. A deliberately empty typed fault proves observability-local
-	// validation cannot veto the winning core mutation.
-	fault := domain.AgentSwitchFault{}
 	mutation := ports.AgentSwitchMutation{
 		Record: rec, ExpectedState: expectedState,
 		ExpectedSourceGenerationID: rec.SourceGenerationID,
 		ExpectedTargetGenerationID: expectedTarget,
-		Fault:                      &fault,
 	}
-	var result ports.AgentSwitchMutationResult
-	var err error
+	var (
+		changed bool
+		err     error
+	)
 	if unacknowledged {
-		result, err = s.FailAgentSwitchIfUnacknowledgedWithFault(ctx, mutation)
+		changed, err = s.FailAgentSwitchIfUnacknowledgedMutation(ctx, mutation)
 	} else {
-		result, err = s.ApplyAgentSwitchMutation(ctx, mutation)
+		changed, err = s.ApplyAgentSwitchMutation(ctx, mutation)
 	}
 	if err != nil {
 		t.Fatalf("apply reportable switch fixture: %v", err)
 	}
-	return result.CoreChanged
+	return changed
 }
 
 func TestActivateChatAgentSwitchTargetMovesSourceGenerationToTarget(t *testing.T) {

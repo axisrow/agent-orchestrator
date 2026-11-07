@@ -5,8 +5,8 @@
 package ownership
 
 // Owner identifies the layer responsible for reporting an error. The values
-// are part of the API envelope shape (`reporting_owner`); the remote Sentry
-// processor they originally fed is removed in this fork.
+// are part of the API envelope shape (`reporting_owner`); the renderer uses
+// them to bucket error-report dedupe.
 type Owner string
 
 // Owner values identify the layer responsible for reporting a failure.

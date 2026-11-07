@@ -7,8 +7,6 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
-	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 	"github.com/aoagents/agent-orchestrator/backend/internal/storage/sqlite/gen"
 )
 
@@ -26,9 +24,7 @@ type Store struct {
 	qr      *gen.Queries // bound to the reader pool
 	writeMu *contextMutex
 
-	agentSwitchFailureEventMetadata *domain.AgentSwitchEventMetadata
-	agentSwitchFailureEventEncoder  ports.AgentSwitchFailureEventEncoder
-	agentSwitchFailureCommit        func(*sql.Tx) error
+	agentSwitchFailureCommit func(*sql.Tx) error
 }
 
 type contextMutex struct {
