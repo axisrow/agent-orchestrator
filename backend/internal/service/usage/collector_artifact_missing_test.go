@@ -93,6 +93,49 @@ func TestCollectorHookKeepsTheMainArtifactWhenTheSubagentArtifactIsAbsent(t *tes
 	}
 }
 
+// The exact #300 incident end to end: a session whose hooks degraded all day
+// (so no source was ever registered) fires session-end naming a transcript
+// that is gone. The finalizing hook must not drop on the missing artifact:
+// the binding reaches Finalizing and the settle runs — and, per the base
+// contract, declines, because CompleteUsageBindingIfSettled only completes a
+// binding whose registered sources are complete and requires at least one to
+// exist. Finalizing is therefore the hook-reachable terminal state for a
+// binding with nothing registered, exactly as the live incident's bindings
+// sat. The absent artifact must not register a phantom source either.
+func TestCollectorFinalizingHookWithAbsentArtifactSettlesTheBinding(t *testing.T) {
+	store := collectorTestStore(t)
+	const nativeID = "native-finalize-absent"
+	session := collectorTestSession(t, store, domain.HarnessClaudeCode, nativeID, false)
+	root := filepath.Join(t.TempDir(), "projects")
+	absent := filepath.Join(root, "workspace", nativeID+".jsonl")
+	collector := NewCollector(store, SourceRoots{ClaudeProjects: root}, nil)
+	now := time.Unix(1700000000, 0).UTC()
+	collector.now = func() time.Time { return now }
+	seedCollectorUsageBinding(t, store, session, nativeID, domain.UsageBindingActive, now, "")
+
+	mustNoError(t, collector.RecordHook(context.Background(), session.ID, HookSignal{
+		Harness:         domain.HarnessClaudeCode,
+		Event:           "session-end",
+		NativeSessionID: nativeID,
+		TranscriptPath:  absent,
+	}))
+	bindings, err := store.ListUsageBindingsForSession(context.Background(), session.ID)
+	if err != nil || len(bindings) != 1 {
+		t.Fatalf("bindings=%+v err=%v", bindings, err)
+	}
+	if bindings[0].State != domain.UsageBindingFinalizing {
+		t.Fatalf("binding state = %q, want Finalizing — the event must not drop on the missing artifact", bindings[0].State)
+	}
+	sources, err := store.ListUsageSourcesForBinding(context.Background(), bindings[0].ID)
+	if err != nil || len(sources) != 0 {
+		t.Fatalf("sources=%+v err=%v, want no registration for the absent artifact", sources, err)
+	}
+	metrics := collector.HookMetricsSnapshot()
+	if metrics["hookArtifactsMissing"] != 1 || metrics["hookFailures"] != 0 {
+		t.Fatalf("metrics=%v, want one degraded artifact and no dropped events", metrics)
+	}
+}
+
 // Path rejection is a policy boundary, not an absence: a hook naming an
 // existing transcript outside the allowed roots must keep failing the event.
 func TestCollectorHookStillRejectsPathsOutsideTheAllowedRoots(t *testing.T) {
