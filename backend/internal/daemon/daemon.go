@@ -12,7 +12,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -34,7 +33,6 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/runtime/conpty/ptyregistry"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/runtime/runtimeselect"
 	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/systemexec"
-	"github.com/aoagents/agent-orchestrator/backend/internal/adapters/telemetry/policyauthority"
 	"github.com/aoagents/agent-orchestrator/backend/internal/agentlaunch"
 	"github.com/aoagents/agent-orchestrator/backend/internal/attachmentstore"
 	"github.com/aoagents/agent-orchestrator/backend/internal/autoreview"
@@ -48,7 +46,6 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/httpd/controllers"
 	"github.com/aoagents/agent-orchestrator/backend/internal/mobilebridge"
 	"github.com/aoagents/agent-orchestrator/backend/internal/notify"
-	agentswitchobs "github.com/aoagents/agent-orchestrator/backend/internal/observe/agentswitch"
 	usagepipeline "github.com/aoagents/agent-orchestrator/backend/internal/observe/usage"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 	"github.com/aoagents/agent-orchestrator/backend/internal/presence"
@@ -90,87 +87,6 @@ import (
 const usageReconcileTick = 3 * time.Minute
 
 const chatHibernateSweepTick = 30 * time.Second
-
-// agentSwitchEventMetadata maps the daemon's app version to the closed
-// event metadata taxonomy (environment/channel) used in fault envelopes.
-func agentSwitchEventMetadata(cfg config.Config) domain.AgentSwitchEventMetadata {
-	environment := domain.AgentSwitchEnvironmentStable
-	channel := domain.AgentSwitchChannelStable
-	version := strings.ToLower(strings.TrimSpace(cfg.Telemetry.AppVersion))
-	switch {
-	case strings.Contains(version, "nightly"):
-		environment, channel = domain.AgentSwitchEnvironmentNightly, domain.AgentSwitchChannelNightly
-	case strings.Contains(version, "edge"), strings.Contains(version, "-pr"):
-		environment, channel = domain.AgentSwitchEnvironmentDevelopment, domain.AgentSwitchChannelPreview
-	}
-	osName := domain.AgentSwitchOS(runtime.GOOS)
-	return domain.AgentSwitchEventMetadata{
-		Release: cfg.Telemetry.AppVersion, Environment: environment, Channel: channel,
-		Platform: domain.AgentSwitchPlatformDaemon, OS: osName,
-		ElapsedTimeBucket: domain.AgentSwitchElapsedNotApplicable,
-	}
-}
-
-func agentSwitchFailureStreamDisabled(disabled []string) bool {
-	for _, name := range disabled {
-		if name == "ao.agent_switch.failure" || name == "ao.agent_switch.*" || name == "*" {
-			return true
-		}
-	}
-	return false
-}
-
-type agentSwitchDaemonFaultEnqueuer interface {
-	EnqueueAgentSwitchDaemonFault(context.Context, ports.AgentSwitchDaemonFault) (ports.AgentSwitchMutationResult, error)
-}
-
-func agentSwitchWorkerWaitTimedOut(err error) bool {
-	return errors.Is(err, context.DeadlineExceeded)
-}
-
-func enqueueAgentSwitchWorkerShutdownTimeout(
-	ctx context.Context,
-	store agentSwitchDaemonFaultEnqueuer,
-	policy ports.AgentSwitchReportingPolicy,
-	daemonRunID string,
-	at time.Time,
-) error {
-	if store == nil || policy == nil || strings.TrimSpace(daemonRunID) == "" {
-		return nil
-	}
-	fault := domain.AgentSwitchFault{
-		ReportKind:           domain.AgentSwitchReportDaemonLifecycleFailure,
-		FailurePoint:         domain.AgentSwitchFailureShutdownWorkerTimeout,
-		ClassifierCallsite:   domain.AgentSwitchClassifierDaemonShutdown,
-		Phase:                domain.AgentSwitchStateNotApplicable,
-		ErrorCode:            domain.AgentSwitchErrorNotApplicable,
-		FaultCode:            domain.AgentSwitchFaultShutdownWorkersTimedOut,
-		Execution:            domain.AgentSwitchExecutionDaemonShutdown,
-		Mode:                 domain.SessionModeNotApplicable,
-		FromHarness:          domain.HarnessNotApplicable,
-		TargetHarness:        domain.HarnessNotApplicable,
-		TargetStartMode:      domain.AgentSwitchTargetStartNotApplicable,
-		RuntimeBackend:       domain.AgentSwitchRuntimeNotApplicable,
-		CallOutcome:          domain.AgentSwitchCallTimedOut,
-		Ownership:            domain.AgentSwitchOwnershipNotApplicable,
-		Compensation:         domain.AgentSwitchCompensationNotApplicable,
-		UserImpact:           domain.AgentSwitchUserImpactNotApplicable,
-		SourceStopConfirmed:  domain.AgentSwitchTriNotApplicable,
-		TargetOwnerCommitted: domain.AgentSwitchTriNotApplicable,
-		GateRetained:         domain.AgentSwitchTriNotApplicable,
-		OccurredAt:           at,
-		Frames: []domain.AgentSwitchStackFrame{{
-			Package: "daemon", Function: "Run",
-			Filename: "backend/internal/daemon/daemon.go", Line: 1,
-		}},
-	}
-	_, err := store.EnqueueAgentSwitchDaemonFault(ctx, ports.AgentSwitchDaemonFault{
-		DaemonRunID:   daemonRunID,
-		Fault:         fault,
-		Authorization: policy.Authorization(),
-	})
-	return err
-}
 
 // daemonShutdownContext separates worker cancellation from signal cleanup.
 // Keep stopSignals deferred until restoration and all shutdown stages finish:
@@ -252,9 +168,8 @@ func Run() error {
 	//   - the HTTP drain and six stages capped at T each: failure dispatcher,
 	//     background workers, agent-switch workers, Codex account-switch workers,
 	//     chat StopAll, LAN listener; the harness installer gets I;
-	//   - fixed caps: 5s agent-switch fault enqueue, 3s `tailscale serve off`,
-	//     5s closed-lid lease release plus 3s caffeinate exit (keep-awake), and
-	//     a 2s Sentry flush.
+	//   - fixed caps: 3s `tailscale serve off`, 5s closed-lid lease release
+	//     plus 3s caffeinate exit (keep-awake).
 	// Wait 8T+I+18s (382s by default), one stage of margin. Run's uncapped waits
 	// (startup reconcile, preview servers, chat side stops, usage, pricing,
 	// lifecycle stack) are not covered: a predecessor stuck in one past the
@@ -278,28 +193,6 @@ func Run() error {
 		return fmt.Errorf("recover report delivery claims: %w", err)
 	} else if n > 0 {
 		log.Info("report claims requeued after restart", "count", n)
-	}
-	if err := store.ConfigureAgentSwitchFailureEventEncoder(context.Background(), agentswitchobs.AgentSwitchEventEncoder{}); err != nil {
-		return fmt.Errorf("configure agent switch failure event encoder: %w", err)
-	}
-
-	// Consent and event metadata are established before any reporting surface or
-	// recovery enrollment exists. SQLite is forced off first on every boot so a
-	// stale enabled mirror can never authorize work after a restart. The
-	// destination fingerprint stays empty: the local failure pipeline has no
-	// remote destination anymore, so authorization never enables.
-	policyCoordinator := agentswitchobs.NewPolicyCoordinator(store, agentswitchobs.PolicyOptions{
-		AuthorityReader:         policyauthority.New(filepath.Join(cfg.DataDir, agentswitchobs.PolicyFileName)),
-		TelemetryEvents:         cfg.Telemetry.Events,
-		TelemetryEventsExplicit: cfg.Telemetry.EventsExplicit,
-		StreamKillSwitched:      agentSwitchFailureStreamDisabled(cfg.Telemetry.DisabledEvents),
-		Metadata:                agentSwitchEventMetadata(cfg),
-	})
-	if err := policyCoordinator.ForceDisabled(context.Background()); err != nil {
-		return fmt.Errorf("force agent switch reporting disabled: %w", err)
-	}
-	if err := policyCoordinator.Synchronize(context.Background()); err != nil && !errors.Is(err, agentswitchobs.ErrPolicyUnavailable) {
-		return fmt.Errorf("synchronize agent switch reporting policy: %w", err)
 	}
 
 	// Refresh the embedded using-ao skill into the data dir so worker sessions
@@ -336,8 +229,6 @@ func Run() error {
 	ctx, stop, stopSignals := daemonShutdownContext()
 	defer stopSignals()
 	defer stop()
-	policyCoordinator.StartWatcher(ctx)
-	defer func() { _ = policyCoordinator.CloseAndDrain(context.Background()) }()
 
 	cdcPipe, err := startCDC(ctx, store, log)
 	if err != nil {
@@ -579,7 +470,7 @@ func Run() error {
 		}
 		return fmt.Errorf("reviewer resolver: %w", err)
 	}
-	sessionSvc, reviewSvc, wiredSessMgr, err := startSession(ctx, cfg, runtimeAdapter, store, lcStack.LCM, lcStack.ArtifactVersions, messenger, telemetrySink, notificationWriter, agents, agentSvc, managedPreview, browserBroker, browserAuthority, chatLauncher{svc: chatSvc, persistentHostReconcileDone: persistentHostsReconciled}, reviewerChatsRecovered, settingsSvc, policyCoordinator, tracker, codexOperationGate, reviewers, scmHTTP, log)
+	sessionSvc, reviewSvc, wiredSessMgr, err := startSession(ctx, cfg, runtimeAdapter, store, lcStack.LCM, lcStack.ArtifactVersions, messenger, telemetrySink, notificationWriter, agents, agentSvc, managedPreview, browserBroker, browserAuthority, chatLauncher{svc: chatSvc, persistentHostReconcileDone: persistentHostsReconciled}, reviewerChatsRecovered, settingsSvc, tracker, codexOperationGate, reviewers, scmHTTP, log)
 	if err != nil {
 		stop()
 		lcStack.Stop()
@@ -1141,7 +1032,6 @@ func Run() error {
 		PreviewServer:            managedPreview,
 		SessionCapabilities:      browserAuthority,
 		ShellPreviewCapabilities: shellTermSvc,
-		AgentSwitchPolicy:        policyCoordinator,
 		Readiness:                readiness,
 	})
 	if err != nil {
@@ -1307,13 +1197,6 @@ func Run() error {
 	reapStopCancel()
 	switchStopCtx, switchCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	if err := sessMgr.WaitAgentSwitchWorkers(switchStopCtx); err != nil {
-		if agentSwitchWorkerWaitTimedOut(err) {
-			enqueueCtx, enqueueCancel := context.WithTimeout(context.Background(), 5*time.Second)
-			if enqueueErr := enqueueAgentSwitchWorkerShutdownTimeout(enqueueCtx, store, policyCoordinator, cfg.AppRunID, time.Now().UTC()); enqueueErr != nil {
-				log.Error("agent switch worker shutdown observability enqueue", "error", enqueueErr)
-			}
-			enqueueCancel()
-		}
 		log.Error("agent switch worker shutdown", "err", err)
 	}
 	switchCancel()

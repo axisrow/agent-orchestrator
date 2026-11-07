@@ -438,14 +438,11 @@ type conversationSettingsStore interface {
 // Manager coordinates internal session spawn, restore, kill, and cleanup over
 // the outbound ports. User-facing read-model assembly lives in the service package.
 type Manager struct {
-	runtime   runtimeController
-	agents    ports.AgentResolver
-	workspace ports.Workspace
-	store     Store
-	// agentSwitchReporting supplies the exact authorization snapshot immediately
-	// before each failure-aware store transaction. Nil is fail-closed.
-	agentSwitchReporting ports.AgentSwitchReportingPolicy
-	daemonRunID          string
+	runtime     runtimeController
+	agents      ports.AgentResolver
+	workspace   ports.Workspace
+	store       Store
+	daemonRunID string
 	// providerEntries supplies the stored gateway entries (see Deps.ProviderEntries).
 	providerEntries func(ctx context.Context) []agentcreds.GatewayEntry
 	agentReadiness  ports.AgentReadinessProvider
@@ -905,13 +902,12 @@ const (
 
 // Deps are the collaborators a Session Manager needs; New wires them together.
 type Deps struct {
-	Runtime         runtimeController
-	Agents          ports.AgentResolver
-	Workspace       ports.Workspace
-	Store           Store
-	ReportingPolicy ports.AgentSwitchReportingPolicy
-	DaemonRunID     string
-	Messenger       ports.AgentMessenger
+	Runtime     runtimeController
+	Agents      ports.AgentResolver
+	Workspace   ports.Workspace
+	Store       Store
+	DaemonRunID string
+	Messenger   ports.AgentMessenger
 	// Defaults supplies the daemon-owned default session interface for spawns that
 	// name no mode. Nil means always use the compatibility default.
 	Defaults SessionModeDefaults
@@ -982,7 +978,6 @@ func New(d Deps) *Manager {
 		agents:                         d.Agents,
 		workspace:                      d.Workspace,
 		store:                          d.Store,
-		agentSwitchReporting:           d.ReportingPolicy,
 		daemonRunID:                    strings.TrimSpace(d.DaemonRunID),
 		defaults:                       d.Defaults,
 		chat:                           d.Chat,

@@ -75,7 +75,6 @@ func NewWithDeps(cfg config.Config, log *slog.Logger, termMgr *terminal.Manager,
 		Handler: NewRouterWithControl(cfg, log, termMgr, deps, ControlDeps{
 			RequestShutdown:             srv.requestShutdown,
 			RequestShutdownWithTeardown: srv.requestShutdownWithTeardown,
-			AgentSwitchPolicy:           deps.AgentSwitchPolicy,
 		}),
 		// ReadHeaderTimeout guards against slow-loris even on loopback;
 		// per-request body/handler timeouts are applied per-surface.

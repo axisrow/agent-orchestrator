@@ -81,8 +81,7 @@ type APIDeps struct {
 	Installer controllers.Installer
 	AgentAuth controllers.AgentAuthService
 	// GitHub is the local GitHub PAT + repos surface.
-	GitHub            controllers.GitHubPATService
-	AgentSwitchPolicy AgentSwitchPolicyControl
+	GitHub controllers.GitHubPATService
 	// Gateway backs the Anthropic-compatible gateway settings routes; nil
 	// leaves them answering 501.
 	Gateway controllers.GatewayService
