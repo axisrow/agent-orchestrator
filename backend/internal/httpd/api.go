@@ -25,19 +25,23 @@ import (
 
 // APIDeps bundles every service the API layer's controllers depend on.
 type APIDeps struct {
-	Awake              controllers.AwakeService
-	Agents             controllers.AgentCatalog
-	CodexAccounts      controllers.CodexAccountService
-	AgentAccounts      controllers.AgentAccountService
-	Projects           projectsvc.Manager
-	UserConfig         userconfigsvc.Manager
-	Sessions           controllers.SessionService
-	ArtifactVersions   controllers.ArtifactVersionService
-	Automations        controllers.AutomationService
-	DesktopWorkspaces  controllers.DesktopWorkspaceService
-	Activity           controllers.ActivityRecorder
-	UsageHooks         controllers.UsageHookRecorder
-	UsageSummary       controllers.UsageSummaryService
+	Awake             controllers.AwakeService
+	Agents            controllers.AgentCatalog
+	CodexAccounts     controllers.CodexAccountService
+	AgentAccounts     controllers.AgentAccountService
+	Projects          projectsvc.Manager
+	UserConfig        userconfigsvc.Manager
+	Sessions          controllers.SessionService
+	ArtifactVersions  controllers.ArtifactVersionService
+	Automations       controllers.AutomationService
+	DesktopWorkspaces controllers.DesktopWorkspaceService
+	Activity          controllers.ActivityRecorder
+	UsageHooks        controllers.UsageHookRecorder
+	UsageSummary      controllers.UsageSummaryService
+	// UsageHookMetrics surfaces the usage hook-processing counters on /healthz.
+	// Nil keeps the probe payload unchanged. Counters exist so a wholesale hook
+	// outage cannot hide behind WARN spam while the state machine lies (#300).
+	UsageHookMetrics   func() map[string]int64
 	SessionMemory      controllers.SessionMemoryService
 	SessionSteps       controllers.SessionStepsReader
 	PRs                prsvc.ActionManager
