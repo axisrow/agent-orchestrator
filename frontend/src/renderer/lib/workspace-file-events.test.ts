@@ -23,6 +23,9 @@ vi.mock("./host-clients", () => ({
 	baseUrlForHost: baseUrlForHostMock,
 	subscribeConnectedHosts: subscribeConnectedHostsMock,
 }));
+vi.mock("../hooks/useWorkspaceQuery", () => ({
+	workspaceQueryKeyForHost: (hostId?: string) => (hostId ? ["remote-workspaces", hostId] : ["workspaces"]),
+}));
 
 import { getWorkspaceFileConnectionState, subscribeWorkspaceFileChanges } from "./workspace-file-events";
 
@@ -399,6 +402,53 @@ describe("subscribeWorkspaceFileChanges", () => {
 
 		source.onopen?.();
 		expect(getWorkspaceFileConnectionState("sess-native-retry")).toBe("connected");
+		unsubscribe();
+	});
+
+	it("settles a late subscriber from the snapshot instead of waiting for events", () => {
+		vi.useFakeTimers();
+		const queryClient = fakeQueryClient();
+		const unsubscribe = subscribeWorkspaceFileChanges("sess-late", queryClient);
+		const source = EventSourceStub.instances[0]!;
+
+		// A subscription that opens after preparation finished gets the state the
+		// stream has already passed: the provisioning phase settles at once and
+		// the workspace views refetch what the agent already wrote.
+		source.dispatch("workspace_snapshot", JSON.stringify({ kind: "snapshot", provisionState: "ready", workspaceVersion: "v7" }));
+		expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["workspaces"] });
+		vi.advanceTimersByTime(INVALIDATE_TEST_WINDOW_MS);
+		expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["session-workspace-files", "sess-late"] });
+		expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["session-workspace-diffs", "sess-late"] });
+
+		// A live event for the version the snapshot already carried settles nothing twice.
+		vi.mocked(queryClient.invalidateQueries).mockClear();
+		source.dispatch("workspace_changed", JSON.stringify({ kind: "version", workspaceVersion: "v7" }));
+		vi.advanceTimersByTime(INVALIDATE_TEST_WINDOW_MS);
+		expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["session-workspace-diffs", "sess-late"] });
+		expect(queryClient.invalidateQueries).not.toHaveBeenCalledWith({ queryKey: ["session-workspace-files", "sess-late"] });
+		unsubscribe();
+	});
+
+	it("keeps live events flowing for a subscriber that arrived mid-preparation", () => {
+		vi.useFakeTimers();
+		const queryClient = fakeQueryClient();
+		const unsubscribe = subscribeWorkspaceFileChanges("sess-mid", queryClient);
+		const source = EventSourceStub.instances[0]!;
+
+		source.dispatch("workspace_snapshot", JSON.stringify({ kind: "snapshot", provisionState: "provisioning" }));
+		vi.advanceTimersByTime(INVALIDATE_TEST_WINDOW_MS);
+		vi.mocked(queryClient.invalidateQueries).mockClear();
+
+		// The live edges behave exactly as without a snapshot: content refreshes
+		// on the dirty frame, inventory on the version frame.
+		source.dispatch("workspace_changed", JSON.stringify({ kind: "dirty", refreshing: true }));
+		vi.advanceTimersByTime(INVALIDATE_TEST_WINDOW_MS);
+		expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["session-workspace-diffs", "sess-mid"] });
+		expect(queryClient.invalidateQueries).not.toHaveBeenCalledWith({ queryKey: ["session-workspace-files", "sess-mid"] });
+		vi.mocked(queryClient.invalidateQueries).mockClear();
+		source.dispatch("workspace_changed", JSON.stringify({ kind: "version", workspaceVersion: "v3" }));
+		vi.advanceTimersByTime(INVALIDATE_TEST_WINDOW_MS);
+		expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["session-workspace-files", "sess-mid"] });
 		unsubscribe();
 	});
 

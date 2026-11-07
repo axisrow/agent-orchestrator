@@ -1362,7 +1362,8 @@ func (c *SessionsController) streamWorkspaceChanges(w http.ResponseWriter, r *ht
 	// The watcher cannot report edits made before it existed. Reconcile both
 	// workspace caches after the watch is installed and before telling the client
 	// it can stop fallback polling.
-	if _, err := c.Svc.ReconcileWorkspaceManifest(r.Context(), sessionID(r)); err != nil {
+	manifest, err := c.Svc.ReconcileWorkspaceManifest(r.Context(), sessionID(r))
+	if err != nil {
 		envelope.WriteError(w, r, err)
 		return
 	}
@@ -1377,6 +1378,27 @@ func (c *SessionsController) streamWorkspaceChanges(w http.ResponseWriter, r *ht
 		return
 	}
 	flusher.Flush()
+	// The stream only carries file changes that happen after the subscription, so
+	// a client that opens after preparation finished would otherwise sit on its
+	// stale phase until an unrelated write arrives. One snapshot of the current
+	// facts — workspace version, readiness and the start checklist — lets it
+	// settle at once; live events follow unchanged.
+	snapshot := struct {
+		Kind             string                        `json:"kind"`
+		WorkspaceVersion string                        `json:"workspaceVersion,omitempty"`
+		ProvisionState   domain.SessionProvisionState  `json:"provisionState,omitempty"`
+		ProvisionSteps   []domain.SessionProvisionStep `json:"provisionSteps,omitempty"`
+	}{Kind: "snapshot", WorkspaceVersion: manifest.WorkspaceVersion}
+	if sess, getErr := c.Svc.Get(r.Context(), sessionID(r)); getErr == nil {
+		snapshot.ProvisionState = sess.ProvisionState.WithDefault()
+		snapshot.ProvisionSteps = sess.ProvisionSteps
+	}
+	if data, marshalErr := json.Marshal(snapshot); marshalErr == nil {
+		if _, err := fmt.Fprintf(w, "event: workspace_snapshot\ndata: %s\n\n", data); err != nil {
+			return
+		}
+		flusher.Flush()
+	}
 
 	keepAlive := time.NewTicker(15 * time.Second)
 	defer keepAlive.Stop()
