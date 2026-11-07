@@ -2598,7 +2598,13 @@ func sessionPrefix(project domain.ProjectRecord) string {
 // row when nothing observable has landed yet (seed state) via rollbackSpawn or
 // rollbackSpawnSeedRow.
 func (m *Manager) markSpawnFailedTerminated(ctx context.Context, id domain.SessionID) {
-	_ = m.lcm.MarkTerminated(ctx, id)
+	// Both best-effort fallbacks of a failed seed spawn (delete, then this
+	// mark) swallow their errors; a write that loses to store contention
+	// strands a fresh, never-terminating phantom row with nothing in the log
+	// (#296's leftover row). Log so that failure is diagnosable.
+	if err := m.lcm.MarkTerminated(ctx, id); err != nil {
+		m.logger.Warn("spawn rollback: mark seed row terminated failed", "session", id, "err", err)
+	}
 	m.cleanupSystemPromptDir(id)
 }
 

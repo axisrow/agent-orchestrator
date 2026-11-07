@@ -3975,19 +3975,19 @@ func TestToSpawnAPIErrorMapsSpawnStageSentinels(t *testing.T) {
 		{
 			"spawn timeout",
 			context.DeadlineExceeded,
-			apierr.KindConflict,
+			apierr.KindUnavailable,
 			"SPAWN_TIMEOUT",
 		},
 		{
 			"timeout wins over runtime stage",
 			fmt.Errorf("spawn mer-1: %w: %w", sessionmanager.ErrRuntimeCreate, context.DeadlineExceeded),
-			apierr.KindConflict,
+			apierr.KindUnavailable,
 			"SPAWN_TIMEOUT",
 		},
 		{
 			"spawn cancelled",
 			context.Canceled,
-			apierr.KindConflict,
+			apierr.KindUnavailable,
 			"SPAWN_CANCELLED",
 		},
 		{
