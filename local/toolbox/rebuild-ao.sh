@@ -263,12 +263,16 @@ if [ -n "$SANITY_NEEDLE" ]; then
   fi
 fi
 
-# 6f. Env GUI и демона без агентских маркеров (следствие whitelist-запуска, шаг 5).
-#     open форвардит env вызывавшего в GUI, демон наследует env GUI и раздаёт
-#     его воркерам: маркер здесь = утечка env claude-сессии в апп
-#     (anthropics/claude-code#73294: воркер-claude с протёкшим маркером не
-#     пишет транскрипт). Детектор — на классы маркеров, не поимённо.
-MARKER_RE='CLAUDE_CODE_|CLAUDECODE=|CLAUDE_PID=|CLAUDE_EFFORT=|CLAUDE_AUTO_RETRY|ANTHROPIC_|ZAI_|CHILD_SESSION|AO_SESSION_ID|AO_APP_RUN_ID'
+# 6f. Env GUI и демона без маркеров агентской СЕССИИ (следствие whitelist-запуска, шаг 5).
+#     open форвардит env вызывавшего в GUI: маркер здесь = утечка env claude-сессии
+#     (anthropics/claude-code#73294: воркер-claude с протёкшим маркером не пишет
+#     транскрипт).
+#     NB: env демона ШИРЕ env GUI по дизайну AO — buildDaemonEnv (frontend/src/
+#     shared/shell-env.ts) подмешивает пробу логин-шелла пользователя, поэтому
+#     переменные профиля (ZAI_API_KEY, ANTHROPIC_* из .zshrc) и GUI-генерированный
+#     AO_APP_RUN_ID там легитимны и при Finder-запуске. Гейт — только на классы
+#     «сессийных» маркеров, которые профиль не экспортирует.
+MARKER_RE='CLAUDE_CODE_|CLAUDECODE=|CLAUDE_PID=|CLAUDE_EFFORT=|CLAUDE_AUTO_RETRY|CHILD_SESSION|AO_SESSION_ID|AO_PERMISSION_MODE|AO_PROJECT_ID|AO_OWNER'
 GUI_PID="$(pgrep -f 'Contents/MacOS/agent-orchestrator' | head -1)"
 ENV_LEAK=""
 for pid in "$NEW_DAEMON_PID" "$GUI_PID"; do
