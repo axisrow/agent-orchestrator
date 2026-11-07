@@ -199,7 +199,7 @@ env -u AO_OWNER -u AO_APP_RUN_ID -u AO_WAKE_HELPER -u AO_ACP_RUNTIME_DIR \
     -u AO_BROWSER_RUNTIME_TOKEN_STDIN -u AO_DATA_DIR -u AO_RUN_FILE \
     -u AO_BROWSER_CAPABILITY -u AO_BROWSER_RUNTIME_TOKEN \
     -u AO_SUPERVISED_PROCESS -u AO_ISSUE_ID -u AO_RUNTIME_LAUNCH_ID \
-    -u CHILD_SESSION open -a "$APP_DST"
+    -u CHILD_SESSION -u CLAUDE_CODE_CHILD_SESSION open -a "$APP_DST"
 
 # 6. Post-check: ждём демон ready +全套 проверок (PID сменился, порт тот же, healthz).
 echo "==> жду демон ready (до 30с)..."
