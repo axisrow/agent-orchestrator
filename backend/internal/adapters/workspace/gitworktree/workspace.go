@@ -2459,8 +2459,20 @@ func movePathAside(path, suffix string) (string, error) {
 
 func runCommand(ctx context.Context, binary string, args ...string) ([]byte, error) {
 	cmd := aoprocess.CommandContext(ctx, binary, args...)
+	// Network commands (fetch/push) fork git-remote-https children whose connect
+	// attempts ignore the parent's SIGKILL for up to libcurl's 300s connect
+	// timeout. Kill the whole process group at cancellation and bound the wait
+	// on pipes a detached grandchild may still hold, so a hung remote costs the
+	// context's deadline, not that timeout — a spawn's bounded default-branch
+	// refresh (5s) used to run for minutes this way (#296).
+	aoprocess.ConfigureTreeCancellation(cmd)
+	cmd.WaitDelay = time.Second
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GCM_INTERACTIVE=Never")
 	out, err := cmd.CombinedOutput()
+	if errors.Is(err, exec.ErrWaitDelay) && ctx.Err() == nil {
+		// The command succeeded; a detached child merely held its output pipes.
+		err = nil
+	}
 	if err != nil {
 		return out, commandError{args: append([]string{binary}, args...), output: string(out), err: err}
 	}

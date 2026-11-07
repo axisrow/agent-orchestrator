@@ -1295,6 +1295,44 @@ func TestWorkspaceIntegrationWorkspaceProjectAssetCopyFailureRollsBackRoot(t *te
 	}
 }
 
+// TestFetchDefaultBranchStopsAtDeadlineWhenNetworkChildHangs reproduces #296:
+// a fetch against a black-holed remote forks a git-remote-https child whose
+// connect attempt ignores the parent's SIGKILL for up to libcurl's 300s
+// timeout while it holds the output pipes open. The command must still return
+// at the context deadline (process-group kill + bounded pipe wait), or every
+// spawn's bounded default-branch refresh runs for minutes.
+func TestFetchDefaultBranchStopsAtDeadlineWhenNetworkChildHangs(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "git-fake")
+	// Fork a child that keeps stderr open for 30s, then replace the parent with
+	// a 30s sleep — the shape of `git fetch` stuck in a connect attempt.
+	script := "#!/bin/sh\nsleep 30 >&2 &\nexec sleep 30\n"
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	repo := filepath.Join(dir, "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ws, err := New(Options{Binary: bin, ManagedRoot: filepath.Join(dir, "managed"), RepoResolver: StaticRepoResolver{}})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	started := time.Now()
+	err = ws.FetchDefaultBranch(ctx, repo, ports.WorkspaceDefaultBranch{
+		Remote: "origin", Branch: "main", BaseRef: "refs/remotes/origin/main",
+	})
+	elapsed := time.Since(started)
+	if err == nil {
+		t.Fatal("fetch error = nil, want deadline failure")
+	}
+	if elapsed > 15*time.Second {
+		t.Fatalf("fetch ran %v; the hung network child outlived the deadline", elapsed)
+	}
+}
+
 func TestFetchDefaultBranchRefreshesRemoteTrackingRef(t *testing.T) {
 	git := requireGit(t)
 	tmp := t.TempDir()

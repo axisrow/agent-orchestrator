@@ -1757,9 +1757,15 @@ func toSpawnAPIError(err error) error {
 	case errors.Is(err, sessionmanager.ErrClientRequestIncomplete):
 		return apierr.Conflict("CLIENT_REQUEST_INCOMPLETE", "This task is still starting or its prior launch did not finish; check the session before trying again", nil)
 	case errors.Is(err, context.DeadlineExceeded):
-		return apierr.Conflict("SPAWN_TIMEOUT", "Session spawn timed out before the agent could start", nil)
+		// A deadline is a transient capacity condition, not a conflict: the
+		// request waited on something (a hung git remote, a busy store) and its
+		// budget ran out. Answer 503 so clients retry instead of reading 409 as
+		// a state collision (#296).
+		return apierr.Unavailable("SPAWN_TIMEOUT", "Session spawn timed out before the agent could start; retry")
 	case errors.Is(err, context.Canceled):
-		return apierr.Conflict("SPAWN_CANCELLED", "Session spawn was cancelled", nil)
+		// Same reasoning as the deadline above: cancellation is never evidence
+		// that the request contradicted the session state.
+		return apierr.Unavailable("SPAWN_CANCELLED", "Session spawn was cancelled; retry")
 	case errors.Is(err, sessionmanager.ErrSpawnPrompt):
 		return apierr.Internal("SPAWN_PROMPT_FAILED", err.Error())
 	case errors.Is(err, sessionmanager.ErrSpawnCreate):
