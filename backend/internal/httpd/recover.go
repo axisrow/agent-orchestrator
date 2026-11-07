@@ -11,7 +11,6 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/httpd/envelope"
-	"github.com/aoagents/agent-orchestrator/backend/internal/observe/sentryobs"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 	"github.com/aoagents/agent-orchestrator/backend/internal/telemetrymeta"
 )
@@ -28,7 +27,6 @@ func recoverTelemetry(log *slog.Logger, sink ports.EventSink) func(http.Handler)
 					if rec == http.ErrAbortHandler { //nolint:errorlint // net/http aborts quietly on exactly this value
 						panic(rec)
 					}
-					failureSite := telemetrymeta.CurrentFailureSite()
 					stack := string(debug.Stack())
 					log.Error("http handler panic",
 						"id", middleware.GetReqID(r.Context()),
@@ -37,8 +35,7 @@ func recoverTelemetry(log *slog.Logger, sink ports.EventSink) func(http.Handler)
 						"panic", fmt.Sprint(rec),
 						"stack", stack,
 					)
-					route := telemetrymeta.RoutePattern(r)
-					path := route.String()
+					path := telemetrymeta.RoutePattern(r).String()
 					panicKind := telemetrymeta.PanicKind(rec)
 					fingerprint := telemetrymeta.Fingerprint("httpd", "http_request_panic", r.Method, path, panicKind)
 					if sink != nil {
@@ -59,14 +56,6 @@ func recoverTelemetry(log *slog.Logger, sink ports.EventSink) func(http.Handler)
 							},
 						})
 					}
-					// Sentry keeps safe stack frames without raw panic text.
-					sentryobs.CapturePanic(r.Context(), map[string]string{
-						"component":  "httpd",
-						"operation":  "http_request_panic",
-						"method":     r.Method,
-						"path":       path,
-						"panic_kind": panicKind,
-					}, fingerprint, route, failureSite)
 					writeRecoveredError(w, r)
 				}
 			}()

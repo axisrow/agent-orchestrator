@@ -16,7 +16,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -50,7 +49,6 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/mobilebridge"
 	"github.com/aoagents/agent-orchestrator/backend/internal/notify"
 	agentswitchobs "github.com/aoagents/agent-orchestrator/backend/internal/observe/agentswitch"
-	"github.com/aoagents/agent-orchestrator/backend/internal/observe/sentryobs"
 	usagepipeline "github.com/aoagents/agent-orchestrator/backend/internal/observe/usage"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 	"github.com/aoagents/agent-orchestrator/backend/internal/presence"
@@ -93,22 +91,8 @@ const usageReconcileTick = 3 * time.Minute
 
 const chatHibernateSweepTick = 30 * time.Second
 
-// sentryEnvironment maps the daemon's app version to a Sentry environment so a
-// nightly/edge build's issues do not mix with stable release health.
-func sentryEnvironment(version string) string {
-	v := strings.ToLower(strings.TrimSpace(version))
-	switch {
-	case v == "":
-		return "unknown"
-	case strings.Contains(v, "nightly"):
-		return "nightly"
-	case strings.Contains(v, "edge") || strings.Contains(v, "pr"):
-		return "development"
-	default:
-		return "stable"
-	}
-}
-
+// agentSwitchEventMetadata maps the daemon's app version to the closed
+// event metadata taxonomy (environment/channel) used in fault envelopes.
 func agentSwitchEventMetadata(cfg config.Config) domain.AgentSwitchEventMetadata {
 	environment := domain.AgentSwitchEnvironmentStable
 	channel := domain.AgentSwitchChannelStable
@@ -295,31 +279,21 @@ func Run() error {
 	} else if n > 0 {
 		log.Info("report claims requeued after restart", "count", n)
 	}
-	if err := store.ConfigureAgentSwitchFailureEventEncoder(context.Background(), sentryobs.AgentSwitchEventEncoder{}); err != nil {
+	if err := store.ConfigureAgentSwitchFailureEventEncoder(context.Background(), agentswitchobs.AgentSwitchEventEncoder{}); err != nil {
 		return fmt.Errorf("configure agent switch failure event encoder: %w", err)
 	}
 
 	// Consent and event metadata are established before any reporting surface or
 	// recovery enrollment exists. SQLite is forced off first on every boot so a
-	// stale enabled mirror can never authorize work after a restart.
-	destination, destinationErr := sentryobs.ParseAgentSwitchDSN(cfg.Telemetry.SentryDSN, true)
-	if destinationErr != nil && cfg.Telemetry.SentryDSN != "" {
-		log.Warn("agent switch failure sender disabled", "error", destinationErr)
-	}
-	// The coordinator's consent mirror gates Sentry capture: fail-closed (false
-	// until the first policy state lands), consulted before every capture.
-	var agentSwitchReporting atomic.Bool
-	sentryobs.SetPolicyCheck(func(context.Context) bool { return agentSwitchReporting.Load() })
-	defer sentryobs.SetPolicyCheck(nil)
+	// stale enabled mirror can never authorize work after a restart. The
+	// destination fingerprint stays empty: the local failure pipeline has no
+	// remote destination anymore, so authorization never enables.
 	policyCoordinator := agentswitchobs.NewPolicyCoordinator(store, agentswitchobs.PolicyOptions{
 		AuthorityReader:         policyauthority.New(filepath.Join(cfg.DataDir, agentswitchobs.PolicyFileName)),
 		TelemetryEvents:         cfg.Telemetry.Events,
 		TelemetryEventsExplicit: cfg.Telemetry.EventsExplicit,
-		DestinationFingerprint:  destination.Fingerprint,
 		StreamKillSwitched:      agentSwitchFailureStreamDisabled(cfg.Telemetry.DisabledEvents),
 		Metadata:                agentSwitchEventMetadata(cfg),
-		OnEventsChanged:         agentSwitchReporting.Store,
-		ProviderDrain:           sentryobs.Drain,
 	})
 	if err := policyCoordinator.ForceDisabled(context.Background()); err != nil {
 		return fmt.Errorf("force agent switch reporting disabled: %w", err)
@@ -341,23 +315,11 @@ func Run() error {
 	}
 
 	// Product telemetry answers to AO_TELEMETRY_EVENTS alone. The agent-switch
-	// consent (policyCoordinator) governs only the Sentry failure path above and
-	// the dispatcher below; wiring it in here turned the "Share error events"
-	// switch into a kill switch for every daemon product event.
+	// consent (policyCoordinator) governs only the local failure pipeline below;
+	// wiring it in here turned the "Share error events" switch into a kill
+	// switch for every daemon product event.
 	telemetrySink := newTelemetrySink(cfg, store, log)
 	defer func() { _ = telemetrySink.Close(context.Background()) }()
-	// Daemon Sentry: captures genuine 5xx/panics with their Go stack. Gated on
-	// Initialize the transport once so a later policy opt-in works without a
-	// daemon restart. The policy gate remains fail-closed and is checked before
-	// every capture; a blank DSN still leaves this as a no-op.
-	if err := sentryobs.Init(sentryobs.Config{
-		DSN:         cfg.Telemetry.SentryDSN,
-		Release:     cfg.Telemetry.AppVersion,
-		Environment: sentryEnvironment(cfg.Telemetry.AppVersion),
-	}); err != nil {
-		log.Warn("daemon sentry disabled", "err", err)
-	}
-	defer sentryobs.Flush(2 * time.Second)
 	telemetrySink.Emit(context.Background(), ports.TelemetryEvent{
 		Name:       "ao.daemon.started",
 		Source:     "daemon",
@@ -376,27 +338,6 @@ func Run() error {
 	defer stop()
 	policyCoordinator.StartWatcher(ctx)
 	defer func() { _ = policyCoordinator.CloseAndDrain(context.Background()) }()
-	// Constructing the synchronous sender performs no I/O. The hard production
-	// gate keeps this dormant until the separate privacy and destination release
-	// gates are approved; each call remains guarded by durable consent below.
-	var agentSwitchObserver ports.AgentSwitchFailureObserver
-	if domain.AgentSwitchFailureProductionEnabled && destinationErr == nil {
-		agentSwitchObserver = sentryobs.NewAgentSwitchFailureSender(destination, nil)
-	}
-	agentSwitchDispatcher, err := newAgentSwitchFailureDispatcher(store, policyCoordinator, agentSwitchObserver, log)
-	if err != nil {
-		return fmt.Errorf("wire agent switch failure dispatcher: %w", err)
-	}
-	if agentSwitchDispatcher != nil {
-		agentSwitchDispatcher.Start(ctx)
-		defer func() {
-			stopContext, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
-			defer cancel()
-			if stopErr := agentSwitchDispatcher.Stop(stopContext); stopErr != nil {
-				log.Error("agent switch failure dispatcher shutdown", "error", stopErr)
-			}
-		}()
-	}
 
 	cdcPipe, err := startCDC(ctx, store, log)
 	if err != nil {
@@ -1342,13 +1283,6 @@ func Run() error {
 	// stop only cancels workers; deferred stopSignals keeps a second automatic
 	// SIGTERM from terminating the process while installer restoration runs.
 	stop()
-	if agentSwitchDispatcher != nil {
-		dispatcherStopContext, dispatcherStopCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
-		if err := agentSwitchDispatcher.Stop(dispatcherStopContext); err != nil {
-			log.Error("agent switch failure dispatcher shutdown", "error", err)
-		}
-		dispatcherStopCancel()
-	}
 	installStopCtx, installStopCancel := context.WithTimeout(context.Background(), installerShutdownTimeout)
 	if err := systemInstall.Close(installStopCtx); err != nil {
 		log.Error("harness installer shutdown", "err", err)

@@ -689,7 +689,6 @@ func TestScrubTelemetryEnvKeepsLoadedConfigAndClearsProcessEnv(t *testing.T) {
 	t.Setenv("AO_TELEMETRY_REMOTE", "posthog")
 	t.Setenv("AO_TELEMETRY_POSTHOG_KEY", "phc_test")
 	t.Setenv("AO_TELEMETRY_APP_VERSION", "0.13.7")
-	t.Setenv("AO_SENTRY_DSN", "https://k@o.ingest.sentry.io/1")
 	t.Setenv("AO_PORT", "3123")
 	// Desktop-only, documented opt-out the daemon never reads: must survive.
 	t.Setenv("AO_TELEMETRY_RENDERER", "off")
@@ -700,7 +699,7 @@ func TestScrubTelemetryEnvKeepsLoadedConfigAndClearsProcessEnv(t *testing.T) {
 	}
 	ScrubTelemetryEnv()
 
-	if cfg.Telemetry.Remote != TelemetryRemotePostHog || cfg.Telemetry.AppVersion != "0.13.7" || cfg.Telemetry.PostHogKey != "phc_test" || cfg.Telemetry.SentryDSN == "" {
+	if cfg.Telemetry.Remote != TelemetryRemotePostHog || cfg.Telemetry.AppVersion != "0.13.7" || cfg.Telemetry.PostHogKey != "phc_test" {
 		t.Fatalf("loaded config lost telemetry settings: %+v", cfg.Telemetry)
 	}
 	for _, key := range telemetryEnvKeys {

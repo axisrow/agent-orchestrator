@@ -18,7 +18,6 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 	"github.com/aoagents/agent-orchestrator/backend/internal/httpd/apierr"
 	"github.com/aoagents/agent-orchestrator/backend/internal/observe/ownership"
-	"github.com/aoagents/agent-orchestrator/backend/internal/observe/sentryobs"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 	"github.com/aoagents/agent-orchestrator/backend/internal/reqid"
 	chatsvc "github.com/aoagents/agent-orchestrator/backend/internal/service/chat"
@@ -613,17 +612,10 @@ func (s *Service) emitSpawnFailed(ctx context.Context, cfg ports.SpawnConfig, er
 	})
 }
 
-// captureRelaunchError sends a relaunch failure through the daemon's gated,
-// privacy-safe Sentry boundary.
-var captureRelaunchError = func(ctx context.Context, err error, tags map[string]string, fingerprint string) {
-	sentryobs.CaptureError(ctx, err, tags, fingerprint, telemetrymeta.RoutePattern(nil), telemetrymeta.FailureSite{})
-}
-
 // emitRelaunchFailed records a failed agent relaunch. These answer 409
 // AGENT_RESUME_FAILED rather than 500, so neither ao.http.5xx nor the request
-// logger's Sentry capture sees them any more. PostHog gets the operation, step
-// and the root error's Go type (never its text, which can carry paths and env);
-// Sentry, which scrubs events, gets the raw error the 500 used to carry.
+// logger sees them. PostHog gets the operation, step and the root error's Go
+// type (never its text, which can carry paths and env).
 func (s *Service) emitRelaunchFailed(ctx context.Context, operation string, id domain.SessionID, err, mapped error) {
 	var relaunchErr *sessionmanager.RelaunchError
 	var apiErr *apierr.Error
@@ -651,11 +643,6 @@ func (s *Service) emitRelaunchFailed(ctx context.Context, operation string, id d
 		payload["kind"] = string(rec.Kind)
 		projectID = &rec.ProjectID
 	}
-	tags := map[string]string{"request_id": reqid.FromContext(ctx)}
-	for key, value := range payload {
-		tags[key] = fmt.Sprint(value)
-	}
-	captureRelaunchError(ctx, err, tags, fingerprint)
 	if s.telemetry == nil {
 		return
 	}

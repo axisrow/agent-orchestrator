@@ -1,4 +1,4 @@
-package sentryobs
+package agentswitch
 
 import (
 	"encoding/json"

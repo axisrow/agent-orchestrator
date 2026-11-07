@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
-	"github.com/aoagents/agent-orchestrator/backend/internal/observe/sentryobs"
+	"github.com/aoagents/agent-orchestrator/backend/internal/observe/agentswitch"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 
 	_ "modernc.org/sqlite"
@@ -101,7 +101,7 @@ CREATE TABLE agent_switch_failure_delivery_state (
 		GateRetained: domain.AgentSwitchTriFalse, OccurredAt: now.Add(time.Second),
 	}
 	st := NewStore(db, db)
-	if err := st.ConfigureAgentSwitchFailureEventEncoder(context.Background(), sentryobs.AgentSwitchEventEncoder{}); err != nil {
+	if err := st.ConfigureAgentSwitchFailureEventEncoder(context.Background(), agentswitch.AgentSwitchEventEncoder{}); err != nil {
 		t.Fatalf("configure event encoder: %v", err)
 	}
 	metadata := domain.AgentSwitchEventMetadata{

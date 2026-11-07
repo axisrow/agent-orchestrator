@@ -91,11 +91,6 @@ type TelemetryConfig struct {
 	// binary has no reliable version of its own (see cli.Version, which release
 	// tooling does not currently override), so the supervisor passes it in.
 	AppVersion string
-	// SentryDSN, when set (AO_SENTRY_DSN), enables daemon-side Sentry capture of
-	// genuine server faults (5xx and panics) with their Go stack. Blank keeps
-	// Sentry a no-op. Kept separate from the PostHog key: the two are different
-	// processors with different projects.
-	SentryDSN string
 	// LocalRetention controls how long local telemetry events are kept before
 	// pruning. Zero means use the default (30 days).
 	LocalRetention time.Duration
@@ -458,9 +453,6 @@ func Load() (Config, error) {
 	if raw := os.Getenv("AO_TELEMETRY_APP_VERSION"); raw != "" {
 		cfg.Telemetry.AppVersion = strings.TrimSpace(raw)
 	}
-	if raw := os.Getenv("AO_SENTRY_DSN"); raw != "" {
-		cfg.Telemetry.SentryDSN = strings.TrimSpace(raw)
-	}
 	if raw := os.Getenv("AO_TELEMETRY_RETENTION"); raw != "" {
 		d, err := time.ParseDuration(raw)
 		if err != nil {
@@ -577,7 +569,6 @@ var telemetryEnvKeys = []string{
 	"AO_TELEMETRY_POSTHOG_HOST",
 	"AO_TELEMETRY_DISABLED_EVENTS",
 	"AO_TELEMETRY_APP_VERSION",
-	"AO_SENTRY_DSN",
 }
 
 // ScrubTelemetryEnv removes the telemetry export variables from the process
