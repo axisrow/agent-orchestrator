@@ -4387,6 +4387,198 @@ func TestSessionsAPI_StreamWorkspaceChanges(t *testing.T) {
 	}
 }
 
+// A subscriber that opens after preparation finished is the issue #297 case:
+// with no future file change to carry, the stream must still deliver the
+// current state immediately, as one snapshot right after ready.
+func TestSessionsAPI_StreamWorkspaceChangesSnapshotToLateSubscriber(t *testing.T) {
+	svc := newFakeSessionService()
+	// The fake session carries no provisioning fields: exactly what a session
+	// whose preparation completed before the view opened looks like.
+	session := svc.sessions["ao-1"]
+	session.Metadata.WorkspacePath = t.TempDir()
+	svc.sessions["ao-1"] = session
+	srv := newSessionTestServer(t, svc)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/api/v1/sessions/ao-1/workspace/events", nil)
+	if err != nil {
+		t.Fatalf("new workspace stream request: %v", err)
+	}
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatalf("GET workspace stream: %v", err)
+	}
+	defer resp.Body.Close()
+
+	snapshotData := make(chan string, 1)
+	done := make(chan map[string]int, 1)
+	go func() {
+		counts := map[string]int{}
+		scanner := bufio.NewScanner(resp.Body)
+		event := ""
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.HasPrefix(line, "event: ") {
+				event = strings.TrimPrefix(line, "event: ")
+				counts[event]++
+				continue
+			}
+			if strings.HasPrefix(line, "data: ") && event == "workspace_snapshot" {
+				snapshotData <- strings.TrimPrefix(line, "data: ")
+			}
+		}
+		done <- counts
+	}()
+	var data string
+	select {
+	case data = <-snapshotData:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for workspace snapshot")
+	}
+	var snapshot struct {
+		Kind           string                       `json:"kind"`
+		ProvisionState domain.SessionProvisionState `json:"provisionState"`
+	}
+	mustJSON(t, []byte(data), &snapshot)
+	if snapshot.Kind != "snapshot" {
+		t.Fatalf("snapshot kind = %q, want snapshot", snapshot.Kind)
+	}
+	if snapshot.ProvisionState != domain.SessionProvisionReady {
+		t.Fatalf("provisionState = %q, want ready", snapshot.ProvisionState)
+	}
+	// No file was written for this subscription: the snapshot alone proves the
+	// stream no longer hangs silent for late subscribers.
+	cancel()
+	select {
+	case counts := <-done:
+		if counts["ready"] != 1 || counts["workspace_snapshot"] != 1 {
+			t.Fatalf("ready/snapshot counts = %d/%d, want 1/1", counts["ready"], counts["workspace_snapshot"])
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out draining workspace stream")
+	}
+}
+
+// A subscriber that arrives while preparation is still running must keep the
+// old behavior — live events, and ready emitted once — with the snapshot added
+// beside it, never instead of it.
+func TestSessionsAPI_StreamWorkspaceChangesSnapshotDuringPreparation(t *testing.T) {
+	workspace := t.TempDir()
+	svc := newFakeSessionService()
+	// Permit the startup reconciliation, then block refresh work so the live
+	// invalidation edge is what carries the change, as before.
+	scans := 0
+	svc.workspaceListHook = func(ctx context.Context) error {
+		scans++
+		if scans == 1 {
+			return nil
+		}
+		<-ctx.Done()
+		return ctx.Err()
+	}
+
+	session := svc.sessions["ao-1"]
+	session.Metadata.WorkspacePath = workspace
+	now := time.Now().UTC()
+	session.ProvisionState = domain.SessionProvisionProvisioning
+	session.ProvisionSteps = []domain.SessionProvisionStep{
+		{ID: domain.SessionProvisionStepFetch, Status: domain.SessionProvisionStepDone, EndedAt: &now},
+		{ID: domain.SessionProvisionStepWorktree, Status: domain.SessionProvisionStepRunning, StartedAt: &now},
+	}
+	svc.sessions["ao-1"] = session
+	srv := newSessionTestServer(t, svc)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/api/v1/sessions/ao-1/workspace/events", nil)
+	if err != nil {
+		t.Fatalf("new workspace stream request: %v", err)
+	}
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatalf("GET workspace stream: %v", err)
+	}
+	defer resp.Body.Close()
+
+	type streamTally struct {
+		ready, snapshot, changed int
+		snapshotData             string
+	}
+	snapshotSeen := make(chan string, 1)
+	changedSeen := make(chan struct{}, 1)
+	done := make(chan streamTally, 1)
+	go func() {
+		var tally streamTally
+		scanner := bufio.NewScanner(resp.Body)
+		event := ""
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.HasPrefix(line, "event: ") {
+				event = strings.TrimPrefix(line, "event: ")
+				switch event {
+				case "ready":
+					tally.ready++
+				case "workspace_snapshot":
+					tally.snapshot++
+				case "workspace_changed":
+					tally.changed++
+					if tally.changed == 1 {
+						changedSeen <- struct{}{}
+					}
+				}
+				continue
+			}
+			if strings.HasPrefix(line, "data: ") && event == "workspace_snapshot" && tally.snapshotData == "" {
+				tally.snapshotData = strings.TrimPrefix(line, "data: ")
+				snapshotSeen <- tally.snapshotData
+			}
+		}
+		done <- tally
+	}()
+	var data string
+	select {
+	case data = <-snapshotSeen:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for workspace snapshot")
+	}
+	var snapshot struct {
+		ProvisionState domain.SessionProvisionState   `json:"provisionState"`
+		ProvisionSteps []domain.SessionProvisionStep  `json:"provisionSteps"`
+	}
+	mustJSON(t, []byte(data), &snapshot)
+	if snapshot.ProvisionState != domain.SessionProvisionProvisioning {
+		t.Fatalf("provisionState = %q, want provisioning", snapshot.ProvisionState)
+	}
+	if len(snapshot.ProvisionSteps) != 2 || snapshot.ProvisionSteps[1].Status != domain.SessionProvisionStepRunning {
+		t.Fatalf("provisionSteps = %#v, want a running worktree step", snapshot.ProvisionSteps)
+	}
+
+	if err := os.WriteFile(filepath.Join(workspace, "README.md"), []byte("changed\n"), 0o644); err != nil {
+		t.Fatalf("write workspace file: %v", err)
+	}
+	select {
+	case <-changedSeen:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for workspace change event")
+	}
+	cancel()
+	select {
+	case tally := <-done:
+		if tally.ready != 1 {
+			t.Fatalf("ready events = %d, want 1", tally.ready)
+		}
+		if tally.snapshot != 1 {
+			t.Fatalf("snapshot events = %d, want 1", tally.snapshot)
+		}
+		if tally.changed < 1 {
+			t.Fatalf("workspace_changed events = %d, want at least 1", tally.changed)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out draining workspace stream")
+	}
+}
+
 func TestSessionsAPI_SetPreviewEmptyURLNoEntry(t *testing.T) {
 	svc := newFakeSessionService()
 	s := svc.sessions["ao-1"]

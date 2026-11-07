@@ -1,4 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
+import { workspaceQueryKeyForHost } from "../hooks/useWorkspaceQuery";
 import { getApiBaseUrl, hasTrustedApiBaseUrl, subscribeApiBaseUrl } from "./api-client";
 import { baseUrlForHost, subscribeConnectedHosts } from "./host-clients";
 import { sessionUiKey } from "./hosts";
@@ -178,8 +179,16 @@ function createWorkspaceStream(sessionId: string, queryClient: QueryClient, host
 			setWorkspaceFileConnectionState(key, "connected");
 			stream.stopRemote = probeRemoteSse(
 				`${baseUrl.replace(/\/+$/, "")}/api/v1/sessions/${encodeURIComponent(sessionId)}/workspace/events`,
-				["workspace_changed"],
-				invalidate,
+				["workspace_changed", "workspace_snapshot"],
+				(event) => {
+					invalidate();
+					// The snapshot is the daemon telling a late subscriber what the
+					// workspace already is; the session's provisioning phase rides the
+					// same fact, so let the workspace query settle now, not at its next poll.
+					if (event.type === "workspace_snapshot") {
+						void queryClient.invalidateQueries({ queryKey: workspaceQueryKeyForHost(hostId) });
+					}
+				},
 				() => {
 					if (stream.poll !== undefined) clearInterval(stream.poll);
 					stream.poll = undefined;
@@ -239,6 +248,30 @@ function createWorkspaceStream(sessionId: string, queryClient: QueryClient, host
 					const cached = queryClient.getQueryData<{ workspaceVersion?: string }>(queryPrefix("session-workspace-files"));
 					if (cached?.workspaceVersion === payload.workspaceVersion) return;
 				}
+				scheduleInvalidation(INVENTORY_QUERY_NAMES);
+			});
+			// A subscriber that opens after preparation finished receives the state
+			// the stream has already passed as one snapshot. Settle the provisioning
+			// phase and the workspace views from it at once instead of waiting for
+			// the next poll or the agent's next write.
+			source.addEventListener("workspace_snapshot", (event) => {
+				if (stream.disposed || generation !== stream.generation || stream.source !== source) return;
+				let payload: { workspaceVersion?: string } = {};
+				try {
+					payload = JSON.parse((event as MessageEvent<string>).data || "{}") as typeof payload;
+				} catch {
+					// A bodyless snapshot still means "as of now"; fall through to the refresh.
+				}
+				void queryClient.invalidateQueries({ queryKey: workspaceQueryKeyForHost(hostId) });
+				scheduleInvalidation(CONTENT_QUERY_NAMES);
+				if (!payload.workspaceVersion) {
+					scheduleInvalidation(INVENTORY_QUERY_NAMES);
+					return;
+				}
+				if (stream.lastVersion === payload.workspaceVersion) return;
+				stream.lastVersion = payload.workspaceVersion;
+				const cached = queryClient.getQueryData<{ workspaceVersion?: string }>(queryPrefix("session-workspace-files"));
+				if (cached?.workspaceVersion === payload.workspaceVersion) return;
 				scheduleInvalidation(INVENTORY_QUERY_NAMES);
 			});
 		} catch {
