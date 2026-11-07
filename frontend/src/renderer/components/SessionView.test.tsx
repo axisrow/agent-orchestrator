@@ -307,6 +307,9 @@ vi.mock("./chat/SessionChatSurface", async () => {
 		onOpenReviewerTerminal,
 		reviewerTarget,
 		onSelectChat,
+		reviewerStarting,
+		reviewerStartingSelected,
+		onOpenReviewerStarting,
 		controllerTransitioning,
 		agentResuming,
 		shellTerminals = [],
@@ -330,6 +333,9 @@ vi.mock("./chat/SessionChatSurface", async () => {
 		onOpenReviewerTerminal?: (target: { handleId: string; harness: string }) => void;
 		reviewerTarget?: { kind: "reviewer"; handleId: string; harness: string; sessionId: string };
 		onSelectChat?: () => void;
+		reviewerStarting?: { reviewId: string; harness: string };
+		reviewerStartingSelected?: boolean;
+		onOpenReviewerStarting?: () => void;
 		agentResuming?: boolean;
 		controllerTransitioning?: boolean;
 		shellTerminals?: Array<{ handleId: string; title: string }>;
@@ -400,6 +406,11 @@ vi.mock("./chat/SessionChatSurface", async () => {
 			{reviewerTerminal ? (
 				<button type="button" onClick={() => onOpenReviewerTerminal?.(reviewerTerminal)}>
 					Reviewer
+				</button>
+			) : null}
+			{reviewerStarting ? (
+				<button type="button" data-testid="reviewer-starting-tab" onClick={() => onOpenReviewerStarting?.()}>
+					{reviewerStartingSelected ? "reviewer starting selected" : "reviewer starting"}
 				</button>
 			) : null}
 			{reviewerTarget ? (
@@ -5936,5 +5947,58 @@ describe("SessionView", () => {
 		browserViewState.agentBrowserActive = true;
 		rerender(<SessionView sessionId="sess-1" />);
 
+	});
+});
+
+// A queued pass (#302): the run row exists, the reviewer pane is not up yet,
+// so the active reviewer surface carries an empty handle. SessionView must
+// surface the queued reviewer instead of leaving it silently absent, follow it
+// onto the screen from the plain session pane, and hand off once the pane is up.
+describe("SessionView queued reviewer card", () => {
+	it("shows the queued reviewer and selects it while the pane is pending", async () => {
+		workerSession("sess-1").mode = "chat";
+		const view = render(<SessionView sessionId="sess-1" />);
+		act(() => view.client.setQueryData(["session-reviews", "sess-1"], {
+			reviewerHandleId: "",
+			reviewerHarness: "claude-code",
+			reviews: [{ prUrl: "https://github.com/o/r/pull/1", prNumber: 1, targetSha: "sha1", status: "running" }],
+			runs: [{ id: "run-1", status: "running", prUrl: "https://github.com/o/r/pull/1", targetSha: "sha1" }],
+			activeReviewers: [{ mode: "tui", reviewId: "review-1", harness: "claude-code", handleId: "" }],
+		}));
+
+		expect(await screen.findByTestId("reviewer-starting-tab")).toHaveTextContent("reviewer starting selected");
+		expect(screen.getByTestId("auxiliary-tab-order-sess-1")).toHaveTextContent("reviewer-starting:review-1");
+	});
+
+	it("keeps the queued reviewer unselected while a shell is on screen", async () => {
+		const worker = workerSession("sess-1");
+		worker.mode = "chat";
+		shellTerminalsState.data = [{ handleId: "sh-q", projectId: "proj-1", sessionId: "sess-1", title: "queued shell", workingDir: "/p", createdAt: "2026-11-08T00:00:00Z" }];
+		const view = render(<SessionView sessionId="sess-1" />);
+		act(() => useUiStore.getState().setActiveShellTerminal("sh-q"));
+		act(() => view.client.setQueryData(["session-reviews", "sess-1"], {
+			reviewerHandleId: "",
+			reviewerHarness: "claude-code",
+			reviews: [{ prUrl: "https://github.com/o/r/pull/1", prNumber: 1, targetSha: "sha1", status: "running" }],
+			runs: [{ id: "run-1", status: "running", prUrl: "https://github.com/o/r/pull/1", targetSha: "sha1" }],
+			activeReviewers: [{ mode: "tui", reviewId: "review-1", harness: "claude-code", handleId: "" }],
+		}));
+
+		expect(await screen.findByTestId("reviewer-starting-tab")).toHaveTextContent("reviewer starting");
+	});
+
+	it("hands off to the real reviewer once the pane is up", async () => {
+		workerSession("sess-1").mode = "chat";
+		const view = render(<SessionView sessionId="sess-1" />);
+		act(() => view.client.setQueryData(["session-reviews", "sess-1"], {
+			reviewerHandleId: "review-sess-1",
+			reviewerHarness: "claude-code",
+			reviews: [{ prUrl: "https://github.com/o/r/pull/1", prNumber: 1, targetSha: "sha1", status: "running" }],
+			runs: [{ id: "run-1", status: "running", prUrl: "https://github.com/o/r/pull/1", targetSha: "sha1" }],
+			activeReviewers: [{ mode: "tui", reviewId: "review-1", harness: "claude-code", handleId: "review-sess-1" }],
+		}));
+
+		await screen.findByTestId("chat-surface");
+		expect(screen.queryByTestId("reviewer-starting-tab")).not.toBeInTheDocument();
 	});
 });

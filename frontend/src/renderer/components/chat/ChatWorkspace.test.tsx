@@ -5670,3 +5670,57 @@ describe("sent message recall", () => {
 		expect(readChatSessionDraft("recall-alpha").composer.text).toBe("");
 	});
 });
+
+describe("ChatWorkspace queued reviewer (starting state)", () => {
+	const reviewerStarting = { reviewId: "rev-start", harness: "claude-code" };
+
+	it("shows the reviewer tab in its starting state and opens it on click", () => {
+		const onOpenReviewerStarting = vi.fn();
+		render(
+			<ChatWorkspace
+				snapshot={idleSnapshot()}
+				session={chatSession}
+				reviewerStarting={reviewerStarting}
+				onOpenReviewerStarting={onOpenReviewerStarting}
+			/>,
+		);
+
+		const startingTab = screen.getByRole("tab", { name: "Reviewer" });
+		expect(startingTab.querySelector(".animate-spin")).toBeInTheDocument();
+		fireEvent.click(startingTab);
+		expect(onOpenReviewerStarting).toHaveBeenCalledTimes(1);
+		// No pane yet: the real reviewer terminal target does not exist.
+		expect(screen.queryByTestId("chat-reviewer-panel")).not.toBeInTheDocument();
+	});
+
+	it("shows the starting panel and hides the conversation while selected", () => {
+		render(
+			<ChatWorkspace
+				snapshot={idleSnapshot()}
+				session={chatSession}
+				reviewerStarting={reviewerStarting}
+				reviewerStartingSelected
+			/>,
+		);
+
+		expect(screen.getByTestId("chat-reviewer-starting-panel")).toBeInTheDocument();
+		expect(screen.getByText("Reviewer is starting…")).toBeInTheDocument();
+		const conversation = screen.getByTestId("chat-conversation-panel");
+		expect(conversation).toHaveAttribute("aria-hidden", "true");
+	});
+
+	it("drops the starting state once the reviewer pane is up", () => {
+		render(
+			<ChatWorkspace
+				snapshot={idleSnapshot()}
+				session={chatSession}
+				reviewerTerminal={{ handleId: "review-1", harness: "claude-code" }}
+				reviewerStarting={reviewerStarting}
+				reviewerStartingSelected
+			/>,
+		);
+
+		expect(screen.queryByTestId("chat-reviewer-starting-panel")).not.toBeInTheDocument();
+		expect(screen.queryByRole("tab", { name: "Reviewer" })?.querySelector(".animate-spin")).not.toBeInTheDocument();
+	});
+});
