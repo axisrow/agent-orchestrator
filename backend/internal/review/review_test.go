@@ -2549,8 +2549,11 @@ func TestTriggerConfigOverrideFinalUpsertFailurePreservesStoredReviewerHandle(t 
 	if !launcher.spawned || !launcher.destroyed || launcher.destroyedHandle != "review-mer-2" {
 		t.Fatalf("replacement reviewer should be cleaned up after upsert failure: %+v", launcher)
 	}
-	if store.review == nil || store.review.ReviewerHandleID != "review-mer-1" || store.review.AgentSessionID != "" {
-		t.Fatalf("stored review row = %+v, want old handle retained with cleared stale native id", store.review)
+	// The fresh-spawn path blanks the stale handle before spawning, and the
+	// final-upsert failure destroyed the replacement pane, so the truthful
+	// stored state is no live handle with the stale native id cleared.
+	if store.review == nil || store.review.ReviewerHandleID != "" || store.review.AgentSessionID != "" {
+		t.Fatalf("stored review row = %+v, want no live handle with cleared stale native id", store.review)
 	}
 }
 
@@ -4092,5 +4095,40 @@ func TestListDoesNotBlockWhileTriggerSpawns(t *testing.T) {
 	close(unblock)
 	if err := <-done; err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestFreshSpawnClearsStaleHandleBeforeLaunch proves the durable row stops
+// advertising a dead pane's handle the moment a fresh spawn starts: a pass
+// that cancelled its reviewer keeps the old handle until this blank, and the
+// reviews snapshot taken during the spawn must show the queued pass
+// (running run, no handle), not a phantom live pane.
+func TestFreshSpawnClearsStaleHandleBeforeLaunch(t *testing.T) {
+	store := &fakeStore{
+		review: &domain.Review{ID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerClaudeCode, ReviewerHandleID: "review-mer-1"},
+		runs: []domain.ReviewRun{{
+			ID: "run-1", SessionID: "mer-1", PRURL: "https://github.com/o/r/pull/1", TargetSHA: "sha1",
+			Harness: domain.ReviewerClaudeCode, Status: domain.ReviewRunCancelled,
+		}},
+	}
+	unblock := make(chan struct{})
+	launcher := &fakeLauncher{handle: "review-mer-1", spawnStarted: make(chan struct{}), unblockSpawn: unblock}
+	eng := newEngineForTest(store, fakeSessions{rec: liveWorker(), ok: true}, prAt("sha2"), fakeProjects{}, launcher)
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := eng.TriggerWithOptions(context.Background(), "mer-1", TriggerOptions{Source: domain.ReviewTriggerManual})
+		done <- err
+	}()
+	<-launcher.spawnStarted
+	if store.review == nil || store.review.ReviewerHandleID != "" {
+		t.Fatalf("handle during spawn = %q, want blank while the pane is down", store.review.ReviewerHandleID)
+	}
+	close(unblock)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if store.review == nil || store.review.ReviewerHandleID != "review-mer-1" {
+		t.Fatalf("handle after spawn = %q, want the live pane handle", store.review.ReviewerHandleID)
 	}
 }

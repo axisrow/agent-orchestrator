@@ -711,7 +711,12 @@ func (e *Engine) TriggerWithOptions(ctx stdctx.Context, workerID domain.SessionI
 			previousStopped = true
 		}
 		launchID := e.newID()
-		reviewRow, err = e.upsertReview(ctx, worker, harness, reviewRow.ReviewerHandleID, launchAgentSessionID, launchID, "", now)
+		// The pane is dead or absent on this fresh-spawn path, so the durable
+		// row must not keep advertising the old handle: a cancelled pass leaves
+		// a stale handle that would make the reviews snapshot present the pass
+		// as a live pane during the whole spawn. Rollback restores
+		// previousHandleID on failure.
+		reviewRow, err = e.upsertReview(ctx, worker, harness, "", launchAgentSessionID, launchID, "", now)
 		if err != nil {
 			return TriggerResult{}, rollbackReplacement(err)
 		}
