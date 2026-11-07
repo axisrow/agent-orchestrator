@@ -36,6 +36,7 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/agentlaunch"
 	"github.com/aoagents/agent-orchestrator/backend/internal/attachmentstore"
 	"github.com/aoagents/agent-orchestrator/backend/internal/autoreview"
+	"github.com/aoagents/agent-orchestrator/backend/internal/pushwatch"
 	"github.com/aoagents/agent-orchestrator/backend/internal/browserruntime"
 	"github.com/aoagents/agent-orchestrator/backend/internal/codexops"
 	"github.com/aoagents/agent-orchestrator/backend/internal/config"
@@ -796,7 +797,8 @@ func Run() error {
 		}()
 		lcStack.LCM.SetUsageFinalizer(usageCollector)
 	}
-	lcStack.scmDone = startSCMObserver(ctx, store, lcStack.LCM, cfg.GitLab, log, scmHTTP)
+	scmKick := &scmPollKick{}
+	lcStack.scmDone = startSCMObserver(ctx, store, lcStack.LCM, cfg.GitLab, log, scmHTTP, scmKick)
 	var prActions prsvc.ActionManager
 	prReader := newMultiSCMProvider(cfg.GitLab, log, scmHTTP)
 	prMerger := newMultiSCMMerger(cfg.GitLab, log, scmHTTP)
@@ -847,6 +849,15 @@ func Run() error {
 	lcStack.automationDone = automationDone
 	autoReview := autoreview.New(store, reviewSvc, autoreview.Config{Logger: log})
 	lcStack.autoReviewDone = autoReview.Start(ctx)
+	// Push-driven auto-review: a worker push observed locally (its
+	// remote-tracking ref landed on the pushed tip) wakes the SCM observer for
+	// fresh provider facts and nudges the auto-review coordinator, which
+	// triggers against the pushed head without waiting for the observer's poll
+	// cycle. The sweep stays the fallback for pushes from outside this daemon.
+	pushDetector := pushwatch.New(store, func(ctx context.Context, id domain.SessionID, branch, sha string) {
+		scmKick.request()
+		autoReview.Nudge(id, branch, sha)
+	}, log)
 	// Push-device registry: persisted phones that receive OS push notifications.
 	// A load failure must not block boot — degrade to no push rather than refusing
 	// to start the daemon. pushRegistry (interface) is assigned only when load
@@ -992,6 +1003,7 @@ func Run() error {
 		Orphans:            wiredSessMgr,
 		Installer:          systemInstall,
 		Sessions:           sessionSvc,
+		PushWatch:          pushDetector,
 		Automations:        automationSvc,
 		DesktopWorkspaces:  sessionSvc,
 		PRs:                prActions,

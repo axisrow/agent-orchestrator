@@ -684,6 +684,14 @@ func (s *Service) TriggerAuto(ctx context.Context, workerID domain.SessionID, ha
 	return s.triggerWithOptions(ctx, workerID, reviewcore.TriggerOptions{Harness: harness, Source: domain.ReviewTriggerAuto})
 }
 
+// TriggerAutoPush starts a daemon-initiated review pass for a worker the
+// daemon observed pushing. localHeads maps source branch to the pushed remote
+// tip so the pass plans against the pushed head without waiting for the SCM
+// observer's next poll; the idle gate of the periodic sweep does not apply.
+func (s *Service) TriggerAutoPush(ctx context.Context, workerID domain.SessionID, harness domain.ReviewerHarness, localHeads map[string]string) (reviewcore.TriggerResult, error) {
+	return s.triggerWithOptions(ctx, workerID, reviewcore.TriggerOptions{Harness: harness, Source: domain.ReviewTriggerAuto, PushTriggered: true, LocalHeads: localHeads})
+}
+
 // triggerWithOptions is the single instrumented trigger path. Every entry
 // point routes through it so an automatic pass is never invisible: before
 // this, only the manual Trigger emitted, which made auto-review

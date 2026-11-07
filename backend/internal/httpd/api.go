@@ -36,12 +36,16 @@ type APIDeps struct {
 	Automations       controllers.AutomationService
 	DesktopWorkspaces controllers.DesktopWorkspaceService
 	Activity          controllers.ActivityRecorder
+	// PushWatch reconciles worker branch tips after post-tool-use hooks so a
+	// push becomes an immediate daemon event; nil leaves the activity hook
+	// without push detection.
+	PushWatch         controllers.PushReconciler
 	UsageHooks        controllers.UsageHookRecorder
 	UsageSummary      controllers.UsageSummaryService
 	// UsageHookMetrics surfaces the usage hook-processing counters on /healthz.
 	// Nil keeps the probe payload unchanged. Counters exist so a wholesale hook
 	// outage cannot hide behind WARN spam while the state machine lies (#300).
-	UsageHookMetrics   func() map[string]int64
+	UsageHookMetrics  func() map[string]int64
 	SessionMemory      controllers.SessionMemoryService
 	SessionSteps       controllers.SessionStepsReader
 	PRs                prsvc.ActionManager
@@ -196,6 +200,7 @@ func newAPIWithLogger(cfg config.Config, deps APIDeps, log *slog.Logger) *API {
 			Svc:                      deps.Sessions,
 			Projects:                 deps.Projects,
 			Activity:                 deps.Activity,
+			PushWatch:                deps.PushWatch,
 			DataDir:                  cfg.DataDir,
 			Usage:                    deps.UsageHooks,
 			Attachments:              attachmentstore.New(cfg.DataDir),

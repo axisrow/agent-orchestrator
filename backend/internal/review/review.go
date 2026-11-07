@@ -292,6 +292,17 @@ type TriggerOptions struct {
 	// the worker's branch just before this trigger and found none, so a
 	// no-PR error may say so.
 	BranchPRLookupFoundNone bool
+	// PushTriggered marks an automatic pass the daemon started because its own
+	// worker pushed. The push is itself the freshness proof, so the idle gate
+	// that protects the periodic sweep does not apply: reviewing the pushed
+	// head cannot race unpushed work. The sweep keeps its gate.
+	PushTriggered bool
+	// LocalHeads maps source branch to the locally observed remote tip (a
+	// successful push updates the remote-tracking ref before the provider
+	// fetch lands). Branches listed here plan against that SHA even when the
+	// stored PR row still shows the previous head, so the trigger does not
+	// wait for the SCM observer. Absent branches keep their stored facts.
+	LocalHeads map[string]string
 }
 
 // TriggerWithOptions starts reviews for every PR on the worker session that needs review.
@@ -347,7 +358,13 @@ func (e *Engine) TriggerWithOptions(ctx stdctx.Context, workerID domain.SessionI
 		return TriggerResult{}, fmt.Errorf("%w: worker session %q", ErrNotFound, workerID)
 	}
 	if source == domain.ReviewTriggerAuto {
-		if reason := autoReviewSessionReason(worker, e.clock()); reason != "" {
+		var reason string
+		if opts.PushTriggered {
+			reason = autoReviewPushGate(worker)
+		} else {
+			reason = autoReviewSessionReason(worker, e.clock())
+		}
+		if reason != "" {
 			return TriggerResult{SkipReason: reason}, nil
 		}
 	}
@@ -385,6 +402,7 @@ func (e *Engine) TriggerWithOptions(ctx stdctx.Context, workerID domain.SessionI
 		}
 		prs = only
 	}
+	ApplyLocalHeads(prs, opts.LocalHeads)
 	runs, err := e.store.ListReviewRunsBySession(ctx, workerID)
 	if err != nil {
 		return TriggerResult{}, err
@@ -821,6 +839,39 @@ func autoReviewSessionReason(worker domain.SessionRecord, now time.Time) string 
 	}
 }
 
+// autoReviewPushGate is the auto-review gate for a push-driven pass. The push
+// is itself the freshness proof — the pushed head cannot race unpushed work —
+// so the sweep's idle and idle-threshold checks do not apply. Enabled, kind,
+// and liveness stay enforced; the engine also rejects terminated workers below.
+func autoReviewPushGate(worker domain.SessionRecord) string {
+	switch {
+	case !worker.AutoReviewEnabled:
+		return "disabled"
+	case worker.Kind != domain.KindWorker:
+		return "not_worker"
+	default:
+		return ""
+	}
+}
+
+// ApplyLocalHeads plans open PRs against locally observed remote tips instead
+// of the stored (provider-polled) head, so a push-driven trigger does not wait
+// for the SCM observer. Terminal PRs keep their stored facts. It mutates the
+// slice in place; callers pass their own copies.
+func ApplyLocalHeads(prs []domain.PullRequest, heads map[string]string) {
+	if len(heads) == 0 {
+		return
+	}
+	for i := range prs {
+		if prs[i].Merged || prs[i].Closed {
+			continue
+		}
+		if sha := heads[prs[i].SourceBranch]; sha != "" {
+			prs[i].HeadSHA = sha
+		}
+	}
+}
+
 // maxReviewersPerHead resolves the project's per-head reviewer cap. Without a
 // project record, or when the project cannot be read, the default of one
 // reviewer per head applies: the gate fails closed.
@@ -1008,7 +1059,7 @@ func (e *Engine) SwitchReviewer(
 	if _, err := e.restoreReviewerLocked(ctx, workerID, worker, selected, selectedConfig); err != nil {
 		return SessionReviews{}, err
 	}
-	return e.listLocked(ctx, workerID, selected)
+	return e.listLocked(ctx, workerID, selected, true)
 }
 
 func reviewerPaneReusable(reviewRow domain.Review, hadRunningReviewer bool) bool {
@@ -1641,6 +1692,14 @@ func firstReusableRun(reviews []PRReviewState) domain.ReviewRun {
 }
 
 // List returns a worker's review state: the live reviewer handle and its passes.
+//
+// It never blocks on the per-worker trigger lock. A trigger holds that lock
+// across the reviewer spawn — seconds to tens of seconds — and the UI polls
+// this endpoint the moment the run row lands (review_run_created CDC), so
+// blocking here kept the queued pass invisible until the spawn finished. Under
+// contention List returns the durable snapshot without reconciling exited
+// reviewer panes (that reconciliation mutates runs and probes the launcher, so
+// it only runs under the lock); the next uncontended poll reconciles.
 func (e *Engine) List(ctx stdctx.Context, workerID domain.SessionID) (SessionReviews, error) {
 	if workerID == "" {
 		return SessionReviews{}, fmt.Errorf("%w: worker session id is required", ErrInvalid)
@@ -1648,8 +1707,17 @@ func (e *Engine) List(ctx stdctx.Context, workerID domain.SessionID) (SessionRev
 	if err := e.waitForChatRecovery(ctx); err != nil {
 		return SessionReviews{}, err
 	}
-	unlock := e.lockWorker(workerID)
-	defer unlock()
+	e.triggerMu.Lock()
+	mu, ok := e.triggerLocks[workerID]
+	if !ok {
+		mu = &sync.Mutex{}
+		e.triggerLocks[workerID] = mu
+	}
+	e.triggerMu.Unlock()
+	locked := mu.TryLock()
+	if locked {
+		defer mu.Unlock()
+	}
 
 	worker, ok, err := e.sessions.GetSession(ctx, workerID)
 	if err != nil {
@@ -1662,10 +1730,10 @@ func (e *Engine) List(ctx stdctx.Context, workerID domain.SessionID) (SessionRev
 	if err != nil {
 		return SessionReviews{}, err
 	}
-	return e.listLocked(ctx, workerID, selectedHarness)
+	return e.listLocked(ctx, workerID, selectedHarness, locked)
 }
 
-func (e *Engine) listLocked(ctx stdctx.Context, workerID domain.SessionID, selectedHarness domain.ReviewerHarness) (SessionReviews, error) {
+func (e *Engine) listLocked(ctx stdctx.Context, workerID domain.SessionID, selectedHarness domain.ReviewerHarness, probes bool) (SessionReviews, error) {
 	runs, err := e.store.ListReviewRunsBySession(ctx, workerID)
 	if err != nil {
 		return SessionReviews{}, err
@@ -1683,12 +1751,14 @@ func (e *Engine) listLocked(ctx stdctx.Context, workerID domain.SessionID, selec
 		reviewRow = review
 		reviewerHarness = review.Harness
 	}
-	if changed, err := e.reconcileExitedReviewer(ctx, &reviewRow, runs); err != nil {
-		return SessionReviews{}, err
-	} else if changed {
-		runs, err = e.store.ListReviewRunsBySession(ctx, workerID)
-		if err != nil {
+	if probes {
+		if changed, err := e.reconcileExitedReviewer(ctx, &reviewRow, runs); err != nil {
 			return SessionReviews{}, err
+		} else if changed {
+			runs, err = e.store.ListReviewRunsBySession(ctx, workerID)
+			if err != nil {
+				return SessionReviews{}, err
+			}
 		}
 	}
 	reviewRows, err := e.store.ListReviewsBySession(ctx, workerID)
@@ -1706,12 +1776,14 @@ func (e *Engine) listLocked(ctx stdctx.Context, workerID domain.SessionID, selec
 		}
 		// Other reviewers can be running alongside the selected one; a pane that
 		// died mid-pass must fail its runs the same way the selected one does.
-		if changed, err := e.reconcileExitedReviewer(ctx, &other, runs); err != nil {
-			return SessionReviews{}, err
-		} else if changed {
-			runs, err = e.store.ListReviewRunsBySession(ctx, workerID)
-			if err != nil {
+		if probes {
+			if changed, err := e.reconcileExitedReviewer(ctx, &other, runs); err != nil {
 				return SessionReviews{}, err
+			} else if changed {
+				runs, err = e.store.ListReviewRunsBySession(ctx, workerID)
+				if err != nil {
+					return SessionReviews{}, err
+				}
 			}
 		}
 		if reviewerRowActive(other, runs) {

@@ -218,6 +218,14 @@ type SessionsController struct {
 	// handle; nil leaves `ao send --session <reviewer-handle>` reporting the
 	// plain SESSION_NOT_FOUND.
 	Reviews ReviewerMessageSender
+	// PushWatch reconciles a worker's local/remote branch tips after its tool
+	// calls, so a `git push` becomes an immediate daemon event; nil skips it.
+	PushWatch PushReconciler
+}
+
+// PushReconciler is the push-watch surface the activity hook needs.
+type PushReconciler interface {
+	ReconcileSession(ctx context.Context, id domain.SessionID)
 }
 
 // ReviewerMessageSender is the review-service surface the send route needs.
@@ -2480,6 +2488,17 @@ func (c *SessionsController) activity(w http.ResponseWriter, r *http.Request) {
 			envelope.WriteError(w, r, err)
 			return
 		}
+	}
+	// A worker's post-tool-use hook is the moment its `git push` finished: the
+	// remote-tracking ref is already on disk, so reconciling branch tips now
+	// turns the push into a daemon event within the hook round trip. Detached
+	// and bounded so a slow git read never holds the hook response.
+	if c.PushWatch != nil && sig.Event == "post-tool-use" {
+		watchCtx, cancelWatch := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
+		go func() {
+			defer cancelWatch()
+			c.PushWatch.ReconcileSession(watchCtx, sessionID(r))
+		}()
 	}
 	if c.Usage != nil {
 		usageSignal := usagesvc.HookSignal{

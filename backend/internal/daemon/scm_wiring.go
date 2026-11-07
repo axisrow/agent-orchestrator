@@ -69,8 +69,9 @@ func newSCMHTTPClient(src scmProxySource, logger *slog.Logger) *http.Client {
 // and GitLab providers via a multi Provider dispatcher. Missing credentials
 // for one provider do not prevent the other from starting; the observer is
 // disabled only when no provider has usable credentials. A nil httpClient
-// leaves both providers on their default clients.
-func startSCMObserver(ctx context.Context, store *sqlite.Store, lcm *lifecycle.Manager, gitlabCfg config.GitLabConfig, logger *slog.Logger, httpClient *http.Client) <-chan struct{} {
+// leaves both providers on their default clients. kick, when non-nil, is bound
+// to the running observer so a worker push can wake the poll loop immediately.
+func startSCMObserver(ctx context.Context, store *sqlite.Store, lcm *lifecycle.Manager, gitlabCfg config.GitLabConfig, logger *slog.Logger, httpClient *http.Client, kick *scmPollKick) <-chan struct{} {
 	var named []scmmulti.NamedProvider
 
 	ghProvider, ghErr := newGitHubSCMProvider(logger, httpClient)
@@ -93,7 +94,31 @@ func startSCMObserver(ctx context.Context, store *sqlite.Store, lcm *lifecycle.M
 	}
 	provider := scmmulti.New(named...)
 	observer := scmobserve.New(provider, store, lcm, scmobserve.Config{Logger: logger, ScopedIdentityResolver: provider})
+	if kick != nil {
+		kick.bind(observer)
+	}
 	return observer.Start(ctx)
+}
+
+// scmPollKick hands push events to the SCM observer once it is running.
+// Before then, or without any SCM provider, a kick is dropped and the observer
+// never starts — the push-driven review trigger does not depend on either.
+type scmPollKick struct {
+	observer atomic.Pointer[scmobserve.Observer]
+}
+
+func (k *scmPollKick) bind(o *scmobserve.Observer) {
+	if k != nil {
+		k.observer.Store(o)
+	}
+}
+
+func (k *scmPollKick) request() {
+	if k != nil {
+		if o := k.observer.Load(); o != nil {
+			o.RequestPoll()
+		}
+	}
 }
 
 func newGitHubSCMProvider(logger *slog.Logger, httpClient *http.Client) (*scmgithub.Provider, error) {
