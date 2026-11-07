@@ -269,10 +269,11 @@ fi
 #     транскрипт).
 #     NB: env демона ШИРЕ env GUI по дизайну AO — buildDaemonEnv (frontend/src/
 #     shared/shell-env.ts) подмешивает пробу логин-шелла пользователя, поэтому
-#     переменные профиля (ZAI_API_KEY, ANTHROPIC_* из .zshrc) и GUI-генерированный
-#     AO_APP_RUN_ID там легитимны и при Finder-запуске. Гейт — только на классы
-#     «сессийных» маркеров, которые профиль не экспортирует.
-MARKER_RE='CLAUDE_CODE_|CLAUDECODE=|CLAUDE_PID=|CLAUDE_EFFORT=|CLAUDE_AUTO_RETRY|CHILD_SESSION|AO_SESSION_ID|AO_PERMISSION_MODE|AO_PROJECT_ID|AO_OWNER'
+#     переменные профиля (ZAI_API_KEY, ANTHROPIC_* из .zshrc) легитимны при любом
+#     запуске; AO_APP_RUN_ID и AO_OWNER GUI ставит сам (main.ts:1404, main.ts:1462).
+#     Гейт — только на классы «сессийных» маркеров, которые профиль и апп
+#     сами не выставляют.
+MARKER_RE='CLAUDE_CODE_|CLAUDECODE=|CLAUDE_PID=|CLAUDE_EFFORT=|CLAUDE_AUTO_RETRY|CHILD_SESSION|AO_SESSION_ID|AO_PERMISSION_MODE|AO_PROJECT_ID'
 GUI_PID="$(pgrep -f 'Contents/MacOS/agent-orchestrator' | head -1)"
 ENV_LEAK=""
 for pid in "$NEW_DAEMON_PID" "$GUI_PID"; do
