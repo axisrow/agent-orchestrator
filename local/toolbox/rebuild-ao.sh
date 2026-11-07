@@ -6,7 +6,7 @@
 #
 # Что делает: npm run package → staging в /Applications → codesign → атомарный
 # rm+mv живого бандла → сборка CLI в ~/.local/bin/ao → запуск GUI через
-# launchd (open -a, со стрипом агентского env) → poll ao status → готово.
+# launchd (open -a, env по белому списку) → post-check (rebuild doctor) → готово.
 #
 # Предполагает: запуск из корня репо agent-orchestrator, на нужной ветке.
 # Старые AO-процессы убивает сам (pkill). Данные durable в ~/.ao/data переживают.
@@ -182,24 +182,31 @@ fi
 # 5. Запуск GUI через launchd (open -a), а не прямым exec бинаря: прямой exec
 #    обходил LaunchServices, поэтому launchctl setenv-инжекции (например
 #    AO_RIGHT_PANEL=expanded) до аппа не доезжали — правая панель переставала
-#    открываться после каждой пересборки. Компромисс: env аппа теперь задаёт
-#    launchd, а не env -i. Это же закрывает старую проблему агента структурно:
-#    https_proxy и прочее окружение claude-сессии не наследуется GUI в принципе
-#    (демон наследует env GUI; с агентским https_proxy его стартовые сетевые
-#    вызовы уходили в локальный прокси и вешали старт до открытия порта —
-#    2026-10-14). env -u ниже — страховка: стрип известных AO/claude-переменных
-#    воркера на случай путей, где env всё же протекает (проверено живьём
-#    2026-10-31: AO_RIGHT_PANEL доезжает, CHILD_SESSION не протекает).
+#    открываться после каждой пересборки (PR #206 форка, 2026-11-01).
+#
+#    Env GUI — ТОЛЬКО белый список ниже. open форвардит env вызывавшего
+#    процесса в запускаемый GUI (проверено 2026-11-07: апп, запущенный из
+#    claude-сессии, получил ~25 агентских маркеров, включая ANTHROPIC_* с
+#    кредами), а демон наследует env GUI и раздаёт его воркерам. Поэтому ни
+#    «запуск из чистого терминала», ни blacklist env -u не закрывают класс:
+#    Claude Code ставит CLAUDE_CODE_CHILD_SESSION=1 каждой своей команде
+#    (code.claude.com/docs/en/env-vars), список маркеров растёт — а протёкший
+#    маркер заставляет воркер-claude считать себя вложенной сессией и НЕ
+#    ПИСАТЬ ТРАНСКРИПТ (anthropics/claude-code#73294). env -i не ломает
+#    launchctl setenv-инжекции: их домен добавляет сам launchd, мимо форварда.
+#
+#    AO_RIGHT_PANEL передаётся явно: в launchctl getenv его сейчас нет,
+#    панель доезжала только через форвард env вызывающего.
 #    Gatekeeper/provenance больше не обходится — бандл переподписан в staging
 #    выше, карантин-атрибут на локальной сборке не ставится.
-echo "==> запуск GUI через launchd (open -a, стрип агентского env)..."
-env -u AO_OWNER -u AO_APP_RUN_ID -u AO_WAKE_HELPER -u AO_ACP_RUNTIME_DIR \
-    -u AO_TMUX_BINARY -u AO_TMUX_SOCKET_NAME -u AO_BROWSER_RUNTIME_ADDRESS \
-    -u AO_SESSION_ID -u AO_PERMISSION_MODE -u AO_PROJECT_ID \
-    -u AO_BROWSER_RUNTIME_TOKEN_STDIN -u AO_DATA_DIR -u AO_RUN_FILE \
-    -u AO_BROWSER_CAPABILITY -u AO_BROWSER_RUNTIME_TOKEN \
-    -u AO_SUPERVISED_PROCESS -u AO_ISSUE_ID -u AO_RUNTIME_LAUNCH_ID \
-    -u CHILD_SESSION -u CLAUDE_CODE_CHILD_SESSION open -a "$APP_DST"
+echo "==> запуск GUI через launchd (open -a, чистый env по белому списку)..."
+env -i HOME="$HOME" \
+    USER="$(id -un)" LOGNAME="$(id -un)" \
+    TMPDIR="${TMPDIR:-/tmp}" \
+    SHELL="${SHELL:-/bin/zsh}" \
+    PATH="/Users/axisrow/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
+    AO_RIGHT_PANEL="${AO_RIGHT_PANEL:-expanded}" \
+    open -a "$APP_DST"
 
 # 6. Post-check: ждём демон ready +全套 проверок (PID сменился, порт тот же, healthz).
 echo "==> жду демон ready (до 30с)..."
@@ -254,6 +261,27 @@ if [ -n "$SANITY_NEEDLE" ]; then
   else
     echo "   [FAIL] sanity: «$SANITY_NEEDLE» НЕ найден — ditto принёс устаревшую сборку"; FAIL=1
   fi
+fi
+
+# 6f. Env GUI и демона без агентских маркеров (следствие whitelist-запуска, шаг 5).
+#     open форвардит env вызывавшего в GUI, демон наследует env GUI и раздаёт
+#     его воркерам: маркер здесь = утечка env claude-сессии в апп
+#     (anthropics/claude-code#73294: воркер-claude с протёкшим маркером не
+#     пишет транскрипт). Детектор — на классы маркеров, не поимённо.
+MARKER_RE='CLAUDE_CODE_|CLAUDECODE=|CLAUDE_PID=|CLAUDE_EFFORT=|CLAUDE_AUTO_RETRY|ANTHROPIC_|ZAI_|CHILD_SESSION|AO_SESSION_ID|AO_APP_RUN_ID'
+GUI_PID="$(pgrep -f 'Contents/MacOS/agent-orchestrator' | head -1)"
+ENV_LEAK=""
+for pid in "$NEW_DAEMON_PID" "$GUI_PID"; do
+  [ -n "$pid" ] || continue
+  found="$(ps eww -p "$pid" -o command= 2>/dev/null | grep -oE "$MARKER_RE" | sort -u | tr '\n' ' ')"
+  [ -n "$found" ] && ENV_LEAK="$ENV_LEAK PID $pid: $found;"
+done
+if [ -n "$ENV_LEAK" ]; then
+  echo "   [FAIL] агентские маркеры в env GUI/демона:$ENV_LEAK"; FAIL=1
+elif [ -n "$GUI_PID" ]; then
+  echo "   [OK]   агентских маркеров в env GUI ($GUI_PID) и демона ($NEW_DAEMON_PID) нет"
+else
+  echo "   [WARN] GUI-процесс не найден — env-чек пропущен"
 fi
 
 echo "==> ========================================"
