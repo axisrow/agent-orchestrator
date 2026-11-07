@@ -1,6 +1,5 @@
 import { authHeaders, httpBase, normalizeServerHost, type ServerConfig } from "./config";
 import { cachedInstallId, getInstallId } from "./installId";
-import { captureMobileApiError, httpCategory } from "./sentry";
 import { UnreachableError } from "./connectionError";
 import type { AttentionLevel } from "./theme";
 
@@ -423,10 +422,8 @@ async function req(cfg: ServerConfig, path: string, init?: RequestInit, timeoutM
 			// error envelope stalls. Never turn a 401 into a retryable timeout.
 		} else if ((e as { name?: string })?.name === "AbortError") {
 			// Timed out reaching the host (commonly a sleeping Tailscale peer).
-			captureMobileApiError(path, "timeout");
 			throw new UnreachableError("timeout", { cause: e });
 		} else {
-			captureMobileApiError(path, "offline");
 			throw new UnreachableError("offline", { cause: e });
 		}
 	} finally {
@@ -448,9 +445,8 @@ async function req(cfg: ServerConfig, path: string, init?: RequestInit, timeoutM
 		} catch {
 			/* ignore */
 		}
-		// Server answered with an error: classify by status + daemon code, and tag
-		// the requestId so a mobile event pivots to the daemon's own capture.
-		captureMobileApiError(path, httpCategory(res.status), res.status, code, requestId);
+		// Server answered with an error: the ApiError carries status, daemon code
+		// and requestId for the caller to classify.
 		throw new ApiError(
 			res.status,
 			`${res.status} ${res.statusText}${detail ? ` - ${detail}` : ""}`,

@@ -4,8 +4,6 @@ import { isLoopbackHostname } from "./loopback";
 import { ORCHESTRATOR_SPAWN_SOURCES } from "./orchestrator-spawn-sources";
 import { DEFAULT_POSTHOG_HOST, DEFAULT_POSTHOG_PROJECT_KEY } from "../../shared/posthog-config";
 import { EDITOR_IDS } from "../../shared/editor-handoff";
-import { captureExceptionToSentry, initSentry } from "./sentry";
-
 const POSTHOG_KEY = import.meta.env.VITE_AO_POSTHOG_KEY?.trim() || DEFAULT_POSTHOG_PROJECT_KEY;
 const POSTHOG_HOST = import.meta.env.VITE_AO_POSTHOG_HOST?.trim() || DEFAULT_POSTHOG_HOST;
 const RELEASE_TAG = "2026-01-30";
@@ -84,8 +82,8 @@ export type DailyActiveHeartbeatOptions = {
 
 /**
  * Release channel. The updater that let a user opt into a channel is gone from
- * the fork; the field stays so event schemas and the Sentry release tag keep
- * their shape. Everything reports "unknown".
+ * the fork; the field stays so event schemas keep their shape. Everything
+ * reports "unknown".
  */
 export type ReleaseChannel = "stable" | "nightly" | "feature" | "unknown";
 
@@ -883,14 +881,6 @@ export async function initTelemetry(): Promise<boolean> {
 			...telemetryContext,
 			surface: "renderer",
 		});
-		// Typed renderer fault intake has its own main-owned policy gate. PostHog
-		// product analytics are intentionally independent of that preference.
-		void initSentry({
-			release: bootstrap.appVersion,
-			channel: "unknown",
-			platform: bootstrap.platform,
-			distinctId: bootstrap.distinctId,
-		});
 		bindErrorHandlers();
 		startDailyActiveHeartbeat({
 			storage: telemetryStorage(),
@@ -968,14 +958,6 @@ export async function captureRendererException(error: unknown, properties?: Reco
 	if (!(await initTelemetry())) return;
 	const safeProperties = withTelemetryContext(await sanitizeRendererExceptionProperties(error, properties));
 	posthog.captureException(normalizeException(error), safeProperties);
-	// Mirror into Sentry (no-op unless a DSN is configured). Source drives the
-	// category so a boundary crash classifies as render_crash.
-	const source = typeof properties?.source === "string" ? properties.source : undefined;
-	captureExceptionToSentry(normalizeException(error), {
-		category: source === "react-error-boundary" ? "render_crash" : undefined,
-		operation: typeof properties?.operation === "string" ? properties.operation : undefined,
-		unhandled: properties?.unhandled === true,
-	});
 }
 
 export async function addRendererExceptionStep(message: string, properties?: Record<string, unknown>): Promise<void> {

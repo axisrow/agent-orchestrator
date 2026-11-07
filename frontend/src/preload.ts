@@ -41,7 +41,6 @@ import {
 	TELEMETRY_CLEAR_RENDERER_QUEUES_CHANNEL,
 	TELEMETRY_POLICY_CHANGED_CHANNEL,
 	TELEMETRY_RENDERER_QUEUES_CLEARED_CHANNEL,
-	type RendererTelemetryCaptureInput,
 	type RendererTelemetryQueuePurgeRequest,
 	type TelemetryPolicyView,
 } from "./shared/telemetry-policy";
@@ -419,10 +418,6 @@ const api = {
 		setEventsEnabled: (eventsEnabled: boolean) => ipcRenderer.invoke("telemetry:setEventsEnabled", { eventsEnabled, expectedGeneration: currentTelemetryPolicy?.consentGeneration ?? "" }) as Promise<TelemetryPolicyView>,
 		onPolicy: (listener: (view: TelemetryPolicyView) => void) => { telemetryPolicyListeners.add(listener); if (currentTelemetryPolicy) listener(currentTelemetryPolicy); return () => telemetryPolicyListeners.delete(listener); },
 		onClearQueues: (listener: () => void | Promise<void>) => { rendererQueuePurgeListeners.add(listener); return () => rendererQueuePurgeListeners.delete(listener); },
-		capture: (input: RendererTelemetryCaptureInput) => {
-			if (!currentTelemetryPolicy) return Promise.resolve(false);
-			return ipcRenderer.invoke("telemetry:capture", { ...input, consentGeneration: currentTelemetryPolicy.consentGeneration }) as Promise<boolean>;
-		},
 		signalAgentSwitchVisibility: (signal: AgentSwitchVisibilitySignalBody) => {
 			if (!currentTelemetryPolicy) return false;
 			ipcRenderer.send(AGENT_SWITCH_VISIBILITY_IPC_CHANNEL, { consentGeneration: currentTelemetryPolicy.consentGeneration, signal });

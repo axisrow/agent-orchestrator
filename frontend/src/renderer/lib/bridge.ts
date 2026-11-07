@@ -122,7 +122,6 @@ export const aoBridge: AoBridge =
 			setEventsEnabled: async () => ({ eventsEnabled: false, consentGeneration: "preview", updatedAt: new Date(0).toISOString(), acknowledged: false, consentRenewalRequired: false, state: "applied", environmentVeto: true, durabilitySupported: false, reason: "environment_veto" }),
 			onPolicy: () => () => false,
 			onClearQueues: () => () => false,
-			capture: async () => false,
 			signalAgentSwitchVisibility: () => false,
 		},
 		browser: {

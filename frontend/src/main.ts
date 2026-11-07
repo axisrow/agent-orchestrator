@@ -22,7 +22,6 @@ import {
 	type WebContents,
 	type OpenDialogOptions,
 } from "electron";
-import { initMainSentry, sanitizeRendererCapture } from "./main/sentry-main";
 import { TelemetryPolicyAuthority, resolveDesktopDataDir } from "./main/telemetry-policy-file";
 import { DaemonTelemetryPolicyClient } from "./main/daemon-telemetry-policy-client";
 import { DesktopTelemetryController } from "./main/desktop-telemetry-controller";
@@ -137,14 +136,12 @@ import { installCloudLocalAuthIPC } from "./main/cloud-auth-local";
 import { createCloudAgentProxy } from "./main/cloud-agent-proxy";
 import { installCloudCpProxy } from "./main/cloud-cp-proxy";
 import { DEFAULT_POSTHOG_HOST, DEFAULT_POSTHOG_PROJECT_KEY } from "./shared/posthog-config";
-import { DEFAULT_SENTRY_DSN } from "./shared/sentry-config";
 import { buildTelemetryBootstrap, rendererTelemetryEnabled } from "./shared/telemetry";
 import {
 	TELEMETRY_CLEAR_RENDERER_QUEUES_CHANNEL,
 	TELEMETRY_POLICY_CHANGED_CHANNEL,
 	TELEMETRY_RENDERER_QUEUES_CLEARED_CHANNEL,
 	telemetryPolicyRetryable,
-	type RendererTelemetryCapture,
 	type TelemetryPolicyView,
 } from "./shared/telemetry-policy";
 import {
@@ -1287,11 +1284,6 @@ function telemetryOverrides(): Record<string, string> {
 		AO_TELEMETRY_REMOTE: process.env.AO_TELEMETRY_REMOTE ?? (isDev ? "off" : "posthog"),
 		AO_TELEMETRY_POSTHOG_KEY: process.env.AO_TELEMETRY_POSTHOG_KEY ?? DEFAULT_POSTHOG_PROJECT_KEY,
 		AO_TELEMETRY_POSTHOG_HOST: process.env.AO_TELEMETRY_POSTHOG_HOST ?? DEFAULT_POSTHOG_HOST,
-		// Daemon-side Sentry (5xx + panics with Go stacks). Stamped on the daemon
-		// env so the spawned daemon inherits the DSN; off in dev to match the
-		// PostHog remote gate, and an explicit env always wins. A blank value
-		// leaves the daemon's Sentry a no-op.
-		AO_SENTRY_DSN: process.env.AO_SENTRY_DSN ?? (isDev ? "" : DEFAULT_SENTRY_DSN),
 		// The daemon binary has no version of its own that release tooling sets,
 		// so without this every daemon event lands unattributable to a release.
 		AO_TELEMETRY_APP_VERSION: process.env.AO_TELEMETRY_APP_VERSION ?? app.getVersion(),
@@ -2810,11 +2802,6 @@ ipcMain.on(TELEMETRY_RENDERER_QUEUES_CLEARED_CHANNEL, (event, input: unknown) =>
 	if (!pending || pending.senderId !== event.sender.id) return;
 	finishRendererQueuePurge(result.requestId, result.ok ? undefined : new Error("renderer telemetry queue purge failed"));
 });
-ipcMain.handle("telemetry:capture", (_event, request: RendererTelemetryCapture) => {
-	const sanitized = sanitizeRendererCapture(request);
-	if (!telemetryPolicyController || !sanitized) return false;
-	return telemetryPolicyController.capture(sanitized);
-});
 ipcMain.on(AGENT_SWITCH_VISIBILITY_IPC_CHANNEL, (event, request: unknown) => {
 	const trustedSender = trustedShellWebContents.get(event.sender.id);
 	if (trustedSender !== event.sender || trustedSender.isDestroyed()) return;
@@ -3389,7 +3376,9 @@ app.whenReady().then(async () => {
 		authority,
 		daemon: daemonPolicy,
 		environmentAllowsEvents: rendererTelemetryEnabled(process.env, app.isPackaged),
-		transportFactory: () => initMainSentry(app.getVersion(), app.getPath("userData")),
+		// The desktop error transport is gone with Sentry; the policy controller
+		// keeps the seam for consent/purge bookkeeping but nothing ever captures.
+		transportFactory: () => Promise.resolve(null),
 		visibility: agentSwitchVisibilityController,
 		clearRendererQueues: clearRendererTelemetryQueues,
 		broadcast: (view) => {

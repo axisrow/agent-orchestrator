@@ -231,7 +231,6 @@ if (typeof window !== "undefined") {
 			setEventsEnabled: async () => ({ eventsEnabled: false, consentGeneration: "test", updatedAt: new Date(0).toISOString(), acknowledged: false, consentRenewalRequired: false, state: "applied", environmentVeto: true, durabilitySupported: false }),
 			onPolicy: () => () => false,
 			onClearQueues: () => () => false,
-			capture: async () => false,
 			signalAgentSwitchVisibility: () => false,
 		},
 		browser: {

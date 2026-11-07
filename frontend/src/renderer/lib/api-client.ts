@@ -3,7 +3,6 @@ import type { components, paths } from "../../api/schema";
 import type { DaemonStatus } from "../../shared/daemon-status";
 import { daemonFailureMessage } from "./daemon-failure";
 import { captureRendererEvent } from "./telemetry";
-import { captureApiErrorToSentry } from "./sentry";
 
 function devApiBaseUrl(): string {
 	return typeof window === "undefined" ? "http://127.0.0.1:3001" : window.location.origin;
@@ -255,13 +254,11 @@ function reportApiError(
 	operation: string,
 	category: ApiErrorCategory,
 	status?: number,
-	code?: string,
-	requestId?: string,
 	reportingOwner?: ReportingOwner,
 ): void {
-	// Treat an omitted owner as HTTP-owned for dedupe purposes. Saga-owned
+	// Treat an omitted owner as HTTP-owned for dedupe purposes: saga-owned
 	// responses need their own bucket so suppressing one cannot hide a later
-	// generic HTTP failure from Sentry.
+	// generic HTTP failure.
 	const ownerBucket = reportingOwner === "agent_switch_saga" ? "agent_switch_saga" : "http";
 	const key = `${operation}|${category}|${status ?? ""}|${ownerBucket}`;
 	const now = Date.now();
@@ -273,13 +270,6 @@ function reportApiError(
 		error_category: category,
 		status,
 	});
-	// Mirror into Sentry (no-op unless a DSN is configured). The daemon `code`
-	// is what drives the fine-grained severity/owner classification; `requestId`
-	// (when present) is tagged so a client event pivots to the daemon's own
-	// capture of the same request, which carries the matching request_id.
-	if (reportingOwner !== "agent_switch_saga") {
-		captureApiErrorToSentry(operation, category, status, code, requestId);
-	}
 }
 
 async function runtimeFetch(input: Request): Promise<Response> {
@@ -340,12 +330,10 @@ async function runtimeFetch(input: Request): Promise<Response> {
 		// Best-effort read the daemon error envelope's `code` (via a clone so the
 		// caller still gets an unconsumed body) to drive classification.
 		let code: string | undefined;
-		let requestId: string | undefined;
 		let reportingOwner: ReportingOwner | undefined;
 		try {
 			const body = (await response.clone().json()) as Partial<components["schemas"]["APIError"]>;
 			if (typeof body?.code === "string" && body.code !== "") code = body.code;
-			if (typeof body?.requestId === "string" && body.requestId !== "") requestId = body.requestId;
 			if (body?.reporting_owner === "http" || body?.reporting_owner === "agent_switch_saga") {
 				reportingOwner = body.reporting_owner;
 			}
@@ -356,8 +344,6 @@ async function runtimeFetch(input: Request): Promise<Response> {
 			operation,
 			response.status >= 500 ? "http_5xx" : "http_4xx",
 			response.status,
-			code,
-			requestId,
 			reportingOwner,
 		);
 	}

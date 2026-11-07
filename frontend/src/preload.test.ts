@@ -77,15 +77,6 @@ describe("preload repository branch bridge", () => {
 });
 
 describe("preload telemetry generation bridge", () => {
-	it("tags captures with the latest broadcast generation without a renderer reload", async () => {
-		telemetryPolicyBroadcastListener?.({}, { eventsEnabled: false, consentGeneration: "generation-off", updatedAt: "2026-08-28T10:15:30.000Z", acknowledged: true, state: "applied", environmentVeto: false, durabilitySupported: true });
-		await exposedBridge().telemetry.capture({ kind: "message", message: "first" });
-		telemetryPolicyBroadcastListener?.({}, { eventsEnabled: true, consentGeneration: "generation-on", updatedAt: "2026-08-28T10:15:31.000Z", acknowledged: true, state: "applied", environmentVeto: false, durabilitySupported: true });
-		await exposedBridge().telemetry.capture({ kind: "message", message: "second" });
-		expect(electronMocks.invoke).toHaveBeenNthCalledWith(1, "telemetry:capture", { kind: "message", message: "first", consentGeneration: "generation-off" });
-		expect(electronMocks.invoke).toHaveBeenNthCalledWith(2, "telemetry:capture", { kind: "message", message: "second", consentGeneration: "generation-on" });
-	});
-
 	it("attaches the latest policy generation to visibility signals without accepting renderer generation", () => {
 		telemetryPolicyBroadcastListener?.({}, { eventsEnabled: true, consentGeneration: "generation-a", updatedAt: "2026-08-28T10:15:30.000Z", acknowledged: true, state: "applied", environmentVeto: false, durabilitySupported: true });
 		expect(exposedBridge().telemetry.signalAgentSwitchVisibility({ kind: "focus", value: true })).toBe(true);

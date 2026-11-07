@@ -30,7 +30,6 @@ vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ t
 vi.mock("@react-native-async-storage/async-storage", () => ({ default: {} }));
 vi.mock("expo-secure-store", () => ({}));
 vi.mock("./installId", () => ({}));
-vi.mock("./sentry", () => ({}));
 vi.mock("./store", () => ({ useApp: () => ({ ...fixture, activeProjectId: "all", refreshAll: vi.fn() }) }));
 vi.mock("./ThemeProvider", () => ({ useTheme: () => fixture.theme, useThemedStyles: (factory: (theme: object) => object) => factory(fixture.theme) }));
 vi.mock("./icons", () => ({ Feather: "Feather" }));
