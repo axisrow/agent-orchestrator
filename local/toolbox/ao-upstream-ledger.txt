@@ -446,14 +446,14 @@ f3ef2fc5b8377bb9bcee835b91d62b8d74e33053 taken fix(browser): stop Browser openin
 628fe11f24a3c739c278ec33e5d2e5c5621ad6c6 skipped feat(desktop): sign in through orchestrator.inc and link the website visit (#7656)
 f13071273264e7fe3670f17cc283874e41614ec6 skipped fix(sidebar): close the session preview when the archive confirm opens (#7829) — фикс про hover-preview + archive-confirm, оба выпилены в форке (#165 kanban/preview, #185 archive-immediately)
 d42110f6527cb42bb012c77c6fc02b91c4a0f712 taken fix(pty-host): answer DA1 queries so fish starts without a 2 s stall (#7864) — свод: только DA1-часть, fg-машинерия опущена (её приносит скипнутый feat #7787)
-eed7877e2d68980888613311c4ada91ee4c66318 skipped fix: close Sentry blind spots in the daemon and desktop app (#7682) — конфликтует с 42 файлов: пик стоит на промежуточных скипнутых апстрим-коммитах (telemetry/sentry/mobile); сводить позже вручную вместе с владельцем
+eed7877e2d68980888613311c4ada91ee4c66318 skipped fix: close Sentry blind spots in the daemon and desktop app (#7682) — СКИП НАВСЕГДА (решение владельца 2026-11-07: Sentry выпилен из форка целиком); ранее: конфликт 42 файлов, пик на промежуточных скипнутых апстрим-коммитах
 86b04b2a6216e2f192cd44aa1220e4ac9b036190 skipped Split panes (#7791)
 50a62fbdeb85018df82fdc845aae54c704b1fcb9 skipped fix(topbar): open the worktree in the file manager when no editor is set (#7880) — фикс машинерии editor-handoff из скипнутого фита #6927 (ChatPathMenu/OpenTargetIcon отсутствуют в форке)
 e1c62f2493061a0f26025c5bfe0874aa71451293 skipped feat(desktop): right-click menu for center tab strip tabs (#7877)
 d0f204f125f72a3152a5ce7716dd83e762b3e0c4 skipped feat(settings): pick the default shell for new terminals (#7874)
 43b9e8b02b0965b4ce2b85ee34d52fe225053b3a skipped fix(desktop): title a Cloud session whose sandbox stopped responding (#7852) — облачный control-plane (политика Cloud→self-hosted); пик стоит на непринятом апстрим-хвосте i18n
 93cdaa0dd190a916fd96968553941162ed7ef3fb skipped fix(desktop): every Cloud model picker uses Cloud's own model list (#7815) — облачный control-plane (Cloud→self-hosted); пик стоит на +5401 строках непринятого апстрим-хвоста (cloud contracts/schema)
-c7f0f45677110557537d9f4845117e723fd53229 skipped fix: bound Sentry capture and exclude expected provider states (#7878) — форк удалил значимую часть sentry-машинерии (DU background.go/chat+sentry/session_manager+sentry/auto-updater/main-error-capture); пик стоит на непринятом апстрим-хвосте
+c7f0f45677110557537d9f4845117e723fd53229 skipped fix: bound Sentry capture and exclude expected provider states (#7878) — СКИП НАВСЕГДА (решение владельца 2026-11-07: Sentry выпилен из форка целиком); ранее: форк удалил значимую часть sentry-машинерии, пик на непринятом апстрим-хвосте
 77e8d8fbb8257f153fc457be3fa83fb8d6f9f04d skipped chore(mobile): native toolchain, config plugins and assets (native overhaul 1/4) (#7836)
 b96659423ccb2900ad59e13f8c2780dd44ea3f4d skipped feat(mobile): add the native UI building blocks (native overhaul 2/4) (#7837)
 d3cbb4692ac67b861e550c0adc46a6bbbe80186a skipped feat(mobile): rebuild Settings, Machines, terminal, Files and preview natively (native overhaul 3/4) (#7838)

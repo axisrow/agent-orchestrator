@@ -150,8 +150,7 @@ that waitlist as described in the [privacy policy](https://orchestrator.inc/priv
 - Event rates are limited to reduce repeated background activity and error
   loops.
 - Remote HTTP 5xx events are not sampled. The minute rollup and the daily
-  rate limit bound them, and real HTTP 500 responses also go to the existing
-  gated Sentry capture once. The local diagnostic stream keeps every
+  rate limit bound them. The local diagnostic stream keeps every
   occurrence. CLI usage errors are one event per command path and error kind
   per install per completed UTC day, with `command_path`, `error_kind`, and
   `count`. At most 20 of those events are sent per day. The minute rate limit
@@ -210,8 +209,13 @@ disk space for the rewrite.
 Orchestrator.inc contains a separate, consent-gated reliability path for asynchronous
 agent-switch failures. It is intentionally failure-only: a successful switch,
 an expected validation rejection, an idempotent replay, a stale callback, or a
-transient condition that is proven recovered creates no failure receipt, no
-outbox payload, and no Sentry event.
+transient condition that is proven recovered creates no failure receipt and no
+outbox payload.
+
+Fork note: this fork removed the remote processor (Sentry) entirely — the
+daemon no longer initializes any error-reporting SDK and the delivery sender
+is deleted. The local outbox, consent and receipt machinery below remains for
+the staged durability contract, but nothing is delivered off-device.
 
 When enabled in a future release, an eligible failure event is limited to a
 closed set of operational fields. It includes:
@@ -266,17 +270,9 @@ The required opt-out sequence is:
 Only then may the UI acknowledge the change. If the daemon is unavailable or
 any cleanup cannot be proven, the UI reports `cleanup_pending` rather than
 claiming completion. Payload-free receipts remain solely to prevent a later
-duplicate enrollment. A provider may already have accepted a request that was
-in flight before cancellation. Orchestrator.inc cannot recall data already received by the
-provider.
+duplicate enrollment.
 
-This path uses Sentry as the intended processor. Like any remote endpoint,
-Sentry receives connection metadata such as the source IP address even though
-Orchestrator.inc does not place an IP address in the event body. The Sentry organization's IP
-storage/scrubbing setting, data residency, retention, and automatic-context
-settings have not yet received the required dated privacy approval. The
-production feature flag therefore remains disabled and Orchestrator.inc does not initialize
-this agent-switch Sentry sender in production. Windows fails closed: event
+Windows fails closed: event
 consent is treated as disabled and an enable acknowledgement is rejected until
 a tested native write-through replacement satisfies the policy-file durability
 contract.
