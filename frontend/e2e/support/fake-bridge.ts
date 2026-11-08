@@ -149,7 +149,6 @@ export async function installFakeBridge(page: Page, opts: FakeBridgeOptions = {}
 					setEventsEnabled: async () => ({ eventsEnabled: false, consentGeneration: "e2e", updatedAt: new Date(0).toISOString(), acknowledged: false, consentRenewalRequired: false, state: "applied", environmentVeto: true, durabilitySupported: false, reason: "environment_veto" }),
 					onPolicy: () => () => false,
 					onClearQueues: () => () => false,
-					capture: async () => false,
 					signalAgentSwitchVisibility: () => false,
 				},
 				browser: {
@@ -991,7 +990,6 @@ export async function installFakeAgent(page: Page, opts: FakeAgentOptions = {}):
 					setEventsEnabled: async () => ({ eventsEnabled: false, consentGeneration: "e2e", updatedAt: new Date(0).toISOString(), acknowledged: false, consentRenewalRequired: false, state: "applied", environmentVeto: true, durabilitySupported: false, reason: "environment_veto" }),
 					onPolicy: () => () => false,
 					onClearQueues: () => () => false,
-					capture: async () => false,
 					signalAgentSwitchVisibility: () => false,
 				},
 				browser: {

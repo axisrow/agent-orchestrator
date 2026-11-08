@@ -75,7 +75,7 @@ test("a repeatedly failing readiness pipeline shows an explicit error state with
 	await expect(failingCard.getByText(/Next retry in \d+s/).first()).toBeVisible();
 	await expect(failingCard.getByText("Checking merge readiness")).toHaveCount(0);
 
-	await inspector.screenshot({ path: "test-results/pr-readiness-check-failure.png", fullPage: true });
+	await inspector.screenshot({ path: "test-results/pr-readiness-check-failure.png" });
 });
 
 test("the healthy mergeable card stays free of readiness-check errors @P0", async ({ page }) => {

@@ -4803,5 +4803,8 @@
 	"settings.gateway.applyAppliedToast_two": "Provider applied to {{count}} sessions",
 	"settings.gateway.applyAppliedToast_few": "Provider applied to {{count}} sessions",
 	"settings.gateway.applyAppliedToast_many": "Provider applied to {{count}} sessions",
-	"settings.gateway.applyAppliedToast_zero": "Provider applied to {{count}} sessions"
+	"settings.gateway.applyAppliedToast_zero": "Provider applied to {{count}} sessions",
+	"pr.card.checkFailed": "Readiness check failed",
+	"pr.merge.checkFailed": "Readiness check failed",
+	"pr.merge.checkRetryIn": "Next retry in {{seconds}}s"
 }
