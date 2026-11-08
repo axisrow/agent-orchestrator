@@ -16,8 +16,16 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/config"
 	"github.com/aoagents/agent-orchestrator/backend/internal/lifecycle"
 	scmobserve "github.com/aoagents/agent-orchestrator/backend/internal/observe/scm"
+	sessionsvc "github.com/aoagents/agent-orchestrator/backend/internal/service/session"
 	"github.com/aoagents/agent-orchestrator/backend/internal/storage/sqlite"
 )
+
+// readinessFailuresBinder late-binds the SCM observer's readiness-failure
+// tracker into the session service. *sessionsvc.Service satisfies it
+// structurally — same pattern as scmProxySource.
+type readinessFailuresBinder interface {
+	SetReadinessFailures(p sessionsvc.ReadinessFailuresProvider)
+}
 
 // scmHTTPTimeout matches the providers' own default client timeout: an injected
 // *http.Client is taken verbatim, so the wiring owns the deadline.
@@ -71,7 +79,7 @@ func newSCMHTTPClient(src scmProxySource, logger *slog.Logger) *http.Client {
 // disabled only when no provider has usable credentials. A nil httpClient
 // leaves both providers on their default clients. kick, when non-nil, is bound
 // to the running observer so a worker push can wake the poll loop immediately.
-func startSCMObserver(ctx context.Context, store *sqlite.Store, lcm *lifecycle.Manager, gitlabCfg config.GitLabConfig, logger *slog.Logger, httpClient *http.Client, kick *scmPollKick) <-chan struct{} {
+func startSCMObserver(ctx context.Context, store *sqlite.Store, lcm *lifecycle.Manager, gitlabCfg config.GitLabConfig, logger *slog.Logger, httpClient *http.Client, kick *scmPollKick, readiness readinessFailuresBinder) <-chan struct{} {
 	var named []scmmulti.NamedProvider
 
 	ghProvider, ghErr := newGitHubSCMProvider(logger, httpClient)
@@ -96,6 +104,9 @@ func startSCMObserver(ctx context.Context, store *sqlite.Store, lcm *lifecycle.M
 	observer := scmobserve.New(provider, store, lcm, scmobserve.Config{Logger: logger, ScopedIdentityResolver: provider})
 	if kick != nil {
 		kick.bind(observer)
+	}
+	if readiness != nil {
+		readiness.SetReadinessFailures(observer)
 	}
 	return observer.Start(ctx)
 }

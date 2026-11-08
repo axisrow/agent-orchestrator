@@ -330,6 +330,52 @@ describe("prCardPresentation", () => {
 		expect(presentation.readiness?.detail).toBe("Waiting for the latest checks and review state.");
 	});
 
+	it("shows an explicit readiness-check failure with the reason and retry schedule (issue #306)", () => {
+		const presentation = prCardPresentation(
+			summary({
+				ci: { autoInjectCI: true, state: "unknown", failingChecks: [] },
+				mergeability: { state: "unknown", reasons: [], prUrl: "https://github.com/acme/repo/pull/7" },
+				readinessCheck: {
+					attempts: 3,
+					lastError: "context deadline exceeded (Client.Timeout exceeded while awaiting headers)",
+					lastFailedAt: new Date(Date.now() - 30_000).toISOString(),
+					nextRetryAt: new Date(Date.now() + 45_000).toISOString(),
+				},
+			}),
+		);
+
+		expect(presentation.readiness).toMatchObject({
+			label: "Readiness check failed",
+			tone: "error",
+		});
+		expect(presentation.readiness?.detail).toContain("context deadline exceeded");
+		expect(presentation.readiness?.detail).toMatch(/Next retry in (44|45)s/);
+		// The primary chip stops breathing "Checking" once the failure is known.
+		expect(presentation.primary).toMatchObject({ key: "ci", label: "Readiness check failed", tone: "error" });
+		expect(presentation.primary.breathe).toBe(false);
+	});
+
+	it("clamps an overdue retry to zero seconds", () => {
+		const presentation = prCardPresentation(
+			summary({
+				readinessCheck: {
+					attempts: 2,
+					lastError: "connection reset by peer",
+					lastFailedAt: new Date(Date.now() - 120_000).toISOString(),
+					nextRetryAt: new Date(Date.now() - 5_000).toISOString(),
+				},
+			}),
+		);
+
+		expect(presentation.readiness?.detail).toContain("Next retry in 0s");
+	});
+
+	it("keeps the healthy flow free of readiness-check errors", () => {
+		const presentation = prCardPresentation(summary({}));
+		expect(presentation.readiness?.label).toBe("Mergeable");
+		expect(presentation.primary.label).not.toBe("Readiness check failed");
+	});
+
 	it("treats an empty check rollup as terminal no-checks, not an eternal load (issue #170)", () => {
 		const presentation = prCardPresentation(
 			summary({

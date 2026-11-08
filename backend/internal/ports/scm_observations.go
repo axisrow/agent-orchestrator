@@ -47,6 +47,21 @@ type SCMPRRef struct {
 	URL string
 }
 
+// SCMReadinessFailure describes repeated failures of one PR's readiness
+// observation pipeline (commit check-runs guard and PR detail fetch). The SCM
+// observer records these in memory; the session service surfaces them so the PR
+// card can show an explicit error state instead of an endless "Checking".
+type SCMReadinessFailure struct {
+	// Attempts counts failed tries since the last successful refresh.
+	Attempts int
+	// LastError is the most recent failure's error text.
+	LastError string
+	// LastFailedAt is when the most recent failure was recorded.
+	LastFailedAt time.Time
+	// NextRetryAt is when the observer will try this PR's pipeline again.
+	NextRetryAt time.Time
+}
+
 // SCMGuardResult is an ETag-style cache guard result. NotModified maps to HTTP
 // 304 for providers that support it.
 type SCMGuardResult struct {

@@ -190,9 +190,13 @@ export function prCardPresentation(pr: SessionPRSummary, aoReview?: PRReviewStat
 	} else if (pr.review.decision === "review_required") {
 		primary = cardStatus("review", "pr.card.reviewRequired", "review", appI18n.t("pr.card.reviewRequiredDetail"));
 	} else if (pr.ci.state === "pending") {
-		primary = cardStatus("ci", "pr.card.checksPending", "validating", undefined, [], prChecksUrl(pr), true, pr.ciPendingSince ?? undefined);
+		primary = pr.readinessCheck
+			? cardStatus("ci", "pr.card.checkFailed", "error", readinessCheckDetail(pr), [], prChecksUrl(pr))
+			: cardStatus("ci", "pr.card.checksPending", "validating", undefined, [], prChecksUrl(pr), true, pr.ciPendingSince ?? undefined);
 	} else if (pr.ci.state === "unknown") {
-		primary = cardStatus("ci", "pr.card.checksLoading", "passive", undefined, [], prChecksUrl(pr), true);
+		primary = pr.readinessCheck
+			? cardStatus("ci", "pr.card.checkFailed", "error", readinessCheckDetail(pr), [], prChecksUrl(pr))
+			: cardStatus("ci", "pr.card.checksLoading", "passive", undefined, [], prChecksUrl(pr), true);
 	} else if (pr.mergeability.state === "blocked" || pr.mergeability.state === "unstable") {
 		primary = cardStatus(
 			"merge",
@@ -239,7 +243,11 @@ export function prCardPresentation(pr: SessionPRSummary, aoReview?: PRReviewStat
 		} else if (pr.ci.state === "none") {
 			statusRows.push(cardStatus("ci", "pr.card.noChecks", "passive", undefined, [], prChecksUrl(pr)));
 		} else if (pr.ci.state === "pending" || pr.ci.state === "unknown") {
-			statusRows.push(cardStatus("ci", pr.ci.state === "pending" ? "pr.card.checksPending" : "pr.card.checksLoading", pr.ci.state === "pending" ? "validating" : "passive", undefined, [], prChecksUrl(pr), true, pr.ci.state === "pending" ? pr.ciPendingSince ?? undefined : undefined));
+			// A repeatedly failing readiness pipeline replaces the breathing
+			// "Checking" row with the explicit error row (issue #306).
+			statusRows.push(pr.readinessCheck
+				? cardStatus("ci", "pr.card.checkFailed", "error", readinessCheckDetail(pr), [], prChecksUrl(pr))
+				: cardStatus("ci", pr.ci.state === "pending" ? "pr.card.checksPending" : "pr.card.checksLoading", pr.ci.state === "pending" ? "validating" : "passive", undefined, [], prChecksUrl(pr), true, pr.ci.state === "pending" ? pr.ciPendingSince ?? undefined : undefined));
 		}
 		statusRows.push(cardStatus("review", "pr.card.reviewStatus", reviewTone(pr.review.decision, pr.review.hasUnresolvedHumanComments), reviewStatusDetail(pr)));
 		// Independent of the review status above: the GitHub requirement and the
@@ -259,6 +267,17 @@ export function prCardPresentation(pr: SessionPRSummary, aoReview?: PRReviewStat
 				label: appI18n.t("pr.merge.accessLost"),
 				detail: appI18n.t("pr.merge.accessLostDetail"),
 				tone: "warning",
+			} };
+		}
+		// A repeatedly failing readiness pipeline must never read as an endless
+		// silent "Checking" (issue #306): surface the reason and the retry
+		// schedule. The backend only sets readinessCheck past its failure
+		// threshold, so its presence alone is the error state.
+		if (pr.readinessCheck) {
+			return { primary, supporting, statusRows, readiness: {
+				label: appI18n.t("pr.merge.checkFailed"),
+				detail: readinessCheckDetail(pr),
+				tone: "error",
 			} };
 		}
 		const checkingReadiness = pr.ci.state === "pending" || pr.ci.state === "unknown" || pr.mergeability.state === "unknown";
@@ -284,6 +303,7 @@ function cardStatus(
 		| "pr.card.mergeUnavailable"
 		| "pr.card.checksPending"
 		| "pr.card.checksLoading"
+		| "pr.card.checkFailed"
 		| "pr.card.noChecks"
 		| "pr.card.checksUnavailable"
 		| "pr.card.draft"
@@ -304,6 +324,28 @@ function cardStatus(
 	since?: string,
 ): PRCardStatus {
 	return { key, label: appI18n.t(labelKey), detail, href, breathe, since, links, tone, timeUnavailable: labelKey === "pr.card.checksPending" || labelKey === "pr.card.aoReviewRunning" ? appI18n.t("pr.card.timeUnavailable") : undefined };
+}
+
+// readinessCheckDetail composes the explicit error text for a PR whose
+// readiness pipeline keeps failing: the provider failure reason plus the
+// observer's next retry time. The countdown is computed at render time; the
+// 15s summary refetch keeps it fresh enough for a seconds-scale schedule.
+function readinessCheckDetail(pr: SessionPRSummary): string {
+	const check = pr.readinessCheck;
+	if (!check) return "";
+	const reason = (check.lastError ?? "").trim();
+	const seconds = secondsUntil(check.nextRetryAt);
+	if (!reason) {
+		return seconds === undefined ? "" : appI18n.t("pr.merge.checkRetryIn", { seconds });
+	}
+	return seconds === undefined ? reason : `${reason} ${appI18n.t("pr.merge.checkRetryIn", { seconds })}`;
+}
+
+function secondsUntil(iso: string | null | undefined): number | undefined {
+	if (!iso) return undefined;
+	const at = new Date(iso).getTime();
+	if (Number.isNaN(at)) return undefined;
+	return Math.max(0, Math.ceil((at - Date.now()) / 1000));
 }
 
 export function prCanMerge(pr: SessionPRSummary): boolean {
