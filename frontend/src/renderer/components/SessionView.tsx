@@ -834,9 +834,12 @@ export function SessionView({ sessionId, cloudOrgId, projectId, hostId }: Sessio
 		const active = (reviewerQuery.data?.activeReviewers ?? []).find(
 			(surface) => surface.mode !== "chat" && Boolean(surface.reviewId) && !surface.handleId,
 		);
-		return active ? { reviewId: active.reviewId, harness: active.harness || "codex" } : undefined;
+		return active ? { reviewId: active.reviewId, harness: active.harness || "claude-code" } : undefined;
 	}, [reviewerQuery.data, session?.cloud]);
 	const [reviewerStartingSelected, setReviewerStartingSelected] = useState(false);
+	// The queued pass the user explicitly dismissed from; auto-follow does not
+	// re-assert it. A different (newer) pass follows again.
+	const dismissedStartingRef = useRef<string | null>(null);
 
 	// Shell terminals opened inside a session live beside its pane as extra tabs,
 	// scoped to the session on screen so each session has its own shell set.
@@ -897,13 +900,16 @@ export function SessionView({ sessionId, cloudOrgId, projectId, hostId }: Sessio
 	}, [setActiveShellTerminal, setFileTabsBySession, setTerminalTarget, uiSessionId]);
 	// Follow the queued card onto the screen the way the reviewer follow effect
 	// follows the real terminal — but only from the plain session pane, so a
-	// file or shell the user is reading is not yanked away. When the pane lands,
-	// the reviewer follow effect takes over and the queued state drops.
+	// file or shell the user is reading is not yanked away, and never after the
+	// user explicitly chose the chat for this pass. When the pane lands, the
+	// reviewer follow effect takes over and the queued state drops.
 	useEffect(() => {
 		if (!reviewerStarting) {
 			setReviewerStartingSelected(false);
+			dismissedStartingRef.current = null;
 			return;
 		}
+		if (dismissedStartingRef.current === reviewerStarting.reviewId) return;
 		if (!reviewerTerminal && !reviewerChat && terminalTarget.kind === "worker" && !fileTabs.activePath && !activeShellTerminalHandleId) {
 			setReviewerStartingSelected(true);
 		}
@@ -1063,11 +1069,16 @@ export function SessionView({ sessionId, cloudOrgId, projectId, hostId }: Sessio
 		setActiveShellTerminal(null);
 		setTerminalTarget({ kind: "worker" });
 		setReviewerChatId(null);
+		// An explicit chat selection dismisses the queued reviewer card; the
+		// follow effect must not pull it back over the conversation while this
+		// pass is still starting (#302 review).
+		setReviewerStartingSelected(false);
+		dismissedStartingRef.current = reviewerStarting?.reviewId ?? null;
 		setFileTabsBySession((current) => ({
 			...current,
 			[uiSessionId]: activateSessionFile(current[uiSessionId] ?? EMPTY_SESSION_FILE_TABS, null),
 		}));
-	}, [setActiveShellTerminal, uiSessionId]);
+	}, [reviewerStarting, setActiveShellTerminal, uiSessionId]);
 	// "Ask in chat" from a file tab brings the session's Chat surface forward.
 	useEffect(() => subscribeChatReveal(uiSessionId, selectSessionTerminal), [selectSessionTerminal, uiSessionId]);
 	const selectReviewerTerminal = useCallback((target: ReviewerTerminalTarget) => {

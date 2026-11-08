@@ -413,6 +413,11 @@ vi.mock("./chat/SessionChatSurface", async () => {
 					{reviewerStartingSelected ? "reviewer starting selected" : "reviewer starting"}
 				</button>
 			) : null}
+			{onSelectChat ? (
+				<button type="button" onClick={onSelectChat}>
+					return to chat
+				</button>
+			) : null}
 			{reviewerTarget ? (
 				<div data-testid="terminal-target">reviewer</div>
 			) : null}
@@ -6000,5 +6005,59 @@ describe("SessionView queued reviewer card", () => {
 
 		await screen.findByTestId("chat-surface");
 		expect(screen.queryByTestId("reviewer-starting-tab")).not.toBeInTheDocument();
+	});
+});
+
+// Regression (review of #305): clicking the Chat tab while the queued reviewer
+// card is up must actually return to the conversation — the dismissal has to
+// stick, and the follow effect must not pull the card back over the chat.
+describe("SessionView queued reviewer dismissal", () => {
+	function resetSessionUiStore() {
+		// The ui-store persists across tests in this file; a shell left active or
+		// a remembered reviewer tab would suppress the queued card's auto-follow.
+		// Reset before render: the mounted view's persistence effect writes its
+		// own terminal target back on mount.
+		act(() => useUiStore.getState().setActiveShellTerminal(null));
+		act(() => useUiStore.getState().setTerminalTab("sess-1", { terminalTarget: { kind: "worker" }, reviewerChatId: null }));
+	}
+
+	function seedQueued(view: { client: { setQueryData: (key: unknown, data: unknown) => void } }) {
+		act(() => view.client.setQueryData(["session-reviews", "sess-1"], {
+			reviewerHandleId: "",
+			reviewerHarness: "claude-code",
+			reviews: [{ prUrl: "https://github.com/o/r/pull/1", prNumber: 1, targetSha: "sha1", status: "running" }],
+			runs: [{ id: "run-1", status: "running", prUrl: "https://github.com/o/r/pull/1", targetSha: "sha1" }],
+			activeReviewers: [{ mode: "tui", reviewId: "review-1", harness: "claude-code", handleId: "" }],
+		}));
+	}
+
+	it("keeps the chat tab selected after the user explicitly leaves the queued card", async () => {
+		workerSession("sess-1").mode = "chat";
+		resetSessionUiStore();
+		const view = render(<SessionView sessionId="sess-1" />);
+		seedQueued(view);
+		await waitFor(() => expect(screen.getByTestId("reviewer-starting-tab")).toHaveTextContent("reviewer starting selected"));
+
+		fireEvent.click(screen.getByRole("button", { name: "return to chat" }));
+		await waitFor(() => expect(screen.getByTestId("reviewer-starting-tab")).toHaveTextContent("reviewer starting"));
+	});
+
+	it("follows a newer queued pass after an older one was dismissed", async () => {
+		workerSession("sess-1").mode = "chat";
+		resetSessionUiStore();
+		const view = render(<SessionView sessionId="sess-1" />);
+		seedQueued(view);
+		await waitFor(() => expect(screen.getByTestId("reviewer-starting-tab")).toHaveTextContent("reviewer starting selected"));
+		fireEvent.click(screen.getByRole("button", { name: "return to chat" }));
+		expect(await screen.findByTestId("reviewer-starting-tab")).toHaveTextContent("reviewer starting");
+
+		act(() => view.client.setQueryData(["session-reviews", "sess-1"], {
+			reviewerHandleId: "",
+			reviewerHarness: "claude-code",
+			reviews: [{ prUrl: "https://github.com/o/r/pull/1", prNumber: 1, targetSha: "sha2", status: "running" }],
+			runs: [{ id: "run-2", status: "running", prUrl: "https://github.com/o/r/pull/1", targetSha: "sha2" }],
+			activeReviewers: [{ mode: "tui", reviewId: "review-2", harness: "claude-code", handleId: "" }],
+		}));
+		expect(await screen.findByTestId("reviewer-starting-tab")).toHaveTextContent("reviewer starting selected");
 	});
 });
