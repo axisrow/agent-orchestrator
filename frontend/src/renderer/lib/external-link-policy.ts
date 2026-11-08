@@ -71,10 +71,6 @@ export function isPotentialWorkspaceFileLink(url: string): boolean {
 	return path.includes("/") || /^\.[^/]+$/.test(path) || /\.[a-z\d][a-z\d._-]*$/i.test(path);
 }
 
-export function isWorkspaceHtmlLink(url: string, workspacePaths: string[]): boolean {
-	return /\.html?$/i.test(url.split(/[?#]/, 1)[0]) && isWorkspaceFileLink(url, workspacePaths);
-}
-
 /**
  * Web links open in the system browser by default; AO_LINKS_EXTERNAL=0 opts out.
  * The AO Browser panel stays reachable through the context menu in both modes.
