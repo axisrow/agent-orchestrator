@@ -6021,7 +6021,7 @@ describe("SessionView queued reviewer dismissal", () => {
 		act(() => useUiStore.getState().setTerminalTab("sess-1", { terminalTarget: { kind: "worker" }, reviewerChatId: null }));
 	}
 
-	function seedQueued(view: { client: { setQueryData: (key: unknown, data: unknown) => void } }) {
+	function seedQueued(view: { client: { setQueryData: (key: readonly unknown[], data: unknown) => void } }) {
 		act(() => view.client.setQueryData(["session-reviews", "sess-1"], {
 			reviewerHandleId: "",
 			reviewerHarness: "claude-code",
