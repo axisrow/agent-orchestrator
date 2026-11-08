@@ -14,6 +14,7 @@ import (
 	scmgitlab "github.com/aoagents/agent-orchestrator/backend/internal/adapters/scm/gitlab"
 	scmmulti "github.com/aoagents/agent-orchestrator/backend/internal/adapters/scm/multi"
 	"github.com/aoagents/agent-orchestrator/backend/internal/config"
+	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 	"github.com/aoagents/agent-orchestrator/backend/internal/lifecycle"
 	scmobserve "github.com/aoagents/agent-orchestrator/backend/internal/observe/scm"
 	sessionsvc "github.com/aoagents/agent-orchestrator/backend/internal/service/session"
@@ -128,6 +129,18 @@ func (k *scmPollKick) request() {
 	if k != nil {
 		if o := k.observer.Load(); o != nil {
 			o.RequestPoll()
+		}
+	}
+}
+
+// RequestSessionRefresh forwards a session-targeted early refresh to the bound
+// observer: a finished agent command probably changed the session's pull
+// request on the provider (`gh pr merge`, `git push`). Implements the API's
+// PRRefresher interface.
+func (k *scmPollKick) RequestSessionRefresh(id domain.SessionID) {
+	if k != nil {
+		if o := k.observer.Load(); o != nil {
+			o.RequestSessionRefresh(id)
 		}
 	}
 }

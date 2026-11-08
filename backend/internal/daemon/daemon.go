@@ -316,7 +316,12 @@ func Run() error {
 	// registered driver cannot start in chat mode, so an unsupported request fails
 	// loudly instead of silently becoming a TUI session.
 	var sessMgr sessionLifecycle
+	// The chat service and the hook route start before the SCM observer does,
+	// so the poll kick is created up front and late-binds the observer in
+	// startSCMObserver; PR-changed signals go through it the same way.
+	scmKick := &scmPollKick{}
 	chatSvc := chatsvc.New(chatsvc.Options{
+		PRChanged:           scmKick.RequestSessionRefresh,
 		Store:               store,
 		Sessions:            store,
 		Renders:             attachmentstore.New(cfg.DataDir),
@@ -797,7 +802,6 @@ func Run() error {
 		}()
 		lcStack.LCM.SetUsageFinalizer(usageCollector)
 	}
-	scmKick := &scmPollKick{}
 	lcStack.scmDone = startSCMObserver(ctx, store, lcStack.LCM, cfg.GitLab, log, scmHTTP, scmKick, sessionSvc)
 	var prActions prsvc.ActionManager
 	prReader := newMultiSCMProvider(cfg.GitLab, log, scmHTTP)
@@ -1027,6 +1031,7 @@ func Run() error {
 		CDC:                store,
 		Events:             cdcPipe.Broadcaster,
 		Activity:           hookActivity,
+		PRRefresh:          scmKick,
 		UsageHooks:         usageCollector,
 		UsageHookMetrics:   usageCollector.HookMetricsSnapshot,
 		UsageSummary:       usagesvc.NewSummaryReader(store),

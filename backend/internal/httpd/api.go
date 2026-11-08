@@ -36,6 +36,7 @@ type APIDeps struct {
 	Automations       controllers.AutomationService
 	DesktopWorkspaces controllers.DesktopWorkspaceService
 	Activity          controllers.ActivityRecorder
+	PRRefresh         controllers.PRRefresher
 	// PushWatch reconciles worker branch tips after post-tool-use hooks so a
 	// push becomes an immediate daemon event; nil leaves the activity hook
 	// without push detection.
@@ -200,6 +201,7 @@ func newAPIWithLogger(cfg config.Config, deps APIDeps, log *slog.Logger) *API {
 			Svc:                      deps.Sessions,
 			Projects:                 deps.Projects,
 			Activity:                 deps.Activity,
+			PRRefresh:                deps.PRRefresh,
 			PushWatch:                deps.PushWatch,
 			DataDir:                  cfg.DataDir,
 			Usage:                    deps.UsageHooks,

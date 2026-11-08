@@ -210,6 +210,7 @@ type Controller struct {
 	newID                  IDFactory
 	now                    Clock
 	onAccountChanged       func(domain.SessionID, string, domain.AgentHarness)
+	prChanged              func(domain.SessionID)
 	onCodexCapacityChanged func(domain.SessionID, string, ports.CodexCapacityObservation)
 
 	// sendMu serializes command dispatch so only one operation mutates the
@@ -372,6 +373,7 @@ func newController(
 	newID IDFactory,
 	now Clock,
 	onAccountChanged func(domain.SessionID, string, domain.AgentHarness),
+	prChanged func(domain.SessionID),
 	onCodexCapacityChanged func(domain.SessionID, string, ports.CodexCapacityObservation),
 	reader SnapshotReader,
 ) *Controller {
@@ -389,6 +391,7 @@ func newController(
 		newID:                  newID,
 		now:                    now,
 		onAccountChanged:       onAccountChanged,
+		prChanged:              prChanged,
 		onCodexCapacityChanged: onCodexCapacityChanged,
 		state:                  ports.ChatControllerReady,
 		settings:               conversation.Settings,
@@ -3256,6 +3259,10 @@ func (c *Controller) apply(ctx context.Context, event ports.ChatEvent) error {
 			}, now); err != nil {
 			return err
 		}
+		if event.Kind == ports.ChatEventActivityCompleted && event.ActivityStatus == domain.ActivityStatusCompleted &&
+			event.ActivityKind == domain.ActivityKindCommand && c.prChanged != nil && commandDetailMayChangePR(event.Detail) {
+			c.prChanged(c.sessionID)
+		}
 		// After the upsert, so the row exists to settle. Only when the provider
 		// actually settled something: an empty settle would erase an accumulation the
 		// user watched arrive, and a reasoning item with an empty summary array is the
@@ -4124,4 +4131,16 @@ func (c *Controller) reportActivity(
 		c.log.Debug("chat activity signal rejected",
 			"session", c.sessionID, "event", event, "error", err)
 	}
+}
+
+// commandDetailMayChangePR reads a finished command activity's normalized
+// detail and reports whether the command probably changed a pull request.
+func commandDetailMayChangePR(detail []byte) bool {
+	var d struct {
+		Command string `json:"command"`
+	}
+	if json.Unmarshal(detail, &d) != nil {
+		return false
+	}
+	return domain.CommandMayChangePR(d.Command)
 }
