@@ -193,6 +193,8 @@ export function prCardPresentation(pr: SessionPRSummary, aoReview?: PRReviewStat
 		primary = pr.readinessCheck
 			? cardStatus("ci", "pr.card.checkFailed", "error", readinessCheckDetail(pr), [], prChecksUrl(pr))
 			: cardStatus("ci", "pr.card.checksPending", "validating", undefined, [], prChecksUrl(pr), true, pr.ciPendingSince ?? undefined);
+	} else if (ciCancelled(pr)) {
+		primary = cardStatus("ci", "pr.card.checksCancelled", "passive", undefined, [], prChecksUrl(pr));
 	} else if (pr.ci.state === "unknown") {
 		primary = pr.readinessCheck
 			? cardStatus("ci", "pr.card.checkFailed", "error", readinessCheckDetail(pr), [], prChecksUrl(pr))
@@ -221,6 +223,8 @@ export function prCardPresentation(pr: SessionPRSummary, aoReview?: PRReviewStat
 			supporting.push(cardStatus("ci", "pr.card.checksPassing", "success", undefined, [], prChecksUrl(pr)));
 		} else if (pr.ci.state === "pending") {
 			supporting.push(cardStatus("ci", "pr.card.checksPending", "validating", undefined, [], prChecksUrl(pr), true, pr.ciPendingSince ?? undefined));
+		} else if (ciCancelled(pr)) {
+			supporting.push(cardStatus("ci", "pr.card.checksCancelled", "passive", undefined, [], prChecksUrl(pr)));
 		} else if (pr.ci.state === "unknown") {
 			supporting.push(cardStatus("ci", "pr.card.checksLoading", "passive", undefined, [], prChecksUrl(pr), true));
 		} else if (pr.ci.state === "none") {
@@ -242,6 +246,8 @@ export function prCardPresentation(pr: SessionPRSummary, aoReview?: PRReviewStat
 			statusRows.push(cardStatus("ci", "pr.card.checksUnavailable", "warning", undefined, [], prChecksUrl(pr)));
 		} else if (pr.ci.state === "none") {
 			statusRows.push(cardStatus("ci", "pr.card.noChecks", "passive", undefined, [], prChecksUrl(pr)));
+		} else if (ciCancelled(pr)) {
+			statusRows.push(cardStatus("ci", "pr.card.checksCancelled", "neutral", undefined, [], prChecksUrl(pr)));
 		} else if (pr.ci.state === "pending" || pr.ci.state === "unknown") {
 			// A repeatedly failing readiness pipeline replaces the breathing
 			// "Checking" row with the explicit error row (issue #306).
@@ -280,6 +286,13 @@ export function prCardPresentation(pr: SessionPRSummary, aoReview?: PRReviewStat
 				tone: "error",
 			} };
 		}
+		if (ciCancelled(pr)) {
+			return { primary, supporting, statusRows, readiness: {
+				label: appI18n.t("pr.card.checksCancelled"),
+				detail: appI18n.t("pr.merge.checksCancelledDetail"),
+				tone: "neutral",
+			} };
+		}
 		const checkingReadiness = pr.ci.state === "pending" || pr.ci.state === "unknown" || pr.mergeability.state === "unknown";
 		return { primary, supporting, statusRows, readiness: {
 			label: appI18n.t(checkingReadiness ? "pr.merge.checkingReadiness" : mergeable ? "pr.merge.mergeable" : "pr.merge.notMergeableYet"),
@@ -306,6 +319,7 @@ function cardStatus(
 		| "pr.card.checkFailed"
 		| "pr.card.noChecks"
 		| "pr.card.checksUnavailable"
+		| "pr.card.checksCancelled"
 		| "pr.card.draft"
 		| "pr.card.readyToMerge"
 		| "pr.card.reviewApproved"
@@ -346,6 +360,12 @@ function secondsUntil(iso: string | null | undefined): number | undefined {
 	const at = new Date(iso).getTime();
 	if (Number.isNaN(at)) return undefined;
 	return Math.max(0, Math.ceil((at - Date.now()) / 1000));
+}
+
+// A run cancelled with no replacement: the backend reports unknown and lists the
+// cancelled checks. It is settled, so it must not read as still loading.
+function ciCancelled(pr: SessionPRSummary): boolean {
+	return pr.ci.state === "unknown" && pr.ci.failingChecks.some((check) => check.status === "cancelled");
 }
 
 export function prCanMerge(pr: SessionPRSummary): boolean {
@@ -429,7 +449,9 @@ export function prSummaryParts(pr: SessionPRSummary): PRSummaryPart[] {
 		{
 			key: "ci",
 			label: appI18n.t("pr.section.ci"),
-			status: mergeReasons(pr).includes("github_checks_unavailable") ? appI18n.t("pr.card.checksUnavailable") : ciLabel(pr.ci.state),
+			status: mergeReasons(pr).includes("github_checks_unavailable")
+				? appI18n.t("pr.card.checksUnavailable")
+				: ciCancelled(pr) ? appI18n.t("pr.card.checksCancelled") : ciLabel(pr.ci.state),
 			summary: mergeReasons(pr).includes("github_checks_unavailable") ? appI18n.t("pr.merge.checksUnavailableDetail") : ciSummary(pr),
 			links: ciLinks(pr),
 			linkTotal: pr.ci.state === "failing" ? pr.ci.failingChecks.length : 0,

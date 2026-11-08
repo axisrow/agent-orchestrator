@@ -322,7 +322,9 @@ func (p *Provider) fetchJobLogTail(ctx context.Context, owner, repo string, jobI
 // not render (issue #230). While any latest run is still queued or in
 // progress the verdict is pending: an in-flight run can still flip an
 // earlier failure, so "running" must not be reported as failing
-// (issue #227). When the rollup is paginated (pageInfo.hasNextPage=true)
+// (issue #227). A cancelled latest run is not a failure (#8000): with
+// nothing running it settles as unknown — it proved nothing, so the PR
+// must not read as passing. When the rollup is paginated (pageInfo.hasNextPage=true)
 // the verdict is conservative: a known failure is still safe — failures
 // don't get un-failed by more pages — but passing/pending/unknown verdicts
 // could hide a failing context on the next page, so we degrade them to
@@ -372,19 +374,23 @@ func ciSummaryFromGraphQL(pr map[string]any) domain.CIState {
 // per check name (the rows GitHub's check UI renders): while any latest run
 // is queued or in progress the verdict is pending — an in-flight run can
 // still flip an earlier failure, so running must not read as failing
-// (issue #227). With nothing running, failure-class entries win; a set with
-// neither is passing (unknown when no context carries a decidable state).
+// (issue #227). With nothing running, failure-class entries win; a cancelled
+// latest run is not a failure (#8000): it settles the set as unknown even
+// beside passing checks, and only a failure-free, cancellation-free set is
+// passing (unknown when no context carries a decidable state).
 // Re-running a failed workflow creates a new CheckRun while the superseded
 // red run stays in statusCheckRollup.contexts (issue #230, BeamCraft#407:
 // 42 contexts for 32 checks; the aggregate counted the superseded runs and
 // stayed FAILURE over an all-green latest set), so raw nodes must be
 // collapsed before classification.
 func ciStateFromContextNodes(rawNodes []map[string]any) domain.CIState {
-	pending, failing, passing := false, false, false
+	pending, failing, passing, cancelled := false, false, false, false
 	for _, n := range latestRunNodesByName(rawNodes) {
 		switch checkStatusFromGraphQL(n) {
-		case domain.PRCheckFailed, domain.PRCheckCancelled:
+		case domain.PRCheckFailed:
 			failing = true
+		case domain.PRCheckCancelled:
+			cancelled = true
 		case domain.PRCheckQueued, domain.PRCheckInProgress:
 			pending = true
 		case domain.PRCheckPassed:
@@ -396,6 +402,8 @@ func ciStateFromContextNodes(rawNodes []map[string]any) domain.CIState {
 		return domain.CIPending
 	case failing:
 		return domain.CIFailing
+	case cancelled:
+		return domain.CIUnknown
 	case passing:
 		return domain.CIPassing
 	default:
@@ -768,7 +776,7 @@ func checkStatusFromGraphQL(n map[string]any) domain.PRCheckStatus {
 }
 
 func isFailingCheckStatus(s domain.PRCheckStatus) bool {
-	return s == domain.PRCheckFailed || s == domain.PRCheckCancelled
+	return s == domain.PRCheckFailed
 }
 
 // ---------------------------------------------------------------------------

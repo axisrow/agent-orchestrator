@@ -1948,7 +1948,7 @@ func applyStoredFailedLogTails(obs *ports.SCMObservation, checks []domain.PullRe
 		if obs.CI.HeadSHA != "" && ch.CommitHash != "" && ch.CommitHash != obs.CI.HeadSHA {
 			continue
 		}
-		if ch.LogTail != "" && (ch.Status == domain.PRCheckFailed || ch.Status == domain.PRCheckCancelled) {
+		if ch.LogTail != "" && ch.Status == domain.PRCheckFailed {
 			tailsByName[ch.Name] = ch.LogTail
 		}
 	}
@@ -2294,7 +2294,7 @@ func ciObservationFromLocal(pr domain.PullRequest, checks []domain.PullRequestCh
 			ProviderID: ch.Details,
 		}
 		ci.Checks = append(ci.Checks, check)
-		if ch.Status == domain.PRCheckFailed || ch.Status == domain.PRCheckCancelled {
+		if ch.Status == domain.PRCheckFailed {
 			ci.FailedChecks = append(ci.FailedChecks, check)
 			if ch.LogTail != "" {
 				tails = append(tails, ch.LogTail)

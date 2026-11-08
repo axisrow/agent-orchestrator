@@ -640,6 +640,12 @@ func ciSummaryFromRollupState(pr map[string]any) domain.CIState {
 	if state == domain.CIPassing && nodesHideSupersededFailures(rawNodes) {
 		return domain.CIPassing
 	}
+	// A FAILURE aggregate over a latest set whose runs are all cancelled is
+	// the rollup counting cancelled as failed (#8000): nothing failed and
+	// nothing is running, so settle unknown instead of failing.
+	if state == domain.CIUnknown && hasCancelledCheck(rawNodes) {
+		return domain.CIUnknown
+	}
 	return mapRollupState(str(roll["state"]))
 }
 
@@ -677,6 +683,19 @@ func nodesHideSupersededFailures(rawNodes []map[string]any) bool {
 			continue
 		}
 		if ks := checkStatusFromGraphQL(rawNodes[keptIdx]); ks != domain.PRCheckFailed && ks != domain.PRCheckCancelled {
+			return true
+		}
+	}
+	return false
+}
+
+// hasCancelledCheck reports whether any latest run per check name is
+// cancelled (#8000): the rollup aggregate counts cancelled as failure, so a
+// FAILURE aggregate over an all-cancelled latest set settles as unknown
+// instead of failing.
+func hasCancelledCheck(rawNodes []map[string]any) bool {
+	for _, n := range latestRunNodesByName(rawNodes) {
+		if checkStatusFromGraphQL(n) == domain.PRCheckCancelled {
 			return true
 		}
 	}
@@ -723,8 +742,7 @@ func scmChecksFromGraphQL(pr map[string]any) []ports.SCMCheckObservation {
 func failedSCMChecks(checks []ports.SCMCheckObservation) []ports.SCMCheckObservation {
 	out := make([]ports.SCMCheckObservation, 0, len(checks))
 	for _, ch := range checks {
-		status := domain.PRCheckStatus(ch.Status)
-		if status == domain.PRCheckFailed || status == domain.PRCheckCancelled {
+		if isFailingCheckStatus(domain.PRCheckStatus(ch.Status)) {
 			out = append(out, ch)
 		}
 	}
