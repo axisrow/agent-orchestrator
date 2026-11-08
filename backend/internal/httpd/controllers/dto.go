@@ -1319,6 +1319,9 @@ type SessionPRSummary struct {
 	CIObservedAt     time.Time                    `json:"ciObservedAt,omitempty"`
 	ReviewObservedAt time.Time                    `json:"reviewObservedAt,omitempty"`
 	LastSeenAt       *time.Time                   `json:"lastSeenAt,omitempty"`
+	// ReadinessCheck is present only while the observer's readiness pipeline
+	// keeps failing for this PR; nil means the pipeline is healthy.
+	ReadinessCheck *SessionPRReadinessCheck `json:"readinessCheck,omitempty"`
 }
 
 // SessionPRCISummary is the CI status block for a session PR summary.
@@ -1436,7 +1439,31 @@ func NewSessionPRSummary(in sessionsvc.PRSummary) SessionPRSummary {
 		CIObservedAt:     in.CIObservedAt,
 		ReviewObservedAt: in.ReviewObservedAt,
 		LastSeenAt:       optionalTime(in.LastSeenAt),
+		ReadinessCheck:   newSessionPRReadinessCheck(in.ReadinessCheck),
 	}
+}
+
+// SessionPRReadinessCheck reports that the SCM observer repeatedly failed to
+// refresh a PR's readiness facts; absent while the pipeline is healthy.
+type SessionPRReadinessCheck struct {
+	Attempts     int        `json:"attempts" description:"Consecutive failed readiness-pipeline tries since the last success."`
+	LastError    string     `json:"lastError" description:"Most recent failure's error text."`
+	LastFailedAt *time.Time `json:"lastFailedAt,omitempty" description:"When the most recent failure was recorded."`
+	NextRetryAt  *time.Time `json:"nextRetryAt,omitempty" description:"When the observer will try this PR's pipeline again."`
+}
+
+func newSessionPRReadinessCheck(in *sessionsvc.PRReadinessCheck) *SessionPRReadinessCheck {
+	if in == nil {
+		return nil
+	}
+	out := &SessionPRReadinessCheck{Attempts: in.Attempts, LastError: in.LastError}
+	if in.LastFailedAt != nil {
+		out.LastFailedAt = optionalTime(*in.LastFailedAt)
+	}
+	if in.NextRetryAt != nil {
+		out.NextRetryAt = optionalTime(*in.NextRetryAt)
+	}
+	return out
 }
 
 func optionalTime(value time.Time) *time.Time {

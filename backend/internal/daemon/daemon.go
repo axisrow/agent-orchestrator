@@ -36,7 +36,6 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/agentlaunch"
 	"github.com/aoagents/agent-orchestrator/backend/internal/attachmentstore"
 	"github.com/aoagents/agent-orchestrator/backend/internal/autoreview"
-	"github.com/aoagents/agent-orchestrator/backend/internal/pushwatch"
 	"github.com/aoagents/agent-orchestrator/backend/internal/browserruntime"
 	"github.com/aoagents/agent-orchestrator/backend/internal/codexops"
 	"github.com/aoagents/agent-orchestrator/backend/internal/config"
@@ -54,6 +53,7 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/previewserver"
 	"github.com/aoagents/agent-orchestrator/backend/internal/procinventory"
 	"github.com/aoagents/agent-orchestrator/backend/internal/push"
+	"github.com/aoagents/agent-orchestrator/backend/internal/pushwatch"
 	"github.com/aoagents/agent-orchestrator/backend/internal/runfile"
 	agentsvc "github.com/aoagents/agent-orchestrator/backend/internal/service/agent"
 	"github.com/aoagents/agent-orchestrator/backend/internal/service/agentaccounts"
@@ -798,7 +798,7 @@ func Run() error {
 		lcStack.LCM.SetUsageFinalizer(usageCollector)
 	}
 	scmKick := &scmPollKick{}
-	lcStack.scmDone = startSCMObserver(ctx, store, lcStack.LCM, cfg.GitLab, log, scmHTTP, scmKick)
+	lcStack.scmDone = startSCMObserver(ctx, store, lcStack.LCM, cfg.GitLab, log, scmHTTP, scmKick, sessionSvc)
 	var prActions prsvc.ActionManager
 	prReader := newMultiSCMProvider(cfg.GitLab, log, scmHTTP)
 	prMerger := newMultiSCMMerger(cfg.GitLab, log, scmHTTP)

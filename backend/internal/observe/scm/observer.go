@@ -50,6 +50,24 @@ const (
 	// next poll retries it. It only cuts work that honors cancellation; a wake
 	// or a teardown runs on its own budget. Merged and closed PRs are exempt.
 	DefaultLifecycleTimeout = 30 * time.Second
+	// DefaultGuardTimeout bounds one CommitChecksGuard provider call. The
+	// check-runs guard is a refresh-eligibility optimization, not the source
+	// of readiness facts — the PR detail fetch is — so a hung guard response
+	// must not consume the HTTP client's full 30s timeout per tracked PR and
+	// stretch the sequential poll loop past its tick.
+	DefaultGuardTimeout = 10 * time.Second
+	// readinessBackoffBase is the first retry delay after a readiness-pipeline
+	// failure. Each consecutive failure doubles it, capped at
+	// readinessBackoffMax, so a dead provider endpoint is retried on an
+	// exponential schedule (10s, 20s, 40s, 80s, 120s, …) instead of every 30s
+	// tick while recovery within seconds-to-minutes stays possible.
+	readinessBackoffBase = 10 * time.Second
+	readinessBackoffMax  = 2 * time.Minute
+	// readinessFailureReportThreshold is the attempt count from which a PR's
+	// readiness failures are surfaced to the UI. A single failed try is
+	// transient noise that usually self-heals on the next poll; from the
+	// second consecutive failure the card shows an explicit error state.
+	readinessFailureReportThreshold = 2
 )
 
 // identityKey builds the cache key for a per-provider, per-host identity.
@@ -176,6 +194,11 @@ type Config struct {
 	// host. Without a matching identity, new automatic attachments are disabled;
 	// existing attachments continue to refresh and explicit claims still work.
 	ScopedIdentityResolver ports.ScopedIdentityResolver
+	// GuardTimeout bounds one CommitChecksGuard provider call. Zero uses
+	// DefaultGuardTimeout. The poll loop runs guards sequentially, so one
+	// hung check-runs response would otherwise consume the HTTP client's
+	// full timeout for every tracked PR in the same poll.
+	GuardTimeout time.Duration
 }
 
 // ObserverCache stores provider ETags and review polling timestamps in memory.
@@ -267,14 +290,32 @@ type Observer struct {
 	trigger chan struct{}
 	// lifecycleTimeout bounds each lifecycle notification.
 	lifecycleTimeout time.Duration
+	// guardTimeout bounds one CommitChecksGuard provider call.
+	guardTimeout time.Duration
+	// readinessMu guards readinessFailures and readinessCheckingSince. The
+	// poll goroutine writes; HTTP handlers read via ReadinessFailures.
+	readinessMu sync.Mutex
+	// readinessFailures tracks consecutive readiness-pipeline failures per PR
+	// URL (commit check-runs guard and PR detail fetch), with an exponential
+	// retry backoff. Cleared on the first successful refresh.
+	readinessFailures map[string]*readinessFailure
+	// readinessCheckingSince records, per PR URL, when an observation last
+	// left the PR not-ready-to-merge. When the PR reaches ready-to-merge the
+	// elapsed time is logged so "Checking merge readiness" durations become
+	// measurable; entries are otherwise unobservable internal state.
+	readinessCheckingSince map[string]time.Time
 }
 
 // New constructs an Observer with default cadence/cache settings for zero
 // values in cfg.
 func New(provider Provider, store Store, lifecycle Lifecycle, cfg Config) *Observer {
-	o := &Observer{provider: provider, store: store, lifecycle: lifecycle, tick: cfg.Tick, reviewInterval: cfg.ReviewInterval, clock: cfg.Clock, logger: cfg.Logger, scopedIdentityResolver: cfg.ScopedIdentityResolver, Cache: newCache(cfg.CacheMax), rateLimitUntil: map[string]time.Time{}, lifecycleTimeout: DefaultLifecycleTimeout, forcedReviews: map[string]bool{}, trigger: make(chan struct{}, 1)}
+	o := &Observer{provider: provider, store: store, lifecycle: lifecycle, tick: cfg.Tick, reviewInterval: cfg.ReviewInterval, clock: cfg.Clock, logger: cfg.Logger, scopedIdentityResolver: cfg.ScopedIdentityResolver, Cache: newCache(cfg.CacheMax), rateLimitUntil: map[string]time.Time{}, lifecycleTimeout: DefaultLifecycleTimeout, forcedReviews: map[string]bool{}, trigger: make(chan struct{}, 1), readinessFailures: map[string]*readinessFailure{}, readinessCheckingSince: map[string]time.Time{}}
 	if o.tick <= 0 {
 		o.tick = DefaultTickInterval
+	}
+	o.guardTimeout = cfg.GuardTimeout
+	if o.guardTimeout <= 0 {
+		o.guardTimeout = DefaultGuardTimeout
 	}
 	if o.reviewInterval <= 0 {
 		o.reviewInterval = DefaultReviewInterval
@@ -506,6 +547,15 @@ func (o *Observer) Poll(ctx context.Context) (pollErr error) {
 				markRepoRefreshFailed(ref.Repo)
 				continue
 			}
+			if o.readinessBackoffActive(ref.URL, now) {
+				// Readiness backoff gates the fetch too: a PR whose pipeline
+				// keeps failing retries on the recorded schedule instead of
+				// hammering the provider every tick. The skip pins the repo
+				// refresh state for the same durable-state reason as the
+				// cooldown skip above.
+				markRepoRefreshFailed(ref.Repo)
+				continue
+			}
 			active = append(active, ref)
 			activeKeys = append(activeKeys, selection.refKeys[i])
 		}
@@ -531,6 +581,7 @@ func (o *Observer) Poll(ctx context.Context) (pollErr error) {
 			}
 			o.logger.Error("scm observer: GraphQL PR batch failed", "err", err)
 			for _, ref := range active {
+				o.recordReadinessFailure(ref.URL, now, err)
 				markRepoRefreshFailed(ref.Repo)
 			}
 			continue
@@ -550,14 +601,25 @@ func (o *Observer) Poll(ctx context.Context) (pollErr error) {
 					if errors.Is(fetchErr, ports.ErrSCMNotFound) {
 						// A permanent miss (deleted repo, revoked access, dead
 						// redirect), re-observed every tick — Debug, not Warn,
-						// so a broken tracked PR does not flood the log.
+						// so a broken tracked PR does not flood the log. It is
+						// an access problem, not a retryable pipeline failure,
+						// so it stays out of the readiness-failure tracker.
 						o.logger.Debug("scm observer: tracked PR not found at provider; marking refresh-incomplete", "provider", providerKey, "pr", ref.URL, "err", fetchErr)
-					} else if cooldown, ok := rateLimitCooldown(now, fetchErr); ok {
-						o.setRateLimitCooldown(now, providerKey, cooldown)
-						o.logger.Warn("scm observer: provider rate-limited (per-observation); entering cooldown", "provider", providerKey, "cooldown", cooldown, "err", fetchErr)
 					} else {
-						o.logger.Warn("scm observer: provider fetch failed (per-observation); marking refresh-incomplete", "provider", providerKey, "err", fetchErr)
+						if cooldown, ok := rateLimitCooldown(now, fetchErr); ok {
+							o.setRateLimitCooldown(now, providerKey, cooldown)
+							o.logger.Warn("scm observer: provider rate-limited (per-observation); entering cooldown", "provider", providerKey, "cooldown", cooldown, "err", fetchErr)
+						} else {
+							o.logger.Warn("scm observer: provider fetch failed (per-observation); marking refresh-incomplete", "provider", providerKey, "err", fetchErr)
+						}
+						o.recordReadinessFailure(ref.URL, now, fetchErr)
 					}
+				} else {
+					// A candidate ref came back with no observation and no
+					// error: the provider could not resolve it this poll, so
+					// its readiness facts stay unobserved. Record that as a
+					// pipeline failure so the card does not read as healthy.
+					o.recordReadinessFailure(ref.URL, now, fmt.Errorf("provider returned no observation for %s", ref.URL))
 				}
 				markRepoRefreshFailed(ref.Repo)
 				continue
@@ -626,6 +688,9 @@ func (o *Observer) Poll(ctx context.Context) (pollErr error) {
 				o.logger.Warn("scm observer: pr seen touch failed", "pr", local.URL, "err", err)
 			}
 			prRefreshOK[key] = true
+			o.clearReadinessFailure(local.URL)
+			o.noteReadinessOutcome(local.URL, prepared.PR.Merged, prepared.PR.Closed,
+				prepared.CI.Summary == string(domain.CIPassing) && prepared.Mergeability.State == string(domain.MergeMergeable), now)
 			continue
 		}
 		finalPR, finalChecks, finalReviews, finalThreads, finalComments := domainFromObservation(subj.session.ID, subj.session, prepared, local, opts, now)
@@ -685,6 +750,10 @@ func (o *Observer) Poll(ctx context.Context) (pollErr error) {
 			o.logger.Warn("scm observer: pr seen touch failed", "pr", finalPR.URL, "err", err)
 		}
 		prRefreshOK[key] = true
+		prURL := firstNonEmpty(prepared.PR.URL, local.URL)
+		o.clearReadinessFailure(prURL)
+		o.noteReadinessOutcome(prURL, prepared.PR.Merged, prepared.PR.Closed,
+			prepared.CI.Summary == string(domain.CIPassing) && prepared.Mergeability.State == string(domain.MergeMergeable), now)
 	}
 	for key, ok := range prRefreshOK {
 		if !ok {
@@ -1017,6 +1086,151 @@ func (o *Observer) logProviderRequest(stage, repository string, startedAt time.T
 		return
 	}
 	o.logger.Debug("scm observer: provider request completed", attrs...)
+}
+
+// readinessFailure is one PR's consecutive readiness-pipeline failure record.
+// It lives only in memory: a daemon restart re-derives readiness from the
+// provider, so durability would buy nothing.
+type readinessFailure struct {
+	attempts     int
+	lastError    string
+	lastFailedAt time.Time
+	nextRetryAt  time.Time
+}
+
+// readinessBackoff returns the retry delay after the nth consecutive failure.
+func readinessBackoff(attempts int) time.Duration {
+	d := readinessBackoffBase
+	for i := 1; i < attempts && d < readinessBackoffMax; i++ {
+		d *= 2
+	}
+	if d > readinessBackoffMax {
+		d = readinessBackoffMax
+	}
+	return d
+}
+
+// recordReadinessFailure bumps the PR's failure count and retry backoff. Both
+// the guard and the fetch can fail within one poll; a failure already recorded
+// for this poll only refreshes the error text so one poll counts as one try.
+func (o *Observer) recordReadinessFailure(prURL string, now time.Time, err error) {
+	if prURL == "" || err == nil {
+		return
+	}
+	o.readinessMu.Lock()
+	defer o.readinessMu.Unlock()
+	f := o.readinessFailures[prURL]
+	if f == nil {
+		f = &readinessFailure{}
+		o.readinessFailures[prURL] = f
+	}
+	if f.lastFailedAt.Equal(now) {
+		f.lastError = err.Error()
+		return
+	}
+	f.attempts++
+	f.lastError = err.Error()
+	f.lastFailedAt = now
+	f.nextRetryAt = now.Add(readinessBackoff(f.attempts))
+	o.logger.Warn("scm observer: readiness check failing; backing off",
+		"pr", prURL, "attempts", f.attempts, "next_retry_at", f.nextRetryAt.UTC(), "err", err)
+}
+
+// clearReadinessFailure drops the PR's failure record after a successful
+// refresh.
+func (o *Observer) clearReadinessFailure(prURL string) {
+	if prURL == "" {
+		return
+	}
+	o.readinessMu.Lock()
+	had := o.readinessFailures[prURL] != nil
+	delete(o.readinessFailures, prURL)
+	o.readinessMu.Unlock()
+	if had {
+		o.logger.Debug("scm observer: readiness check recovered", "pr", prURL)
+	}
+}
+
+// readinessBackoffActive reports whether the PR is inside its failure backoff
+// window. A failure recorded in the same poll does not gate that poll's own
+// remaining steps: the guard and the fetch are independent provider calls, so
+// the poll that discovered the failure still attempts the full refresh once.
+func (o *Observer) readinessBackoffActive(prURL string, now time.Time) bool {
+	o.readinessMu.Lock()
+	defer o.readinessMu.Unlock()
+	f := o.readinessFailures[prURL]
+	return f != nil && now.Before(f.nextRetryAt) && !f.lastFailedAt.Equal(now)
+}
+
+// ReadinessFailures reports the PRs whose readiness pipeline keeps failing,
+// keyed by PR URL. Entries below readinessFailureReportThreshold are withheld:
+// one failed try is transient noise the next poll usually heals.
+func (o *Observer) ReadinessFailures(prURLs []string) map[string]ports.SCMReadinessFailure {
+	o.readinessMu.Lock()
+	defer o.readinessMu.Unlock()
+	out := map[string]ports.SCMReadinessFailure{}
+	for _, url := range prURLs {
+		f := o.readinessFailures[url]
+		if f == nil || f.attempts < readinessFailureReportThreshold {
+			continue
+		}
+		out[url] = ports.SCMReadinessFailure{
+			Attempts:     f.attempts,
+			LastError:    f.lastError,
+			LastFailedAt: f.lastFailedAt,
+			NextRetryAt:  f.nextRetryAt,
+		}
+	}
+	return out
+}
+
+// noteReadinessStart records when a PR stops being ready-to-merge so the
+// duration of the next "checking" phase is loggable when it resolves.
+func (o *Observer) noteReadinessStart(prURL string, now time.Time) {
+	if prURL == "" {
+		return
+	}
+	o.readinessMu.Lock()
+	defer o.readinessMu.Unlock()
+	if _, ok := o.readinessCheckingSince[prURL]; !ok {
+		o.readinessCheckingSince[prURL] = now
+	}
+}
+
+// noteReadinessResolved logs how long the PR took to reach ready-to-merge and
+// stops tracking it. Terminal PRs leave both trackers.
+func (o *Observer) noteReadinessResolved(prURL string, now time.Time) {
+	if prURL == "" {
+		return
+	}
+	o.readinessMu.Lock()
+	started, ok := o.readinessCheckingSince[prURL]
+	delete(o.readinessCheckingSince, prURL)
+	o.readinessMu.Unlock()
+	if ok {
+		o.logger.Info("scm observer: pr readiness resolved",
+			"pr", prURL, "checking_duration_ms", now.Sub(started).Milliseconds())
+	}
+}
+
+// noteReadinessOutcome updates the checking-duration tracker after a PR's
+// observation persisted successfully. Ready means nothing observable is left:
+// CI passing and mergeability mergeable — the same facts the merge button
+// requires. Terminal PRs leave both trackers.
+func (o *Observer) noteReadinessOutcome(prURL string, merged, closed, ready bool, now time.Time) {
+	if prURL == "" {
+		return
+	}
+	if merged || closed {
+		o.clearReadinessFailure(prURL)
+		o.noteReadinessResolved(prURL, now)
+		return
+	}
+	if ready {
+		o.noteReadinessResolved(prURL, now)
+		return
+	}
+	o.noteReadinessStart(prURL, now)
 }
 
 func repoNames(refs []ports.SCMPRRef) string {
@@ -1383,14 +1597,24 @@ func (o *Observer) selectRefreshCandidates(ctx context.Context, subjects map[str
 				candidate = true
 			}
 		}
-		if s.known.HeadSHA != "" {
+		if s.known.HeadSHA != "" && !o.readinessBackoffActive(s.known.URL, now) {
 			commitKey := commitKey(s.repo, s.known.HeadSHA)
 			prev := o.Cache.CommitChecksETag[commitKey]
 			started := time.Now()
-			res, err := o.provider.CommitChecksGuard(ctx, s.repo, s.known.HeadSHA, prev)
+			guardCtx, cancel := context.WithTimeout(ctx, o.guardTimeout)
+			res, err := o.provider.CommitChecksGuard(guardCtx, s.repo, s.known.HeadSHA, prev)
+			cancel()
 			o.logProviderRequest("commit_checks_guard", repoFullName(s.repo), started, err)
 			if err != nil {
 				o.logger.Error("scm observer: commit check-runs guard failed", "pr", s.known.URL, "sha", s.known.HeadSHA, "err", err)
+				o.recordReadinessFailure(s.known.URL, now, err)
+				// Fail-open: a failed guard answer says nothing about whether
+				// the PR's checks changed, so promote the PR to a refresh
+				// candidate anyway. The detail fetch is what lands CI and
+				// mergeability facts; suppressing it here left GitHub-reported
+				// CLEAN PRs in "Checking merge readiness" forever when this
+				// guard hit a transient network error.
+				candidate = true
 				if markRepoFailed != nil {
 					markRepoFailed(s.repo)
 				}

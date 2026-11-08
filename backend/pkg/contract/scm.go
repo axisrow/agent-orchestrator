@@ -191,33 +191,51 @@ type PullRequestMergeabilitySummary struct {
 	ConflictFiles []PullRequestConflictFile `json:"conflictFiles"`
 }
 
+// PullRequestReadinessCheck reports that the SCM observer repeatedly failed to
+// refresh a PR's readiness facts (commit check-runs guard / detail fetch), so
+// the card can show an explicit error state with the retry schedule instead of
+// an endless "Checking merge readiness". Absent while the pipeline is healthy.
+type PullRequestReadinessCheck struct {
+	// Attempts counts consecutive failed tries since the last success.
+	Attempts int `json:"attempts"`
+	// LastError is the most recent failure's error text.
+	LastError string `json:"lastError"`
+	// LastFailedAt is when the most recent failure was recorded.
+	LastFailedAt *time.Time `json:"lastFailedAt,omitempty"`
+	// NextRetryAt is when the observer will try the PR's pipeline again.
+	NextRetryAt *time.Time `json:"nextRetryAt,omitempty"`
+}
+
 // PullRequestSummary is the normalized raw SCM read model for one pull request.
 type PullRequestSummary struct {
-	URL              string                         `json:"url"`
-	HTMLURL          string                         `json:"htmlUrl,omitempty"`
-	Number           int                            `json:"number"`
-	Title            string                         `json:"title"`
-	State            PRState                        `json:"state"`
-	Provider         string                         `json:"provider"`
-	Repo             string                         `json:"repository"`
-	Author           string                         `json:"author"`
-	AuthorAvatarURL  string                         `json:"authorAvatarUrl,omitempty"`
-	SourceBranch     string                         `json:"sourceBranch"`
-	TargetBranch     string                         `json:"targetBranch"`
-	HeadSHA          string                         `json:"headSha"`
-	Additions        int                            `json:"additions"`
-	Deletions        int                            `json:"deletions"`
-	ChangedFiles     int                            `json:"changedFiles"`
-	CI               PullRequestCISummary           `json:"ci"`
-	Review           PullRequestReviewSummary       `json:"review"`
-	Mergeability     PullRequestMergeabilitySummary `json:"mergeability"`
-	StateChangedAt   time.Time                      `json:"stateChangedAt,omitempty"`
-	CreatedAt        time.Time                      `json:"createdAt,omitempty"`
-	UpdatedAt        time.Time                      `json:"updatedAt"`
-	ObservedAt       time.Time                      `json:"observedAt"`
-	CIPendingSince   time.Time                      `json:"ciPendingSince,omitempty"`
-	CIObservedAt     time.Time                      `json:"ciObservedAt"`
-	ReviewObservedAt time.Time                      `json:"reviewObservedAt"`
+	URL             string                         `json:"url"`
+	HTMLURL         string                         `json:"htmlUrl,omitempty"`
+	Number          int                            `json:"number"`
+	Title           string                         `json:"title"`
+	State           PRState                        `json:"state"`
+	Provider        string                         `json:"provider"`
+	Repo            string                         `json:"repository"`
+	Author          string                         `json:"author"`
+	AuthorAvatarURL string                         `json:"authorAvatarUrl,omitempty"`
+	SourceBranch    string                         `json:"sourceBranch"`
+	TargetBranch    string                         `json:"targetBranch"`
+	HeadSHA         string                         `json:"headSha"`
+	Additions       int                            `json:"additions"`
+	Deletions       int                            `json:"deletions"`
+	ChangedFiles    int                            `json:"changedFiles"`
+	CI              PullRequestCISummary           `json:"ci"`
+	Review          PullRequestReviewSummary       `json:"review"`
+	Mergeability    PullRequestMergeabilitySummary `json:"mergeability"`
+	// ReadinessCheck is present only while the observer's readiness pipeline
+	// keeps failing for this PR; nil means the pipeline is healthy.
+	ReadinessCheck   *PullRequestReadinessCheck `json:"readinessCheck,omitempty"`
+	StateChangedAt   time.Time                  `json:"stateChangedAt,omitempty"`
+	CreatedAt        time.Time                  `json:"createdAt,omitempty"`
+	UpdatedAt        time.Time                  `json:"updatedAt"`
+	ObservedAt       time.Time                  `json:"observedAt"`
+	CIPendingSince   time.Time                  `json:"ciPendingSince,omitempty"`
+	CIObservedAt     time.Time                  `json:"ciObservedAt"`
+	ReviewObservedAt time.Time                  `json:"reviewObservedAt"`
 	// LastSeenAt is when the observer last refreshed the PR, including no-op
 	// polls where nothing changed. Zero until the first refresh; the
 	// ci/review observed stamps are change timestamps, not freshness ones.

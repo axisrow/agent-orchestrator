@@ -258,6 +258,10 @@ type Service struct {
 	// runsOnComputerLogin reports whether a new session would launch on the
 	// computer's own CLI login rather than a saved account. Nil means always.
 	runsOnComputerLogin func(context.Context, domain.AgentHarness, string) bool
+	// readinessFailures late-binds the SCM observer's readiness-failure tracker
+	// (SetReadinessFailures). Nil leaves PR summaries without readiness-check
+	// error states, which is the healthy-pipeline shape.
+	readinessFailures ReadinessFailuresProvider
 }
 
 // SetComputerLoginCheck late-binds the account check the launch gate needs: the
@@ -270,6 +274,19 @@ func (s *Service) SetComputerLoginCheck(check func(ctx context.Context, harness 
 // services have been constructed. It performs no provider or filesystem probes.
 func (s *Service) SetChatProviderPreserver(preserves func(domain.SessionID) bool) {
 	s.chatProviderPreserved = preserves
+}
+
+// ReadinessFailuresProvider reports the SCM observer's per-PR readiness
+// pipeline failures so PR summaries can carry an explicit error state.
+type ReadinessFailuresProvider interface {
+	ReadinessFailures(prURLs []string) map[string]ports.SCMReadinessFailure
+}
+
+// SetReadinessFailures late-binds the SCM observer after both services are
+// constructed: the observer starts after the session service, mirroring
+// SetAgentReadiness.
+func (s *Service) SetReadinessFailures(p ReadinessFailuresProvider) {
+	s.readinessFailures = p
 }
 
 // New wires a controller-facing session service over an internal session Manager.

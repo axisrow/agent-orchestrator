@@ -4943,6 +4943,22 @@ export interface components {
             port: number;
             reason: string;
         };
+        ControllersSessionPRReadinessCheck: {
+            /** @description Consecutive failed readiness-pipeline tries since the last success. */
+            attempts: number;
+            /** @description Most recent failure's error text. */
+            lastError: string;
+            /**
+             * Format: date-time
+             * @description When the most recent failure was recorded.
+             */
+            lastFailedAt?: null | string;
+            /**
+             * Format: date-time
+             * @description When the observer will try this PR's pipeline again.
+             */
+            nextRetryAt?: null | string;
+        };
         ControllersSessionView: {
             activeAgentSwitch?: components["schemas"]["AgentSwitch"];
             activity: components["schemas"]["DomainActivity"];
@@ -6650,6 +6666,7 @@ export interface components {
             observedAt?: string;
             /** @enum {string} */
             provider: "github" | "gitlab";
+            readinessCheck?: components["schemas"]["ControllersSessionPRReadinessCheck"];
             repo: string;
             review: components["schemas"]["SessionPRReviewSummary"];
             /** Format: date-time */

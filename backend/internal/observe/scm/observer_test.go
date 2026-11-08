@@ -138,16 +138,21 @@ func (s *fakeStore) RecordRepositoryRename(_ context.Context, r domain.Repositor
 }
 
 type fakeProvider struct {
-	mu           sync.Mutex
-	repoGuards   map[string]ports.SCMGuardResult
-	checkGuards  map[string]ports.SCMGuardResult
-	openPRs      map[string][]ports.SCMPRObservation
-	listErr      error
-	observations map[string]ports.SCMObservation
-	reviews      map[string]ports.SCMReviewObservation
-	logTails     map[string]string
-	fetchErr     error
-	reviewErr    error
+	mu             sync.Mutex
+	repoGuards     map[string]ports.SCMGuardResult
+	checkGuards    map[string]ports.SCMGuardResult
+	checkGuardErrs map[string]error
+	// checkGuardBlocksUntilCtx makes CommitChecksGuard hang until its context
+	// is cancelled, so tests can exercise the guard timeout without sleeps.
+	checkGuardBlocksUntilCtx bool
+	checkGuardCalls          int
+	openPRs                  map[string][]ports.SCMPRObservation
+	listErr                  error
+	observations             map[string]ports.SCMObservation
+	reviews                  map[string]ports.SCMReviewObservation
+	logTails                 map[string]string
+	fetchErr                 error
+	reviewErr                error
 
 	// fetchObsErrors maps a prKey to a per-observation error that the fake
 	// attaches to the observation it returns for that ref, mimicking the
@@ -226,8 +231,21 @@ func (p *fakeProvider) ListPRsByRepo(_ context.Context, repo ports.SCMRepo, _ ti
 	}
 	return p.openPRs[prKey(repo, 0)], nil
 }
-func (p *fakeProvider) CommitChecksGuard(_ context.Context, repo ports.SCMRepo, sha, _ string) (ports.SCMGuardResult, error) {
-	return p.checkGuards[commitKey(repo, sha)], nil
+func (p *fakeProvider) CommitChecksGuard(ctx context.Context, repo ports.SCMRepo, sha, _ string) (ports.SCMGuardResult, error) {
+	p.mu.Lock()
+	p.checkGuardCalls++
+	err := p.checkGuardErrs[commitKey(repo, sha)]
+	guard := p.checkGuards[commitKey(repo, sha)]
+	blockUntilDone := p.checkGuardBlocksUntilCtx
+	p.mu.Unlock()
+	if blockUntilDone {
+		<-ctx.Done()
+		return ports.SCMGuardResult{}, ctx.Err()
+	}
+	if err != nil {
+		return ports.SCMGuardResult{}, err
+	}
+	return guard, nil
 }
 
 // FetchPullRequests honors the positional-alignment contract: out[i] answers

@@ -14171,6 +14171,31 @@ components:
       - port
       - reason
       type: object
+    ControllersSessionPRReadinessCheck:
+      properties:
+        attempts:
+          description: Consecutive failed readiness-pipeline tries since the last
+            success.
+          type: integer
+        lastError:
+          description: Most recent failure's error text.
+          type: string
+        lastFailedAt:
+          description: When the most recent failure was recorded.
+          format: date-time
+          type:
+          - "null"
+          - string
+        nextRetryAt:
+          description: When the observer will try this PR's pipeline again.
+          format: date-time
+          type:
+          - "null"
+          - string
+      required:
+      - attempts
+      - lastError
+      type: object
     ControllersSessionView:
       properties:
         activeAgentSwitch:
@@ -18576,6 +18601,8 @@ components:
           - github
           - gitlab
           type: string
+        readinessCheck:
+          $ref: '#/components/schemas/ControllersSessionPRReadinessCheck'
         repo:
           type: string
         review:

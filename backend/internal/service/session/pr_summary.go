@@ -37,6 +37,9 @@ type PRReviewCommentLink = contract.PullRequestReviewCommentLink
 // PRMergeabilitySummary describes whether a PR can be merged and why.
 type PRMergeabilitySummary = contract.PullRequestMergeabilitySummary
 
+// PRReadinessCheck reports a repeatedly failing readiness pipeline for one PR.
+type PRReadinessCheck = contract.PullRequestReadinessCheck
+
 // PRConflictFile is one file involved in a PR merge conflict.
 type PRConflictFile = contract.PullRequestConflictFile
 
@@ -96,6 +99,7 @@ func (s *Service) ListPRSummaries(ctx context.Context, id domain.SessionID) ([]P
 		}
 		out = append(out, summarizePR(group.primary, checks, reviews, threads, comments, threadsExact, latestHeadRun[group.primary.URL], aoPublishedReviewIDs(ctx, s.store, group.primary.URL)))
 	}
+	attachReadinessChecks(out, s.readinessFailures)
 	sortPRSummaries(out)
 	return out, nil
 }
@@ -480,6 +484,36 @@ func reviewAfter(a, b domain.PullRequestReview) bool {
 		return a.ID > b.ID
 	}
 	return a.SubmittedAt.After(b.SubmittedAt)
+}
+
+// attachReadinessChecks stamps the observer's readiness-failure records onto
+// open summaries. Only a failing pipeline carries the block; a nil provider
+// (service tests, observer not started) leaves every summary untouched.
+func attachReadinessChecks(out []PRSummary, provider ReadinessFailuresProvider) {
+	if provider == nil {
+		return
+	}
+	urls := make([]string, 0, len(out))
+	for _, pr := range out {
+		if pr.State != domain.PRStateMerged && pr.State != domain.PRStateClosed {
+			urls = append(urls, pr.URL)
+		}
+	}
+	if len(urls) == 0 {
+		return
+	}
+	failures := provider.ReadinessFailures(urls)
+	for i := range out {
+		if f, ok := failures[out[i].URL]; ok {
+			lastFailedAt, nextRetryAt := f.LastFailedAt, f.NextRetryAt
+			out[i].ReadinessCheck = &contract.PullRequestReadinessCheck{
+				Attempts:     f.Attempts,
+				LastError:    f.LastError,
+				LastFailedAt: &lastFailedAt,
+				NextRetryAt:  &nextRetryAt,
+			}
+		}
+	}
 }
 
 func summarizeMergeability(pr domain.PullRequest, _ []domain.PullRequestReviewThread) PRMergeabilitySummary {

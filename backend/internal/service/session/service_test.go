@@ -6076,6 +6076,74 @@ func (f *multiPRFakeStore) ListPRsBySession(context.Context, domain.SessionID) (
 	return f.prs, nil
 }
 
+// fakeReadinessFailures is a ReadinessFailuresProvider stub for the PR-summary
+// enrichment.
+type fakeReadinessFailures struct {
+	failures map[string]ports.SCMReadinessFailure
+	askedFor []string
+}
+
+func (f *fakeReadinessFailures) ReadinessFailures(prURLs []string) map[string]ports.SCMReadinessFailure {
+	f.askedFor = append([]string(nil), prURLs...)
+	return f.failures
+}
+
+func TestListPRSummariesAttachReadinessCheckFailures(t *testing.T) {
+	now := time.Date(2026, 11, 8, 10, 0, 0, 0, time.UTC)
+	st := newFakeStore()
+	st.sessions["mer-1"] = domain.SessionRecord{ID: "mer-1", ProjectID: "mer", Kind: domain.KindWorker}
+	readyURL := "https://github.com/acme/repo/pull/7"
+	stList := &multiPRFakeStore{fakeStore: st, prs: []domain.PullRequest{{
+		URL: readyURL, HTMLURL: readyURL, SessionID: "mer-1", Number: 7,
+		CI:           domain.CIPassing,
+		Mergeability: domain.MergeUnknown,
+		Provider:     "github", Repo: "acme/repo", Title: "Fix dashboard", Author: "ada",
+		UpdatedAt: now,
+	}}}
+
+	tracker := &fakeReadinessFailures{failures: map[string]ports.SCMReadinessFailure{readyURL: {
+		Attempts:     3,
+		LastError:    "context deadline exceeded",
+		LastFailedAt: now.Add(-30 * time.Second),
+		NextRetryAt:  now.Add(90 * time.Second),
+	}}}
+	svc := &Service{store: stList, clock: func() time.Time { return now }}
+	svc.SetReadinessFailures(tracker)
+
+	got, err := svc.ListPRSummaries(context.Background(), "mer-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("summaries = %+v", got)
+	}
+	pr := got[0]
+	if pr.ReadinessCheck == nil {
+		t.Fatalf("repeated failures must surface a readiness check on the summary")
+	}
+	if pr.ReadinessCheck.Attempts != 3 || pr.ReadinessCheck.LastError != "context deadline exceeded" {
+		t.Fatalf("readiness check = %+v", pr.ReadinessCheck)
+	}
+	if pr.ReadinessCheck.NextRetryAt == nil || !pr.ReadinessCheck.NextRetryAt.Equal(now.Add(90*time.Second)) {
+		t.Fatalf("nextRetryAt = %+v", pr.ReadinessCheck.NextRetryAt)
+	}
+	// Only open PR URLs are queried from the tracker.
+	if len(tracker.askedFor) != 1 || tracker.askedFor[0] != readyURL {
+		t.Fatalf("tracker asked for %v, want only the open PR URL", tracker.askedFor)
+	}
+
+	// A healthy pipeline reports nothing: the provider returning no entries
+	// (and the summary keeping the block nil) is the absent-on-the-wire shape.
+	tracker.failures = nil
+	got, err = svc.ListPRSummaries(context.Background(), "mer-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got[0].ReadinessCheck != nil {
+		t.Fatalf("healthy pipeline must leave readinessCheck absent, got %+v", got[0].ReadinessCheck)
+	}
+}
+
 func containsString(values []string, want string) bool {
 	for _, got := range values {
 		if got == want {
