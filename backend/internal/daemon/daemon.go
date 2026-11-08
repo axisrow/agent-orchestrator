@@ -1016,6 +1016,7 @@ func Run() error {
 		Events:             cdcPipe.Broadcaster,
 		Activity:           hookActivity,
 		UsageHooks:         usageCollector,
+		UsageHookMetrics:   usageCollector.HookMetricsSnapshot,
 		UsageSummary:       usagesvc.NewSummaryReader(store),
 		SessionMemory:      memoryReader,
 		SessionSteps:       lcStack.LCM,

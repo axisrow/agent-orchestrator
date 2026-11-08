@@ -72,7 +72,7 @@ func NewRouterWithControl(cfg config.Config, log *slog.Logger, termMgr *terminal
 	r.NotFound(notFoundJSON)
 	r.MethodNotAllowed(methodNotAllowedJSON)
 
-	mountHealth(r, cfg, deps.Readiness)
+	mountHealth(r, cfg, deps.Readiness, deps.UsageHookMetrics)
 	mountTerminalMux(r, termMgr, log, cfg.AllowedOrigins)
 	mountControl(r, control)
 	mountTelemetry(r, cfg, deps.Telemetry)
@@ -98,9 +98,17 @@ func previewOriginMiddleware(sessions *controllers.SessionsController) func(http
 // mountHealth registers the liveness and readiness probes the Electron
 // supervisor polls before letting the renderer connect. /healthz is liveness
 // (the process is up); /readyz is readiness (the daemon can do its job).
-func mountHealth(r chi.Router, cfg config.Config, readiness *Readiness) {
+// usageHookMetrics, when non-nil, adds the usage hook-processing counters to
+// the payload so 500+ silent hook failures a day stay visible (#300).
+func mountHealth(r chi.Router, cfg config.Config, readiness *Readiness, usageHookMetrics func() map[string]int64) {
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		envelope.WriteJSON(w, http.StatusOK, daemonProbePayload("ok", cfg))
+		payload := daemonProbePayload("ok", cfg)
+		if usageHookMetrics != nil {
+			if metrics := usageHookMetrics(); metrics != nil {
+				payload["usageHooks"] = metrics
+			}
+		}
+		envelope.WriteJSON(w, http.StatusOK, payload)
 	})
 	r.Get("/readyz", func(w http.ResponseWriter, _ *http.Request) {
 		status, reason := "ready", ""

@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -34,6 +35,14 @@ const (
 )
 
 var nativeUsageIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
+// errUsageArtifactMissing marks a hook payload artifact path that does not
+// (or not yet) exist on disk. Providers fire hooks at moments where their
+// transcript is legitimately absent — Claude 2.1.319 reports transcript_path
+// before it creates the file at SessionStart/UserPromptSubmit, and reports
+// agent_transcript_path under <session>/subagents/ that it no longer writes —
+// so a hook carrying one must degrade, not drop.
+var errUsageArtifactMissing = errors.New(domain.UsageErrorArtifactMissing)
 
 // ErrUsageSessionNotFound reports that hook metadata targeted no durable AO session.
 var ErrUsageSessionNotFound = errors.New("usage session not found")
@@ -128,6 +137,25 @@ type Collector struct {
 	discoveryAfterID int64
 	// Guarded separately from mu, which RecordHook holds across the whole hook.
 	routeMu sync.RWMutex
+	// Hook-failure observability. 504 silent WARNs a day hid a wholesale hook
+	// outage while the activity state machine kept lying to the user, so the
+	// counts must be queryable, not just logged (#300).
+	hookFailures         atomic.Int64
+	hookArtifactsMissing atomic.Int64
+}
+
+// HookMetricsSnapshot reports the collector's hook-processing counters:
+// hookFailures counts hook events dropped with an error, hookArtifactsMissing
+// counts artifacts a hook reported that were absent on disk and processed
+// without (degraded, not dropped).
+func (c *Collector) HookMetricsSnapshot() map[string]int64 {
+	if c == nil {
+		return nil
+	}
+	return map[string]int64{
+		"hookFailures":         c.hookFailures.Load(),
+		"hookArtifactsMissing": c.hookArtifactsMissing.Load(),
+	}
 }
 
 // OnRouteResolved registers the handler called the first time a binding learns
@@ -261,8 +289,17 @@ func (c *Collector) ReactivateSession(
 }
 
 // RecordHook registers transcript metadata and updates collection lifecycle for
-// one native hook callback.
+// one native hook callback. Whole-event failures are counted so a dead hook
+// pipeline cannot hide behind WARN spam (#300).
 func (c *Collector) RecordHook(ctx context.Context, sessionID domain.SessionID, signal HookSignal) error {
+	if err := c.recordHook(ctx, sessionID, signal); err != nil {
+		c.hookFailures.Add(1)
+		return err
+	}
+	return nil
+}
+
+func (c *Collector) recordHook(ctx context.Context, sessionID domain.SessionID, signal HookSignal) error {
 	signal.LaunchID = boundedUsageMetadata(signal.LaunchID)
 	finalizing := finalizingEvent(signal.Event)
 	session, proceed, err := c.hookSession(ctx, sessionID, signal, finalizing)
@@ -295,13 +332,31 @@ func (c *Collector) RecordHook(ctx context.Context, sessionID domain.SessionID, 
 		}
 	}
 	subagentPath := strings.TrimSpace(signal.SubagentTranscriptPath)
+	// A hook artifact that is absent on disk must not drop the event: providers
+	// fire hooks before their transcript exists (Claude 2.1.319 SessionStart) or
+	// name artifacts they no longer write (subagents/ paths). Registration of
+	// the missing artifact is skipped; binding, finalization, and settle work
+	// still run, and the next hook that finds the file registers it — sources
+	// ingest from byte 0, so nothing already written is lost (#300).
 	mainArtifact, err := c.validateHookArtifact(ctx, session.Harness, mainPath)
 	if err != nil {
-		return err
+		if !errors.Is(err, errUsageArtifactMissing) {
+			return err
+		}
+		c.hookArtifactsMissing.Add(1)
+		c.logger.Debug("usage hook artifact absent; processing without it",
+			"session", sessionID, "event", signal.Event, "path", mainPath)
+		mainArtifact = nil
 	}
 	subagentArtifact, err := c.validateHookArtifact(ctx, session.Harness, subagentPath)
 	if err != nil {
-		return err
+		if !errors.Is(err, errUsageArtifactMissing) {
+			return err
+		}
+		c.hookArtifactsMissing.Add(1)
+		c.logger.Debug("usage hook artifact absent; processing without it",
+			"session", sessionID, "event", signal.Event, "path", subagentPath)
+		subagentArtifact = nil
 	}
 	if finalizing && !existsForDiscovery {
 		recoveryPath := mainPath
@@ -1874,14 +1929,14 @@ func (c *Collector) validateSourcePath(ctx context.Context, harness domain.Agent
 	}
 	resolved, err := filepath.EvalSymlinks(filepath.Clean(path))
 	if err != nil {
-		return "", "", 0, errors.New(domain.UsageErrorArtifactMissing)
+		return "", "", 0, errUsageArtifactMissing
 	}
 	if err := ctx.Err(); err != nil {
 		return "", "", 0, err
 	}
 	info, err := os.Stat(resolved)
 	if err != nil || !info.Mode().IsRegular() {
-		return "", "", 0, errors.New(domain.UsageErrorArtifactMissing)
+		return "", "", 0, errUsageArtifactMissing
 	}
 	roots := c.allowedRoots(harness)
 	allowed := false
