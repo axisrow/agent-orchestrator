@@ -19240,6 +19240,8 @@ components:
           - auto
           - bypass-permissions
           type: string
+        async:
+          type: boolean
         attachments:
           items:
             $ref: '#/components/schemas/AttachmentInput'

@@ -1265,6 +1265,11 @@ func (m *Manager) spawn(ctx context.Context, cfg ports.SpawnConfig, timings *spa
 			seed.Metadata.Model = cfg.AgentConfig.Model
 			seed.Metadata.Effort = cfg.AgentConfig.Effort
 		}
+		// Visible from its first row: without this, a view that opens the session
+		// before beginAsyncChatSpawn reads a ready session with no controller.
+		if asyncChat {
+			seed.ProvisionState = domain.SessionProvisionProvisioning
+		}
 		if cfg.ClientRequestID != "" {
 			var fresh bool
 			rec, fresh, err = m.store.CreateClientRequestSession(ctx, seed)

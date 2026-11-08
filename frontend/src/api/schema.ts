@@ -6938,6 +6938,7 @@ export interface components {
         SpawnSessionRequest: {
             /** @enum {string} */
             approvalMode?: "default" | "accept-edits" | "auto" | "bypass-permissions";
+            async?: boolean;
             attachments?: components["schemas"]["AttachmentInput"][];
             branch?: string;
             clientRequestId?: string;
