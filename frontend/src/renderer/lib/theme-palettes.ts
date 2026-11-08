@@ -1,2 +1,2 @@
-// The catalog is shared with the mobile app (packages/mobile/lib/theme.ts).
+// Re-exported from the shared theme package for renderer consumers.
 export * from "../../../../packages/shared/theme/palettes";

@@ -1,10 +1,9 @@
 /**
- * Named color themes, shared by the desktop and mobile apps. Every theme ships
+ * Named color themes shared by desktop surfaces. Every theme ships
  * a dark and a light palette; values are the theme's canonical colors, nudged
  * only where a role failed the contrast floor in
- * frontend/src/renderer/lib/theme-palettes.test.ts. Each app derives its own
- * tokens from these roles: desktop in frontend/src/renderer/lib/theme-tokens.ts,
- * mobile in packages/mobile/lib/themeDerive.ts.
+ * frontend/src/renderer/lib/theme-palettes.test.ts. The desktop derives its
+ * tokens from these roles in frontend/src/renderer/lib/theme-tokens.ts.
  */
 
 export type ThemePalette = {
@@ -41,8 +40,7 @@ export type ThemeDefinition = {
 
 export const THEMES = [
 	{
-		// Owned by tokens.css on desktop and by the hand-tuned palette in
-		// packages/mobile/lib/theme.ts; these values only feed the picker swatch.
+		// Owned by tokens.css on desktop; these values only feed the picker swatch.
 		id: "orchestrate",
 		label: "Orchestrate",
 		dark: {
