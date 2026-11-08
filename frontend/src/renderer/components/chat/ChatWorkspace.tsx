@@ -230,6 +230,7 @@ type WorkspaceTab = { key: string; content: ReactNode; onSelect: () => void; onC
 type ChatAuxiliaryTab =
 	| { key: string; kind: "reviewer"; terminal: { handleId: string; harness: string } }
 	| { key: string; kind: "reviewer-chat"; terminal: { reviewId: string; harness: string } }
+	| { key: string; kind: "reviewer-starting"; terminal: { reviewId: string; harness: string } }
 	| { key: string; kind: "shell"; terminal: ShellTerminal }
 	| { key: string; kind: "workspace"; tab: WorkspaceTab };
 
@@ -387,6 +388,10 @@ export interface ChatWorkspaceProps {
 	onOpenReviewerChat?: (target: { reviewId: string; harness: string }) => void;
 	/** A typed reviewer owns the body while this worker surface remains mounted. */
 	reviewerChatSelected?: boolean;
+	/** A queued pass whose reviewer pane has not come up yet (#302). */
+	reviewerStarting?: { reviewId: string; harness: string };
+	reviewerStartingSelected?: boolean;
+	onOpenReviewerStarting?: () => void;
 	/** The parent surface owns the shared session tab strip. */
 	hideHeader?: boolean;
 	inlineHeader?: boolean;
@@ -654,6 +659,9 @@ function ChatWorkspaceContent({
 	reviewerChat,
 	onOpenReviewerChat,
 	reviewerChatSelected = false,
+	reviewerStarting,
+	reviewerStartingSelected = false,
+	onOpenReviewerStarting,
 	hideHeader = false,
 	inlineHeader = false,
 	session,
@@ -861,7 +869,8 @@ function ChatWorkspaceContent({
 	// Selection is durable UI state; availability only controls whether the tab is
 	// offered. Keeping these separate preserves a selected reviewer while an active
 	// session temporarily becomes terminated and later returns.
-	const reviewerActive = reviewerChatSelected || Boolean(reviewerTarget && session);
+	const reviewerActive = reviewerChatSelected || Boolean(reviewerTarget && session)
+		|| Boolean(reviewerStarting && reviewerStartingSelected);
 	const shellActive = Boolean(shellTarget && session);
 	const auxiliaryTabs = useMemo<ChatAuxiliaryTab[]>(
 		() => [
@@ -871,10 +880,16 @@ function ChatWorkspaceContent({
 			...(!reviewerTerminal && reviewerChat
 				? [{ key: `reviewer-chat:${reviewerChat.reviewId}`, kind: "reviewer-chat" as const, terminal: reviewerChat }]
 				: []),
+			// The pass is queued and its pane is not up yet: show the reviewer tab
+			// in its starting state instead of leaving the reviewer silently
+			// absent until the spawn finishes (#302).
+			...(!reviewerTerminal && !reviewerChat && reviewerStarting
+				? [{ key: `reviewer-starting:${reviewerStarting.reviewId}`, kind: "reviewer-starting" as const, terminal: reviewerStarting }]
+				: []),
 			...(shellTerminals ?? []).map((terminal) => ({ key: terminal.handleId, kind: "shell" as const, terminal })),
 			...(workspaceTabs ?? []).map((tab) => ({ key: tab.key, kind: "workspace" as const, tab })),
 		],
-		[reviewerChat, reviewerTerminal, shellTerminals, workspaceTabs],
+		[reviewerChat, reviewerStarting, reviewerTerminal, shellTerminals, workspaceTabs],
 	);
 	const availableTabKeys = useMemo(() => auxiliaryTabs.map((tab) => tab.key), [auxiliaryTabs]);
 	const [tabOrderBySession, setTabOrderBySession] = useState<Record<string, string[]>>({});
@@ -1243,7 +1258,9 @@ function ChatWorkspaceContent({
 						? `reviewer:${reviewerTerminal.handleId}`
 						: reviewerChat
 							? `reviewer-chat:${reviewerChat.reviewId}`
-							: "chat"
+							: reviewerStarting
+								? `reviewer-starting:${reviewerStarting.reviewId}`
+								: "chat"
 					: "chat");
 			const activeIndex = tabs.findIndex((tab) => tab.key === activeKey);
 			const currentIndex = activeIndex >= 0 ? activeIndex : 0;
@@ -1255,6 +1272,10 @@ function ChatWorkspaceContent({
 			}
 			if (next.kind === "reviewer") {
 				onOpenReviewerTerminal?.(next.terminal);
+				return;
+			}
+			if (next.kind === "reviewer-starting") {
+				onOpenReviewerStarting?.();
 				return;
 			}
 			if (next.kind === "reviewer-chat") {
@@ -1270,10 +1291,12 @@ function ChatWorkspaceContent({
 		[
 			onOpenReviewerTerminal,
 			onOpenReviewerChat,
+			onOpenReviewerStarting,
 			onSelectChat,
 			onSelectShellTerminal,
 			reviewerActive,
 			reviewerChat,
+			reviewerStarting,
 			reviewerTerminal,
 			orderedAuxiliaryTabs,
 			shellActive,
@@ -1609,6 +1632,7 @@ function ChatWorkspaceContent({
 				sessionRole={sessionRole}
 				onOpenReviewerTerminal={onOpenReviewerTerminal}
 				onOpenReviewerChat={onOpenReviewerChat}
+				onOpenReviewerStarting={onOpenReviewerStarting}
 				reviewerActive={reviewerActive}
 				onSelectChat={onSelectChat}
 				shellActiveHandleId={shellActive ? shellTarget?.handleId : undefined}
@@ -1629,6 +1653,19 @@ function ChatWorkspaceContent({
 				inline={isFullscreen || inlineHeader}
 			/>}
 			<div className="relative flex min-h-0 flex-1 flex-col">
+				{reviewerStartingSelected && reviewerStarting && !reviewerTerminal && !reviewerTarget && !reviewerChatSelected ? (
+					<div
+						aria-label="Reviewer starting"
+						className="flex min-h-0 flex-1 items-center justify-center"
+						data-testid="chat-reviewer-starting-panel"
+						role="tabpanel"
+					>
+						<div className="flex flex-col items-center gap-3 text-center">
+							<Loader2 aria-hidden="true" className="size-6 animate-spin text-status-working motion-reduce:animate-none" />
+							<p className="text-caption text-muted-foreground">Reviewer is starting…</p>
+						</div>
+					</div>
+				) : null}
 				{reviewerTarget && session ? (
 					<div
 						aria-label="Reviewer terminal"
@@ -2075,6 +2112,7 @@ function ChatHeader({
 	sessionRole,
 	onOpenReviewerTerminal,
 	onOpenReviewerChat,
+	onOpenReviewerStarting,
 	reviewerActive,
 	onSelectChat,
 	shellActiveHandleId,
@@ -2099,6 +2137,7 @@ function ChatHeader({
 	sessionRole: SessionKind;
 	onOpenReviewerTerminal?: (target: { handleId: string; harness: string }) => void;
 	onOpenReviewerChat?: (target: { reviewId: string; harness: string }) => void;
+	onOpenReviewerStarting?: () => void;
 	/** The reviewer tab is selected; the chat tab is the clickable alternative. */
 	reviewerActive?: boolean;
 	/** Return the tab strip to the chat tab. */
@@ -2230,7 +2269,7 @@ function ChatHeader({
 										/>
 									) : (
 										<DraggableChatTab key={tab.key} value={tab.key}>
-											{tab.kind === "reviewer" || tab.kind === "reviewer-chat" ? (
+											{tab.kind === "reviewer" || tab.kind === "reviewer-chat" || tab.kind === "reviewer-starting" ? (
 												<button
 													aria-current={reviewerActive && !workspaceActiveTabKey ? true : undefined}
 													aria-label="Reviewer"
@@ -2241,13 +2280,17 @@ function ChatHeader({
 															? "bg-overlay text-foreground after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-foreground/80"
 															: "text-muted-foreground hover:bg-raised hover:text-foreground",
 													)}
-													onClick={() => tab.kind === "reviewer" ? onOpenReviewerTerminal?.(tab.terminal) : onOpenReviewerChat?.(tab.terminal)}
+													onClick={() => tab.kind === "reviewer" ? onOpenReviewerTerminal?.(tab.terminal) : tab.kind === "reviewer-chat" ? onOpenReviewerChat?.(tab.terminal) : onOpenReviewerStarting?.()}
 													role="tab"
 													tabIndex={reviewerActive && !workspaceActiveTabKey ? 0 : -1}
 													title={tab.terminal.harness}
 													type="button"
 												>
-													<AgentAvatar className="size-icon-base" decorative provider={tab.terminal.harness} />
+													{tab.kind === "reviewer-starting" ? (
+														<Loader2 aria-hidden="true" className="size-icon-base shrink-0 animate-spin text-status-working motion-reduce:animate-none" />
+													) : (
+														<AgentAvatar className="size-icon-base" decorative provider={tab.terminal.harness} />
+													)}
 													<span className="truncate">Reviewer</span>
 												</button>
 											) : (

@@ -2,6 +2,7 @@ package autoreview
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -318,6 +319,108 @@ type notifyingTrigger struct {
 func (f *notifyingTrigger) TriggerAuto(_ context.Context, id domain.SessionID, _ domain.ReviewerHarness) (reviewcore.TriggerResult, error) {
 	f.called <- id
 	return reviewcore.TriggerResult{Created: true}, nil
+}
+
+// pushTrigger records push-driven triggers. TriggerAuto answering Created:true
+// satisfies Trigger; TriggerAutoPush records the passed local heads.
+type pushTrigger struct {
+	fakeTrigger
+	mu      sync.Mutex
+	calls   int
+	head    map[string]string
+	harness domain.ReviewerHarness
+	seen    chan struct{}
+}
+
+func (f *pushTrigger) TriggerAutoPush(_ context.Context, _ domain.SessionID, harness domain.ReviewerHarness, localHeads map[string]string) (reviewcore.TriggerResult, error) {
+	f.mu.Lock()
+	f.calls++
+	f.harness = harness
+	f.head = localHeads
+	f.mu.Unlock()
+	if f.seen != nil {
+		f.seen <- struct{}{}
+	}
+	return reviewcore.TriggerResult{Created: true}, nil
+}
+
+func (f *pushTrigger) record() (int, map[string]string, domain.ReviewerHarness) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.calls, f.head, f.harness
+}
+
+// TestNudgeTriggersWithoutIdleGate proves the push-driven path starts a review
+// for a worker that is still Active — the sweep's idle gate does not apply to
+// a push — and that the trigger plans against the pushed local head, not the
+// stale stored PR head.
+func TestNudgeTriggersWithoutIdleGate(t *testing.T) {
+	now := time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC)
+	store := &fakeStore{
+		// Not idle at all: today's sweep would skip this session.
+		session: domain.SessionRecord{ID: "s1", ProjectID: "p1", Kind: domain.KindWorker, Harness: domain.HarnessCodex, AutoReviewEnabled: true, Activity: domain.Activity{State: domain.ActivityActive, LastActivityAt: now}},
+		project: domain.ProjectRecord{ID: "p1"},
+		// Stored PR head is the previous, already-reviewed SHA.
+		prs:  []domain.PullRequest{{URL: "pr1", Number: 1, HeadSHA: "oldsha", SourceBranch: "ao/s1/topic"}},
+		runs: []domain.ReviewRun{{PRURL: "pr1", TargetSHA: "oldsha", Status: domain.ReviewRunComplete, Verdict: domain.VerdictApproved, CreatedAt: now}},
+	}
+	trigger := &pushTrigger{fakeTrigger: fakeTrigger{}, seen: make(chan struct{}, 4)}
+	coordinator := New(store, trigger, Config{Clock: func() time.Time { return now }})
+	coordinator.Start(context.Background())
+
+	coordinator.Nudge("s1", "ao/s1/topic", "newsha")
+	select {
+	case <-trigger.seen:
+	case <-time.After(2 * time.Second):
+		t.Fatal("push-driven evaluation never triggered")
+	}
+	calls, head, harness := trigger.record()
+	if calls != 1 {
+		t.Fatalf("TriggerAutoPush calls = %d, want 1", calls)
+	}
+	if head["ao/s1/topic"] != "newsha" {
+		t.Fatalf("local heads = %v, want the pushed sha", head)
+	}
+	if harness != domain.ReviewerCodex {
+		t.Fatalf("harness = %q, want codex", harness)
+	}
+}
+
+// TestNudgeHonorsDisabledGate proves the push path keeps the enabled and kind
+// gates: a disabled or non-worker session is never triggered by a push.
+func TestNudgeHonorsDisabledGate(t *testing.T) {
+	now := time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name   string
+		mutate func(*fakeStore)
+	}{
+		{name: "disabled", mutate: func(f *fakeStore) { f.session.AutoReviewEnabled = false }},
+		{name: "non-worker", mutate: func(f *fakeStore) { f.session.Kind = domain.KindOrchestrator }},
+		{name: "terminated", mutate: func(f *fakeStore) { f.session.IsTerminated = true }},
+		{name: "no heads to plan against", mutate: func(f *fakeStore) { f.prs = nil }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &fakeStore{
+				session: domain.SessionRecord{ID: "s1", ProjectID: "p1", Kind: domain.KindWorker, Harness: domain.HarnessCodex, AutoReviewEnabled: true},
+				project: domain.ProjectRecord{ID: "p1"},
+				prs:     []domain.PullRequest{{URL: "pr1", Number: 1, HeadSHA: "sha1", SourceBranch: "br"}},
+			}
+			if tt.mutate != nil {
+				tt.mutate(store)
+			}
+			trigger := &pushTrigger{fakeTrigger: fakeTrigger{}}
+			coordinator := New(store, trigger, Config{Clock: func() time.Time { return now }})
+			coordinator.Start(context.Background())
+			coordinator.Nudge("s1", "br", "newsha")
+			// The evaluation runs on its own goroutine; give it a beat, then
+			// assert nothing fired.
+			time.Sleep(50 * time.Millisecond)
+			if calls, _, _ := trigger.record(); calls != 0 {
+				t.Fatalf("TriggerAutoPush calls = %d, want 0", calls)
+			}
+		})
+	}
 }
 
 func TestCoordinatorPeriodicallyEvaluatesPersistedFacts(t *testing.T) {

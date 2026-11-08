@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
@@ -38,6 +39,13 @@ type Trigger interface {
 	TriggerAuto(context.Context, domain.SessionID, domain.ReviewerHarness) (reviewcore.TriggerResult, error)
 }
 
+// PushTrigger is the optional trigger capability the push-driven path uses:
+// a pass planned against locally observed pushed heads, without the sweep's
+// idle gate. The daemon's review service implements it.
+type PushTrigger interface {
+	TriggerAutoPush(context.Context, domain.SessionID, domain.ReviewerHarness, map[string]string) (reviewcore.TriggerResult, error)
+}
+
 // Result describes whether an evaluation started a review and why it skipped
 // or triggered.
 type Result struct {
@@ -53,6 +61,16 @@ type Coordinator struct {
 	idleThreshold time.Duration
 	sweepInterval time.Duration
 	logger        *slog.Logger
+
+	// Push nudges: one evaluation goroutine per session, re-running while new
+	// pushes arrive. pendingHeads holds branch→remote-tip facts not yet
+	// consumed; pushedAt keeps the first unconsumed push instant for the
+	// push→trigger delay log.
+	rootCtx      context.Context
+	nudgeMu      sync.Mutex
+	pendingHeads map[domain.SessionID]map[string]string
+	nudging      map[domain.SessionID]bool
+	pushedAt     map[domain.SessionID]time.Time
 }
 
 // Config customizes coordinator timing and logging.
@@ -84,6 +102,88 @@ func New(store Store, reviews Trigger, cfg Config) *Coordinator {
 // EvaluateSession evaluates one worker against the current project, activity,
 // PR, and review-run facts.
 func (c *Coordinator) EvaluateSession(ctx context.Context, id domain.SessionID) (Result, error) {
+	return c.evaluate(ctx, id, nil, false)
+}
+
+// Nudge schedules a push-driven evaluation of one worker: the daemon observed
+// the worker's branch land on the remote (branch at remote tip sha). A push is
+// itself the freshness proof, so the sweep's idle gate does not apply and the
+// trigger plans against the locally observed head — no SCM observer round trip
+// sits between the push and the review. Evaluations are single-flight per
+// session; pushes arriving mid-evaluation rerun it. The periodic sweep stays
+// the fallback for pushes this daemon cannot observe.
+func (c *Coordinator) Nudge(sessionID domain.SessionID, branch, sha string) {
+	c.nudgeMu.Lock()
+	if c.pendingHeads == nil {
+		c.pendingHeads = map[domain.SessionID]map[string]string{}
+	}
+	if c.nudging == nil {
+		c.nudging = map[domain.SessionID]bool{}
+	}
+	if c.pushedAt == nil {
+		c.pushedAt = map[domain.SessionID]time.Time{}
+	}
+	heads := c.pendingHeads[sessionID]
+	if heads == nil {
+		heads = map[string]string{}
+		c.pendingHeads[sessionID] = heads
+	}
+	if branch != "" && sha != "" {
+		heads[branch] = sha
+	}
+	if _, started := c.nudging[sessionID]; started {
+		c.nudgeMu.Unlock()
+		return
+	}
+	c.nudging[sessionID] = true
+	if _, ok := c.pushedAt[sessionID]; !ok {
+		c.pushedAt[sessionID] = c.clock()
+	}
+	ctx := c.rootCtx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	c.nudgeMu.Unlock()
+	go c.nudgeLoop(ctx, sessionID)
+}
+
+func (c *Coordinator) nudgeLoop(ctx context.Context, id domain.SessionID) {
+	for {
+		c.nudgeMu.Lock()
+		heads := c.pendingHeads[id]
+		delete(c.pendingHeads, id)
+		pushAt := c.pushedAt[id]
+		c.nudgeMu.Unlock()
+		c.evaluatePush(ctx, id, heads, pushAt)
+		c.nudgeMu.Lock()
+		if len(c.pendingHeads[id]) == 0 {
+			delete(c.nudging, id)
+			delete(c.pushedAt, id)
+			c.nudgeMu.Unlock()
+			return
+		}
+		c.nudgeMu.Unlock()
+	}
+}
+
+func (c *Coordinator) evaluatePush(ctx context.Context, id domain.SessionID, heads map[string]string, pushAt time.Time) {
+	result, err := c.evaluate(ctx, id, heads, true)
+	if err != nil {
+		c.logger.Error("auto-review: push-driven evaluation failed", "session_id", id, "err", err)
+		return
+	}
+	if result.Triggered {
+		c.logger.Info("auto-review: push-driven review started",
+			"session_id", id,
+			"push_to_trigger_ms", c.clock().Sub(pushAt).Milliseconds())
+		return
+	}
+	c.logger.Debug("auto-review: push-driven evaluation skipped", "session_id", id, "reason", result.Reason)
+}
+
+// evaluate is the shared eligibility body. With push set, the idle gate does
+// not apply and the trigger plans against the pushed local heads.
+func (c *Coordinator) evaluate(ctx context.Context, id domain.SessionID, heads map[string]string, push bool) (Result, error) {
 	session, ok, err := c.store.GetSession(ctx, id)
 	if err != nil || !ok {
 		if err == nil {
@@ -91,8 +191,12 @@ func (c *Coordinator) EvaluateSession(ctx context.Context, id domain.SessionID) 
 		}
 		return Result{}, err
 	}
-	if reason := sessionGate(session, c.clock(), c.idleThreshold); reason != "" {
-		return Result{Reason: reason}, nil
+	gate := sessionGate(session, c.clock(), c.idleThreshold)
+	if push {
+		gate = pushSessionGate(session)
+	}
+	if gate != "" {
+		return Result{Reason: gate}, nil
 	}
 	project, ok, err := c.store.GetProject(ctx, string(session.ProjectID))
 	if err != nil || !ok {
@@ -109,6 +213,7 @@ func (c *Coordinator) EvaluateSession(ctx context.Context, id domain.SessionID) 
 	if err != nil {
 		return Result{}, err
 	}
+	reviewcore.ApplyLocalHeads(prs, heads)
 	runs, err := c.store.ListReviewRunsBySession(ctx, id)
 	if err != nil {
 		return Result{}, err
@@ -148,7 +253,16 @@ func (c *Coordinator) EvaluateSession(ctx context.Context, id domain.SessionID) 
 	if !eligible && !hasRunning {
 		return Result{Reason: reason}, nil
 	}
-	result, err := c.reviews.TriggerAuto(ctx, id, harness)
+	var result reviewcore.TriggerResult
+	if push {
+		pushTrigger, ok := c.reviews.(PushTrigger)
+		if !ok {
+			return Result{Reason: "push_trigger_unavailable"}, nil
+		}
+		result, err = pushTrigger.TriggerAutoPush(ctx, id, harness, heads)
+	} else {
+		result, err = c.reviews.TriggerAuto(ctx, id, harness)
+	}
 	if err != nil {
 		return Result{}, fmt.Errorf("trigger auto review for %s: %w", id, err)
 	}
@@ -273,6 +387,22 @@ func sessionGate(session domain.SessionRecord, now time.Time, threshold time.Dur
 	return ""
 }
 
+// pushSessionGate is the eligibility gate for a push-driven evaluation. The
+// push is the freshness proof, so the sweep's idle and idle-threshold checks
+// do not apply; enabled, kind, and liveness stay enforced.
+func pushSessionGate(session domain.SessionRecord) string {
+	if !session.AutoReviewEnabled {
+		return "disabled"
+	}
+	if session.Kind != domain.KindWorker {
+		return "not_worker"
+	}
+	if session.IsTerminated {
+		return "terminated"
+	}
+	return ""
+}
+
 // Sweep evaluates every known session, isolating per-session failures.
 func (c *Coordinator) Sweep(ctx context.Context) error {
 	sessions, err := c.store.ListAllSessions(ctx)
@@ -291,8 +421,11 @@ func (c *Coordinator) Sweep(ctx context.Context) error {
 }
 
 // Start evaluates persisted session and PR facts on the configured cadence
-// until ctx is cancelled.
+// until ctx is cancelled. The context also bounds push-driven evaluations.
 func (c *Coordinator) Start(ctx context.Context) <-chan struct{} {
+	c.nudgeMu.Lock()
+	c.rootCtx = ctx
+	c.nudgeMu.Unlock()
 	done := make(chan struct{})
 	go func() {
 		defer close(done)

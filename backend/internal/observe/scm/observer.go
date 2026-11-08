@@ -308,7 +308,18 @@ func (o *Observer) Start(ctx context.Context) <-chan struct{} {
 		})
 		return o.Poll(ctx)
 	}
-	return observe.StartPollLoop(ctx, o.tick, poll, o.logger, "scm observer")
+	return observe.StartTriggeredPollLoop(ctx, o.tick, o.trigger, poll, o.logger, "scm observer")
+}
+
+// RequestPoll wakes the poll loop for an immediate observation cycle. A worker
+// push is such a moment: the pushed PR head reaches the durable facts on this
+// poll instead of the next tick. Non-blocking; a trigger arriving mid-poll runs
+// one more poll right after it, and the tick cadence stays the fallback.
+func (o *Observer) RequestPoll() {
+	select {
+	case o.trigger <- struct{}{}:
+	default:
+	}
 }
 
 type subject struct {

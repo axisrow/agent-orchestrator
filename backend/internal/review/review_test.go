@@ -706,6 +706,84 @@ func TestTriggerSpawnsNewReviewerAndRecordsRunAfterLaunch(t *testing.T) {
 	}
 }
 
+// activeWorker is a live worker mid-turn: the sweep's idle gate refuses it,
+// which is exactly the state a push-driven pass must be able to review.
+func activeWorker() domain.SessionRecord {
+	worker := liveWorker()
+	worker.Activity = domain.Activity{State: domain.ActivityActive, LastActivityAt: time.Unix(-1, 0).UTC()}
+	return worker
+}
+
+func prOnBranch(sha, branch string) fakePRs {
+	return fakePRs{prs: []domain.PullRequest{{URL: "https://github.com/o/r/pull/1", Number: 1, HeadSHA: sha, SourceBranch: branch}}}
+}
+
+// TestPushDrivenTriggerPlansLocalHeadWithoutIdleGate proves a push-driven
+// auto pass starts for a worker that is still Active and plans against the
+// locally observed pushed head, not the stale stored PR head. The same
+// trigger without PushTriggered stays gated.
+func TestPushDrivenTriggerPlansLocalHeadWithoutIdleGate(t *testing.T) {
+	store := &fakeStore{}
+	launcher := &fakeLauncher{handle: "review-mer-1"}
+	eng := newEngineForTest(store, fakeSessions{rec: activeWorker(), ok: true}, prOnBranch("oldsha", "ao/mer-1/root"), fakeProjects{}, launcher)
+
+	res, err := eng.TriggerWithOptions(context.Background(), "mer-1", TriggerOptions{
+		Source:        domain.ReviewTriggerAuto,
+		PushTriggered: true,
+		LocalHeads:    map[string]string{"ao/mer-1/root": "newsha"},
+	})
+	if err != nil {
+		t.Fatalf("push-driven trigger: %v", err)
+	}
+	if res.SkipReason != "" || !res.Created {
+		t.Fatalf("result = %+v, want a created pass", res)
+	}
+	if res.Run.TargetSHA != "newsha" {
+		t.Fatalf("run target sha = %q, want the pushed head newsha", res.Run.TargetSHA)
+	}
+}
+
+func TestSweepTriggerStaysIdleGated(t *testing.T) {
+	store := &fakeStore{}
+	launcher := &fakeLauncher{}
+	eng := newEngineForTest(store, fakeSessions{rec: activeWorker(), ok: true}, prOnBranch("oldsha", "ao/mer-1/root"), fakeProjects{}, launcher)
+
+	res, err := eng.TriggerWithOptions(context.Background(), "mer-1", TriggerOptions{Source: domain.ReviewTriggerAuto})
+	if err != nil {
+		t.Fatalf("sweep trigger: %v", err)
+	}
+	if res.SkipReason != "not_idle" || res.Created {
+		t.Fatalf("result = %+v, want not_idle skip", res)
+	}
+	if len(store.runs) != 0 {
+		t.Fatalf("runs persisted = %d, want none", len(store.runs))
+	}
+}
+
+// TestPushDrivenTriggerPlansAgainstStoredHeadsWithoutLocalFacts proves the
+// push fields are inert unless the caller supplies them: an auto trigger with
+// PushTriggered but no LocalHeads plans against stored PR facts — here an
+// already-approved stored head, so nothing starts.
+func TestPushDrivenTriggerPlansAgainstStoredHeadsWithoutLocalFacts(t *testing.T) {
+	store := &fakeStore{runs: []domain.ReviewRun{{
+		ID: "run-1", SessionID: "mer-1", PRURL: "https://github.com/o/r/pull/1", TargetSHA: "oldsha",
+		Status: domain.ReviewRunComplete, Verdict: domain.VerdictApproved, Harness: domain.ReviewerClaudeCode,
+	}}}
+	launcher := &fakeLauncher{}
+	eng := newEngineForTest(store, fakeSessions{rec: activeWorker(), ok: true}, prOnBranch("oldsha", "ao/mer-1/root"), fakeProjects{}, launcher)
+
+	res, err := eng.TriggerWithOptions(context.Background(), "mer-1", TriggerOptions{
+		Source:        domain.ReviewTriggerAuto,
+		PushTriggered: true,
+	})
+	if err != nil {
+		t.Fatalf("push trigger: %v", err)
+	}
+	if res.Created || len(res.Reviews) != 1 || res.Reviews[0].Status != ReviewStateUpToDate {
+		t.Fatalf("result = %+v, want an up-to-date reuse", res)
+	}
+}
+
 func TestTriggerPersistsChatModeBeforeCreatingReviewerConversation(t *testing.T) {
 	ctx := context.Background()
 	store := newSQLiteReviewStore(t)
@@ -2471,8 +2549,11 @@ func TestTriggerConfigOverrideFinalUpsertFailurePreservesStoredReviewerHandle(t 
 	if !launcher.spawned || !launcher.destroyed || launcher.destroyedHandle != "review-mer-2" {
 		t.Fatalf("replacement reviewer should be cleaned up after upsert failure: %+v", launcher)
 	}
-	if store.review == nil || store.review.ReviewerHandleID != "review-mer-1" || store.review.AgentSessionID != "" {
-		t.Fatalf("stored review row = %+v, want old handle retained with cleared stale native id", store.review)
+	// The fresh-spawn path blanks the stale handle before spawning, and the
+	// final-upsert failure destroyed the replacement pane, so the truthful
+	// stored state is no live handle with the stale native id cleared.
+	if store.review == nil || store.review.ReviewerHandleID != "" || store.review.AgentSessionID != "" {
+		t.Fatalf("stored review row = %+v, want no live handle with cleared stale native id", store.review)
 	}
 }
 
@@ -3974,5 +4055,80 @@ func TestFailedReviewLaunchKeepsArchivedReviewerHidden(t *testing.T) {
 				t.Fatalf("failed trigger reopened archive: %+v, %v", saved, err)
 			}
 		})
+	}
+}
+
+// TestListDoesNotBlockWhileTriggerSpawns proves the reviews read returns the
+// queued pass while the trigger still holds the worker lock across the spawn:
+// the run row is already durable, and the UI polls this endpoint the moment
+// the run lands.
+func TestListDoesNotBlockWhileTriggerSpawns(t *testing.T) {
+	store := &fakeStore{}
+	unblock := make(chan struct{})
+	launcher := &fakeLauncher{handle: "review-mer-1", spawnStarted: make(chan struct{}), unblockSpawn: unblock}
+	eng := newEngineForTest(store, fakeSessions{rec: liveWorker(), ok: true}, prAt("sha1"), fakeProjects{}, launcher)
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := eng.TriggerWithOptions(context.Background(), "mer-1", TriggerOptions{Source: domain.ReviewTriggerManual})
+		done <- err
+	}()
+	<-launcher.spawnStarted
+	// The run row is durable before the spawn; the trigger holds the lock.
+	if len(store.runs) != 1 {
+		t.Fatalf("runs persisted before spawn = %d, want 1", len(store.runs))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	res, err := eng.List(ctx, "mer-1")
+	if err != nil {
+		t.Fatalf("List blocked on the spawning trigger: %v", err)
+	}
+	if len(res.Runs) != 1 || res.Runs[0].Status != domain.ReviewRunRunning {
+		t.Fatalf("queued pass invisible during spawn: %+v", res)
+	}
+	if len(res.ActiveReviewers) != 1 {
+		t.Fatalf("active reviewers = %d, want the starting reviewer", len(res.ActiveReviewers))
+	}
+
+	close(unblock)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestFreshSpawnClearsStaleHandleBeforeLaunch proves the durable row stops
+// advertising a dead pane's handle the moment a fresh spawn starts: a pass
+// that cancelled its reviewer keeps the old handle until this blank, and the
+// reviews snapshot taken during the spawn must show the queued pass
+// (running run, no handle), not a phantom live pane.
+func TestFreshSpawnClearsStaleHandleBeforeLaunch(t *testing.T) {
+	store := &fakeStore{
+		review: &domain.Review{ID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerClaudeCode, ReviewerHandleID: "review-mer-1"},
+		runs: []domain.ReviewRun{{
+			ID: "run-1", SessionID: "mer-1", PRURL: "https://github.com/o/r/pull/1", TargetSHA: "sha1",
+			Harness: domain.ReviewerClaudeCode, Status: domain.ReviewRunCancelled,
+		}},
+	}
+	unblock := make(chan struct{})
+	launcher := &fakeLauncher{handle: "review-mer-1", spawnStarted: make(chan struct{}), unblockSpawn: unblock}
+	eng := newEngineForTest(store, fakeSessions{rec: liveWorker(), ok: true}, prAt("sha2"), fakeProjects{}, launcher)
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := eng.TriggerWithOptions(context.Background(), "mer-1", TriggerOptions{Source: domain.ReviewTriggerManual})
+		done <- err
+	}()
+	<-launcher.spawnStarted
+	if store.review == nil || store.review.ReviewerHandleID != "" {
+		t.Fatalf("handle during spawn = %q, want blank while the pane is down", store.review.ReviewerHandleID)
+	}
+	close(unblock)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if store.review == nil || store.review.ReviewerHandleID != "review-mer-1" {
+		t.Fatalf("handle after spawn = %q, want the live pane handle", store.review.ReviewerHandleID)
 	}
 }

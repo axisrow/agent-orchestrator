@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -519,4 +520,53 @@ func TestSessionsAPI_ActivityWithoutRecorderIs501(t *testing.T) {
 
 	body, status, _ := doRequest(t, srv, "POST", "/api/v1/sessions/ao-1/activity", `{"state":"idle"}`)
 	assertErrorCode(t, body, status, http.StatusNotImplemented, "NOT_IMPLEMENTED")
+}
+
+type fakePushWatch struct {
+	mu    sync.Mutex
+	gotID domain.SessionID
+	calls int
+	done  chan struct{}
+}
+
+func (f *fakePushWatch) ReconcileSession(_ context.Context, id domain.SessionID) {
+	f.mu.Lock()
+	f.gotID = id
+	f.calls++
+	f.mu.Unlock()
+	if f.done != nil {
+		f.done <- struct{}{}
+	}
+}
+
+// TestSessionsAPI_PostToolUseReconcilesPushWatch proves a worker's
+// post-tool-use hook reconciles its branch tips (the push event path), and
+// other events do not.
+func TestSessionsAPI_PostToolUseReconcilesPushWatch(t *testing.T) {
+	pushWatch := &fakePushWatch{done: make(chan struct{}, 4)}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	srv := httptest.NewServer(httpd.NewRouterWithControl(config.Config{}, log, nil,
+		httpd.APIDeps{Activity: &fakeActivityRecorder{}, PushWatch: pushWatch}, httpd.ControlDeps{}))
+	t.Cleanup(srv.Close)
+
+	body, status, _ := doRequest(t, srv, "POST", "/api/v1/sessions/ao-1/activity", `{"state":"active","event":"post-tool-use","toolName":"Bash"}`)
+	if status != http.StatusOK {
+		t.Fatalf("activity = %d, want 200; body=%s", status, body)
+	}
+	select {
+	case <-pushWatch.done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("post-tool-use did not reconcile push watch")
+	}
+	if pushWatch.gotID != "ao-1" {
+		t.Fatalf("reconciled session = %q, want ao-1", pushWatch.gotID)
+	}
+
+	doRequest(t, srv, "POST", "/api/v1/sessions/ao-1/activity", `{"state":"idle","event":"stop"}`)
+	time.Sleep(50 * time.Millisecond)
+	pushWatch.mu.Lock()
+	defer pushWatch.mu.Unlock()
+	if pushWatch.calls != 1 {
+		t.Fatalf("push watch calls = %d, want 1 (stop must not reconcile)", pushWatch.calls)
+	}
 }

@@ -826,6 +826,20 @@ export function SessionView({ sessionId, cloudOrgId, projectId, hostId }: Sessio
 		: undefined;
 	const availableReviewerChat = reviewerChatFromReviews(reviewerQuery.data);
 	const reviewerChat = session && sessionIsActive(session) ? availableReviewerChat : undefined;
+	// A queued pass: the run row exists but the reviewer pane is not up yet, so
+	// the active reviewer surface still carries an empty handle. Showing it
+	// keeps the push→card gap visible instead of silently absent (#302).
+	const reviewerStarting = useMemo(() => {
+		if (session?.cloud) return undefined;
+		const active = (reviewerQuery.data?.activeReviewers ?? []).find(
+			(surface) => surface.mode !== "chat" && Boolean(surface.reviewId) && !surface.handleId,
+		);
+		return active ? { reviewId: active.reviewId, harness: active.harness || "claude-code" } : undefined;
+	}, [reviewerQuery.data, session?.cloud]);
+	const [reviewerStartingSelected, setReviewerStartingSelected] = useState(false);
+	// The queued pass the user explicitly dismissed from; auto-follow does not
+	// re-assert it. A different (newer) pass follows again.
+	const dismissedStartingRef = useRef<string | null>(null);
 
 	// Shell terminals opened inside a session live beside its pane as extra tabs,
 	// scoped to the session on screen so each session has its own shell set.
@@ -841,6 +855,9 @@ export function SessionView({ sessionId, cloudOrgId, projectId, hostId }: Sessio
 		const available = [
 			...(reviewerTerminal ? [`reviewer:${reviewerTerminal.handleId}`] : []),
 			...(!reviewerTerminal && reviewerChat ? [`reviewer-chat:${reviewerChat.reviewId}`] : []),
+			// The queued reviewer tab lives in the chat surface's strip; keeping
+			// its key here preserves its strip position across renders.
+			...(!reviewerTerminal && !reviewerChat && reviewerStarting ? [`reviewer-starting:${reviewerStarting.reviewId}`] : []),
 			...openFileKeys,
 			...openShellKeys,
 		];
@@ -853,7 +870,7 @@ export function SessionView({ sessionId, cloudOrgId, projectId, hostId }: Sessio
 			if (!resolved.includes(key)) resolved.push(key);
 		}
 		return resolved;
-	}, [auxiliaryTabOrder, fileTabs.openPaths, reviewerChat, reviewerTerminal, shellTerminals]);
+	}, [auxiliaryTabOrder, fileTabs.openPaths, reviewerChat, reviewerStarting, reviewerTerminal, shellTerminals]);
 	useEffect(() => {
 		setAuxiliaryTabOrderBySession((current) => {
 			const storedOrder = current[uiSessionId] ?? [];
@@ -873,6 +890,30 @@ export function SessionView({ sessionId, cloudOrgId, projectId, hostId }: Sessio
 	const setActiveShellTerminal = useUiStore((state) => state.setActiveShellTerminal);
 	const setVisibleTerminalKind = useUiStore((state) => state.setVisibleTerminalKind);
 	const clearVisibleTerminalKind = useUiStore((state) => state.clearVisibleTerminalKind);
+	const selectReviewerStarting = useCallback(() => {
+		setReviewerStartingSelected(true);
+		setActiveShellTerminal(null);
+		setTerminalTarget({ kind: "worker" });
+		setFileTabsBySession((current) => ({
+			[uiSessionId]: activateSessionFile(current[uiSessionId] ?? EMPTY_SESSION_FILE_TABS, null),
+		}));
+	}, [setActiveShellTerminal, setFileTabsBySession, setTerminalTarget, uiSessionId]);
+	// Follow the queued card onto the screen the way the reviewer follow effect
+	// follows the real terminal — but only from the plain session pane, so a
+	// file or shell the user is reading is not yanked away, and never after the
+	// user explicitly chose the chat for this pass. When the pane lands, the
+	// reviewer follow effect takes over and the queued state drops.
+	useEffect(() => {
+		if (!reviewerStarting) {
+			setReviewerStartingSelected(false);
+			dismissedStartingRef.current = null;
+			return;
+		}
+		if (dismissedStartingRef.current === reviewerStarting.reviewId) return;
+		if (!reviewerTerminal && !reviewerChat && terminalTarget.kind === "worker" && !fileTabs.activePath && !activeShellTerminalHandleId) {
+			setReviewerStartingSelected(true);
+		}
+	}, [activeShellTerminalHandleId, fileTabs.activePath, reviewerChat, reviewerStarting, reviewerTerminal, terminalTarget]);
 	const renameShellTerminalByHandle = useCallback(
 		(handleId: string, title: string) => renameShellTerminal.mutate({ handleId, title }),
 		[renameShellTerminal],
@@ -1028,11 +1069,16 @@ export function SessionView({ sessionId, cloudOrgId, projectId, hostId }: Sessio
 		setActiveShellTerminal(null);
 		setTerminalTarget({ kind: "worker" });
 		setReviewerChatId(null);
+		// An explicit chat selection dismisses the queued reviewer card; the
+		// follow effect must not pull it back over the conversation while this
+		// pass is still starting (#302 review).
+		setReviewerStartingSelected(false);
+		dismissedStartingRef.current = reviewerStarting?.reviewId ?? null;
 		setFileTabsBySession((current) => ({
 			...current,
 			[uiSessionId]: activateSessionFile(current[uiSessionId] ?? EMPTY_SESSION_FILE_TABS, null),
 		}));
-	}, [setActiveShellTerminal, uiSessionId]);
+	}, [reviewerStarting, setActiveShellTerminal, uiSessionId]);
 	// "Ask in chat" from a file tab brings the session's Chat surface forward.
 	useEffect(() => subscribeChatReveal(uiSessionId, selectSessionTerminal), [selectSessionTerminal, uiSessionId]);
 	const selectReviewerTerminal = useCallback((target: ReviewerTerminalTarget) => {
@@ -1537,9 +1583,9 @@ export function SessionView({ sessionId, cloudOrgId, projectId, hostId }: Sessio
 	// Publish which one is showing: the notification runtime lives outside this
 	// subtree and must not treat "on the session route" as "watching the agent".
 	useEffect(() => {
-		setVisibleTerminalKind(uiSessionId, reviewerChatId ? "reviewer" : routedTerminalTarget.kind);
+		setVisibleTerminalKind(uiSessionId, reviewerChatId || (reviewerStartingSelected && reviewerStarting) ? "reviewer" : routedTerminalTarget.kind);
 		return () => clearVisibleTerminalKind(uiSessionId);
-	}, [clearVisibleTerminalKind, reviewerChatId, routedTerminalTarget.kind, uiSessionId, setVisibleTerminalKind]);
+	}, [clearVisibleTerminalKind, reviewerChatId, reviewerStarting, reviewerStartingSelected, routedTerminalTarget.kind, uiSessionId, setVisibleTerminalKind]);
 
 	const prepareFilesInspector = useCallback(() => {
 		if (browserOnly) return;
@@ -2028,6 +2074,9 @@ export function SessionView({ sessionId, cloudOrgId, projectId, hostId }: Sessio
 									reviewerTerminal={reviewerTerminal}
 									reviewerChat={reviewerChat}
 									reviewerChatSelected={Boolean(reviewerChatId)}
+									reviewerStarting={reviewerStarting}
+									reviewerStartingSelected={reviewerStartingSelected}
+									onOpenReviewerStarting={selectReviewerStarting}
 									onOpenReviewerTerminal={selectReviewerTerminal}
 									onOpenReviewerChat={(target) => selectReviewerChat(target.reviewId)}
 									onSessionRenamed={refreshWorkspaces}

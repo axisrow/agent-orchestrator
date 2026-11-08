@@ -102,6 +102,9 @@ export const SessionChatSurface = memo(function SessionChatSurface({
 	reviewerChat,
 	onOpenReviewerChat,
 	reviewerChatSelected,
+	reviewerStarting,
+	reviewerStartingSelected,
+	onOpenReviewerStarting,
 	onSessionRenamed,
 	reviewerTarget,
 	onSelectChat,
@@ -146,6 +149,10 @@ export const SessionChatSurface = memo(function SessionChatSurface({
 	reviewerChat?: { reviewId: string; harness: string };
 	onOpenReviewerChat?: (target: { reviewId: string; harness: string }) => void;
 	reviewerChatSelected?: boolean;
+	/** A queued pass whose reviewer pane has not come up yet (#302). */
+	reviewerStarting?: { reviewId: string; harness: string };
+	reviewerStartingSelected?: boolean;
+	onOpenReviewerStarting?: () => void;
 	onSessionRenamed?: () => void | Promise<void>;
 	reviewerTarget?: Extract<TerminalTarget, { kind: "reviewer" }>;
 	onSelectChat?: () => void;
@@ -589,6 +596,9 @@ export const SessionChatSurface = memo(function SessionChatSurface({
 				reviewerChat={reviewerChat}
 				onOpenReviewerChat={onOpenReviewerChat}
 				reviewerChatSelected={reviewerChatSelected}
+				reviewerStarting={reviewerStarting}
+				reviewerStartingSelected={reviewerStartingSelected}
+				onOpenReviewerStarting={onOpenReviewerStarting}
 				reviewerTarget={reviewerTarget}
 				onSelectChat={onSelectChat}
 				shellTerminals={shellTerminals}
