@@ -4543,8 +4543,8 @@ func TestSessionsAPI_StreamWorkspaceChangesSnapshotDuringPreparation(t *testing.
 		t.Fatal("timed out waiting for workspace snapshot")
 	}
 	var snapshot struct {
-		ProvisionState domain.SessionProvisionState   `json:"provisionState"`
-		ProvisionSteps []domain.SessionProvisionStep  `json:"provisionSteps"`
+		ProvisionState domain.SessionProvisionState  `json:"provisionState"`
+		ProvisionSteps []domain.SessionProvisionStep `json:"provisionSteps"`
 	}
 	mustJSON(t, []byte(data), &snapshot)
 	if snapshot.ProvisionState != domain.SessionProvisionProvisioning {

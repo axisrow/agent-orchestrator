@@ -489,3 +489,13 @@ d2b042f38507de999b0e4dff7cb567d4d689a5a6 skipped fix(desktop): a Cloud worker de
 b7b391e98e6b5b7c333b2579df298c7642711839 skipped feat(cloud): share dialog in the Google Docs pattern, with General access and Copy link (#7888)
 6ec8ff3ab88378025603b0231f85c398a915aae9 skipped fix(session): let a degraded fresh TUI keep its messaged Chat archived (#7740) — не компилируется на форке: transition.DegradedKind отсутствует в domain, сигнатура relaunchSessionWithPolicyAndGeneration иная; machinery identity-degrade в форке нет (автомердж текстово чист, go build красный)
 8bf36847091d0fe2767a199f95b8f6f48ccc35db skipped feat(settings): subscription accounts for everyone; remove the Subscriptions page (#7899)
+d672970c3a830a0a188c300b597c3f9c59c94a86 skipped fix(onboarding): clone GitHub repos from the web URL, not the API URL (#7927) — repo-пикер онбординга (listGitHubRepos) в форке отсутствует
+80342361ef7aa7fa88197334e0b3d99cbb5130a7 skipped feat(remote): open remote chats instantly and keep them readable offline (#7789)
+4f9b0429eff6752a823d15145053679204910925 skipped fix(chat): open cloud chat links in the session's Browser tab (#7933) — cloud-сессии: направление cloud → self-hosted, control-plane облачное не берём
+876e3de784fbf4ff64cd9eb8b77b709b8395ca21 skipped fix(session): stop session deletes from stalling the daemon writer (#7928) — DeleteTerminatedSession/num-floors machinery в форке отсутствует (0 вхождений в session_store.go)
+5cde191aad88cf58867c49e5a841f24816815118 skipped fix(inspector): hide Create PR once the session's PR is merged (#7934) — branch-state/PR-панель выпилена в форке (branchState целиком), апстрим-пики на панель скипаем
+7ed6fbfcce23d1ca1665e132c295ce3b1fae907a taken fix(desktop): take render check screenshots from the paint frame, not capturePage (#7920)
+28c1319f4705f07285a2d157b78b8e5a378d5eed skipped fix(desktop): no divider after the last top bar tab (#7945) — CSS floating-topbar, отсутствующего в форке (как #7918)
+b235e55b5c9732528c06ee0b2d565a0f967784bc skipped fix: follow GitHub repo renames for project avatars (#7947) — аватары проектов выпилены в форке (useProjectAvatars/repository-avatar удалены)
+426805362b0591d45e2a1b0448dd3d187b1513b5 skipped fix(claim-pr): accept PRs on a renamed or transferred GitHub origin (#7951) — зависимости (ports.GitHubRepositoryResolver, newGitHubRepoResolver) из скипнутой цепочки #7947; живого кейса переименованного origin в форке нет
+c903429fbd980fc7e6f6c0715ef6dc1b902ed2d8 taken fix(chat): stop auto-opening links from finished agent replies (#7946) — сведён вручную: авто-угадывание ссылок выплачено целиком, форковый externalLinksDefault (AO_LINKS_EXTERNAL) и agent-switch settlement-код сохранены
