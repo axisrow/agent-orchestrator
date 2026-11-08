@@ -2,7 +2,7 @@
 // Regenerates src/main/tray-catalog.generated.ts from the renderer locale JSON.
 //
 // The tray (Electron main) needs ~9 strings. Importing the renderer catalogs
-// put all 8 locale files (1.3 MB, 58% of main.js) on the main process's startup
+// put all 9 locale files (1.3 MB, 58% of main.js) on the main process's startup
 // path. tray-catalog.test.ts fails when this file drifts from the JSON; run
 // `node scripts/sync-tray-catalog.mjs` from frontend/ to fix it.
 import { readFileSync, writeFileSync } from "node:fs";
@@ -10,7 +10,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const frontend = join(dirname(fileURLToPath(import.meta.url)), "..");
-const LOCALES = ["en", "zh-CN", "ja", "ko", "es", "fr", "de", "pt-BR"];
+const LOCALES = ["en", "zh-CN", "ja", "ko", "es", "fr", "de", "pt-BR", "ru"];
 const KEYS = [
 	"tray.untitledSession",
 	"tray.attentionTooltip_one",
