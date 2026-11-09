@@ -68,6 +68,18 @@ function GlobalToastItem({ toast }: { toast: Toast }) {
 			<div className="min-w-0 flex-1">
 				<p className={`wrap-break-word font-medium ${isError ? "text-destructive" : "text-(--color-text-import-title)"}`}>{toast.title}</p>
 				{toast.body ? <p className="mt-0.5 wrap-break-word text-pretty text-[var(--color-text-import-muted)]">{toast.body}</p> : null}
+				{toast.action ? (
+					<button
+						type="button"
+						onClick={() => {
+							toast.action?.run();
+							dismissGlobalToast(toast.nonce);
+						}}
+						className="mt-1.5 rounded px-1.5 py-0.5 font-medium text-foreground underline decoration-border underline-offset-2 hover:bg-interactive-hover"
+					>
+						{toast.action.label}
+					</button>
+				) : null}
 			</div>
 			{toast.dismissible ? (
 				<button

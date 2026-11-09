@@ -101,15 +101,17 @@ export type RememberedFileDisplayMode = { mode: FileDisplayMode; requestKey: num
 export type GlobalToast = {
 	title: string;
 	body?: string;
-	tone?: "info" | "error";
+	tone?: "info" | "error" | "success";
 	placement?: "bottom-right" | "top-center";
 	dismissible?: boolean;
 	durationMs?: number;
 	dedupeKey?: string;
+	/** Optional single action button; the toast renders its label and runs it on click. */
+	action?: { label: string; run: () => void };
 	nonce: number;
 };
 
-export type GlobalToastOptions = Pick<GlobalToast, "tone" | "placement" | "dismissible" | "durationMs" | "dedupeKey">;
+export type GlobalToastOptions = Pick<GlobalToast, "tone" | "placement" | "dismissible" | "durationMs" | "dedupeKey" | "action">;
 
 export type WorkspaceFileOpenRequest = {
 	sessionId: string;
@@ -628,7 +630,7 @@ export const useUiStore = create<UiState>((set, get) => ({
 		set((state) => {
 			const nonce = state.globalToastSequence + 1;
 			const options = typeof style === "object" ? style : undefined;
-			const tone = options?.tone ?? (style === "error" || style === "info" ? style : "info");
+			const tone = options?.tone ?? (style === "error" || style === "info" || style === "success" ? style : "info");
 			const placement = options?.placement ?? (style === "top-center" || style === "bottom-right" ? style : "bottom-right");
 			const toast = { title, body, tone, placement, nonce, ...options };
 			const globalToasts = toast.dedupeKey
