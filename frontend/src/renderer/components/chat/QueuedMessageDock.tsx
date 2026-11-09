@@ -293,6 +293,7 @@ export const QueuedMessageDock = memo(function QueuedMessageDock({
 	onReorderQueuedTurns,
 	promotePendingTurnId,
 	cancelPendingTurnId,
+	steerErrors,
 }: {
 	messages: QueuedMessage[];
 	disabled?: boolean;
@@ -304,12 +305,10 @@ export const QueuedMessageDock = memo(function QueuedMessageDock({
 	onReorderQueuedTurns?: (turnIds: string[]) => Promise<unknown>;
 	promotePendingTurnId?: string;
 	cancelPendingTurnId?: string;
+	steerErrors?: Readonly<Record<string, string>>;
 }) {
 	const [expanded, setExpanded] = useState(true);
 	const [errors, setErrors] = useState<Record<string, string>>({});
-	const [optimisticallySteeredTurnIds, setOptimisticallySteeredTurnIds] = useState<Set<string>>(
-		() => new Set(),
-	);
 	const [displayOrder, setDisplayOrder] = useState<string[] | null>(null);
 	const [hoverSteerSuppressed, setHoverSteerSuppressed] = useState(false);
 	const [reorderError, setReorderError] = useState<string | undefined>();
@@ -347,19 +346,18 @@ export const QueuedMessageDock = memo(function QueuedMessageDock({
 		[],
 	);
 
-	const visibleMessages = messages.filter(({ turnId }) => !optimisticallySteeredTurnIds.has(turnId));
-	const count = visibleMessages.length;
+	const count = messages.length;
 	const hasMore = count > 1;
 	const isOpen = !hasMore || expanded;
 	const expandedRows = Math.min(count, QUEUE_DOCK_VISIBLE_ROWS);
 	const messagesByTurnId = useMemo(
-		() => new Map(visibleMessages.map((message) => [message.turnId, message])),
-		[visibleMessages],
+		() => new Map(messages.map((message) => [message.turnId, message])),
+		[messages],
 	);
-	const pendingMessages = useMemo(() => visibleMessages.filter((entry) => entry.pending), [visibleMessages]);
+	const pendingMessages = useMemo(() => messages.filter((entry) => entry.pending), [messages]);
 	const fifoTurnIds = useMemo(
-		() => visibleMessages.filter((entry) => !entry.pending).map(({ turnId }) => turnId),
-		[visibleMessages],
+		() => messages.filter((entry) => !entry.pending).map(({ turnId }) => turnId),
+		[messages],
 	);
 	const defaultDisplayTurnIds = useMemo(() => [...fifoTurnIds].reverse(), [fifoTurnIds]);
 	const displayTurnIds = useMemo(() => {
@@ -424,24 +422,6 @@ export const QueuedMessageDock = memo(function QueuedMessageDock({
 		}
 	}, [displayOrder, fifoTurnIds]);
 
-	const promoteQueuedTurn = useCallback(
-		async (turnId: string) => {
-			setOptimisticallySteeredTurnIds((current) => new Set(current).add(turnId));
-			try {
-				if (!onPromoteQueuedTurn) return;
-				await onPromoteQueuedTurn(turnId);
-			} catch (error) {
-				setOptimisticallySteeredTurnIds((current) => {
-					const next = new Set(current);
-					next.delete(turnId);
-					return next;
-				});
-				throw error;
-			}
-		},
-		[onPromoteQueuedTurn],
-	);
-
 	useEffect(() => {
 		if (steerNextRequest === undefined || steerNextRequest <= handledSteerNextRequest) return;
 		if (!canSteerNext || !onPromoteQueuedTurn) {
@@ -456,7 +436,7 @@ export const QueuedMessageDock = memo(function QueuedMessageDock({
 			return;
 		}
 		steerNextInFlight.current = true;
-		void runAction(next.turnId, () => promoteQueuedTurn(next.turnId)).finally(() => {
+		void runAction(next.turnId, () => onPromoteQueuedTurn(next.turnId)).finally(() => {
 			steerNextInFlight.current = false;
 			setHandledSteerNextRequest((request) => request + 1);
 		});
@@ -466,7 +446,6 @@ export const QueuedMessageDock = memo(function QueuedMessageDock({
 		handledSteerNextRequest,
 		nextQueuedTurnId,
 		onPromoteQueuedTurn,
-		promoteQueuedTurn,
 		runAction,
 		steerNextRequest,
 	]);
@@ -526,7 +505,7 @@ export const QueuedMessageDock = memo(function QueuedMessageDock({
 
 	const rowProps = {
 		canSteer,
-		onPromoteQueuedTurn: onPromoteQueuedTurn ? promoteQueuedTurn : undefined,
+		onPromoteQueuedTurn,
 		onCancelQueuedTurn,
 		onRunAction: runAction,
 		suppressHoverSteer: hoverSteerSuppressed || isReordering,
@@ -618,7 +597,7 @@ export const QueuedMessageDock = memo(function QueuedMessageDock({
 											showPersistentSteer={Boolean(canSteer && canSteerNext && isNextQueuedTurn)}
 											busy={busy}
 											dragSnapshot={dragSnapshot}
-											error={errors[turnId]}
+											error={errors[turnId] ?? steerErrors?.[turnId]}
 											isReordering={isReordering}
 											onRowHoverChange={setHoveredTurnId}
 											reorderEnabled={reorderEnabled && !busy && !pending}

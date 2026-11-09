@@ -69,7 +69,7 @@ describe("ChatComposer steering", () => {
 		expect(screen.queryByText(/steer/i)).not.toBeInTheDocument();
 	});
 
-	it("steers the next queued message on empty Enter and removes it immediately", async () => {
+	it("steers the next queued message on empty Enter", async () => {
 		const onPromoteQueuedTurn = vi.fn().mockResolvedValue(undefined);
 		render(
 			<ChatComposer
@@ -91,7 +91,6 @@ describe("ChatComposer steering", () => {
 		await userEvent.keyboard("{Enter}");
 
 		await waitFor(() => expect(onPromoteQueuedTurn).toHaveBeenCalledWith("queued-1"));
-		expect(screen.queryByTestId("queued-message-queued-1")).not.toBeInTheDocument();
 	});
 
 	it("drains every queued steer request that arrives while a promotion is pending", async () => {
@@ -125,6 +124,15 @@ describe("ChatComposer steering", () => {
 		);
 
 		await waitFor(() => expect(onPromoteQueuedTurn).toHaveBeenCalledWith("queued-1"));
+		rerender(
+			<QueuedMessageDock
+				messages={messages.slice(1)}
+				canSteer
+				canSteerNext
+				steerNextRequest={2}
+				onPromoteQueuedTurn={onPromoteQueuedTurn}
+			/>,
+		);
 		resolveFirstPromotion?.();
 		await waitFor(() => expect(onPromoteQueuedTurn).toHaveBeenNthCalledWith(2, "queued-2"));
 	});
@@ -404,7 +412,6 @@ describe("ChatWorkspace steering", () => {
 			}),
 		);
 		expect(onPromoteQueuedTurn).toHaveBeenCalledWith("queued-2");
-		expect(screen.queryByTestId("queued-message-queued-2")).not.toBeInTheDocument();
 
 		await userEvent.click(within(screen.getByTestId("queued-message-queued-1")).getByRole("button", { name: "Delete queued message" }));
 		expect(onCancelQueuedTurn).toHaveBeenCalledWith("queued-1");
@@ -479,6 +486,59 @@ describe("ChatWorkspace steering", () => {
 
 		expect(screen.queryByText("first queued")).not.toBeInTheDocument();
 		expect(within(screen.getByTestId("queued-message-dock")).getByText("second queued")).toBeVisible();
+	});
+
+	it("deletes a queued browser annotation from the dock", async () => {
+		const onCancelQueuedTurn = vi.fn().mockResolvedValue(undefined);
+		render(
+			<QueuedMessageDock
+				messages={[{
+					turnId: "queued-annotation",
+					message: {
+						kind: "message",
+						id: "queued-annotation-message",
+						turnId: "queued-annotation",
+						sequence: 100,
+						revision: 0,
+						role: "user",
+						origin: "automation",
+						text: "<browser_annotations>\nPage: Download page\nAnnotations: 1\n\nAnnotation 1 (comment):\nComment: Rename this file\n</browser_annotations>",
+						streaming: false,
+						createdAt: "2026-08-11T10:01:00Z",
+					},
+				}]}
+				canSteer
+				onCancelQueuedTurn={onCancelQueuedTurn}
+			/>,
+		);
+
+		const row = screen.getByTestId("queued-message-queued-annotation");
+		await userEvent.click(within(row).getByRole("button", { name: "Delete queued message" }));
+		expect(onCancelQueuedTurn).toHaveBeenCalledWith("queued-annotation");
+	});
+
+	it("moves a steered message from the dock to the timeline before the daemon answers", async () => {
+		let refuse: ((error: Error) => void) | undefined;
+		const onPromoteQueuedTurn = vi.fn(() => new Promise((_resolve, reject) => { refuse = reject; }));
+		const queued = withQueuedMessages();
+		const snapshot = {
+			...queued,
+			turns: queued.turns.filter((turn) => turn.id !== "queued-2"),
+			items: queued.items.filter((item) => item.turnId !== "queued-2"),
+		};
+		render(<ChatWorkspace snapshot={snapshot} onSteer={vi.fn()} onPromoteQueuedTurn={onPromoteQueuedTurn} />);
+
+		await userEvent.click(
+			within(screen.getByTestId("queued-message-queued-1")).getByRole("button", {
+				name: "Steer this queued message into the running turn",
+			}),
+		);
+		expect(screen.queryByTestId("queued-message-dock")).not.toBeInTheDocument();
+		expect(screen.getByText("first queued")).toBeVisible();
+
+		await act(async () => refuse?.(new Error("The running turn cannot take guidance.")));
+		const row = await screen.findByTestId("queued-message-queued-1");
+		expect(within(row).getByText("The running turn cannot take guidance.")).toBeVisible();
 	});
 
 	it("shows the queued dock while messages are still queued between turns", () => {
