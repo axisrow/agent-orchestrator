@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import type { SessionProvisionStep } from "../../types/workspace";
 import { ShellTopbar } from "../ShellTopbar";
 import type { ConversationSnapshot } from "../../types/conversation";
@@ -13,12 +14,13 @@ export function startingConversationSnapshot(sessionId: string, harness: Convers
 	};
 }
 
-const pendingSnapshot = startingConversationSnapshot("pending-orchestrator", "claude-code");
-
-export function OrchestratorStartingChat({ steps, cloud = false, coderWorkspaceUrl }: { steps?: readonly SessionProvisionStep[]; cloud?: boolean; coderWorkspaceUrl?: string }) {
+export function OrchestratorStartingChat({ steps, cloud = false, coderWorkspaceUrl, harness }: { steps?: readonly SessionProvisionStep[]; cloud?: boolean; coderWorkspaceUrl?: string; harness?: string }) {
+	// The harness being started picks the agent icon; Claude Code only when
+	// the project names none and no orchestrator session exists yet.
+	const snapshot = useMemo(() => startingConversationSnapshot("pending-orchestrator", harness || "claude-code"), [harness]);
 	if (cloud) return <CloudSessionStartupLoader coderWorkspaceUrl={coderWorkspaceUrl} />;
 	return <ChatWorkspace
-		snapshot={pendingSnapshot}
+		snapshot={snapshot}
 		sessionRole="orchestrator"
 		startingSteps={steps}
 		newWorkDisabled
