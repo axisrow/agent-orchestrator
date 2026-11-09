@@ -1491,7 +1491,8 @@ func handleID(handle ports.RuntimeHandle) (string, error) {
 // running" describes the whole server and "error connecting" is a transient
 // socket failure; neither says anything about one session, so treating them as
 // per-session death let a single server outage archive every session on the
-// board (issue #3475).
+// board (issue #3475). tmux >= 3.5 words a missing target as "no such
+// session: <target>" for some commands, e.g. set-option (issue #6099).
 func sessionMissingOutput(out string) bool {
 	// tmux >= ~3.5 reworded the missing-session error from "can't find session"
 	// to "no such session: <target>" (verified on 3.6b, issue #6099).
