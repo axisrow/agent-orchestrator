@@ -653,6 +653,7 @@ func (m *Manager) runInterfaceTransition(
 			"sessionID", rec.ID, "transitionID", transition.ID, "error", err)
 		return
 	}
+	m.deliverQueuedAfterAccountMove(transition)
 }
 
 // handoffNativeConversationID is the readiness check shared by status and
@@ -1348,6 +1349,7 @@ func (m *Manager) rollbackInterfaceTransition(
 		return
 	}
 	_ = m.finishInterfaceTransition(transition.ID, domain.SessionInterfaceTransitionFailed, code, cause.Error())
+	m.deliverQueuedAfterAccountMove(transition)
 }
 
 // chatHoldsProviderConversation reports whether the session durably holds a

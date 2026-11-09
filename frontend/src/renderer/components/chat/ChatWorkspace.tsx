@@ -342,6 +342,7 @@ export interface ChatWorkspaceProps {
 	controllerTransitioning?: boolean;
 	/** The handoff is an account move: the chat stays as it is, with no arrival chrome. */
 	accountMoving?: boolean;
+	accountMoveQueues?: boolean;
 	/** The conversation is still being read on a plain open or navigation; hold the composer without the startup shimmer. */
 	loadingQuietly?: boolean;
 	/**
@@ -611,6 +612,7 @@ function ChatWorkspaceContent({
 	onAuxiliaryTabOrderChange,
 	controllerTransitioning,
 	accountMoving = false,
+	accountMoveQueues = false,
 	loadingQuietly,
 	agentResuming = false,
 	startingSteps,
@@ -1579,7 +1581,7 @@ function ChatWorkspaceContent({
 					data-testid="chat-conversation-panel"
 					hidden={reviewerActive || shellActive}
 					inert={
-						reviewerActive || shellActive || agentInputDisabled || controllerTransitioning
+						reviewerActive || shellActive || agentInputDisabled || (controllerTransitioning && !accountMoveQueues)
 							? true
 							: undefined
 					}
@@ -1711,19 +1713,19 @@ function ChatWorkspaceContent({
 											!workspaceActiveTabKey && !reviewerActive && !shellActive && snapshot.controller.state === "ready"
 											? promptSuggestion : undefined}
 										onDraftEmptyChange={setComposerEmpty}
-										onInterrupt={turn && !newWorkDisabled ? stableInterrupt : undefined}
+										onInterrupt={turn && !newWorkDisabled && !accountMoveQueues ? stableInterrupt : undefined}
 										onContinue={canContinue ? onContinueTurn : undefined}
 										commandError={commandError}
 										settings={<><ContextMeter usage={snapshot.usage} />{composerSettings}</>}
 										busy={busy}
-										willQueue={Boolean(turn) || (sessionRole !== "orchestrator" && session?.provisionState === "provisioning")}
+										willQueue={Boolean(turn) || (sessionRole !== "orchestrator" && session?.provisionState === "provisioning") || accountMoveQueues}
 										queuePlaceholder={
-											session?.provisionState === "provisioning"
+											session?.provisionState === "provisioning" || accountMoveQueues
 												? t("chat.startup.queuePlaceholder", { agent: agentLabel(snapshot.harness) })
 												: undefined
 										}
 										starting={orchestratorStarting || arrivingInChat}
-										disabled={orchestratorStarting || loadingQuietly || (snapshot.controller.state === "stopped" && !suppressStopped && (!resumingAgent || session?.provisionState === "failed" || terminated)) || controllerTransitioning || newWorkDisabled}
+										disabled={orchestratorStarting || loadingQuietly || (snapshot.controller.state === "stopped" && !suppressStopped && !accountMoveQueues && (!resumingAgent || session?.provisionState === "failed" || terminated)) || (controllerTransitioning && !accountMoveQueues) || newWorkDisabled}
 										disabledPlaceholder={
 											arrivingInChat
 												? arrivingPlaceholder

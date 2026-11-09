@@ -2109,6 +2109,7 @@ export function SessionView({ sessionId, cloudOrgId, projectId, hostId }: Sessio
 										? apiErrorMessage(autoResume.error) : undefined}
 									controllerTransitioning={interfaceUi.controllerTransitioning}
 									accountMoving={Boolean(interfaceUi.accountMoveTarget)}
+									accountMoveQueues={interfaceUi.accountMoveQueues}
 									arriving={interfaceUi.optimisticTarget === "chat"}
 									agentResuming={quietResume}
 									newWorkDisabled={interfaceUi.newWorkDisabled}
