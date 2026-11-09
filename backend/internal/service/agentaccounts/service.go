@@ -18,6 +18,7 @@ import (
 
 	"github.com/google/uuid"
 
+	codexagent "github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/codex"
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 	"github.com/aoagents/agent-orchestrator/backend/internal/service/shellterm"
@@ -357,6 +358,10 @@ func (s *Service) newSessionAccount(ctx context.Context, p domain.AgentAccountPr
 	account, err := s.find(ctx, def)
 	if err != nil {
 		return domain.AgentAccount{}, err
+	}
+	// A custom Codex model provider does not use the account's sign-in.
+	if p == domain.AgentAccountProviderCodex && codexagent.UsesCustomModelProvider() {
+		return account, nil
 	}
 	if r := s.cachedReading(account.ID); !r.knownUnusable() {
 		return account, nil
@@ -765,6 +770,10 @@ func (s *Service) BindSession(ctx context.Context, id domain.SessionID, harness 
 		account, err := s.find(ctx, def)
 		if err != nil {
 			return err
+		}
+		// A custom Codex model provider does not use the account's sign-in.
+		if p == domain.AgentAccountProviderCodex && codexagent.UsesCustomModelProvider() {
+			return s.store.BindSessionAgentAccount(ctx, id, p, def, s.now())
 		}
 		// The task would start on the wrong login, or none. Refuse rather than
 		// run it there or quietly on another account, which bills someone else.
