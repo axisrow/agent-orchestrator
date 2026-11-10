@@ -15,6 +15,7 @@ import (
 type sendOptions struct {
 	session         string
 	message         string
+	messageFile     string
 	steer           bool
 	clientMessageID string
 	recoverOnly     bool
@@ -54,11 +55,17 @@ func newSendCommand(ctx *commandContext) *cobra.Command {
 		Short: "Send a message to a running agent session",
 		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			message, err := resolveFlagText(cmd, opts.message, opts.messageFile, "message", "message-file")
+			if err != nil {
+				return err
+			}
+			opts.message = message
 			return ctx.sendMessage(cmd.Context(), opts)
 		},
 	}
 	cmd.Flags().StringVar(&opts.session, "session", "", "Session id (required)")
 	cmd.Flags().StringVar(&opts.message, "message", "", "Message body (required unless --recover-only)")
+	cmd.Flags().StringVar(&opts.messageFile, "message-file", "", "Message body: read it from this file, or - for stdin (so shell metacharacters never pass through a command line)")
 	cmd.Flags().BoolVar(&opts.steer, "steer", false, "Steer an active Chat turn, or start the next turn when idle")
 	cmd.Flags().StringVar(&opts.clientMessageID, "client-message-id", "", "Stable steering delivery handle")
 	cmd.Flags().BoolVar(&opts.recoverOnly, "recover-only", false, "Recover a steering result without contacting the provider")

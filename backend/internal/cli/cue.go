@@ -47,7 +47,7 @@ func newCueCommand(ctx *commandContext) *cobra.Command {
 }
 
 func newCueCreateCommand(ctx *commandContext) *cobra.Command {
-	var project, name, command, prompt string
+	var project, name, command, prompt, commandFile, promptFile string
 	var jsonOutput bool
 	cmd := &cobra.Command{
 		Use:   "create",
@@ -57,6 +57,16 @@ func newCueCreateCommand(ctx *commandContext) *cobra.Command {
 			if strings.TrimSpace(name) == "" {
 				return usageError{errors.New("--name is required")}
 			}
+			resolvedCommand, err := resolveFlagText(cmd, command, commandFile, "command", "command-file")
+			if err != nil {
+				return err
+			}
+			command = resolvedCommand
+			resolvedPrompt, err := resolveFlagText(cmd, prompt, promptFile, "prompt", "prompt-file")
+			if err != nil {
+				return err
+			}
+			prompt = resolvedPrompt
 			if (strings.TrimSpace(command) == "") == (strings.TrimSpace(prompt) == "") {
 				return usageError{errors.New("provide exactly one of --command or --prompt")}
 			}
@@ -85,6 +95,8 @@ func newCueCreateCommand(ctx *commandContext) *cobra.Command {
 	cmd.Flags().StringVar(&name, "name", "", "Cue name")
 	cmd.Flags().StringVar(&command, "command", "", "Exact shell command for a command Cue")
 	cmd.Flags().StringVar(&prompt, "prompt", "", "Reusable agent instruction for an agent Cue")
+	cmd.Flags().StringVar(&commandFile, "command-file", "", "Command Cue: read the command from this file, or - for stdin (so shell metacharacters never pass through a command line)")
+	cmd.Flags().StringVar(&promptFile, "prompt-file", "", "Agent Cue: read the prompt from this file, or - for stdin (so shell metacharacters never pass through a command line)")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Print JSON")
 	return cmd
 }

@@ -18,7 +18,7 @@ import (
 )
 
 type reportOptions struct {
-	note                                string
+	note, noteFile                      string
 	noteSet                             bool
 	artifacts, prsCreated, prsReviewed  []string
 	checkpoint, needsInput, stuck, done bool
@@ -44,11 +44,17 @@ type reportAPIResponse struct {
 func newReportCommand(ctx *commandContext) *cobra.Command {
 	var o reportOptions
 	cmd := &cobra.Command{Use: "report <free-form text>", Short: "Report worker progress to the orchestrator", Args: cobra.ArbitraryArgs, RunE: func(cmd *cobra.Command, args []string) error {
-		o.noteSet = cmd.Flags().Changed("note")
+		note, err := resolveFlagText(cmd, o.note, o.noteFile, "note", "note-file")
+		if err != nil {
+			return err
+		}
+		o.note = note
+		o.noteSet = cmd.Flags().Changed("note") || cmd.Flags().Changed("note-file")
 		return ctx.report(cmd.Context(), args, o)
 	}}
 	f := cmd.Flags()
 	f.StringVar(&o.note, "note", "", "Structured state note")
+	f.StringVar(&o.noteFile, "note-file", "", "Structured state note: read it from this file, or - for stdin (so shell metacharacters never pass through a command line)")
 	f.StringArrayVar(&o.artifacts, "artifact", nil, "Attach an opaque artifact reference (repeatable)")
 	f.StringArrayVar(&o.prsCreated, "pr-created", nil, "Attach a created GitHub PR or GitLab MR (repeatable)")
 	f.StringArrayVar(&o.prsReviewed, "pr-reviewed", nil, "Attach a reviewed GitHub PR or GitLab MR (repeatable)")

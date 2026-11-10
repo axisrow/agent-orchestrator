@@ -27,6 +27,7 @@ type spawnOptions struct {
 	mode            string
 	branch          string
 	prompt          string
+	promptFile      string
 	issue           string
 	name            string
 	model           string
@@ -146,6 +147,12 @@ func newSpawnCommand(ctx *commandContext) *cobra.Command {
 			}
 			opts.harness = harness
 
+			prompt, err := resolveFlagText(cmd, opts.prompt, opts.promptFile, "prompt", "prompt-file")
+			if err != nil {
+				return err
+			}
+			opts.prompt = prompt
+
 			if isScratchProject(project) {
 				if strings.TrimSpace(opts.branch) != "" {
 					return usageError{fmt.Errorf("scratch projects do not support --branch")}
@@ -240,6 +247,7 @@ func newSpawnCommand(ctx *commandContext) *cobra.Command {
 	f.StringVar(&opts.mode, "mode", "", "Initial session interface: chat (structured agent connection) or tui (the agent's native terminal). Omitted uses the daemon default; compatible sessions can switch later.")
 	f.StringVar(&opts.branch, "branch", "", "Branch for git project sessions (default: ao/<session-id>/root; unsupported for standalone or Scratch sessions)")
 	f.StringVar(&opts.prompt, "prompt", "", "Initial prompt for the agent")
+	f.StringVar(&opts.promptFile, "prompt-file", "", "Initial prompt: read it from this file, or - for stdin (so shell metacharacters never pass through a command line)")
 	f.StringVar(&opts.model, "model", "", "Agent model override for this session only (e.g. sonnet, gpt-5.6-sol); overrides project/role config without changing it")
 	f.StringVar(&opts.output, "output", "", "Deliverable for the session: artifact asks the agent to write a file in its artifact directory instead of opening a PR (default: ordinary task)")
 	f.StringVar(&opts.issue, "issue", "", "Issue id to associate with the session")
