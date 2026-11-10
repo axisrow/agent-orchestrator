@@ -676,8 +676,6 @@ func (m *Manager) executeAgentSwitch(ctx context.Context, admitted *admittedAgen
 	}
 	finalized, err := m.finalizeAgentSwitchHandoff(ctx, store, result, writtenFinal, semanticHandoffAvailable, sourceTranscriptStatus)
 	if err != nil {
-		if errors.Is(err, errAgentSwitchFinalArtifactVerify) {
-		}
 		return result, fmt.Errorf("switch agent %s: record finalized handoff: %w", id, err)
 	}
 	result = finalized
@@ -3486,18 +3484,18 @@ func (m *Manager) reconcileStartingTarget(ctx context.Context, store ports.Agent
 		return false, quarantinedAgentSwitchError(marked, fmt.Errorf("reconcile agent switch %s: invalid target ownership result %q", sw.ID, probe.Liveness))
 	}
 	if sw.TargetNativeSessionRef == nil {
-		return m.retainRecoveredTargetIdentityAmbiguity(ctx, store, sw, errors.New("target native session reference is missing"), execution)
+		return m.retainRecoveredTargetIdentityAmbiguity(ctx, store, sw, errors.New("target native session reference is missing"))
 	}
 	targetNative, found, err := store.GetAgentNativeSession(ctx, *sw.TargetNativeSessionRef)
 	if err != nil {
 		cause := fmt.Errorf("read target native session: %w", err)
-		_, recoveryErr := m.retainRecoveredTargetIdentityAmbiguity(ctx, store, sw, cause, execution)
+		_, recoveryErr := m.retainRecoveredTargetIdentityAmbiguity(ctx, store, sw, cause)
 		// A persisted marker does not make a storage read failure safe to ignore.
 		return false, errors.Join(cause, recoveryErr)
 	}
 	if !found || targetNative.AOSessionID != rec.ID || targetNative.Harness != sw.TargetHarness ||
 		targetNative.LastGenerationID != sw.TargetGenerationID || strings.TrimSpace(targetNative.NativeSessionID) == "" {
-		return m.retainRecoveredTargetIdentityAmbiguity(ctx, store, sw, errors.New("target native session identity is absent or does not match the reserved generation"), execution)
+		return m.retainRecoveredTargetIdentityAmbiguity(ctx, store, sw, errors.New("target native session identity is absent or does not match the reserved generation"))
 	}
 	activated, err := m.lcm.ActivateAgentSwitchTarget(ctx, domain.AgentSwitchTargetActivation{
 		SwitchID:                      sw.ID,
@@ -3530,7 +3528,6 @@ func (m *Manager) retainRecoveredTargetIdentityAmbiguity(
 	store ports.AgentSwitchStore,
 	sw domain.AgentSwitch,
 	cause error,
-	execution domain.AgentSwitchExecution,
 ) (bool, error) {
 	marked, markerErr := m.markTargetStartUnconfirmed(ctx, store, sw)
 	if markerErr != nil {
