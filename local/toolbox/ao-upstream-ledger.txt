@@ -584,3 +584,5 @@ edaecb715c3ccbfead8316ea8e3b19b67b5af4e1 skipped fix(chat): sent attachments and
 70ad21d2bbfbce02f7eeee910d2f03543c60c7a4 skipped docs: add a Move from Conductor guide for the Cloud shutdown (#8057)
 b0fabec156467dee330a9d18c8ae77c709dba63e skipped feat(chat): fold agent actions into Worked for, collapse Agent Reports, drop harness logos (#7822)
 cfbaacf114b2207970a9d2582e33c04b25c1e27a skipped fix: artifact selection checkbox styling (#8080) — ручной UI
+d429710c1892e5ad2958928836ad73ce61bc227e skipped feat(usage): add a Usage page with cost, tokens and subscription limits (#7148)
+2fe46249c75bb072690d518c29a0b86acfd835fd skipped fix(sidebar): unpin sessions from offline hosts (#8094) — ручной UI сайдбара
