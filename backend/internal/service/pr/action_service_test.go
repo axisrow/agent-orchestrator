@@ -374,6 +374,7 @@ func TestActionServiceMerge_PersistentOutageExhaustsRetries(t *testing.T) {
 // an error or a duplicate merge.
 func TestActionServiceMerge_RetryFindsAlreadyMergedSucceedsWithoutSecondSquash(t *testing.T) {
 	pr, scm := mergeableActionFixture()
+	pr.SessionID = "session-1"
 	mergedAt := time.Date(2026, 11, 11, 9, 30, 0, 0, time.UTC)
 	scm.fetchErrs = []error{errors.New("github scm: POST graphql: net/http: TLS handshake timeout")}
 	// Positional scripting: call 1 is consumed by fetchErrs[0], so the merged
@@ -383,7 +384,16 @@ func TestActionServiceMerge_RetryFindsAlreadyMergedSucceedsWithoutSecondSquash(t
 		PR:         ports.SCMPRObservation{URL: pr.URL, Number: pr.Number, HeadSHA: pr.HeadSHA, Merged: true, MergeCommitSHA: "abc123merge"},
 		ObservedAt: mergedAt,
 	}}
-	svc := NewActionService(ActionDeps{Store: &fakeActionStore{pr: pr, ok: true}, Reader: scm, Merger: scm, RetryBackoff: time.Millisecond})
+	writer := &fakeActionWriter{}
+	lifecycle := &fakeActionLifecycle{}
+	svc := NewActionService(ActionDeps{
+		Store:        &fakeActionStore{pr: pr, ok: true},
+		Reader:       scm,
+		Merger:       scm,
+		MergeWriter:  writer,
+		Lifecycle:    lifecycle,
+		RetryBackoff: time.Millisecond,
+	})
 	result, err := svc.Merge(context.Background(), MergeRequest{PRID: "42", PRURL: pr.URL, ExpectedHeadSHA: pr.HeadSHA})
 	if err != nil {
 		t.Fatal(err)
@@ -393,6 +403,15 @@ func TestActionServiceMerge_RetryFindsAlreadyMergedSucceedsWithoutSecondSquash(t
 	}
 	if scm.mergeCalls != 0 {
 		t.Fatalf("merge calls = %d, want 0: no second squash after an already-merged outcome", scm.mergeCalls)
+	}
+	// The merged row and the session notice are persisted eagerly: a terminated
+	// session is never reconciled by the observer, so waiting for its tick
+	// would drop the merge.
+	if writer.writeCalls != 1 || writer.mergeCommitSHA != "abc123merge" || writer.mergedURL != pr.URL {
+		t.Fatalf("writer calls=%d sha=%q url=%q, want one eager merged-state write", writer.writeCalls, writer.mergeCommitSHA, writer.mergedURL)
+	}
+	if lifecycle.calls != 1 || lifecycle.sessionID != pr.SessionID || !lifecycle.obs.PR.Merged || lifecycle.obs.PR.MergeCommitSHA != "abc123merge" {
+		t.Fatalf("lifecycle calls=%d session=%q observation=%+v, want one eager merge notice", lifecycle.calls, lifecycle.sessionID, lifecycle.obs)
 	}
 }
 
@@ -405,7 +424,16 @@ func TestActionServiceMerge_AmbiguousFailureRecheckFindsMerged(t *testing.T) {
 		Fetched: true,
 		PR:      ports.SCMPRObservation{URL: pr.URL, Number: pr.Number, HeadSHA: pr.HeadSHA, Merged: true, MergeCommitSHA: "deadbeef000"},
 	}}
-	svc := NewActionService(ActionDeps{Store: &fakeActionStore{pr: pr, ok: true}, Reader: scm, Merger: scm, RetryBackoff: time.Millisecond})
+	writer := &fakeActionWriter{}
+	lifecycle := &fakeActionLifecycle{}
+	svc := NewActionService(ActionDeps{
+		Store:        &fakeActionStore{pr: pr, ok: true},
+		Reader:       scm,
+		Merger:       scm,
+		MergeWriter:  writer,
+		Lifecycle:    lifecycle,
+		RetryBackoff: time.Millisecond,
+	})
 	result, err := svc.Merge(context.Background(), MergeRequest{PRID: "42", PRURL: pr.URL, ExpectedHeadSHA: pr.HeadSHA})
 	if err != nil {
 		t.Fatal(err)
@@ -415,6 +443,9 @@ func TestActionServiceMerge_AmbiguousFailureRecheckFindsMerged(t *testing.T) {
 	}
 	if scm.mergeCalls != 1 || scm.fetchCalls != 2 {
 		t.Fatalf("merge calls=%d fetch calls=%d, want one squash and one recheck", scm.mergeCalls, scm.fetchCalls)
+	}
+	if writer.writeCalls != 1 || writer.mergeCommitSHA != "deadbeef000" || lifecycle.calls != 1 || !lifecycle.obs.PR.Merged {
+		t.Fatalf("writer calls=%d sha=%q lifecycle calls=%d, want eager persistence on the recheck path", writer.writeCalls, writer.mergeCommitSHA, lifecycle.calls)
 	}
 }
 

@@ -209,6 +209,7 @@ func (s *ActionService) Merge(ctx context.Context, request MergeRequest) (MergeR
 	// readiness guard or attempting a second squash.
 	if fresh.PR.Merged {
 		s.logger.Info("pr merge action found the pull request already merged", "pr", tracked.URL, "refresh_retries", refreshRetries, "duration", s.clock().Sub(started))
+		s.persistMergedOutcome(ctx, tracked, fresh, fresh.PR.MergeCommitSHA)
 		return mergedResultFromObservation(tracked, fresh, s.clock()), nil
 	}
 	published, err := s.publishedReviewIDs(ctx, tracked.URL)
@@ -234,19 +235,34 @@ func (s *ActionService) Merge(ctx context.Context, request MergeRequest) (MergeR
 			// surfacing an error the user would answer with a duplicate click.
 			if rechecked, ok := s.recheckMerged(ctx, ref); ok {
 				s.logger.Info("pr merge action found the pull request already merged after an ambiguous failure", "pr", tracked.URL, "duration", s.clock().Sub(started), "err", err)
+				s.persistMergedOutcome(ctx, tracked, rechecked, rechecked.PR.MergeCommitSHA)
 				return mergedResultFromObservation(tracked, rechecked, s.clock()), nil
 			}
 			return MergeResult{}, fmt.Errorf("merge pull request: %w", err)
 		}
 	}
 	s.logger.Info("pr merge action completed", "pr", tracked.URL, "refresh_retries", refreshRetries, "duration", s.clock().Sub(started))
+	mergedAt := s.persistMergedOutcome(ctx, tracked, fresh, out.MergeCommitSHA)
+	return MergeResult{
+		PRNumber:       tracked.Number,
+		Method:         string(ports.SCMMergeSquash),
+		State:          domain.PRStateMerged,
+		MergeCommitSHA: out.MergeCommitSHA,
+		StateChangedAt: mergedAt,
+	}, nil
+}
+
+// persistMergedOutcome eagerly records a provider-confirmed merge in local
+// state and notifies the session lifecycle — for every success path, including
+// already-merged outcomes: a terminated session is never reconciled by the
+// observer (discoverSubjects skips it), so its merge notice must not wait for
+// a background tick. Errors are log-only: the remote merge already happened
+// and callers must keep receiving the authoritative success.
+func (s *ActionService) persistMergedOutcome(ctx context.Context, tracked domain.PullRequest, fresh ports.SCMObservation, mergeCommitSHA string) time.Time {
 	mergedAt := s.clock().UTC()
 	persisted := false
 	if s.mergeWriter != nil {
-		if err := s.mergeWriter.MarkPRMerged(ctx, tracked.URL, out.MergeCommitSHA, mergedAt); err != nil {
-			// GitHub has already committed the irreversible remote mutation. Keep
-			// returning the authoritative success so callers do not retry a merge
-			// that already happened; the observer will reconcile the durable row.
+		if err := s.mergeWriter.MarkPRMerged(ctx, tracked.URL, mergeCommitSHA, mergedAt); err != nil {
 			s.logger.Error("pr merge succeeded but local state persistence failed", "pr", tracked.URL, "err", err)
 		} else {
 			persisted = true
@@ -257,19 +273,13 @@ func (s *ActionService) Merge(ctx context.Context, request MergeRequest) (MergeR
 		fresh.PR.Merged = true
 		fresh.PR.Closed = false
 		fresh.PR.State = string(domain.PRStateMerged)
-		fresh.PR.MergeCommitSHA = out.MergeCommitSHA
+		fresh.PR.MergeCommitSHA = mergeCommitSHA
 		fresh.ObservedAt = mergedAt
 		if err := s.lifecycle.ApplySCMObservation(ctx, tracked.SessionID, fresh); err != nil {
 			s.logger.Error("pr merge succeeded but lifecycle notification failed", "session", tracked.SessionID, "pr", tracked.URL, "err", err)
 		}
 	}
-	return MergeResult{
-		PRNumber:       tracked.Number,
-		Method:         string(ports.SCMMergeSquash),
-		State:          domain.PRStateMerged,
-		MergeCommitSHA: out.MergeCommitSHA,
-		StateChangedAt: mergedAt,
-	}, nil
+	return mergedAt
 }
 
 // refreshMergeReadinessWithRetry runs the merge refresh with a bounded retry:
