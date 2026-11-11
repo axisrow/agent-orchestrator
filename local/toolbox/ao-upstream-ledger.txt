@@ -612,3 +612,5 @@ b4e11e2cb1a772df41ecc02f39cad276e5c07d4d skipped perf(sidebar): stop unrelated s
 f9b90ef6ce923ba36f47e0d2f25856a7144a7c29 skipped perf(chat): wake hibernated chats less often, and faster (#8101)
 9ca621901c3aa6e8eb5a7fc18986e99356a396d5 skipped fix(archive): archive modal in place (#8133) — ручной UI, board выпилен
 defedf5d65fff0c2306f7410835d36a4f0b5cb94 skipped fix(kanban): card statuses match reality (#7503) — канбан-доска выпилена, ручной UI
+7cbc1b35d3dd40d2813dddbeb45ed3851534a2ba taken fix(styles): let text and font utilities apply to buttons and inputs (#8136)
+6e6454870f8866be55098b42c9d7b20f5b53a488 skipped fix(artifacts): section headers as headings (#8135) — ручной UI
