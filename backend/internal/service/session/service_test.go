@@ -2915,6 +2915,62 @@ func TestCleanupMapsManagerResult(t *testing.T) {
 	}
 }
 
+// recordingPolicyCommander is a commander with the optional cleanup-policy
+// capability: it records the options each cleanup ran with so tests can pin
+// the age threshold the service applies.
+type recordingPolicyCommander struct {
+	fakeCommander
+	opts []sessionmanager.CleanupOptions
+}
+
+func (f *recordingPolicyCommander) CleanupWithOptions(_ context.Context, project domain.ProjectID, opts sessionmanager.CleanupOptions) (sessionmanager.CleanupResult, error) {
+	f.opts = append(f.opts, opts)
+	res, err := f.Cleanup(context.Background(), project)
+	res.Reclaimed = []sessionmanager.CleanupReclaim{{
+		SessionID:     "mer-1",
+		WorkspacePath: "/ws/mer-1",
+		Bytes:         2048,
+		PreservedRef:  "refs/ao/preserved/mer-1",
+	}}
+	return res, err
+}
+
+// TestCleanupAppliesDefaultAgePolicy: the plain service entry point runs the
+// #312 policy with the 7-day default — old enough to catch the weeks-old
+// beamcraft leftovers, young enough to leave fresh terminations alone.
+func TestCleanupAppliesDefaultAgePolicy(t *testing.T) {
+	fc := &recordingPolicyCommander{}
+	svc := &Service{manager: fc}
+	if _, err := svc.Cleanup(context.Background(), "mer"); err != nil {
+		t.Fatalf("Cleanup: %v", err)
+	}
+	if len(fc.opts) != 1 || fc.opts[0].DirtyAge != DefaultCleanupOlderThan {
+		t.Fatalf("cleanup options = %+v, want DirtyAge %v", fc.opts, DefaultCleanupOlderThan)
+	}
+}
+
+// TestCleanupWithAgeOverridesThresholdAndMapsReclaimed: an explicit threshold
+// wins over the default, and per-workspace reclaim detail (path, size,
+// preserve ref) is carried to the outcome the API reports.
+func TestCleanupWithAgeOverridesThresholdAndMapsReclaimed(t *testing.T) {
+	fc := &recordingPolicyCommander{}
+	svc := &Service{manager: fc}
+	out, err := svc.CleanupWithAge(context.Background(), "mer", 48*time.Hour)
+	if err != nil {
+		t.Fatalf("CleanupWithAge: %v", err)
+	}
+	if len(fc.opts) != 1 || fc.opts[0].DirtyAge != 48*time.Hour {
+		t.Fatalf("cleanup options = %+v, want DirtyAge 48h", fc.opts)
+	}
+	if len(out.Reclaimed) != 1 {
+		t.Fatalf("reclaimed = %#v, want one entry", out.Reclaimed)
+	}
+	item := out.Reclaimed[0]
+	if item.SessionID != "mer-1" || item.Path != "/ws/mer-1" || item.Bytes != 2048 || item.PreservedRef != "refs/ao/preserved/mer-1" {
+		t.Fatalf("reclaimed item = %+v", item)
+	}
+}
+
 func TestTeardownProjectKillsActiveSessionsThenCleansProject(t *testing.T) {
 	st := newFakeStore()
 	st.sessions["mer-1"] = domain.SessionRecord{ID: "mer-1", ProjectID: "mer"}

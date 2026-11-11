@@ -134,7 +134,24 @@ type CleanupOutcome struct {
 	Cleaned     []domain.SessionID `json:"cleaned"`
 	AlreadyGone []domain.SessionID `json:"alreadyGone"`
 	Skipped     []CleanupSkipped   `json:"skipped"`
+	// Reclaimed carries per-workspace detail for the sessions in Cleaned: the
+	// released path, the reclaimed size, and — for a dirty worktree force-
+	// reclaimed under the age policy — the ref preserving the uncommitted work.
+	Reclaimed []CleanupReclaimed `json:"reclaimed"`
 }
+
+// CleanupReclaimed reports one reclaimed workspace.
+type CleanupReclaimed struct {
+	SessionID    domain.SessionID `json:"sessionId"`
+	Path         string           `json:"path"`
+	Bytes        int64            `json:"bytes"`
+	PreservedRef string           `json:"preservedRef,omitempty"`
+}
+
+// DefaultCleanupOlderThan is the age a terminated session must exceed before
+// cleanup force-reclaims its dirty worktree after preserving uncommitted work
+// (issue #312). Clean worktrees are reclaimable at any age.
+const DefaultCleanupOlderThan = 7 * 24 * time.Hour
 
 // CleanupSkipped is one terminal session whose workspace was preserved by
 // cleanup (never force-deleted), with the user-facing reason.
@@ -1240,10 +1257,33 @@ func (s *Service) SetAutoReview(ctx context.Context, id domain.SessionID, enable
 	return s.Get(ctx, id)
 }
 
+// policyCleanupCommander is the optional cleanup-policy capability: age-aware
+// force reclaim of dirty terminated worktrees. Keeping it separate avoids
+// widening every focused session-service fake while production exposes the
+// policy through the concrete Session Manager.
+type policyCleanupCommander interface {
+	CleanupWithOptions(ctx context.Context, project domain.ProjectID, opts sessionmanager.CleanupOptions) (sessionmanager.CleanupResult, error)
+}
+
 // Cleanup delegates terminal workspace cleanup to the internal manager and
-// reports both reclaimed and preserved (skipped) workspaces.
+// reports both reclaimed and preserved (skipped) workspaces. Dirty worktrees
+// older than DefaultCleanupOlderThan are preserved to a git ref and then
+// reclaimed; younger dirty worktrees keep the conservative skip.
 func (s *Service) Cleanup(ctx context.Context, project domain.ProjectID) (CleanupOutcome, error) {
-	res, err := s.manager.Cleanup(ctx, project)
+	return s.CleanupWithAge(ctx, project, DefaultCleanupOlderThan)
+}
+
+// CleanupWithAge overrides the dirty-reclaim age threshold for one run.
+func (s *Service) CleanupWithAge(ctx context.Context, project domain.ProjectID, olderThan time.Duration) (CleanupOutcome, error) {
+	var (
+		res sessionmanager.CleanupResult
+		err error
+	)
+	if pc, ok := s.manager.(policyCleanupCommander); ok {
+		res, err = pc.CleanupWithOptions(ctx, project, sessionmanager.CleanupOptions{DirtyAge: olderThan})
+	} else {
+		res, err = s.manager.Cleanup(ctx, project)
+	}
 	if err != nil {
 		return CleanupOutcome{}, err
 	}
@@ -1251,6 +1291,7 @@ func (s *Service) Cleanup(ctx context.Context, project domain.ProjectID) (Cleanu
 		Cleaned:     res.Cleaned,
 		AlreadyGone: res.AlreadyGone,
 		Skipped:     make([]CleanupSkipped, 0, len(res.Skipped)),
+		Reclaimed:   make([]CleanupReclaimed, 0, len(res.Reclaimed)),
 	}
 	if out.Cleaned == nil {
 		out.Cleaned = []domain.SessionID{}
@@ -1260,6 +1301,14 @@ func (s *Service) Cleanup(ctx context.Context, project domain.ProjectID) (Cleanu
 	}
 	for _, skip := range res.Skipped {
 		out.Skipped = append(out.Skipped, CleanupSkipped{SessionID: skip.SessionID, Reason: skip.Reason})
+	}
+	for _, item := range res.Reclaimed {
+		out.Reclaimed = append(out.Reclaimed, CleanupReclaimed{
+			SessionID:    item.SessionID,
+			Path:         item.WorkspacePath,
+			Bytes:        item.Bytes,
+			PreservedRef: item.PreservedRef,
+		})
 	}
 	return out, nil
 }

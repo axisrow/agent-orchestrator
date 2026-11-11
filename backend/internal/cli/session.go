@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"text/tabwriter"
@@ -28,9 +29,10 @@ type sessionListOptions struct {
 }
 
 type sessionCleanupOptions struct {
-	project string
-	yes     bool
-	dryRun  bool
+	project   string
+	yes       bool
+	dryRun    bool
+	olderThan string
 }
 
 type sessionClaimPROptions struct {
@@ -129,10 +131,18 @@ type cleanupSkippedSession struct {
 	Reason    string `json:"reason"`
 }
 
+type cleanupReclaimedSession struct {
+	SessionID    string `json:"sessionId"`
+	Path         string `json:"path"`
+	Bytes        int64  `json:"bytes"`
+	PreservedRef string `json:"preservedRef"`
+}
+
 type cleanupSessionsResponse struct {
-	Cleaned     []string                `json:"cleaned"`
-	AlreadyGone []string                `json:"alreadyGone"`
-	Skipped     []cleanupSkippedSession `json:"skipped"`
+	Cleaned     []string                  `json:"cleaned"`
+	AlreadyGone []string                  `json:"alreadyGone"`
+	Skipped     []cleanupSkippedSession   `json:"skipped"`
+	Reclaimed   []cleanupReclaimedSession `json:"reclaimed"`
 }
 
 type claimPRRequest struct {
@@ -349,8 +359,12 @@ func newSessionCleanupCommand(ctx *commandContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "cleanup",
 		Short: "Clean up terminated sessions",
-		Long:  "Clean up terminated sessions by reclaiming eligible workspaces. Dirty worktrees are skipped by the daemon.",
-		Args:  noArgs,
+		Long: "Clean up terminated sessions by reclaiming eligible workspaces.\n\n" +
+			"Clean worktrees are reclaimed at any age. A dirty worktree of a terminated\n" +
+			"session older than --older-than is preserved first: uncommitted work is\n" +
+			"committed to refs/ao/preserved/<session-id> in the project repo, then the\n" +
+			"worktree is removed. Younger dirty worktrees are skipped.",
+		Args: noArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return ctx.cleanupSessions(cmd.Context(), cmd, opts)
 		},
@@ -358,6 +372,7 @@ func newSessionCleanupCommand(ctx *commandContext) *cobra.Command {
 	addSessionProjectFlag(cmd.Flags(), &opts.project, "Filter by project ID")
 	cmd.Flags().BoolVarP(&opts.yes, "yes", "y", false, "Skip confirmation prompt")
 	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Preview which sessions would be cleaned without removing anything")
+	cmd.Flags().StringVar(&opts.olderThan, "older-than", "7d", "Age threshold (e.g. 7d, 12h, 30m) for force-reclaiming dirty terminated worktrees; 0 keeps every dirty worktree preserved")
 	return cmd
 }
 
@@ -721,6 +736,10 @@ func (c *commandContext) renameSession(ctx context.Context, cmd *cobra.Command, 
 }
 
 func (c *commandContext) cleanupSessions(ctx context.Context, cmd *cobra.Command, opts sessionCleanupOptions) error {
+	olderThan, err := parseOlderThan(opts.olderThan)
+	if err != nil {
+		return usageError{err}
+	}
 	candidates, err := c.previewCleanupSessions(ctx, opts.project)
 	if err != nil {
 		return err
@@ -760,12 +779,19 @@ func (c *commandContext) cleanupSessions(ctx context.Context, cmd *cobra.Command
 	if opts.project != "" {
 		params.Set("project", opts.project)
 	}
+	params.Set("olderThan", olderThan.String())
 	var res cleanupSessionsResponse
 	if err := c.postJSON(ctx, apiPath("sessions/cleanup", params), struct{}{}, &res); err != nil {
 		return err
 	}
 	cleaned := res.Cleaned
 	labelByID := cleanupLabelByID(candidates, opts.project)
+	reclaimByID := make(map[string]cleanupReclaimedSession, len(res.Reclaimed))
+	var totalBytes int64
+	for _, item := range res.Reclaimed {
+		reclaimByID[item.SessionID] = item
+		totalBytes += item.Bytes
+	}
 	for _, id := range cleaned {
 		label := id
 		if mapped := labelByID[id]; mapped != "" {
@@ -773,6 +799,16 @@ func (c *commandContext) cleanupSessions(ctx context.Context, cmd *cobra.Command
 		}
 		if _, err := fmt.Fprintf(out, "  Cleaned: %s\n", label); err != nil {
 			return err
+		}
+		if item, ok := reclaimByID[id]; ok {
+			if _, err := fmt.Fprintf(out, "    %s, %s reclaimed\n", item.Path, humanBytes(item.Bytes)); err != nil {
+				return err
+			}
+			if item.PreservedRef != "" {
+				if _, err := fmt.Fprintf(out, "    Preserved uncommitted work: %s\n", item.PreservedRef); err != nil {
+					return err
+				}
+			}
 		}
 	}
 	for _, id := range res.AlreadyGone {
@@ -800,8 +836,33 @@ func (c *commandContext) cleanupSessions(ctx context.Context, cmd *cobra.Command
 	if len(res.Skipped) > 0 {
 		summary += fmt.Sprintf(", %d skipped", len(res.Skipped))
 	}
+	if totalBytes > 0 {
+		summary += fmt.Sprintf(", %s reclaimed", humanBytes(totalBytes))
+	}
 	_, err = fmt.Fprintf(out, "%s.\n", summary)
 	return err
+}
+
+// parseOlderThan accepts a Go duration plus the day unit humans actually use
+// ("7d"). Zero disables the force policy entirely: every dirty worktree keeps
+// the pre-#312 conservative skip.
+func parseOlderThan(v string) (time.Duration, error) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return 0, errors.New("--older-than is required (e.g. 7d, 12h, 30m)")
+	}
+	if d, err := time.ParseDuration(v); err == nil {
+		if d < 0 {
+			return 0, fmt.Errorf("invalid --older-than %q: must not be negative", v)
+		}
+		return d, nil
+	}
+	if strings.HasSuffix(v, "d") {
+		if n, err := strconv.ParseFloat(strings.TrimSuffix(v, "d"), 64); err == nil && n >= 0 {
+			return time.Duration(n * 24 * float64(time.Hour)), nil
+		}
+	}
+	return 0, fmt.Errorf("invalid --older-than %q: use e.g. 7d, 12h, 30m, or a Go duration like 168h", v)
 }
 
 func (c *commandContext) previewCleanupSessions(ctx context.Context, project string) ([]sessionDTO, error) {
