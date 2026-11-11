@@ -608,3 +608,6 @@ df2a38d46301af17d14603fb7cde2cf768b09198 skipped perf(artifacts): mount a card's
 b4e11e2cb1a772df41ecc02f39cad276e5c07d4d skipped perf(sidebar): stop unrelated sidebar re-renders on route, toggle and scroll (#8102)
 08e44c763fafc5e0362bd8be9e756881e624392d skipped feat(usage): move the page controls into a toolbar row, as on Artifacts (#8112)
 98eb7c11760e98845c13d86f0f6cab4b66ada01f skipped fix(artifacts): orchestrator artifacts on Artifacts page (#8118) — ручной UI страницы, сильная дельта форка
+999321b38cc5f57bc53ab9c255cb10c4e8999e68 skipped feat(chat): show a turn's artifacts as preview cards (#8120)
+f9b90ef6ce923ba36f47e0d2f25856a7144a7c29 skipped perf(chat): wake hibernated chats less often, and faster (#8101)
+9ca621901c3aa6e8eb5a7fc18986e99356a396d5 skipped fix(archive): archive modal in place (#8133) — ручной UI, board выпилен
