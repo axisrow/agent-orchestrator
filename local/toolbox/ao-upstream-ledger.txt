@@ -569,3 +569,5 @@ dd756d670b67af7efbf0da9f47e4cdb047105156 taken fix(desktop): kept worktrees not 
 4d195b13a623db5336ecdf6346597427e908101e taken fix(remote): passwordless requests out of lockout (#8027)
 496791b4f8536bd94f749cf519c6b13082de1ee1 skipped fix(mobile): show failed tool servers the way the desktop does (#8037)
 64dcbc3d76b30eb4f2376f9d6e28f4e171151f2a skipped fix(frontend): light active tab styling (#8054) — ручной UI
+bc85aa8ee6d24cee89e1606d5b6b6cd209a6c7f1 skipped feat(chat): keep tool calls collapsed until the reader opens them (#8052)
+27a81af6e97f040c6562ff03d98ab5cab6e17a52 skipped fix(chat): sent attachments above bubble (#8056) — ручной UI вложений, DU поверх выпиленного редактора
