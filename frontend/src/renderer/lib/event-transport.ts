@@ -362,6 +362,7 @@ export function createEventTransport(queryClient: QueryClient): EventTransport {
 										conversationId?: unknown;
 										reviewId?: unknown;
 										interfaceTransitionId?: unknown;
+										activity?: unknown;
 										kind?: unknown;
 										agentId?: unknown;
 										projectId?: unknown;
@@ -427,6 +428,12 @@ export function createEventTransport(queryClient: QueryClient): EventTransport {
 							// can be what tells an open chat that its start-up finished.
 							idOnlySessionUpdate =
 								payload !== undefined && Object.keys(payload).every((key) => key === "id" || key === "sessionId");
+							// Native identity and provisioning changes carry the session-row
+							// activity field. Recheck switch readiness even after its poll
+							// budget expires, without reacting to id-only usage updates.
+							if (typeof payload?.activity === "string") {
+								pendingInterfaceTransitionSessions.add(decoded.sessionId);
+							}
 						}
 					} catch {
 						// A malformed CDC payload still invalidates workspaces; it simply
