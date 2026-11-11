@@ -228,7 +228,7 @@ function formatDiagnostics(diagnostics: ReportProblemDiagnostics): string {
 	return lines.map((line) => `- ${line}`).join("\n");
 }
 
-function currentRoutePath(): string {
+export function currentRoutePath(): string {
 	const hashPath = window.location.hash.replace(/^#/, "").split("?")[0];
 	if (hashPath?.startsWith("/")) return hashPath;
 	return window.location.pathname;

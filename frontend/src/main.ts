@@ -33,6 +33,8 @@ import { discoverMacTerminalApps } from "./main/mac-terminal-apps";
 import { registerCliLinkIpc } from "./main/cli-link-ipc";
 import { launchCommand } from "./main/launch-command";
 import { closeDaemonLog, openDaemonLog, writeDaemonLog } from "./main/daemon-log";
+import { createRendererCrashLog, parseRendererCrashReport } from "./main/renderer-crash-log";
+import { RENDERER_CRASH_REPORT_CHANNEL } from "./shared/renderer-crash";
 import { bootDaemonAndWindow } from "./main/daemon-boot-gate";
 import { blocksRenderFrameNavigation } from "./main/render-frame-guard";
 import { agentPageRequestAllowed } from "./main/render-frame-network";
@@ -653,6 +655,13 @@ let daemonLogChild: ChildProcess | undefined;
 
 function daemonLogPath(): string {
 	return path.join(os.homedir(), ".ao", ...(isDev ? [DEV_STATE_SUBDIR] : []), "daemon.log");
+}
+
+// Same convention as the daemon log: dev keeps its own copy under ~/.ao/dev/.
+// Deliberately not redirected by AO_DATA_DIR, so the path is predictable when
+// a crash report has to be found by hand.
+function rendererCrashLogPath(): string {
+	return path.join(os.homedir(), ".ao", ...(isDev ? [DEV_STATE_SUBDIR] : []), "renderer-crashes.jsonl");
 }
 
 // Menu installed on Windows where the native menu bar is hidden. The bar stays
@@ -2806,6 +2815,13 @@ ipcMain.on(AGENT_SWITCH_VISIBILITY_IPC_CHANNEL, (event, request: unknown) => {
 	const trustedSender = trustedShellWebContents.get(event.sender.id);
 	if (trustedSender !== event.sender || trustedSender.isDestroyed()) return;
 	agentSwitchVisibilityController?.signal(event.sender.id, request);
+});
+const rendererCrashLog = createRendererCrashLog(rendererCrashLogPath(), app.getVersion());
+ipcMain.on(RENDERER_CRASH_REPORT_CHANNEL, (event, input: unknown) => {
+	const trustedSender = trustedShellWebContents.get(event.sender.id);
+	if (!trustedSender || trustedSender !== event.sender || trustedSender.isDestroyed()) return;
+	const report = parseRendererCrashReport(input);
+	if (report) rendererCrashLog(report);
 });
 
 function failClosedTelemetryPolicyView(): TelemetryPolicyView {
