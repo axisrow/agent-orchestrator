@@ -7372,132 +7372,6 @@ paths:
       summary: Remove one queued message without stopping the running turn
       tags:
       - conversations
-  /api/v1/sessions/{sessionId}/conversation/turns/{turnId}/edit:
-    post:
-      operationId: editSessionConversationMessage
-      parameters:
-      - description: Session identifier, e.g. project-1.
-        in: path
-        name: sessionId
-        required: true
-        schema:
-          description: Session identifier, e.g. project-1.
-          type: string
-      - description: AO conversation turn identifier, from the snapshot's turns array.
-        in: path
-        name: turnId
-        required: true
-        schema:
-          description: AO conversation turn identifier, from the snapshot's turns
-            array.
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/EditConversationMessageRequest'
-        required: true
-      responses:
-        "202":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/EditConversationMessageResponse'
-          description: Accepted
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIError'
-          description: Bad Request
-        "404":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIError'
-          description: Not Found
-        "409":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIError'
-          description: Conflict
-        "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIError'
-          description: Internal Server Error
-        "501":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIError'
-          description: Not Implemented
-      summary: Branch before and replace an earlier human prompt
-      tags:
-      - conversations
-  /api/v1/sessions/{sessionId}/conversation/turns/{turnId}/queue/edit:
-    post:
-      operationId: editQueuedSessionConversationTurn
-      parameters:
-      - description: Session identifier, e.g. project-1.
-        in: path
-        name: sessionId
-        required: true
-        schema:
-          description: Session identifier, e.g. project-1.
-          type: string
-      - description: AO conversation turn identifier, from the snapshot's turns array.
-        in: path
-        name: turnId
-        required: true
-        schema:
-          description: AO conversation turn identifier, from the snapshot's turns
-            array.
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/EditQueuedConversationMessageRequest'
-        required: true
-      responses:
-        "204":
-          description: No Content
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIError'
-          description: Bad Request
-        "404":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIError'
-          description: Not Found
-        "409":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIError'
-          description: Conflict
-        "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIError'
-          description: Internal Server Error
-        "501":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIError'
-          description: Not Implemented
-      summary: Rewrite one queued message before it dispatches
-      tags:
-      - conversations
   /api/v1/sessions/{sessionId}/conversation/turns/{turnId}/retry:
     post:
       operationId: retrySessionConversationTurn
@@ -14789,8 +14663,6 @@ components:
           type: boolean
         createdAt:
           type: string
-        editAvailable:
-          type: boolean
         id:
           type: string
         kind:
@@ -14835,7 +14707,6 @@ components:
       - role
       - origin
       - text
-      - editAvailable
       - streaming
       - createdAt
       type: object
@@ -15644,61 +15515,6 @@ components:
       - mode
       - reviewId
       - harness
-      type: object
-    EditConversationMessageRequest:
-      properties:
-        clientMessageId:
-          type: string
-        text:
-          type: string
-      required:
-      - text
-      type: object
-    EditConversationMessageResponse:
-      properties:
-        activeBranchId:
-          type: string
-        providerTurnId:
-          type: string
-        sourceBranchId:
-          type: string
-        state:
-          enum:
-          - queued
-          - running
-          - completed
-          - recovered
-          - interrupted
-          - failed
-          type: string
-        turnId:
-          type: string
-      required:
-      - sourceBranchId
-      - activeBranchId
-      type: object
-    EditQueuedConversationMessageRequest:
-      properties:
-        attachments:
-          items:
-            $ref: '#/components/schemas/ConversationImageContentRequest'
-          type: array
-        clientMessageId:
-          type: string
-        expectedRevision:
-          type:
-          - "null"
-          - integer
-        retainedContent:
-          items:
-            type: integer
-          type:
-          - "null"
-          - array
-        text:
-          type: string
-      required:
-      - text
       type: object
     EndpointsResponse:
       properties:
@@ -18870,6 +18686,10 @@ components:
             to the daemon.
           format: date-time
           type: string
+        prMayHaveChanged:
+          description: The finished tool call probably changed the session's pull
+            request (gh pr merge, git push), so AO re-reads it early.
+          type: boolean
         processId:
           description: Process id of the provider process that fired the hook (Claude's
             CLAUDE_PID).

@@ -35,7 +35,6 @@ import {
 	ListChecks,
 	Loader2,
 	MousePointer2,
-	Pencil,
 	Plug,
 	Shuffle,
 	ShieldCheck,
@@ -70,7 +69,6 @@ import { ActivityTitle, ChatMarkdown, OriginPreviewMarkdown, SessionLabelLink, S
 import { HighlightedCode } from "./HighlightedCode";
 import { CopyButton } from "./CopyButton";
 import { ScriptRunPanel } from "../ScriptRunPanel";
-import { HumanMessageEditor } from "./HumanMessageEditor";
 import { RenderFrame } from "./RenderFrame";
 import { ConversationBranchNavigator } from "./ConversationBranchNavigator";
 import { ConversationContentItems } from "./ConversationContentItems";
@@ -555,18 +553,6 @@ export function HumanMessage({
 	apiBaseUrl = getApiBaseUrl(),
 	queued,
 	animateIn = false,
-	onEdit,
-	editing = false,
-	editText,
-	onEditStart,
-	onEditDraftChange,
-	onEditCancel,
-	onEditAbandonRecovery,
-	editPending = false,
-	editSendBlocked = false,
-	editRecoveryLabel,
-	editBusy = false,
-	editError,
 	branchPoint,
 	onActivateBranch,
 	activateBranchPending = false,
@@ -582,18 +568,6 @@ export function HumanMessage({
 	queued?: boolean;
 	/** True only for a human message added after the timeline first mounted. */
 	animateIn?: boolean;
-	onEdit?: (turnId: string, text: string) => Promise<unknown> | void;
-	editing?: boolean;
-	editText?: string;
-	onEditStart?: () => void;
-	onEditDraftChange?: (text: string) => void;
-	onEditCancel?: () => void;
-	onEditAbandonRecovery?: () => void;
-	editPending?: boolean;
-	editSendBlocked?: boolean;
-	editRecoveryLabel?: string;
-	editBusy?: boolean;
-	editError?: string;
 	branchPoint?: ConversationBranchPoint;
 	onActivateBranch?: (branchId: string) => Promise<unknown> | void;
 	activateBranchPending?: boolean;
@@ -608,31 +582,13 @@ export function HumanMessage({
 	return (
 		<div
 			className="group/message relative flex flex-col items-end gap-1"
-			data-chat-message-id={!queued && !editing ? message.id : undefined}
-			data-chat-message-revision={!queued && !editing ? message.revision : undefined}
-			data-chat-message-role={!queued && !editing ? message.role : undefined}
+			data-chat-message-id={!queued ? message.id : undefined}
+			data-chat-message-revision={!queued ? message.revision : undefined}
+			data-chat-message-role={!queued ? message.role : undefined}
 		>
 			{/* A queued message reads as not-yet-sent rather than as sent-and-ignored:
 			    the agent has not seen it, and the timeline should not imply it has. */}
-			{editing ? (
-				<HumanMessageEditor
-					text={editText ?? visibleMessageText}
-					content={message.content ?? []}
-					pending={editPending}
-					locked={Boolean(editRecoveryLabel)}
-					recoveryLabel={editRecoveryLabel}
-					sendBlocked={editSendBlocked}
-					busy={editBusy}
-					error={editError}
-					onDraftChange={onEditDraftChange}
-					onCancel={() => onEditCancel?.()}
-					onAbandonRecovery={onEditAbandonRecovery}
-					onSend={(text) => {
-						if (!message.turnId || !onEdit) return;
-						return onEdit(message.turnId, text);
-					}}
-				/>
-			) : (
+			{
 				<div
 					/* Themes draw sent and queued differently; light theme needs to tell them
 					   apart in CSS because it paints an enclosure only around a sent one. */
@@ -676,8 +632,8 @@ export function HumanMessage({
 						className={cn(body && "mt-2")}
 					/>
 				</div>
-			)}
-			{editing ? null : (
+			}
+			{
 				// Hover-only actions float under the bubble instead of reserving a blank row;
 				// a branch navigator is always visible, so it keeps its place in the flow.
 				<div className={cn("flex h-7 items-center gap-1", branchPoint && onActivateBranch ? "mt-1" : "absolute right-0 top-full z-10")}>
@@ -688,21 +644,6 @@ export function HumanMessage({
 						>
 							{formatMessageTimestamp(message.createdAt)}
 						</span>
-						{onEdit && onEditStart && message.turnId ? (
-							<Tooltip>
-								<TooltipTrigger asChild>
-									<button
-										type="button"
-										onClick={onEditStart}
-										aria-label="Edit user message"
-										className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-[scale,background-color,color] duration-150 ease-out hover:bg-interactive-hover hover:text-foreground active:scale-[0.96] motion-reduce:transition-none motion-reduce:active:scale-100"
-									>
-										<Pencil aria-hidden="true" className="size-3.5" />
-									</button>
-								</TooltipTrigger>
-								<TooltipContent side="bottom">Edit user message</TooltipContent>
-							</Tooltip>
-						) : null}
 						<CopyButton
 							text={visibleMessageText}
 							label="Copy user message"
@@ -719,7 +660,7 @@ export function HumanMessage({
 						/>
 					) : null}
 				</div>
-			)}
+			}
 			{queued ? (
 				<div className="flex items-center gap-2 text-xs text-muted-foreground">
 					<span>Queued · sends when the agent finishes</span>

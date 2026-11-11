@@ -380,7 +380,6 @@ func attachmentUploadRoute(req *http.Request) bool {
 		"/api/v1/sessions/{sessionId}/conversation/messages",
 		"/api/v1/sessions/{sessionId}/conversation/steer",
 		"/api/v1/sessions/{sessionId}/conversation/steer-or-send",
-		"/api/v1/sessions/{sessionId}/conversation/turns/{turnId}/queue/edit",
 		"/api/v1/reviews/{reviewId}/conversation/messages":
 		return true
 	default:

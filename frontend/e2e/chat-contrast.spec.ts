@@ -32,10 +32,9 @@ for (const theme of ["dark", "light"]) {
 			await page.setViewportSize({ width: 1100, height: 850 });
 			await page.goto(`/e2e/chat-contrast/harness.html?theme=${theme}&transparency=${transparency}`);
 			const cases = [
-				["Send and selected text", "Send message", "lucide-arrow-up"],
+				["Send", "Send message", "lucide-arrow-up"],
 				["Stop", "Stop turn", "lucide-square"],
 				["Continue", "Continue turn", "lucide-play"],
-				["Message-edit send", "Send edited message", "lucide-arrow-up"],
 			];
 			for (const [section, label, icon] of cases) {
 				const button = page.getByRole("region", { name: section, exact: true }).getByRole("button", { name: label, exact: true });
@@ -49,7 +48,7 @@ for (const theme of ["dark", "light"]) {
 					}).toBeGreaterThanOrEqual(4.5);
 				}
 			}
-			const editor = page.getByRole("region", { name: "Send and selected text" }).getByRole("combobox");
+			const editor = page.getByRole("region", { name: "Send" }).getByRole("combobox");
 			await editor.selectText();
 			await expect.poll(() => page.evaluate(() => window.getSelection()?.toString())).toBe("Selected text stays readable");
 			// Lexical renders nested spans; check the actual selected text node too.

@@ -77,9 +77,6 @@ export type ChatSteerOutcome =
 	| { status: "accepted" }
 	| { status: "not-accepted"; reason: string };
 
-/** Durable inline-edit acceptance; uncertainty remains a rejected promise. */
-export type ChatEditOutcome = ChatSteerOutcome;
-
 /** How far the agent has got with one step of its plan. */
 export type PlanStepStatus = "pending" | "in_progress" | "completed";
 
@@ -163,13 +160,6 @@ export interface ConversationContentSummary {
 	sourceRevision?: number;
 }
 
-export interface QueuedMessageEditOptions {
-	clientMessageId?: string;
-	attachments?: { mimeType: string; data: string }[];
-	retainedContent?: number[];
-	expectedRevision?: number;
-}
-
 export interface ConversationMessage {
 	kind: "message";
 	id: string;
@@ -183,8 +173,6 @@ export interface ConversationMessage {
 	text: string;
 	/** Server-authoritative prompt blocks, with heavy image/resource payloads removed. */
 	content?: ConversationContentSummary[];
-	/** False when the original prompt content cannot be reproduced safely. */
-	editAvailable?: boolean;
 	/** The user's one-click "continue" after stopping a turn; drawn as a marker, not a bubble. */
 	continuation?: boolean;
 	/** True while more deltas are expected. */

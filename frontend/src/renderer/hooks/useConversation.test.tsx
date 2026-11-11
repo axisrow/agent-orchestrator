@@ -47,13 +47,6 @@ function deferred<T>() {
 	return { promise, resolve };
 }
 
-it("preserves queued-edit API error codes for delivery recovery", async () => {
-	const refusal = { code: "CHAT_QUEUED_EDIT_CONFLICT", message: "Queued message changed" };
-	postMock.mockResolvedValue({ data: undefined, error: refusal });
-	const { result } = renderHook(() => useConversationCommands("ao-1"), { wrapper });
-	await expect(result.current.editQueuedTurn("queued-1", "edited")).rejects.toBe(refusal);
-});
-
 /** The provider state the daemon now serves, in wire shape. */
 const WIRE = {
 	conversationId: "conv-1",
@@ -532,9 +525,7 @@ describe("session-scoped conversation commands", () => {
 		expect(result.current.error).toBeUndefined();
 	});
 
-	it.each(["retry", "edit"] as const)(
-		"keeps pending and accepted %s work attached to its initiating session",
-		async (operation) => {
+	it("keeps pending and accepted retry work attached to its initiating session", async () => {
 			const response = deferred<{
 				data: {
 					activeBranchId?: string;
@@ -558,10 +549,7 @@ describe("session-scoped conversation commands", () => {
 
 			let request!: Promise<unknown>;
 			act(() => {
-				request =
-					operation === "retry"
-						? result.current.retryControl.retry("turn-source")
-						: result.current.editMessage("turn-source", "edited prompt");
+				request = result.current.retryControl.retry("turn-source");
 			});
 			await waitFor(() => {
 				expect(result.current.busy).toBe(true);
@@ -572,12 +560,9 @@ describe("session-scoped conversation commands", () => {
 			expect(result.current.busy).toBe(false);
 			expect(result.current.pendingAcceptedTurnId).toBeUndefined();
 
-			const acceptedTurnId = `turn-${operation}-accepted`;
+			const acceptedTurnId = `turn-retry-accepted`;
 			response.resolve({
 				data: {
-					...(operation === "edit"
-						? { activeBranchId: "branch-edit", sourceBranchId: "branch-root" }
-						: {}),
 					turnId: acceptedTurnId,
 				},
 				error: undefined,
@@ -610,9 +595,7 @@ describe("session-scoped conversation commands", () => {
 		},
 	);
 
-	it.each(["retry", "edit"] as const)(
-		"clears pending %s work after the initiating request fails",
-		async (operation) => {
+	it("clears pending retry work after the initiating request fails", async () => {
 			const response = deferred<{
 				data: undefined;
 				error: { code: string };
@@ -630,11 +613,7 @@ describe("session-scoped conversation commands", () => {
 
 			let request!: Promise<unknown>;
 			act(() => {
-				request = (
-					operation === "retry"
-						? result.current.retryControl.retry("turn-source")
-						: result.current.editMessage("turn-source", "edited prompt")
-				).catch(() => {});
+				request = result.current.retryControl.retry("turn-source").catch(() => {});
 			});
 			await waitFor(() => expect(result.current.busy).toBe(true));
 
@@ -741,7 +720,6 @@ describe("useConversation snapshot mapping", () => {
 						text: "inspect this",
 						streaming: false,
 						createdAt: "2026-08-03T00:00:00Z",
-						editAvailable: true,
 						content: [
 							{ type: "image", mimeType: "image/png" },
 							{ type: "resource", name: "notes.md", uri: "file:///notes.md" },
@@ -765,7 +743,6 @@ describe("useConversation snapshot mapping", () => {
 			branchPoints: [{ turnId: "turn-1", position: 2, total: 3 }],
 		});
 		expect(result.current.snapshot!.items[0]).toMatchObject({
-			editAvailable: true,
 			content: [
 				{ type: "image", mimeType: "image/png" },
 				{ type: "resource", name: "notes.md", uri: "file:///notes.md" },
@@ -857,7 +834,6 @@ describe("conversation branching commands", () => {
 			await result.current.send({ text: "plain" });
 			await result.current.send({ text: "image", attachments: [image] });
 			await result.current.steer("image", [image]);
-			await result.current.editQueuedTurn("turn-1", "image", { attachments: [image] });
 		});
 
 		expect(postMock.mock.calls[0][1].headers).toBeUndefined();
@@ -866,14 +842,13 @@ describe("conversation branching commands", () => {
 		}
 	});
 
-	it("threads caller-owned idempotency ids through send, steer, and inline edit", async () => {
+	it("threads caller-owned idempotency ids through send and steer", async () => {
 		postMock.mockResolvedValue({ data: {}, error: undefined });
 		const { result } = renderHook(() => useConversationCommands("ao-1"), { wrapper });
 
 		await act(async () => {
 			await result.current.send({ text: "send once", clientMessageId: "send-stable-1" });
 			await result.current.steer("steer once", undefined, "steer-stable-1");
-			await result.current.editMessage("turn-2", "edit once", "edit-stable-1");
 		});
 
 		expect(postMock).toHaveBeenCalledWith(
@@ -884,66 +859,6 @@ describe("conversation branching commands", () => {
 			"/api/v1/sessions/{sessionId}/conversation/steer",
 			expect.objectContaining({ body: { text: "steer once", clientMessageId: "steer-stable-1" } }),
 		);
-		expect(postMock).toHaveBeenCalledWith(
-			"/api/v1/sessions/{sessionId}/conversation/turns/{turnId}/edit",
-			expect.objectContaining({ body: { text: "edit once", clientMessageId: "edit-stable-1" } }),
-		);
-	});
-
-	it("edits through the dedicated endpoint without rolling back", async () => {
-		postMock.mockResolvedValue({ data: {}, error: undefined });
-		const { result } = renderHook(() => useConversationCommands("ao-1"), { wrapper });
-
-		await act(async () => {
-			await result.current.editMessage("turn-2", "edited prompt");
-		});
-
-		expect(postMock).toHaveBeenCalledWith(
-			"/api/v1/sessions/{sessionId}/conversation/turns/{turnId}/edit",
-			expect.objectContaining({
-				params: { path: { sessionId: "ao-1", turnId: "turn-2" } },
-				body: expect.objectContaining({ text: "edited prompt" }),
-			}),
-		);
-		expect(
-			postMock.mock.calls.some(([path]) => String(path).endsWith("/rollback")),
-		).toBe(false);
-	});
-
-	it("returns a typed non-acceptance for a durably rejected inline edit", async () => {
-		apiErrorCodeMock.mockReturnValue("CHAT_EDIT_REJECTED");
-		apiErrorMessageMock.mockReturnValue("provider rejected edited prompt");
-		postMock.mockResolvedValue({ data: undefined, error: { code: "CHAT_EDIT_REJECTED" } });
-		const { result } = renderHook(() => useConversationCommands("ao-1"), { wrapper });
-
-		await expect(
-			result.current.editMessage("turn-2", "keep this edit", "edit-rejected-1"),
-		).resolves.toEqual({
-			status: "not-accepted",
-			reason: "provider rejected edited prompt",
-		});
-	});
-
-	it("keeps an uncertain inline edit rejected for same-id recovery", async () => {
-		apiErrorCodeMock.mockReturnValue("CHAT_EDIT_UNCERTAIN");
-		const failure = { code: "CHAT_EDIT_UNCERTAIN" };
-		postMock.mockResolvedValue({ data: undefined, error: failure });
-		const { result } = renderHook(() => useConversationCommands("ao-1"), { wrapper });
-
-		await expect(
-			result.current.editMessage("turn-2", "do not redispatch", "edit-uncertain-1"),
-		).rejects.toBe(failure);
-	});
-
-	it("keeps an idempotency-conflicted inline edit locked for same-id recovery", async () => {
-		apiErrorCodeMock.mockReturnValue("CHAT_EDIT_IDEMPOTENCY_CONFLICT");
-		const failure = { code: "CHAT_EDIT_IDEMPOTENCY_CONFLICT" };
-		postMock.mockResolvedValue({ data: undefined, error: failure });
-		const { result } = renderHook(() => useConversationCommands("ao-1"), { wrapper });
-
-		await expect(
-			result.current.editMessage("turn-2", "do not unlock this edit", "edit-conflict-1"),
-		).rejects.toBe(failure);
 	});
 
 	it("activates an existing branch", async () => {
@@ -1356,7 +1271,6 @@ describe("toSnapshot", () => {
 					origin: "human",
 					text: "hi",
 					clientMessageId: "client-1",
-					editAvailable: true,
 					streaming: false,
 					createdAt: "2026-10-08T00:00:00Z",
 				},

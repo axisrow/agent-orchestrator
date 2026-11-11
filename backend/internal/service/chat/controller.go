@@ -57,12 +57,10 @@ type Store interface {
 	ClaimChatControllerGeneration(ctx context.Context, session domain.SessionID, generation string) error
 	ClaimReviewChatController(ctx context.Context, reviewID, providerID, generation string, now time.Time) (bool, error)
 	ConversationBranch(ctx context.Context, conversationID, branchID string) (domain.ConversationBranch, error)
-	ConversationEditAnchor(ctx context.Context, conversationID, replacedTurnID string) (domain.ConversationEditAnchor, error)
 	RepairIncompleteConversationEdit(ctx context.Context, sessionID domain.SessionID, conversationID string, now time.Time) (domain.ConversationBranch, bool, error)
 	CreateAndActivateConversationBranch(ctx context.Context, sessionID domain.SessionID, branch domain.ConversationBranch, generation string, now time.Time) error
 	CreateAndActivateReviewConversationBranch(ctx context.Context, reviewID string, branch domain.ConversationBranch, generation string, now time.Time) error
 	ActivateConversationBranch(ctx context.Context, sessionID domain.SessionID, conversationID, branchID, providerConversationID, generation string, now time.Time) error
-	UpdateConversationBranchReplacement(ctx context.Context, branchID, replacementTurnID string) error
 
 	AdoptProviderTurn(ctx context.Context, conversationID string, session domain.SessionID, generation, turnID, providerTurnID string, now time.Time) error
 	AdoptReviewProviderTurn(ctx context.Context, conversationID string, session domain.SessionID, reviewID, generation, turnID, providerTurnID string, now time.Time) error
@@ -101,18 +99,10 @@ type Store interface {
 	ReserveSteerDelivery(ctx context.Context, conversationID, clientMessageID, requestJSON string, now time.Time) (domain.ConversationSteerDelivery, bool, error)
 	CompleteSteerDelivery(ctx context.Context, conversationID, clientMessageID, providerTurnID string, activity domain.ConversationActivity, now time.Time) error
 	RejectSteerDelivery(ctx context.Context, conversationID, clientMessageID string, kind domain.ConversationSteerRejectionKind, message string, now time.Time) error
-	EditDelivery(ctx context.Context, conversationID, clientMessageID string) (domain.ConversationEditDelivery, bool, error)
-	ReserveEditDelivery(ctx context.Context, conversationID, clientMessageID, requestJSON string, now time.Time) (domain.ConversationEditDelivery, bool, error)
-	BeginEditProviderWork(ctx context.Context, conversationID, clientMessageID, generation string) error
-	RecoverCompletedEditDelivery(ctx context.Context, conversationID, clientMessageID string, now time.Time) error
-	CompleteEditDelivery(ctx context.Context, conversationID, clientMessageID, sourceBranchID, activeBranchID string, turn domain.ConversationTurn, now time.Time) error
-	RejectEditDelivery(ctx context.Context, conversationID, clientMessageID string, kind domain.ConversationEditRejectionKind, message string, now time.Time) error
 	CancelQueuedTurns(ctx context.Context, conversationID string, cutoff, now time.Time) error
 	CancelAllQueuedTurns(ctx context.Context, conversationID string, now time.Time) error
 	CancelQueuedTurnByID(ctx context.Context, conversationID, turnID string, now time.Time) error
 	QueuedTurnMessage(ctx context.Context, conversationID, turnID string) (domain.ConversationMessage, error)
-	QueuedEditDelivery(ctx context.Context, conversationID, clientMessageID string) (string, bool, error)
-	UpdateQueuedTurnMessage(ctx context.Context, conversationID, turnID, text, contentJSON string, revision int64, now time.Time, delivery domain.ConversationQueuedEditDelivery) error
 	ReorderQueuedTurns(ctx context.Context, conversationID string, turnIDs []string) error
 
 	RetryPrompt(ctx context.Context, conversationID, turnID string) (domain.RetryPrompt, error)

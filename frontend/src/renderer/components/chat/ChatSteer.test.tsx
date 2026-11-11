@@ -348,9 +348,8 @@ describe("ChatWorkspace steering", () => {
 		expect(screen.getAllByRole("button", { name: "Drag to reorder queued message" })).toHaveLength(2);
 	});
 
-	it("steers, edits, and deletes queued messages from the dock", async () => {
+	it("steers and deletes queued messages from the dock", async () => {
 		const onPromoteQueuedTurn = vi.fn().mockResolvedValue(undefined);
-		const onBeginQueuedEdit = vi.fn();
 		const onCancelQueuedTurn = vi.fn().mockResolvedValue(undefined);
 		render(
 			<QueuedMessageDock
@@ -388,7 +387,6 @@ describe("ChatWorkspace steering", () => {
 				]}
 				canSteer
 				onPromoteQueuedTurn={onPromoteQueuedTurn}
-				onBeginQueuedEdit={onBeginQueuedEdit}
 				onCancelQueuedTurn={onCancelQueuedTurn}
 			/>,
 		);
@@ -407,9 +405,6 @@ describe("ChatWorkspace steering", () => {
 		);
 		expect(onPromoteQueuedTurn).toHaveBeenCalledWith("queued-2");
 		expect(screen.queryByTestId("queued-message-queued-2")).not.toBeInTheDocument();
-
-		await userEvent.click(within(screen.getByTestId("queued-message-queued-1")).getByRole("button", { name: "Edit queued message" }));
-		expect(onBeginQueuedEdit).toHaveBeenCalledWith("queued-1", "first queued");
 
 		await userEvent.click(within(screen.getByTestId("queued-message-queued-1")).getByRole("button", { name: "Delete queued message" }));
 		expect(onCancelQueuedTurn).toHaveBeenCalledWith("queued-1");
@@ -484,25 +479,6 @@ describe("ChatWorkspace steering", () => {
 
 		expect(screen.queryByText("first queued")).not.toBeInTheDocument();
 		expect(within(screen.getByTestId("queued-message-dock")).getByText("second queued")).toBeVisible();
-	});
-
-	it("clears a queued edit when that message is deleted from the dock", async () => {
-		const onCancelQueuedTurn = vi.fn().mockResolvedValue(undefined);
-		render(
-			<ChatWorkspace
-				snapshot={withQueuedMessages()}
-				onSteer={vi.fn()}
-				onEditQueuedTurn={vi.fn()}
-				onCancelQueuedTurn={onCancelQueuedTurn}
-			/>,
-		);
-
-		await userEvent.click(within(screen.getByTestId("queued-message-queued-1")).getByRole("button", { name: "Edit queued message" }));
-		await waitFor(() => expect(screen.getByText(/editing/i)).toBeInTheDocument());
-
-		await userEvent.click(within(screen.getByTestId("queued-message-queued-1")).getByRole("button", { name: "Delete queued message" }));
-		await waitFor(() => expect(onCancelQueuedTurn).toHaveBeenCalledWith("queued-1"));
-		await waitFor(() => expect(screen.queryByText(/editing/i)).not.toBeInTheDocument());
 	});
 
 	it("shows the queued dock while messages are still queued between turns", () => {

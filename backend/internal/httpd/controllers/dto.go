@@ -2708,19 +2708,6 @@ type ConversationImageContentRequest struct {
 	Data     string `json:"data"`
 }
 
-// EditQueuedConversationMessageRequest changes an undispatched prompt. Omitted
-// retainedContent preserves the stored blocks; an empty list removes attachments.
-type EditQueuedConversationMessageRequest struct {
-	// Stable retry key for this exact edit, including its attachments.
-	ClientMessageID string                            `json:"clientMessageId,omitempty"`
-	Text            string                            `json:"text"`
-	Attachments     []ConversationImageContentRequest `json:"attachments,omitempty"`
-	// Indices in the message's public content summary, in their original order.
-	RetainedContent *[]int `json:"retainedContent,omitempty"`
-	// Reject a stale editor before interpreting attachment indices.
-	ExpectedRevision *int64 `json:"expectedRevision,omitempty"`
-}
-
 // ConversationResourceContentRequest is a resource link, or embedded text when
 // Text is present and the provider negotiated embedded context.
 type ConversationResourceContentRequest struct {
@@ -2784,14 +2771,6 @@ type SteerOrSendConversationResponse struct {
 	Duplicate      bool             `json:"duplicate"`
 }
 
-// EditConversationMessageRequest changes the readable text of one durable human
-// prompt. Structured content is intentionally absent: the service reuses the
-// server-side blocks recorded with the original message.
-type EditConversationMessageRequest struct {
-	Text            string `json:"text"`
-	ClientMessageID string `json:"clientMessageId,omitempty"`
-}
-
 // ConversationContentSummaryResponse is a lightweight attachment/resource chip.
 // Image bytes and embedded resource text never leave the durable server record.
 type ConversationContentSummaryResponse struct {
@@ -2807,16 +2786,6 @@ type ConversationContentSummaryResponse struct {
 	SourceConversationID string `json:"sourceConversationId,omitempty"`
 	SourceMessageID      string `json:"sourceMessageId,omitempty"`
 	SourceRevision       int64  `json:"sourceRevision,omitempty"`
-}
-
-// EditConversationMessageResponse identifies the newly selected branch and its
-// replacement turn.
-type EditConversationMessageResponse struct {
-	SourceBranchID string           `json:"sourceBranchId"`
-	ActiveBranchID string           `json:"activeBranchId"`
-	TurnID         string           `json:"turnId,omitempty"`
-	ProviderTurnID string           `json:"providerTurnId,omitempty"`
-	State          domain.TurnState `json:"state,omitempty" enum:"queued,running,completed,recovered,interrupted,failed"`
 }
 
 // RetryTurnResponse reports the new turn a retry dispatched. The original failed
@@ -3053,7 +3022,6 @@ type ConversationMessageResponse struct {
 	// ClientMessageID echoes the sender's idempotency key so a client can match its
 	// local echo to this row without comparing text or clocks.
 	ClientMessageID string `json:"clientMessageId,omitempty"`
-	EditAvailable   bool   `json:"editAvailable"`
 	// Streaming is true while more deltas are expected for this message.
 	Streaming bool `json:"streaming"`
 	// Continuation is the user's one-click "continue" after stopping a turn,

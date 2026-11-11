@@ -165,7 +165,7 @@ describe("next-message suggestion", () => {
 	});
 
 	it.each([
-		{ disabled: true }, { willQueue: true }, { starting: true }, { editingQueuedTurnId: "queued-turn" },
+		{ disabled: true }, { willQueue: true }, { starting: true },
 	])("hides suggestions when normal message entry is unavailable (%j)", (props) => {
 		renderComposer(props);
 		expect(screen.queryByTestId("prompt-suggestion")).not.toBeInTheDocument();

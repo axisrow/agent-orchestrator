@@ -134,10 +134,6 @@ func TestChatViewRouteValidatesAndForwardsLease(t *testing.T) {
 	}
 }
 
-func (f *fakeConversationService) EditMessage(context.Context, domain.SessionID, string, ports.ChatUserMessage) (chatsvc.EditMessageResult, error) {
-	return chatsvc.EditMessageResult{}, nil
-}
-
 func (f *fakeConversationService) ActivateBranch(context.Context, domain.SessionID, string) (string, error) {
 	return "", nil
 }
@@ -294,7 +290,7 @@ func TestConversationSnapshotCarriesTheSendersClientMessageID(t *testing.T) {
 	}
 }
 
-func TestConversationSnapshotExposesSafeEditContentAndBranchMetadata(t *testing.T) {
+func TestConversationSnapshotExposesSafeContentAndBranchMetadata(t *testing.T) {
 	now := time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
 	body := conversationSnapshotBody(t, chatsvc.Snapshot{
 		Conversation: domain.ConversationRecord{ID: "conversation-1", ActiveBranchID: "branch-child"},
@@ -343,9 +339,6 @@ func TestConversationSnapshotExposesSafeEditContentAndBranchMetadata(t *testing.
 	}
 	messages := body["messages"].([]any)
 	valid := messages[0].(map[string]any)
-	if valid["editAvailable"] != true {
-		t.Fatalf("valid editAvailable = %#v", valid["editAvailable"])
-	}
 	content := valid["content"].([]any)
 	if len(content) != 4 {
 		t.Fatalf("content summaries = %#v", content)
@@ -365,47 +358,12 @@ func TestConversationSnapshotExposesSafeEditContentAndBranchMetadata(t *testing.
 	if content[3].(map[string]any)["name"] != "skill_binding" {
 		t.Fatalf("unknown content summary = %#v", content[3])
 	}
-	if messages[1].(map[string]any)["editAvailable"] != true {
-		t.Fatalf("legacy message is not editable: %#v", messages[1])
-	}
-	if messages[2].(map[string]any)["editAvailable"] != false {
-		t.Fatalf("malformed message is editable: %#v", messages[2])
-	}
 	turns := body["turns"].([]any)
 	if turns[0].(map[string]any)["hasRetryAttempt"] != true {
 		t.Fatalf("consumed retry source = %#v", turns[0])
 	}
 	if turns[1].(map[string]any)["retryOfTurnId"] != "turn-source" {
 		t.Fatalf("retry source correlation = %#v", turns[1])
-	}
-}
-
-func TestConversationSnapshotScopesEditAvailabilityToActiveProviderBinding(t *testing.T) {
-	now := time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
-	body := conversationSnapshotBody(t, chatsvc.Snapshot{
-		Conversation:      domain.ConversationRecord{ID: "conversation-1"},
-		SessionID:         domain.SessionID("p1-1"),
-		EditFloorSequence: 10,
-		Messages: []domain.ConversationMessage{
-			{
-				ID: "old-provider", TurnID: "turn-old", Sequence: 10,
-				Role: domain.MessageRoleUser, Origin: domain.MessageOriginHuman,
-				Text: "old provider prompt", CreatedAt: now,
-			},
-			{
-				ID: "active-provider", TurnID: "turn-active", Sequence: 11,
-				Role: domain.MessageRoleUser, Origin: domain.MessageOriginHuman,
-				Text: "active provider prompt", CreatedAt: now,
-			},
-		},
-	})
-
-	messages := body["messages"].([]any)
-	if messages[0].(map[string]any)["editAvailable"] != false {
-		t.Fatalf("old-provider editAvailable = %#v, want false", messages[0])
-	}
-	if messages[1].(map[string]any)["editAvailable"] != true {
-		t.Fatalf("active-provider editAvailable = %#v, want true", messages[1])
 	}
 }
 

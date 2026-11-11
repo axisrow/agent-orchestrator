@@ -38,7 +38,6 @@ const (
 type ConversationService interface {
 	Snapshot(ctx context.Context, session domain.SessionID) (chatsvc.Snapshot, error)
 	Send(ctx context.Context, session domain.SessionID, msg ports.ChatUserMessage) (domain.ConversationTurn, error)
-	EditMessage(ctx context.Context, session domain.SessionID, turnID string, msg ports.ChatUserMessage) (chatsvc.EditMessageResult, error)
 	ActivateBranch(ctx context.Context, session domain.SessionID, branchID string) (string, error)
 	Resolve(ctx context.Context, session domain.SessionID, requestID string, decision ports.ChatDecision) error
 	ResolveInput(ctx context.Context, session domain.SessionID, requestID string, response ports.ChatInputResponse) error
@@ -47,7 +46,6 @@ type ConversationService interface {
 	RecoverSteer(ctx context.Context, session domain.SessionID, clientMessageID string) (chatsvc.SteerResult, error)
 	PromoteQueuedTurn(ctx context.Context, session domain.SessionID, turnID string) (chatsvc.PromoteQueuedTurnResult, error)
 	CancelQueuedTurn(ctx context.Context, session domain.SessionID, turnID string) error
-	EditQueuedTurn(ctx context.Context, session domain.SessionID, turnID string, edit chatsvc.QueuedMessageEdit) error
 	ReorderQueuedTurns(ctx context.Context, session domain.SessionID, turnIDs []string) error
 	Models(ctx context.Context, session domain.SessionID) ([]ports.ChatModel, domain.ConversationSettings, error)
 	ConfigOptions(ctx context.Context, session domain.SessionID) ([]ports.ChatConfigOption, error)
@@ -103,7 +101,6 @@ func (c *ConversationsController) Register(r chi.Router) {
 	r.Post("/sessions/{sessionId}/conversation/steer-or-send", c.steerOrSend)
 	r.Post("/sessions/{sessionId}/conversation/turns/{turnId}/steer", c.promoteQueuedTurn)
 	r.Post("/sessions/{sessionId}/conversation/turns/{turnId}/cancel", c.cancelQueuedTurn)
-	r.Post("/sessions/{sessionId}/conversation/turns/{turnId}/queue/edit", c.editQueuedTurn)
 	r.Post("/sessions/{sessionId}/conversation/queue/reorder", c.reorderQueuedTurns)
 	r.Post("/sessions/{sessionId}/conversation/compact", c.compact)
 	r.Get("/sessions/{sessionId}/conversation/models", c.models)
@@ -112,7 +109,6 @@ func (c *ConversationsController) Register(r chi.Router) {
 	r.Get("/sessions/{sessionId}/conversation/skills", c.skills)
 	r.Patch("/sessions/{sessionId}/conversation/settings", c.setSettings)
 	r.Post("/sessions/{sessionId}/conversation/turns/{turnId}/rollback", c.rollback)
-	r.Post("/sessions/{sessionId}/conversation/turns/{turnId}/edit", c.editMessage)
 	r.Post("/sessions/{sessionId}/conversation/turns/{turnId}/retry", c.retryTurn)
 	r.Post("/sessions/{sessionId}/conversation/branches/{branchId}/activate", c.activateBranch)
 	r.Put("/sessions/{sessionId}/conversation/title", c.setTitle)
@@ -323,38 +319,6 @@ func (c *ConversationsController) reviewInterrupt(w http.ResponseWriter, r *http
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (c *ConversationsController) editMessage(w http.ResponseWriter, r *http.Request) {
-	if c.Svc == nil {
-		apispec.NotImplemented(w, r, "POST",
-			"/api/v1/sessions/{sessionId}/conversation/turns/{turnId}/edit")
-		return
-	}
-	var req EditConversationMessageRequest
-	if !decodeConversationBody(w, r, &req) {
-		return
-	}
-	if strings.TrimSpace(req.Text) == "" {
-		envelope.WriteAPIError(w, r, http.StatusBadRequest, "validation",
-			"CHAT_EDIT_TURN_INVALID", "edited message text is required", nil)
-		return
-	}
-	result, err := c.Svc.EditMessage(r.Context(), domain.SessionID(chi.URLParam(r, "sessionId")),
-		chi.URLParam(r, "turnId"), ports.ChatUserMessage{
-			Text: req.Text, ClientMessageID: req.ClientMessageID, Origin: domain.MessageOriginHuman,
-		})
-	if err != nil {
-		writeConversationEditError(w, r, err)
-		return
-	}
-	envelope.WriteJSON(w, http.StatusAccepted, EditConversationMessageResponse{
-		SourceBranchID: result.SourceBranchID,
-		ActiveBranchID: result.ActiveBranchID,
-		TurnID:         result.Turn.ID,
-		ProviderTurnID: result.Turn.ProviderTurnID,
-		State:          result.Turn.State,
-	})
-}
-
 // retryTurn re-dispatches a failed turn's durable prompt as a new turn. The
 // content is read from AO's rows rather than the request, so the daemon owns
 // what gets sent again and the original failed turn stays failed.
@@ -444,37 +408,6 @@ func (c *ConversationsController) activateBranch(w http.ResponseWriter, r *http.
 		return
 	}
 	envelope.WriteJSON(w, http.StatusAccepted, ActivateConversationBranchResponse{ActiveBranchID: active})
-}
-
-func writeConversationEditError(w http.ResponseWriter, r *http.Request, err error) {
-	switch {
-	case errors.Is(err, chatsvc.ErrEditDeliveryUncertain):
-		envelope.WriteAPIError(w, r, http.StatusConflict, "conflict",
-			"CHAT_EDIT_UNCERTAIN",
-			"the provider may have received this edit; retry only with the same recovery action", nil)
-	case errors.Is(err, chatsvc.ErrEditIdempotencyConflict):
-		envelope.WriteAPIError(w, r, http.StatusConflict, "conflict",
-			"CHAT_EDIT_IDEMPOTENCY_CONFLICT",
-			"this delivery handle belongs to a different edit", nil)
-	case errors.Is(err, chatsvc.ErrEditDeliveryRejected):
-		envelope.WriteAPIError(w, r, http.StatusConflict, "conflict",
-			"CHAT_EDIT_REJECTED",
-			"the edit was not accepted; retry deliberately with a new delivery handle", nil)
-	case errors.Is(err, chatsvc.ErrForkUnsupported):
-		envelope.WriteAPIError(w, r, http.StatusConflict, "conflict",
-			"CHAT_EDIT_UNSUPPORTED", "this agent cannot branch an earlier prompt", nil)
-	case errors.Is(err, chatsvc.ErrTurnRunning), errors.Is(err, chatsvc.ErrControllerHandoff):
-		envelope.WriteAPIError(w, r, http.StatusConflict, "conflict",
-			"CHAT_EDIT_BUSY", "stop the current turn before branching", nil)
-	case errors.Is(err, chatsvc.ErrEditTurnInvalid) && errors.Is(err, domain.ErrNoConversationTurn):
-		envelope.WriteAPIError(w, r, http.StatusNotFound, "not_found",
-			"CHAT_EDIT_TURN_INVALID", "that editable prompt is not in this conversation", nil)
-	case errors.Is(err, chatsvc.ErrEditTurnInvalid):
-		envelope.WriteAPIError(w, r, http.StatusBadRequest, "validation",
-			"CHAT_EDIT_TURN_INVALID", err.Error(), nil)
-	default:
-		writeConversationError(w, r, err)
-	}
 }
 
 // configOptions serves every live control the provider advertises. Empty is a
@@ -1238,8 +1171,7 @@ func conversationSnapshotResponse(s chatsvc.Snapshot) ConversationSnapshotRespon
 			CreatedAt:         msg.CreatedAt.UTC().Format(time.RFC3339),
 			Continuation:      msg.Continuation,
 		}
-		message.Content, message.EditAvailable = conversationContentSummary(msg)
-		message.EditAvailable = message.EditAvailable && msg.Sequence > s.EditFloorSequence
+		message.Content = conversationContentSummary(msg)
 		out.Messages = append(out.Messages, message)
 	}
 	for _, point := range s.BranchPoints {
@@ -1278,16 +1210,16 @@ func branchMaterializationPayload(branch domain.ConversationBranch) *Conversatio
 	}
 }
 
-func conversationContentSummary(msg domain.ConversationMessage) ([]ConversationContentSummaryResponse, bool) {
+func conversationContentSummary(msg domain.ConversationMessage) []ConversationContentSummaryResponse {
 	if msg.Role != domain.MessageRoleUser || msg.Origin != domain.MessageOriginHuman {
-		return nil, false
+		return nil
 	}
 	if msg.DeliveryContentJSON == "" {
-		return nil, true
+		return nil
 	}
 	var content []ports.ChatContent
 	if err := json.Unmarshal([]byte(msg.DeliveryContentJSON), &content); err != nil {
-		return nil, false
+		return nil
 	}
 	summaries := make([]ConversationContentSummaryResponse, 0, len(content))
 	for _, block := range content {
@@ -1324,7 +1256,7 @@ func conversationContentSummary(msg domain.ConversationMessage) ([]ConversationC
 		}
 		summaries = append(summaries, summary)
 	}
-	return summaries, true
+	return summaries
 }
 
 // usagePayload maps the conversation's token position onto the wire shape. A nil

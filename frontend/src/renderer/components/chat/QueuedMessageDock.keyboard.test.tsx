@@ -52,17 +52,17 @@ describe("QueuedMessageDock keyboard reorder", () => {
 
 	it("keeps Enter on the row's own action buttons working", async () => {
 		const user = userEvent.setup();
-		const onBeginQueuedEdit = vi.fn();
+		const onCancelQueuedTurn = vi.fn().mockResolvedValue(undefined);
 		render(
 			<QueuedMessageDock
 				messages={queued(["a", "b"])}
-				onBeginQueuedEdit={onBeginQueuedEdit}
+				onCancelQueuedTurn={onCancelQueuedTurn}
 				onReorderQueuedTurns={vi.fn()}
 			/>,
 		);
-		const [edit] = screen.getAllByRole("button", { name: "Edit queued message" });
-		edit.focus();
+		const [remove] = screen.getAllByRole("button", { name: "Delete queued message" });
+		remove.focus();
 		await user.keyboard("{Enter}");
-		expect(onBeginQueuedEdit).toHaveBeenCalledTimes(1);
+		expect(onCancelQueuedTurn).toHaveBeenCalledTimes(1);
 	});
 });

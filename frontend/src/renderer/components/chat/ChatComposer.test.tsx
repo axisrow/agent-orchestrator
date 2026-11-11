@@ -186,7 +186,6 @@ describe("send key preference", () => {
 	it.each([
 		{ action: "send", button: "Send message", props: {} },
 		{ action: "queue", button: "Queue message", props: { willQueue: true } },
-		{ action: "save edit", button: "Send message", props: { editingQueuedTurnId: "queued-1" } },
 		{ action: "insert", button: "Send message", props: { skills: SKILLS } },
 	])("updates the $action hint immediately when the preference changes", async ({ action, button, props }) => {
 		const user = userEvent.setup();
@@ -251,7 +250,6 @@ describe("send keys", () => {
 			"use this context",
 			undefined,
 			expect.any(String),
-			undefined,
 			excerpts,
 		));
 	});
@@ -504,25 +502,6 @@ describe("send keys", () => {
 		expect(field.textContent).toBe("");
 	});
 
-	it("does not undo an external draft seed into the previous draft", async () => {
-		const onSend = vi.fn();
-		const view = render(
-			<ChatComposer onSend={onSend} draftSeed={{ id: "first", text: "first draft" }} />,
-		);
-		const field = screen.getByLabelText("Message the agent");
-		await waitFor(() => expect(field).toHaveTextContent("first draft"));
-
-		view.rerender(
-			<ChatComposer onSend={onSend} draftSeed={{ id: "second", text: "replacement draft" }} />,
-		);
-		await waitFor(() => expect(field).toHaveTextContent("replacement draft"));
-		field.focus();
-		await userEvent.keyboard("{Meta>}z{/Meta}");
-
-		expect(field).toHaveTextContent("replacement draft");
-		expect(field).not.toHaveTextContent("first draft");
-	});
-
 	it("persists a trailing-whitespace edit made after restoring a session draft", async () => {
 		const sessionId = "composer-trailing-whitespace";
 		writeChatComposerText(sessionId, "restored draft");
@@ -747,7 +726,7 @@ describe("send keys", () => {
 		fireEvent.keyDown(field, { key: "Enter", ctrlKey: true });
 		await waitFor(() => expect(onSend).toHaveBeenCalledOnce());
 		expect(onSteer).not.toHaveBeenCalled();
-		expect(onSend.mock.calls[0]?.[4]).toEqual(excerpts);
+		expect(onSend.mock.calls[0]?.[3]).toEqual(excerpts);
 	});
 
 	it.each([
@@ -1157,24 +1136,6 @@ describe("send keys", () => {
    Cmd, Ctrl, and the send control while a modifier is held — is pinned here.
 --------------------------------------------------------------------------- */
 
-describe("queued message edit", () => {
-	it("saves a queued edit while the composer is busy", async () => {
-		const onSend = vi.fn().mockResolvedValue(undefined);
-		render(
-			<ChatComposer
-				onSend={onSend}
-				busy
-				willQueue
-				editingQueuedTurnId="queued-1"
-				draftSeed={{ id: "queued-1", text: "hi" }}
-			/>,
-		);
-		await waitFor(() => expect(screen.getByLabelText("Message the agent")).toHaveTextContent("hi"));
-		await userEvent.keyboard("{Enter}");
-			await waitFor(() => expect(onSend).toHaveBeenCalledWith("hi", undefined, undefined, []));
-	});
-});
-
 describe("sent message recall", () => {
 	const SENT = ["first question", "second question", "latest question"];
 	/** Fires one arrow key; true means the composer claimed it rather than moving the caret. */
@@ -1337,17 +1298,6 @@ describe("sent message recall", () => {
 		expect(press(field, "ArrowDown")).toBe(false);
 		press(field, "ArrowUp");
 		expect(composerWireText(field)).toBe("latest question");
-	});
-
-	it("stays out of a queued message edit", async () => {
-		const { field } = renderComposer({
-			sentMessages: SENT,
-			editingQueuedTurnId: "turn-queued",
-			draftSeed: { id: "turn-queued:owner", text: "" },
-		});
-		await typeInComposer(field, "");
-		expect(press(field, "ArrowUp")).toBe(false);
-		expect(composerWireText(field)).toBe("");
 	});
 
 	it("stays out of a disabled composer", async () => {
@@ -2781,20 +2731,6 @@ describe("unavailable states", () => {
 		expect(onSend).not.toHaveBeenCalled();
 	});
 
-	it("does not show a loading spinner when no queued edit is saving", () => {
-		renderComposer();
-		expect(
-			screen.getByRole("button", { name: "Send message" }).querySelector(".animate-spin"),
-		).not.toBeInTheDocument();
-	});
-
-	it("shows a loading spinner only while the queued edit being edited is saving", () => {
-		renderComposer({ editingQueuedTurnId: "turn-1", savingQueuedEditPending: true });
-		expect(
-			screen.getByRole("button", { name: "Send message" }).querySelector(".animate-spin"),
-		).toBeInTheDocument();
-	});
-
 	it("says a mid-turn message will be held", () => {
 		const { field } = renderComposer({ willQueue: true });
 		expect(field).toHaveAttribute(
@@ -2966,15 +2902,6 @@ it("keeps staged paths authoritative across a remount until acceptance clears th
 	expect(readChatSessionDraft(sessionId).composer.text).toBe("");
 	expect(send).toHaveBeenCalledOnce();
 	view.unmount();
-});
-
-it("saves /compact as literal queued text without running the command", async () => {
-	const onSend = vi.fn().mockResolvedValue(undefined);
-	const onCompact = vi.fn();
-	render(<ChatComposer onSend={onSend} onCompact={onCompact} editingQueuedTurnId="queued-command" draftSeed={{ id: "queued-command", text: "/compact" }} />);
-	await userEvent.click(screen.getByRole("button", { name: "Send message" }));
-	await waitFor(() => expect(onSend).toHaveBeenCalledWith("/compact", undefined, undefined, []));
-	expect(onCompact).not.toHaveBeenCalled();
 });
 
 it("does not dispatch a restored image after its session incarnation was replaced", async () => {

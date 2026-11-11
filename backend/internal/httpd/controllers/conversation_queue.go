@@ -14,7 +14,6 @@ import (
 )
 
 const cancelQueuedTurnPath = "/api/v1/sessions/{sessionId}/conversation/turns/{turnId}/cancel"
-const editQueuedTurnPath = "/api/v1/sessions/{sessionId}/conversation/turns/{turnId}/queue/edit"
 const reorderQueuedTurnsPath = "/api/v1/sessions/{sessionId}/conversation/queue/reorder"
 
 // ReorderQueuedConversationTurnsRequest rewrites the durable queue order.
@@ -31,35 +30,6 @@ func (c *ConversationsController) cancelQueuedTurn(w http.ResponseWriter, r *htt
 		r.Context(),
 		domain.SessionID(chi.URLParam(r, "sessionId")),
 		chi.URLParam(r, "turnId"),
-	)
-	if err != nil {
-		writeQueuedTurnMutationError(w, r, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
-func (c *ConversationsController) editQueuedTurn(w http.ResponseWriter, r *http.Request) {
-	if c.Svc == nil {
-		apispec.NotImplemented(w, r, "POST", editQueuedTurnPath)
-		return
-	}
-	var req EditQueuedConversationMessageRequest
-	if !decodeConversationBody(w, r, &req) {
-		return
-	}
-	content, attachmentErr := conversationContent(SendConversationMessageRequest{Attachments: req.Attachments})
-	if attachmentErr != nil {
-		envelope.WriteAPIError(w, r, http.StatusBadRequest, "validation",
-			attachmentErr.code, attachmentErr.message, nil)
-		return
-	}
-	err := c.Svc.EditQueuedTurn(
-		r.Context(),
-		domain.SessionID(chi.URLParam(r, "sessionId")),
-		chi.URLParam(r, "turnId"),
-		chatsvc.QueuedMessageEdit{Text: req.Text, Content: content, ClientMessageID: req.ClientMessageID,
-			RetainedContent: req.RetainedContent, ExpectedRevision: req.ExpectedRevision},
 	)
 	if err != nil {
 		writeQueuedTurnMutationError(w, r, err)
@@ -96,18 +66,6 @@ func (c *ConversationsController) reorderQueuedTurns(w http.ResponseWriter, r *h
 
 func writeQueuedTurnMutationError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
-	case errors.Is(err, chatsvc.ErrQueuedContentInvalid):
-		envelope.WriteAPIError(w, r, http.StatusBadRequest, "validation",
-			"CHAT_QUEUED_CONTENT_INVALID", "queued message attachments are invalid", nil)
-	case errors.Is(err, store.ErrQueuedEditDeliveryConflict):
-		envelope.WriteAPIError(w, r, http.StatusConflict, "conflict",
-			"CHAT_QUEUED_EDIT_IDEMPOTENCY_CONFLICT", "queued edit recovery key belongs to a different request", nil)
-	case errors.Is(err, chatsvc.ErrQueuedEditConflict):
-		envelope.WriteAPIError(w, r, http.StatusConflict, "conflict",
-			"CHAT_QUEUED_EDIT_CONFLICT", "that queued message changed; reopen it before editing", nil)
-	case errors.Is(err, chatsvc.ErrQueuedTurnTextRequired):
-		envelope.WriteAPIError(w, r, http.StatusBadRequest, "validation",
-			"CHAT_QUEUED_TEXT_REQUIRED", "queued message text is required", nil)
 	case errors.Is(err, store.ErrQueuedTurnNotAvailable):
 		envelope.WriteAPIError(w, r, http.StatusConflict, "conflict",
 			"CHAT_TURN_NOT_QUEUED", "that message is no longer queued", nil)

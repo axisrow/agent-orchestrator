@@ -1,7 +1,5 @@
 import { TurnWorkSummary } from "./TurnWorkSummary";
-import { useChatDraftTranslation } from "../../lib/chat-draft-messages";
 import { isSettingsPageOpen } from "../../hooks/useAppShortcut";
-import { useLatestCallback, useStableSet } from "../../hooks/useStable";
 import { useTabListTabStop } from "../../hooks/useTabListTabStop";
 /**
  * The Chat surface for a session whose persisted mode is `chat`.
@@ -53,39 +51,19 @@ import { cn } from "../../lib/utils";
 import { sessionBranchPresentation } from "../../lib/session-branch";
 import { annotationBody, annotationTextMatches, annotationTextRange, highlightChatAnnotation } from "../../lib/chat-annotation-navigation";
 import {
-	acknowledgeChatInlineEditMutation,
-	beginChatInlineEditMutation,
-	cancelChatInlineEditMutation,
-	clearAcceptedChatInlineEdit,
-	clearRejectedChatInlineEditDelivery,
-	clearUncertainChatInlineEditDelivery,
-	finishChatInlineEditMutation,
-	getChatInlineEditMutation,
-	markChatInlineEditDeliveryAccepted,
-	prepareChatInlineEditDelivery,
 	activateChatDraftScope,
 	chatDraftScopeKey,
-	chatQueuedAttachmentScopeKey,
 	readChatSessionDraft,
-	subscribeChatDraftRuntime,
-	writeChatInlineEdit,
 	writeChatExcerptReferences,
-	writeChatQueuedEdit,
-	type ChatDraftQueuedEdit,
-	type ChatDraftAttachment,
 	type ChatDraftExcerptReference,
-	type ChatDraftRetainedAttachment,
-	type DraftClearResult,
-	type ChatDraftInlineEdit,
 	type ChatDraftScope,
-	type ChatInlineEditDelivery,
 } from "../../lib/chat-drafts";
-import { purgeFileAttachments, purgeFileAttachmentsForSession } from "../../hooks/useFileAttachments";
+import { purgeFileAttachmentsForSession } from "../../hooks/useFileAttachments";
 import { setChatDraftBoundary } from "../../lib/chat-draft-boundary";
 import { sameContent, useStableList } from "../../lib/stable-list";
 import { useTabScrollEdges } from "../../hooks/useTabScrollEdges";
 import { useSidebarChromeClearanceRef } from "../../hooks/useSidebarChromeGeometry";
-import { apiErrorCode, getApiBaseUrl, subscribeApiBaseUrl } from "../../lib/api-client";
+import { getApiBaseUrl, subscribeApiBaseUrl } from "../../lib/api-client";
 import { aoBridge } from "../../lib/bridge";
 import { isDialogOrMenuOpen } from "../../lib/dom-selectors";
 import { clampTerminalFontSize, initialTerminalFontSize, terminalFontSizeStorageKey } from "../../lib/terminal-font-size";
@@ -127,14 +105,12 @@ import {
 	LiveResponseStatus,
 	type TurnOutcomeRetryControl,
 } from "./ChatTimelineItems";
-import { HumanMessageEditor } from "./HumanMessageEditor";
 import { ChatLinkProvider, ChatOpeningRef } from "./ChatMarkdown";
 import { ChatImageSourceProvider } from "./chat-image-source";
 import type { ComposerPromptSuggestion } from "./ComposerEditor";
-import { ChatComposer, type ChatComposerHandle, type StoredComposerAttachment } from "./ChatComposer";
+import { ChatComposer, type ChatComposerHandle } from "./ChatComposer";
 import { ContextMeter } from "./ContextMeter";
-import { stagedAttachmentParts, attachmentName } from "./messageAttachments";
-import type { QueuedMessageEditOptions } from "../../types/conversation";
+import { stagedAttachmentParts } from "./messageAttachments";
 import { QueuedMessageDock, type QueuedMessage } from "./QueuedMessageDock";
 import { SessionStartup } from "./SessionStartup";
 import { ActivityRun } from "./ActivityRun";
@@ -159,7 +135,6 @@ import {
 	type ChatModel,
 	type ChatSkill,
 	type ChatSteerOutcome,
-	type ChatEditOutcome,
 	type ConversationActivity,
 	type ConversationBranchPoint,
 	type ConversationItem,
@@ -292,8 +267,6 @@ const ShellTerminalTabEntry = memo(function ShellTerminalTabEntry({
 
 const isMac = isMacPlatform();
 const isLinux = isLinuxPlatform();
-
-type MessageEditDraft = ChatDraftInlineEdit;
 
 /**
  * A stream refresh replaces the complete snapshot object. Queue prompts do not
@@ -493,14 +466,6 @@ export interface ChatWorkspaceProps {
 	 * boundary and never for a turn that is running or already succeeded.
 	 */
 	retryControl?: ChatRetryControl;
-	/** Create a conversation branch by replacing a prior human prompt. */
-	onEditMessage?: (
-		turnId: string,
-		text: string,
-		clientMessageId?: string,
-	) => void | ChatEditOutcome | Promise<ChatEditOutcome | void>;
-	editMessagePending?: boolean;
-	editMessageError?: string;
 	/** Switch the visible conversation to another branch. */
 	onActivateBranch?: (branchId: string) => void | Promise<unknown>;
 	activateBranchPending?: boolean;
@@ -539,12 +504,10 @@ export interface ChatWorkspaceProps {
 	/** Why the last steer was refused, from the daemon's typed answer. */
 	steerRefusal?: string;
 	onPromoteQueuedTurn?: (turnId: string) => Promise<unknown>;
-	onEditQueuedTurn?: (turnId: string, text: string, options?: QueuedMessageEditOptions) => Promise<unknown>;
 	onCancelQueuedTurn?: (turnId: string) => Promise<unknown>;
 	onReorderQueuedTurns?: (turnIds: string[]) => Promise<unknown>;
 	promoteQueuedTurnPendingTurnId?: string;
 	cancelQueuedTurnPendingTurnId?: string;
-	editQueuedTurnPendingTurnId?: string;
 	/** Off where another flow owns an unanswered send, such as a pending launch. */
 	parkUnsentSends?: boolean;
 }
@@ -716,9 +679,6 @@ function ChatWorkspaceContent({
 	onOpenFiles,
 	onOpenFile,
 	retryControl,
-	onEditMessage,
-	editMessagePending,
-	editMessageError,
 	onActivateBranch,
 	activateBranchPending,
 	activateBranchError,
@@ -734,12 +694,10 @@ function ChatWorkspaceContent({
 	steerPending,
 	steerRefusal,
 	onPromoteQueuedTurn,
-	onEditQueuedTurn,
 	onCancelQueuedTurn,
 	onReorderQueuedTurns,
 	promoteQueuedTurnPendingTurnId,
 	cancelQueuedTurnPendingTurnId,
-	editQueuedTurnPendingTurnId,
 	draftScope,
 	draftPersistenceAvailable,
 	onRetryDraftPersistence,
@@ -992,151 +950,21 @@ function ChatWorkspaceContent({
 	);
 	const stablePromoteQueuedTurn = useStableCallback(onPromoteQueuedTurn);
 	const stableCancelQueuedTurn = useStableCallback(onCancelQueuedTurn);
-	const [queueEdit, setQueueEdit] = useState<ChatDraftQueuedEdit | undefined>(
-		() => (draftPersistenceAvailable ? readChatSessionDraft(draftScope).queuedEdit : undefined),
-	);
-	const queueEditRef = useRef(queueEdit);
-	const [queueDraftError, setQueueDraftError] = useState<string>();
-	const unprovenQueueWrite = useRef<{ expectedRevision?: string; written: { revisions: (string | undefined)[] } } | undefined>(undefined);
-	const updateQueueDraft = useCallback((edit: Omit<ChatDraftQueuedEdit, "revision"> | undefined, expectedRevision?: string) => {
-		const previous = unprovenQueueWrite.current;
-		const result = writeChatQueuedEdit(draftScope, edit, expectedRevision, undefined,
-			previous?.expectedRevision === expectedRevision ? previous?.written : undefined);
-		setQueueDraftError(result.ok ? undefined : "chat.draft.queueSaveLocalFailed");
-		if (result.ok) {
-			const retired = queueEditRef.current;
-			unprovenQueueWrite.current = undefined;
-			queueEditRef.current = result.draft.queuedEdit;
-			setQueueEdit(result.draft.queuedEdit);
-			if (retired && (!result.draft.queuedEdit || retired.ownerId !== result.draft.queuedEdit.ownerId)) {
-				purgeFileAttachments(chatQueuedAttachmentScopeKey(draftScope,
-					`${retired.turnId}:${retired.ownerId ?? retired.expectedRevision ?? "legacy"}`));
-			}
-		} else if (result.attempted) {
-			unprovenQueueWrite.current = { expectedRevision, written: result.attempted };
-		}
-		return result;
-	}, [draftScope]);
-	useEffect(() => {
-		setChatDraftBoundary(draftScope.sessionId, "queued-edit", queueDraftError ? "persistence-failed" : undefined);
-		return () => setChatDraftBoundary(draftScope.sessionId, "queued-edit", undefined);
-	}, [queueDraftError, draftScope.sessionId]);
-	// Text equality cannot prove an attachment-only edit was accepted. Keep an
-	// uncertain edit and its original daemon revision until a save is acknowledged.
-	const changeQueuedDraft = useCallback((text: string) => {
-		const current = queueEditRef.current;
-		if (!current || current.clientMessageId || current.turnId !== queueEdit?.turnId || current.ownerId !== queueEdit.ownerId || current.text === text) return;
-		const result = updateQueueDraft({ ...current, text, saving: undefined, clientMessageId: undefined }, current.revision);
-		if (!result.ok) {
-			queueEditRef.current = { ...current, text };
-			setQueueEdit(queueEditRef.current);
-		}
-	}, [queueEdit?.turnId, queueEdit?.ownerId, updateQueueDraft]);
-	const changeQueuedAttachments = useCallback((field: "attachments" | "stagedAttachments", attachments: ChatDraftRetainedAttachment[] | ChatDraftAttachment[]) => {
-		const current = queueEditRef.current;
-		if (!current || current.clientMessageId || current.turnId !== queueEdit?.turnId || current.ownerId !== queueEdit.ownerId) return;
-		if (JSON.stringify(current[field] ?? []) === JSON.stringify(attachments)) return;
-		const next = { ...current, [field]: attachments, saving: undefined, clientMessageId: undefined };
-		const result = updateQueueDraft(next, current.revision);
-		if (!result.ok) {
-			queueEditRef.current = next;
-			setQueueEdit(next);
-		}
-	}, [queueEdit?.turnId, queueEdit?.ownerId, updateQueueDraft]);
-	const changeQueuedStagedAttachments = useCallback((attachments: ChatDraftAttachment[]) => {
-		changeQueuedAttachments("stagedAttachments", attachments);
-	}, [changeQueuedAttachments]);
-	const changeQueuedRetainedAttachments = useCallback((attachments: ChatDraftRetainedAttachment[]) => {
-		changeQueuedAttachments("attachments", attachments);
-	}, [changeQueuedAttachments]);
 	const handleCancelQueuedTurn = useCallback(
 		async (turnId: string) => {
 			if (!onCancelQueuedTurn) return;
-			if (queueEditRef.current?.turnId === turnId && queueEditRef.current.clientMessageId) return;
 			await stableCancelQueuedTurn(turnId);
-			const current = queueEditRef.current;
-			if (current?.turnId === turnId && !current.clientMessageId) updateQueueDraft(undefined, current.revision);
 		},
-		[queueEdit, stableCancelQueuedTurn, updateQueueDraft],
+		[stableCancelQueuedTurn],
 	);
-	// Keep the dispatch target with this composer instance while attachment staging
-	// awaits. A newer queue editor must not redirect an older ordinary send.
 	const handleComposerSend = useCallback(
-		async (text: string, attachments?: Parameters<NonNullable<typeof onSend>>[1], clientMessageId?: string, retainedContent?: number[], excerpts?: ChatDraftExcerptReference[]) => {
-			if (queueEdit) {
-				if (!onEditQueuedTurn) {
-					throw new Error("chat.draft.queueUnavailable");
-				}
-				if (!queueEdit.clientMessageId && !queuedMessages.some((entry) => entry.turnId === queueEdit.turnId)) {
-					throw new Error("chat.draft.queueMissing");
-				}
-				const currentEdit = queueEditRef.current;
-				if (!currentEdit || currentEdit.turnId !== queueEdit.turnId || currentEdit.ownerId !== queueEdit.ownerId) {
-					throw new Error("chat.draft.queueReplaced");
-				}
-				const prepared = updateQueueDraft({
-					...currentEdit,
-					saving: true,
-					clientMessageId: currentEdit.clientMessageId ?? crypto.randomUUID(),
-					nativeImages: currentEdit.nativeImages ?? Boolean(nativeImages),
-				}, currentEdit.revision);
-				if (!prepared.ok || !prepared.draft.queuedEdit) throw new Error("chat.draft.queuePrepareFailed");
-				try {
-					await onEditQueuedTurn(queueEdit.turnId, text, {
-						clientMessageId: prepared.draft.queuedEdit.clientMessageId,
-						...(attachments?.length ? { attachments } : {}),
-						retainedContent: queueEdit.attachments === undefined ? undefined : retainedContent,
-						expectedRevision: queueEdit.expectedRevision,
-					});
-				} catch (error) {
-					// These outcomes follow the daemon's atomic receipt lookup, so even
-					// a recovered retry proves this exact edit was never accepted.
-					if ([
-						"CHAT_TURN_NOT_QUEUED",
-						"CHAT_QUEUED_EDIT_CONFLICT",
-						"CHAT_QUEUED_CONTENT_INVALID",
-						"CHAT_QUEUED_TEXT_REQUIRED",
-					].includes(apiErrorCode(error) ?? "")) {
-						updateQueueDraft({
-							...prepared.draft.queuedEdit,
-							clientMessageId: undefined, saving: undefined, nativeImages: undefined,
-						}, prepared.draft.queuedEdit.revision);
-					}
-					throw error;
-				}
-				if (queueEditRef.current?.ownerId === queueEdit.ownerId) {
-					if (!updateQueueDraft(undefined, prepared.draft.queuedEdit.revision).ok) throw new Error("chat.draft.queueClearFailed");
-				}
-				return;
-			}
+		async (text: string, attachments?: Parameters<NonNullable<typeof onSend>>[1], clientMessageId?: string, excerpts?: ChatDraftExcerptReference[]) => {
 			return onSend?.(text, attachments, clientMessageId, excerpts);
 		},
-		[draftScope, onEditQueuedTurn, onSend, nativeImages, queueEdit, queuedMessages, updateQueueDraft],
+		[onSend],
 	);
 	const stableInterrupt = useStableCallback(onInterrupt);
 	const stableSteer = useStableCallback(onSteer);
-	const beginQueuedEdit = useCallback(
-		(turnId: string, text: string) => {
-			if (newWorkDisabled || queueEditRef.current?.clientMessageId) return;
-			const message = queuedMessages.find((queued) => queued.turnId === turnId)?.message;
-			if (!message) return;
-			const parts = stagedAttachmentParts(text);
-			// Paths and native blocks have no shared persisted identity.
-			const attachments: StoredComposerAttachment[] = parts.attachments.map((path) => ({
-				id: path, name: attachmentName(path), path,
-			}));
-			(message.content ?? []).forEach((item, index) => {
-				attachments.push({ id: `content-${index}`, contentIndex: index, contentType: item.type,
-					name: item.name || (item.type === "image" ? `Image ${index + 1}` : item.uri || "Attachment") });
-			});
-			updateQueueDraft({ turnId, ownerId: crypto.randomUUID(), text: parts.body, expectedRevision: message.revision, attachments, stagedAttachments: [] });
-		},
-		[newWorkDisabled, queuedMessages, updateQueueDraft],
-	);
-	const cancelQueuedEdit = useCallback(() => {
-		const current = queueEditRef.current;
-		if (current && !current.clientMessageId) updateQueueDraft(undefined, current.revision);
-	}, [updateQueueDraft]);
 	const promoteQueuedTurn = useCallback(
 		async (turnId: string) => stablePromoteQueuedTurn(turnId),
 		[stablePromoteQueuedTurn],
@@ -1364,7 +1192,6 @@ function ChatWorkspaceContent({
 		(item) => item.kind === "activity" && item.activityKind === "error" &&
 			Boolean(item.summary.trim()) && item.summary.trim() === snapshot.account?.reauthReason?.trim(),
 	);
-	const editHumanMessage = onEditMessage;
 	const pendingApproval = useMemo(
 		() => latestPendingInteraction(snapshot.items, "approval", turn),
 		[snapshot.items, turn],
@@ -1460,13 +1287,8 @@ function ChatWorkspaceContent({
 			visibleQueuedMessages.length > 0 ? (
 				<QueuedMessageDock
 					messages={visibleQueuedMessages}
-					editingTurnId={queueEdit?.turnId}
-					disabled={Boolean(queueEdit?.clientMessageId)}
 					canSteer={canSteerQueuedMessage}
 					onPromoteQueuedTurn={newWorkDisabled ? undefined : promoteQueuedTurn}
-					onBeginQueuedEdit={
-						newWorkDisabled || !draftPersistenceAvailable || !onEditQueuedTurn ? undefined : beginQueuedEdit
-					}
 					onCancelQueuedTurn={newWorkDisabled ? undefined : handleCancelQueuedTurn}
 					onReorderQueuedTurns={newWorkDisabled ? undefined : onReorderQueuedTurns}
 					promotePendingTurnId={promoteQueuedTurnPendingTurnId}
@@ -1474,24 +1296,15 @@ function ChatWorkspaceContent({
 				/>
 			) : null,
 		[
-			beginQueuedEdit,
 			canSteerQueuedMessage,
 			cancelQueuedTurnPendingTurnId,
-			draftPersistenceAvailable,
 			handleCancelQueuedTurn,
 			newWorkDisabled,
-			onEditQueuedTurn,
 			onReorderQueuedTurns,
 			promoteQueuedTurn,
 			promoteQueuedTurnPendingTurnId,
-			queueEdit?.clientMessageId,
-			queueEdit?.turnId,
 			visibleQueuedMessages,
 		],
-	);
-	const composerDraftSeed = useMemo(
-		() => (queueEdit ? { id: `${queueEdit.turnId}:${queueEdit.ownerId ?? queueEdit.expectedRevision ?? "legacy"}`, text: queueEdit.text, attachments: queueEdit.attachments, stagedAttachments: queueEdit.stagedAttachments } : undefined),
-		[queueEdit],
 	);
 	const sentMessageList = useMemo(
 		() => sentMessageHistory(snapshot, localEchos ?? [], openingTurnId, backgroundWakeQueuedTurnIds),
@@ -1792,10 +1605,6 @@ function ChatWorkspaceContent({
 									onOpenFiles={onOpenFiles}
 									onOpenFile={onOpenFile}
 									retryControl={retryControl}
-									onEditHumanMessage={draftPersistenceAvailable ? editHumanMessage : undefined}
-									editPending={editMessagePending}
-									editBusy={Boolean(turn)}
-									editError={editMessageError}
 									onActivateBranch={onActivateBranch}
 									activateBranchPending={activateBranchPending}
 									activateBranchError={activateBranchError}
@@ -1845,34 +1654,22 @@ function ChatWorkspaceContent({
 									<ChatComposer
 										onSelectAnnotation={navigateToAnnotation}
 										focusRef={composerFocusRef}
-										key={`${draftScopeKey}:${draftPersistenceAvailable ? "saved" : "memory"}:${queueEdit ? `${queueEdit.turnId}:${queueEdit.ownerId ?? queueEdit.expectedRevision ?? "legacy"}` : "composer"}`}
+										key={`${draftScopeKey}:${draftPersistenceAvailable ? "saved" : "memory"}`}
 										queuedDock={composerQueuedDock}
 										approval={composerApproval}
 										elicitation={composerElicitation}
 										onSend={handleComposerSend}
 										sentMessages={sentMessages}
 										sentMessagesScope={`${snapshot.conversationId}:${snapshot.activeBranchId ?? ""}`}
-										draftSeed={composerDraftSeed}
-										promptSuggestion={!queueEdit && !composerApproval && !composerElicitation && !turn &&
+										promptSuggestion={!composerApproval && !composerElicitation && !turn &&
 											!busy && !sendPending && !steerPending && !agentInputDisabled && !newWorkDisabled &&
 											!controllerTransitioning && !loadingQuietly && !agentResuming &&
 											!workspaceActiveTabKey && !reviewerActive && !shellActive && snapshot.controller.state === "ready"
 											? promptSuggestion : undefined}
-										editingQueuedTurnId={queueEdit?.turnId}
-										queuedEditRecovery={Boolean(queueEdit?.clientMessageId)}
-										savingQueuedEditPending={Boolean(
-											queueEdit?.turnId &&
-												editQueuedTurnPendingTurnId === queueEdit.turnId,
-										)}
-										onCancelQueuedEdit={cancelQueuedEdit}
-										onQueuedDraftChange={queueEdit ? changeQueuedDraft : undefined}
 										onDraftEmptyChange={setComposerEmpty}
-										queuedDraftScope={queueEdit ? draftScope : undefined}
-										onQueuedAttachmentsChange={changeQueuedStagedAttachments}
-										onQueuedRetainedAttachmentsChange={changeQueuedRetainedAttachments}
 										onInterrupt={turn && !newWorkDisabled ? stableInterrupt : undefined}
-										onContinue={canContinue && !queueEdit ? onContinueTurn : undefined}
-										commandError={queueDraftError ?? (queueEdit && !queueEdit.clientMessageId && !queuedMessages.some((entry) => entry.turnId === queueEdit.turnId) ? "chat.draft.queueMissing" : commandError)}
+										onContinue={canContinue ? onContinueTurn : undefined}
+										commandError={commandError}
 										settings={<><ContextMeter usage={snapshot.usage} />{composerSettings}</>}
 										busy={busy}
 										willQueue={Boolean(turn) || (sessionRole !== "orchestrator" && session?.provisionState === "provisioning")}
@@ -1882,7 +1679,7 @@ function ChatWorkspaceContent({
 												: undefined
 										}
 										starting={orchestratorStarting || arrivingInChat}
-										disabled={(orchestratorStarting || loadingQuietly || (snapshot.controller.state === "stopped" && !suppressStopped && (!resumingAgent || session?.provisionState === "failed" || terminated)) || controllerTransitioning || newWorkDisabled) && !queueEdit?.clientMessageId}
+										disabled={orchestratorStarting || loadingQuietly || (snapshot.controller.state === "stopped" && !suppressStopped && (!resumingAgent || session?.provisionState === "failed" || terminated)) || controllerTransitioning || newWorkDisabled}
 										disabledPlaceholder={
 											arrivingInChat
 												? arrivingPlaceholder
@@ -1907,7 +1704,7 @@ function ChatWorkspaceContent({
 										filePaths={filePaths}
 										filePathsTruncated={filePathsTruncated}
 										onStageAttachments={newWorkDisabled ? undefined : onStageAttachments}
-										nativeImages={queueEdit?.clientMessageId ? queueEdit.nativeImages ?? nativeImages : nativeImages}
+										nativeImages={nativeImages}
 										autoFocus={!reviewerActive}
 										autoFocusKey={draftScope.sessionId}
 										// Steering is only meaningful into a turn that is running. A queued turn
@@ -1922,7 +1719,7 @@ function ChatWorkspaceContent({
 										compacting={compacting}
 										compactUnavailable={compactUnavailable}
 										compactBlocked={Boolean(turn)}
-										draftSessionId={draftPersistenceAvailable && !queueEdit ? draftScope.sessionId : undefined}
+										draftSessionId={draftPersistenceAvailable ? draftScope.sessionId : undefined}
 										draftSessionIncarnation={draftPersistenceAvailable ? draftScope.incarnation : undefined}
 										assetBaseUrl={assetBaseUrl}
 										assetSessionId={snapshot.sessionId}
@@ -2515,10 +2312,6 @@ export function Timeline({
 	onOpenFiles,
 	onOpenFile,
 	retryControl,
-	onEditHumanMessage,
-	editPending,
-	editBusy,
-	editError,
 	onActivateBranch,
 	activateBranchPending,
 	activateBranchError,
@@ -2537,7 +2330,7 @@ export function Timeline({
 	assetBaseUrl?: string;
 	remoteHost?: boolean;
 	draftScope: ChatDraftScope;
-	/** False when drafts can't be saved; persisted inline edits are then ignored. */
+	/** False when drafts can't be saved; persisted unsent sends are then ignored. */
 	draftPersistenceAvailable?: boolean;
 	hasOlder?: boolean;
 	loadingOlder?: boolean;
@@ -2549,10 +2342,6 @@ export function Timeline({
 	onOpenFiles?: () => void;
 	onOpenFile?: (path: string, line?: number) => void;
 	retryControl?: ChatRetryControl;
-	onEditHumanMessage?: ChatWorkspaceProps["onEditMessage"];
-	editPending?: boolean;
-	editBusy?: boolean;
-	editError?: string;
 	onActivateBranch?: (branchId: string) => Promise<unknown> | void;
 	activateBranchPending?: boolean;
 	activateBranchError?: string;
@@ -2568,7 +2357,6 @@ export function Timeline({
 	const arrivedEmpty = useRef(false);
 	if (arriving && !hasTranscript) arrivedEmpty.current = true;
 	const revealTranscript = arrivedEmpty.current && hasTranscript;
-	const translateDraft = useChatDraftTranslation();
 	const uiSessionId = draftScope.sessionId;
 	const scroller = useRef<HTMLDivElement>(null);
 	const scrollContent = useRef<HTMLDivElement>(null);
@@ -2676,44 +2464,7 @@ export function Timeline({
 	}, []);
 	const hoveredMarkerRef = useRef<number | null>(null);
 	hoveredMarkerRef.current = hoveredMarker;
-	const [messageEdit, setMessageEdit] = useState<MessageEditDraft | undefined>(
-		() => (draftPersistenceAvailable ? readChatSessionDraft(draftScope).inlineEdit : undefined),
-	);
-	const messageEditRef = useRef(messageEdit);
-	const [durableInlineEditDelivery, setDurableInlineEditDelivery] =
-		useState<ChatInlineEditDelivery | undefined>(
-			() => (draftPersistenceAvailable ? readChatSessionDraft(draftScope).inlineEditDelivery : undefined),
-		);
-	const [inlineEditUncertain, setInlineEditUncertain] = useState(
-		() => draftPersistenceAvailable && readChatSessionDraft(draftScope).inlineEditDelivery?.state === "dispatching",
-	);
-	const automaticInlineRecoveryAttempted = useRef<string | undefined>(undefined);
 	const [draftPersistenceError, setDraftPersistenceError] = useState<string>();
-	const [inlineEditRecoveryNotice, setInlineEditRecoveryNotice] = useState<string>();
-	const [inlineEditOutcomeNotice, setInlineEditOutcomeNotice] = useState<string>();
-	const subscribeInlineEditMutation = useCallback(
-		(listener: () => void) => subscribeChatDraftRuntime(draftScope, listener),
-		[draftScope],
-	);
-	const getInlineEditMutation = useCallback(
-		() => getChatInlineEditMutation(draftScope),
-		[draftScope],
-	);
-	const inlineEditMutation = useSyncExternalStore(
-		subscribeInlineEditMutation,
-		getInlineEditMutation,
-		getInlineEditMutation,
-	);
-	const [appliedEditAcceptanceSequence, setAppliedEditAcceptanceSequence] = useState(0);
-	const acceptedEditWaiting = Boolean(
-		inlineEditMutation.accepted &&
-			inlineEditMutation.accepted.sequence > appliedEditAcceptanceSequence,
-	);
-	const acceptedEditClearFailed = inlineEditMutation.accepted?.result.ok === false;
-	const inlineEditPending = Boolean(editPending) || inlineEditMutation.pending || acceptedEditWaiting;
-	const inlineEditLocked = inlineEditPending || Boolean(durableInlineEditDelivery);
-	const inlineEditSendBlocked =
-		inlineEditPending || (acceptedEditClearFailed && !durableInlineEditDelivery);
 
 	const captureTranscriptSelection = useCallback(() => {
 		const selection = window.getSelection();
@@ -2814,25 +2565,17 @@ export function Timeline({
 		document.addEventListener("keydown", onKeyDown, true);
 		return () => document.removeEventListener("keydown", onKeyDown, true);
 	}, [selectionAction, selectionPosition?.visible, addSelectionToChat]);
-	const inlineEditRecoveryLabel = durableInlineEditDelivery
-		? durableInlineEditDelivery.state === "accepted"
-			? "chat.draft.clearEdit"
-			: "chat.draft.retryEdit"
-		: undefined;
-	const canAbandonInlineEditRecovery = Boolean(
-		inlineEditUncertain && durableInlineEditDelivery?.state === "dispatching",
-	);
+	// Excerpt references live in the composer draft, so a failed write here is a
+	// composer-draft persistence failure for the unload-risk boundary.
 	useEffect(() => {
 		setChatDraftBoundary(
 			draftScope.sessionId,
-			"inline-edit",
-			[
-				...(draftPersistenceError ? (["persistence-failed"] as const) : []),
-			],
+			"composer",
+			draftPersistenceError ? (["persistence-failed"] as const) : [],
 		);
 	}, [draftPersistenceError, draftScope.sessionId]);
 	useEffect(
-		() => () => setChatDraftBoundary(draftScope.sessionId, "inline-edit", undefined),
+		() => () => setChatDraftBoundary(draftScope.sessionId, "composer", undefined),
 		[draftScope.sessionId],
 	);
 	// The inspector changes the minimap's visibility, but it must not cause this
@@ -2896,83 +2639,12 @@ export function Timeline({
 	const retryTurn = useStableCallback(retryControl?.retry);
 	const localBaseUrl = useSyncExternalStore(subscribeApiBaseUrl, getApiBaseUrl, getApiBaseUrl);
 	const apiBaseUrl = remoteHost ? assetBaseUrl ?? null : assetBaseUrl ?? localBaseUrl;
-	const editHumanMessage = useStableCallback(onEditHumanMessage);
 	const activateBranch = useStableCallback(onActivateBranch);
-	const canEditHumanMessage = Boolean(onEditHumanMessage) && !newWorkDisabled;
 	const canActivateBranch = Boolean(onActivateBranch) && !newWorkDisabled;
-	const canForkHistoricalContext = can(snapshot, "fork");
-	const canReconstructHistoricalContext =
-		can(snapshot, "prompt_replay") && can(snapshot, "embedded_context");
 	const branchPoints = useMemo(
 		() => new Map((snapshot.branchPoints ?? []).map((point) => [point.turnId, point])),
 		[snapshot.branchPoints],
 	);
-	const firstEditableHumanPromptTurnId = useMemo(
-		() =>
-			snapshot.items.find(
-				(item) =>
-					item.kind === "message" &&
-					item.role === "user" &&
-					item.origin === "human" &&
-					item.editAvailable &&
-					item.turnId,
-			)?.turnId,
-		[snapshot.items],
-	);
-	const editableTurnsNow = useMemo(() => {
-		const editable = new Set<string>();
-		if (snapshot.controller.state !== "ready") return editable;
-		const accepted = new Set(
-			snapshot.turns
-				.filter(
-					(turn) =>
-						turn.state === "completed" || turn.state === "interrupted" || turn.state === "failed",
-				)
-				.map((turn) => turn.id),
-		);
-		for (const item of snapshot.items) {
-			if (
-				item.kind !== "message" ||
-				item.role !== "user" ||
-				item.origin !== "human" ||
-				!item.turnId
-			) {
-				continue;
-			}
-			const firstPromptInBinding =
-				!snapshot.hasMoreBefore && item.turnId === firstEditableHumanPromptTurnId;
-			const canNativeFork =
-				canForkHistoricalContext &&
-				(snapshot.nativeForkAvailableAfterSequence ?? 0) > 0 &&
-				item.sequence > (snapshot.nativeForkAvailableAfterSequence ?? 0);
-			if (
-				item.editAvailable &&
-				accepted.has(item.turnId) &&
-				(firstPromptInBinding || canNativeFork || canReconstructHistoricalContext)
-			) {
-				editable.add(item.turnId);
-			}
-		}
-		return editable;
-	}, [
-		canForkHistoricalContext,
-		canReconstructHistoricalContext,
-		firstEditableHumanPromptTurnId,
-		snapshot.controller.state,
-		snapshot.hasMoreBefore,
-		snapshot.items,
-		snapshot.nativeForkAvailableAfterSequence,
-		snapshot.turns,
-	]);
-
-	// An ordinary branch change hides an edit that belongs to the previous branch.
-	// An unresolved delivery is different: its exact persisted editor owns the only
-	// Retry/Abandon controls, so keep it actionable when an ambiguous send activates
-	// and refetches the replacement branch.
-	useEffect(() => {
-		if (draftPersistenceAvailable && readChatSessionDraft(draftScope).inlineEditDelivery) return;
-		setMessageEdit(undefined);
-	}, [draftPersistenceAvailable, draftScope, snapshot.activeBranchId, snapshot.sessionId]);
 	useEffect(() => {
 		const setInspectorOpen = (isOpen: boolean) => {
 			inspectorOpenRef.current = isOpen;
@@ -3020,281 +2692,14 @@ export function Timeline({
 	}, [pinned]);
 
 	useEffect(() => {
-		const restored = draftPersistenceAvailable ? readChatSessionDraft(draftScope) : undefined;
-		messageEditRef.current = restored?.inlineEdit;
-		setMessageEdit(restored?.inlineEdit);
-		setDurableInlineEditDelivery(restored?.inlineEditDelivery);
-		setInlineEditUncertain(restored?.inlineEditDelivery?.state === "dispatching");
 		setDraftPersistenceError(undefined);
-		setInlineEditRecoveryNotice(
-			restored?.inlineEditDelivery
-				? restored.inlineEditDelivery.state === "accepted"
-					? "chat.draft.acceptedEdit"
-					: "chat.draft.editRestart"
-				: undefined,
-		);
-		setAppliedEditAcceptanceSequence(0);
-		setInlineEditOutcomeNotice(undefined);
-		automaticInlineRecoveryAttempted.current = undefined;
 	}, [draftPersistenceAvailable, draftScope]);
-
-	const applyAcceptedInlineEditResult = useCallback((result: DraftClearResult) => {
-		setDurableInlineEditDelivery(result.draft.inlineEditDelivery);
-		if (!result.ok) {
-			setInlineEditRecoveryNotice(
-				"chat.draft.acceptedEdit",
-			);
-			setDraftPersistenceError(
-				"chat.draft.clearEditFailed",
-			);
-			return;
-		}
-		setDraftPersistenceError(undefined);
-		setInlineEditRecoveryNotice(undefined);
-		if (!result.cleared) return;
-		messageEditRef.current = undefined;
-		setMessageEdit(undefined);
-	}, []);
-
-	const acceptAndClearInlineEditDelivery = useCallback(
-		(delivery: ChatInlineEditDelivery, mutationToken?: symbol) => {
-			const accepted = markChatInlineEditDeliveryAccepted(
-				draftScope,
-				delivery.clientMessageId,
-				delivery.revision,
-			);
-			if (!accepted.ok) {
-				if (mutationToken) {
-					cancelChatInlineEditMutation(draftScope, mutationToken);
-				}
-				setDurableInlineEditDelivery(delivery);
-				setDraftPersistenceError(
-					"chat.draft.recordEditFailed",
-				);
-				return false;
-			}
-			setDurableInlineEditDelivery(
-				accepted.draft.inlineEditDelivery ?? { ...delivery, state: "accepted" },
-			);
-			const result = clearAcceptedChatInlineEdit(draftScope, delivery.revision);
-			if (mutationToken) {
-				finishChatInlineEditMutation(
-					draftScope,
-					mutationToken,
-					delivery.revision,
-					result,
-				);
-				return result.ok;
-			}
-			applyAcceptedInlineEditResult(result);
-			return result.ok;
-		},
-		[applyAcceptedInlineEditResult, draftScope],
-	);
-
-	const abandonUncertainInlineEdit = useCallback(() => {
-		if (!durableInlineEditDelivery) return;
-		const result = clearUncertainChatInlineEditDelivery(
-			draftScope,
-			durableInlineEditDelivery.clientMessageId,
-			durableInlineEditDelivery.revision,
-		);
-		setDurableInlineEditDelivery(result.draft.inlineEditDelivery);
-		if (!result.ok) {
-			setDraftPersistenceError(
-				"chat.draft.abandonEditFailed",
-			);
-			return;
-		}
-		setInlineEditUncertain(false);
-		setDraftPersistenceError(undefined);
-		setInlineEditRecoveryNotice(undefined);
-		setInlineEditOutcomeNotice(
-			"chat.draft.abandonedEdit",
-		);
-	}, [draftScope, durableInlineEditDelivery]);
-
-	useEffect(() => {
-		if (!durableInlineEditDelivery || durableInlineEditDelivery.state !== "accepted") return;
-		if (
-			automaticInlineRecoveryAttempted.current ===
-			durableInlineEditDelivery.clientMessageId
-		) return;
-		automaticInlineRecoveryAttempted.current = durableInlineEditDelivery.clientMessageId;
-		acceptAndClearInlineEditDelivery(durableInlineEditDelivery);
-	}, [acceptAndClearInlineEditDelivery, durableInlineEditDelivery]);
-
-	useEffect(() => {
-		const accepted = inlineEditMutation.accepted;
-		if (!accepted || accepted.sequence <= appliedEditAcceptanceSequence) return;
-		applyAcceptedInlineEditResult(accepted.result);
-		setAppliedEditAcceptanceSequence(accepted.sequence);
-		acknowledgeChatInlineEditMutation(draftScope, accepted.sequence);
-	}, [
-		appliedEditAcceptanceSequence,
-		applyAcceptedInlineEditResult,
-		draftScope,
-		inlineEditMutation.accepted,
-	]);
-
-	const editableTurns = useStableSet(editableTurnsNow);
-	const startMessageEdit = useCallback((message: ConversationMessage) => {
-		if (!message.turnId || inlineEditLocked) return;
-		const result = writeChatInlineEdit(draftScope, {
-			turnId: message.turnId,
-			text: message.text,
-			content: message.content ?? [],
-		});
-		const next = result.draft.inlineEdit;
-		if (!next) return;
-		messageEditRef.current = next;
-		setMessageEdit(next);
-		setInlineEditRecoveryNotice(undefined);
-		setInlineEditOutcomeNotice(undefined);
-		setDraftPersistenceError(
-			result.ok
-				? undefined
-				: "chat.draft.editSaveFailed",
-		);
-	}, [draftScope, inlineEditLocked]);
-	const updateMessageEdit = useCallback((text: string) => {
-		if (inlineEditLocked) return;
-		const current = messageEditRef.current;
-		if (!current) return;
-		const result = writeChatInlineEdit(draftScope, {
-			turnId: current.turnId,
-			text,
-			content: current.content,
-		});
-		const next = result.draft.inlineEdit;
-		if (!next) return;
-		messageEditRef.current = next;
-		setMessageEdit(next);
-		setInlineEditRecoveryNotice(undefined);
-		setInlineEditOutcomeNotice(undefined);
-		setDraftPersistenceError(
-			result.ok
-				? undefined
-				: "chat.draft.editSaveFailed",
-		);
-	}, [draftScope, inlineEditLocked]);
-	const cancelMessageEdit = useCallback(() => {
-		if (inlineEditLocked) return;
-		const result = writeChatInlineEdit(draftScope, undefined);
-		if (!result.ok) {
-			setDraftPersistenceError(
-				"chat.draft.editDiscardFailed",
-			);
-			return;
-		}
-		messageEditRef.current = undefined;
-		setMessageEdit(undefined);
-		setInlineEditRecoveryNotice(undefined);
-		setInlineEditOutcomeNotice(undefined);
-		setDraftPersistenceError(undefined);
-	}, [draftScope, inlineEditLocked]);
-	const submitMessageEdit = useCallback(
-		async (text: string) => {
-			const current = messageEditRef.current;
-			if (
-				!current ||
-				!onEditHumanMessage ||
-				inlineEditPending ||
-				(!durableInlineEditDelivery &&
-					getChatInlineEditMutation(draftScope).accepted?.result.ok === false)
-			) return;
-				const prepared = prepareChatInlineEditDelivery(draftScope, {
-					turnId: current.turnId,
-					text,
-					content: current.content,
-					clientMessageId:
-					durableInlineEditDelivery?.clientMessageId ?? crypto.randomUUID(),
-			});
-			if (!prepared.ok) {
-				setDraftPersistenceError(
-					"chat.draft.prepareEditFailed",
-				);
-				return;
-			}
-			const delivery = prepared.mutation;
-			setInlineEditUncertain(false);
-			setDurableInlineEditDelivery(delivery);
-			setDraftPersistenceError(undefined);
-			setInlineEditRecoveryNotice(
-				delivery.state === "accepted"
-					? "chat.draft.acceptedEdit"
-					: undefined,
-			);
-			if (delivery.state === "accepted") {
-				acceptAndClearInlineEditDelivery(delivery);
-				return;
-			}
-			const mutationToken = beginChatInlineEditMutation(draftScope);
-			if (!mutationToken) return;
-			let mutationFinished = false;
-			try {
-				const outcome = await editHumanMessage(
-					delivery.turnId,
-					delivery.requestText,
-					delivery.clientMessageId,
-				);
-				if (outcome?.status === "not-accepted") {
-					const cleared = clearRejectedChatInlineEditDelivery(
-						draftScope,
-							delivery.clientMessageId,
-							delivery.revision,
-						);
-						setDurableInlineEditDelivery(cleared.draft.inlineEditDelivery);
-						if (cleared.ok) {
-							setDraftPersistenceError(undefined);
-							setInlineEditRecoveryNotice(undefined);
-							setInlineEditOutcomeNotice(outcome.reason);
-						} else {
-						setDraftPersistenceError(
-							"chat.draft.clearRefusedEditFailed",
-						);
-					}
-					return;
-				}
-				acceptAndClearInlineEditDelivery(delivery, mutationToken);
-				mutationFinished = true;
-			} catch {
-				setInlineEditUncertain(true);
-				setInlineEditRecoveryNotice(
-					"chat.draft.editUncertain",
-				);
-			} finally {
-				if (!mutationFinished) {
-					cancelChatInlineEditMutation(draftScope, mutationToken);
-				}
-			}
-		},
-		[
-			acceptAndClearInlineEditDelivery,
-			durableInlineEditDelivery,
-			editHumanMessage,
-			inlineEditPending,
-			onEditHumanMessage,
-			draftScope,
-		],
-	);
-
-	// Both churn with their deps while streaming; a stable identity keeps memoized turn groups from re-rendering.
-	const stableStartMessageEdit = useLatestCallback(startMessageEdit);
-	const stableSubmitMessageEdit = useLatestCallback(submitMessageEdit);
 
 	const readable = useMemo(() => readableItems(snapshot), [snapshot]);
 	const items = useStableList(readable, itemKey, sameContent);
 	const seenHumanMessageIds = useRef<Set<string> | undefined>(undefined);
 	const lastSeenLatestSequence = useRef<number | undefined>(undefined);
 	const [newHumanMessageIds, setNewHumanMessageIds] = useState<ReadonlySet<string>>(new Set());
-	const editedMessageVisible = Boolean(
-		messageEdit &&
-		items.some(
-			(item) =>
-				item.kind === "message" && item.role === "user" && item.turnId === messageEdit.turnId,
-		),
-	);
 	const localItems = useMemo(() => {
 		const backgroundQueuedTurnIds = new Set(
 			localEchos
@@ -3481,9 +2886,6 @@ export function Timeline({
 		},
 		rangeExtractor: (range) => {
 			const indexes = defaultRangeExtractor(range);
-			// Keep an in-progress inline edit mounted while its row leaves view.
-			const editing = messageEdit ? groups.findIndex((group) => group.turnId === messageEdit.turnId) : -1;
-			if (editing >= 0 && !indexes.includes(editing)) indexes.push(editing);
 			if (pinned && !indexes.includes(groups.length - 1)) indexes.push(groups.length - 1);
 			return indexes.sort((a, b) => a - b);
 		},
@@ -3760,7 +3162,7 @@ export function Timeline({
 
 	useEffect(() => {
 		syncScrollLayout();
-	}, [pinned, snapshot.latestSequence, groups.length, messageEdit?.turnId, syncScrollLayout]);
+	}, [pinned, snapshot.latestSequence, groups.length, syncScrollLayout]);
 	useLayoutEffect(() => {
 		restoreViewportResize();
 	}, [virtualHeight, restoreViewportResize]);
@@ -3966,7 +3368,7 @@ export function Timeline({
 		updateScrollbar();
 	}
 
-	if (timelineItems.length === 0 && !messageEdit && !turn && !showStartup) {
+	if (timelineItems.length === 0 && !turn && !showStartup) {
 		return null;
 	}
 
@@ -4075,25 +3477,7 @@ export function Timeline({
 									onOpenFiles={onOpenFiles ? openFiles : undefined}
 									onOpenFile={onOpenFile ? openFile : undefined}
 									retry={retry}
-									onEditHumanMessage={canEditHumanMessage ? editHumanMessage : undefined}
-									messageEdit={messageEdit}
-									onStartMessageEdit={stableStartMessageEdit}
-									onUpdateMessageEdit={updateMessageEdit}
-									onCancelMessageEdit={cancelMessageEdit}
-									onAbandonEditRecovery={
-										canAbandonInlineEditRecovery ? abandonUncertainInlineEdit : undefined
-									}
-									onSubmitMessageEdit={stableSubmitMessageEdit}
-									editPending={inlineEditPending}
-									editSendBlocked={inlineEditSendBlocked}
-									editRecoveryLabel={translateDraft(inlineEditRecoveryLabel)}
-									editBusy={Boolean(editBusy || newWorkDisabled)}
-									editError={translateDraft(editError ??
-										draftPersistenceError ??
-										inlineEditRecoveryNotice ??
-										inlineEditOutcomeNotice)}
 									branchPoints={branchPoints}
-									editableTurns={editableTurns}
 									newHumanMessageIds={newHumanMessageIds}
 									onActivateBranch={canActivateBranch ? activateBranch : undefined}
 									activateBranchPending={activateBranchPending}
@@ -4118,29 +3502,6 @@ export function Timeline({
 						</LiveResponseStatus>
 					) : turn?.state === "running" && !groups.some((group) => group.turnId === turn.id) ? (
 						<LiveResponseStatus startedAt={turn.startedAt ?? turn.requestedAt} />
-					) : null}
-					{messageEdit && !editedMessageVisible ? (
-						<div className="flex justify-end" data-chat-scroll-anchor="">
-							<HumanMessageEditor
-								text={messageEdit.text}
-								content={messageEdit.content}
-								pending={inlineEditPending}
-								locked={Boolean(inlineEditRecoveryLabel)}
-								recoveryLabel={translateDraft(inlineEditRecoveryLabel)}
-								sendBlocked={inlineEditSendBlocked}
-								busy={Boolean(editBusy || newWorkDisabled)}
-								error={translateDraft(editError ??
-									draftPersistenceError ??
-									inlineEditRecoveryNotice ??
-									inlineEditOutcomeNotice)}
-								onDraftChange={updateMessageEdit}
-								onCancel={cancelMessageEdit}
-								onAbandonRecovery={
-									canAbandonInlineEditRecovery ? abandonUncertainInlineEdit : undefined
-								}
-								onSend={submitMessageEdit}
-							/>
-						</div>
 					) : null}
 					{/* Pushes the latest prompt toward the top of the viewport when following,
 					    then shrinks as the reply fills the space below it. */}
@@ -4280,20 +3641,7 @@ const TurnGroup = memo(function TurnGroup({
 	onRollback,
 	onOpenFiles,
 	onOpenFile,
-	onEditHumanMessage,
-	messageEdit,
-	onStartMessageEdit,
-	onUpdateMessageEdit,
-	onCancelMessageEdit,
-	onAbandonEditRecovery,
-	onSubmitMessageEdit,
-	editPending,
-	editSendBlocked,
-	editRecoveryLabel,
-	editBusy,
-	editError,
 	branchPoints,
-	editableTurns,
 	onActivateBranch,
 	activateBranchPending,
 	activateBranchError,
@@ -4315,20 +3663,7 @@ const TurnGroup = memo(function TurnGroup({
 	onRollback: (turnId: string) => void;
 	onOpenFiles?: () => void;
 	onOpenFile?: (path: string, line?: number) => void;
-	onEditHumanMessage?: ChatWorkspaceProps["onEditMessage"];
-	messageEdit?: MessageEditDraft;
-	onStartMessageEdit: (message: ConversationMessage) => void;
-	onUpdateMessageEdit: (text: string) => void;
-	onCancelMessageEdit: () => void;
-	onAbandonEditRecovery?: () => void;
-	onSubmitMessageEdit: (text: string) => Promise<void>;
-	editPending?: boolean;
-	editSendBlocked?: boolean;
-	editRecoveryLabel?: string;
-	editBusy?: boolean;
-	editError?: string;
 	branchPoints: Map<string, ConversationBranchPoint>;
-	editableTurns: Set<string>;
 	onActivateBranch?: (branchId: string) => Promise<unknown> | void;
 	activateBranchPending?: boolean;
 	activateBranchError?: string;
@@ -4434,20 +3769,7 @@ const TurnGroup = memo(function TurnGroup({
 				sessionId={sessionId}
 				apiBaseUrl={apiBaseUrl}
 				onDecide={onDecide}
-				onEditHumanMessage={onEditHumanMessage}
-				messageEdit={messageEdit}
-				onStartMessageEdit={onStartMessageEdit}
-				onUpdateMessageEdit={onUpdateMessageEdit}
-				onCancelMessageEdit={onCancelMessageEdit}
-				onAbandonEditRecovery={onAbandonEditRecovery}
-				onSubmitMessageEdit={onSubmitMessageEdit}
-				editPending={editPending}
-				editSendBlocked={editSendBlocked}
-				editRecoveryLabel={editRecoveryLabel}
-				editBusy={editBusy}
-				editError={editError}
 				branchPoints={branchPoints}
-				editableTurns={editableTurns}
 				onActivateBranch={onActivateBranch}
 				activateBranchPending={activateBranchPending}
 				activateBranchError={activateBranchError}
@@ -4601,20 +3923,7 @@ function TimelineItem({
 	sessionId,
 	apiBaseUrl,
 	onDecide,
-	onEditHumanMessage,
-	messageEdit,
-	onStartMessageEdit,
-	onUpdateMessageEdit,
-	onCancelMessageEdit,
-	onAbandonEditRecovery,
-	onSubmitMessageEdit,
-	editPending,
-	editSendBlocked,
-	editRecoveryLabel,
-	editBusy,
-	editError,
 	branchPoints,
-	editableTurns,
 	onActivateBranch,
 	activateBranchPending,
 	activateBranchError,
@@ -4631,20 +3940,7 @@ function TimelineItem({
 	sessionId: string;
 	apiBaseUrl: string | null;
 	onDecide?: (requestId: string, decisionId: string) => void;
-	onEditHumanMessage?: ChatWorkspaceProps["onEditMessage"];
-	messageEdit?: MessageEditDraft;
-	onStartMessageEdit: (message: ConversationMessage) => void;
-	onUpdateMessageEdit: (text: string) => void;
-	onCancelMessageEdit: () => void;
-	onAbandonEditRecovery?: () => void;
-	onSubmitMessageEdit: (text: string) => Promise<void>;
-	editPending?: boolean;
-	editSendBlocked?: boolean;
-	editRecoveryLabel?: string;
-	editBusy?: boolean;
-	editError?: string;
 	branchPoints: Map<string, ConversationBranchPoint>;
-	editableTurns: Set<string>;
 	onActivateBranch?: (branchId: string) => Promise<unknown> | void;
 	activateBranchPending?: boolean;
 	activateBranchError?: string;
@@ -4684,10 +3980,6 @@ function TimelineItem({
 		// A user-role message that did not come from this human is an automation or
 		// worker relay, and is attributed differently.
 		if (item.origin === "human") {
-			const editAvailable = Boolean(
-				item.editAvailable && item.turnId && editableTurns.has(item.turnId) && onEditHumanMessage,
-			);
-			const editing = Boolean(item.turnId && messageEdit?.turnId === item.turnId);
 			return (
 				<HumanMessage
 					message={item}
@@ -4695,18 +3987,6 @@ function TimelineItem({
 					apiBaseUrl={apiBaseUrl}
 					queued={queued}
 					animateIn={newHumanMessageIds.has(itemKey(item))}
-					onEdit={editAvailable ? (_turnID, text) => onSubmitMessageEdit(text) : undefined}
-					editing={editing}
-					editText={editing ? messageEdit?.text : undefined}
-					onEditStart={editAvailable ? () => onStartMessageEdit(item) : undefined}
-					onEditDraftChange={onUpdateMessageEdit}
-					onEditCancel={onCancelMessageEdit}
-					onEditAbandonRecovery={onAbandonEditRecovery}
-					editPending={editPending}
-					editSendBlocked={editSendBlocked}
-					editRecoveryLabel={editRecoveryLabel}
-					editBusy={editBusy}
-					editError={editError}
 					branchPoint={item.turnId ? branchPoints.get(item.turnId) : undefined}
 					onActivateBranch={onActivateBranch}
 					activateBranchPending={activateBranchPending}

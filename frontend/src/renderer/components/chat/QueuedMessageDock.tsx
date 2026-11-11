@@ -13,7 +13,7 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { ChevronDown, Circle, CornerDownLeft, GripVertical, Pencil, Trash2 } from "lucide-react";
+import { ChevronDown, Circle, CornerDownLeft, GripVertical, Trash2 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import type { ConversationMessage } from "../../types/conversation";
 import { useTranslation } from "react-i18next";
@@ -81,7 +81,6 @@ function QueuedMessageRowContent({
 	canSteer,
 	suppressHoverSteer,
 	onPromoteQueuedTurn,
-	onBeginQueuedEdit,
 	onCancelQueuedTurn,
 	turnId,
 	busy,
@@ -96,7 +95,6 @@ function QueuedMessageRowContent({
 	canSteer?: boolean;
 	suppressHoverSteer?: boolean;
 	onPromoteQueuedTurn?: (turnId: string) => Promise<unknown>;
-	onBeginQueuedEdit?: (turnId: string, text: string) => void;
 	onCancelQueuedTurn?: (turnId: string) => Promise<unknown>;
 	turnId: string;
 	busy?: boolean;
@@ -163,18 +161,6 @@ function QueuedMessageRowContent({
 						Steer
 					</button>
 				) : null}
-				{onBeginQueuedEdit ? (
-					<button
-						type="button"
-						disabled={busy}
-						onClick={() => onBeginQueuedEdit(turnId, message.text)}
-						className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-[scale,background-color,color] duration-150 ease-out hover:bg-interactive-hover hover:text-foreground active:scale-[0.96] disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none motion-reduce:active:scale-100"
-						aria-label="Edit queued message"
-						title="Edit"
-					>
-						<Pencil aria-hidden="true" className="shrink-0" width={14} height={14} strokeWidth={2} />
-					</button>
-				) : null}
 				{onCancelQueuedTurn ? (
 					<button
 						type="button"
@@ -215,7 +201,6 @@ function SortableQueuedMessageRow({
 	canSteer,
 	suppressHoverSteer,
 	onPromoteQueuedTurn,
-	onBeginQueuedEdit,
 	onCancelQueuedTurn,
 	busy,
 	error,
@@ -232,7 +217,6 @@ function SortableQueuedMessageRow({
 	canSteer?: boolean;
 	suppressHoverSteer?: boolean;
 	onPromoteQueuedTurn?: (turnId: string) => Promise<unknown>;
-	onBeginQueuedEdit?: (turnId: string, text: string) => void;
 	onCancelQueuedTurn?: (turnId: string) => Promise<unknown>;
 	busy?: boolean;
 	error?: string;
@@ -280,7 +264,6 @@ function SortableQueuedMessageRow({
 				dragHandleProps={{ ...attributes, ...listeners }}
 				dragHandleRef={setActivatorNodeRef}
 				message={message}
-				onBeginQueuedEdit={onBeginQueuedEdit}
 				onCancelQueuedTurn={onCancelQueuedTurn}
 				onPromoteQueuedTurn={onPromoteQueuedTurn}
 				onRunAction={onRunAction}
@@ -302,12 +285,10 @@ function SortableQueuedMessageRow({
 export const QueuedMessageDock = memo(function QueuedMessageDock({
 	messages,
 	disabled,
-	editingTurnId,
 	canSteer,
 	canSteerNext,
 	steerNextRequest,
 	onPromoteQueuedTurn,
-	onBeginQueuedEdit,
 	onCancelQueuedTurn,
 	onReorderQueuedTurns,
 	promotePendingTurnId,
@@ -315,12 +296,10 @@ export const QueuedMessageDock = memo(function QueuedMessageDock({
 }: {
 	messages: QueuedMessage[];
 	disabled?: boolean;
-	editingTurnId?: string;
 	canSteer?: boolean;
 	canSteerNext?: boolean;
 	steerNextRequest?: number;
 	onPromoteQueuedTurn?: (turnId: string) => Promise<unknown>;
-	onBeginQueuedEdit?: (turnId: string, text: string) => void;
 	onCancelQueuedTurn?: (turnId: string) => Promise<unknown>;
 	onReorderQueuedTurns?: (turnIds: string[]) => Promise<unknown>;
 	promotePendingTurnId?: string;
@@ -548,7 +527,6 @@ export const QueuedMessageDock = memo(function QueuedMessageDock({
 	const rowProps = {
 		canSteer,
 		onPromoteQueuedTurn: onPromoteQueuedTurn ? promoteQueuedTurn : undefined,
-		onBeginQueuedEdit,
 		onCancelQueuedTurn,
 		onRunAction: runAction,
 		suppressHoverSteer: hoverSteerSuppressed || isReordering,
@@ -595,7 +573,6 @@ export const QueuedMessageDock = memo(function QueuedMessageDock({
 					>
 						{count} Queued {count === 1 ? "Message" : "Messages"}
 					</span>
-					{editingTurnId ? " · editing" : ""}
 				</span>
 			</button>
 			{count > 0 ? (
@@ -650,7 +627,6 @@ export const QueuedMessageDock = memo(function QueuedMessageDock({
 												? {
 														canSteer: false,
 														onPromoteQueuedTurn: undefined,
-														onBeginQueuedEdit: undefined,
 														onCancelQueuedTurn: undefined,
 													}
 												: null)}

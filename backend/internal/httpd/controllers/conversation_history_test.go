@@ -27,24 +27,14 @@ type fakeChatService struct {
 	title       string
 	rollback    error
 	setTitle    error
-	edit        chatsvc.EditMessageResult
-	editErr     error
 	activate    string
 	activateErr error
 	retryTurn   domain.ConversationTurn
 	retryErr    error
 
-	gotTurnID      string
-	gotTitle       string
-	gotEditTurnID  string
-	gotEditMessage ports.ChatUserMessage
-	gotBranchID    string
-}
-
-func (f *fakeChatService) EditMessage(_ context.Context, _ domain.SessionID, turnID string, message ports.ChatUserMessage) (chatsvc.EditMessageResult, error) {
-	f.gotEditTurnID = turnID
-	f.gotEditMessage = message
-	return f.edit, f.editErr
+	gotTurnID string
+	gotTitle  string
+	gotBranchID string
 }
 
 func (f *fakeChatService) ActivateBranch(_ context.Context, _ domain.SessionID, branchID string) (string, error) {
@@ -234,64 +224,6 @@ func TestRetryTurnRouteRefusalsAreTyped(t *testing.T) {
 	}
 }
 
-func TestEditConversationRouteAcceptsReplacement(t *testing.T) {
-	svc := &fakeChatService{edit: chatsvc.EditMessageResult{
-		SourceBranchID: "branch-root", ActiveBranchID: "branch-child",
-		Turn: domain.ConversationTurn{ID: "turn-edited", ProviderTurnID: "provider-edited", State: domain.TurnStateRunning},
-	}}
-	srv := newChatTestServer(t, svc)
-	body, status, headers := doRequest(t, srv, http.MethodPost,
-		"/api/v1/sessions/ao-1/conversation/turns/turn-2/edit",
-		`{"text":"edited prompt","clientMessageId":"edit-1"}`)
-	assertJSON(t, headers)
-	if status != http.StatusAccepted {
-		t.Fatalf("status = %d, body = %s", status, body)
-	}
-	if svc.gotEditTurnID != "turn-2" || svc.gotEditMessage.Text != "edited prompt" || svc.gotEditMessage.ClientMessageID != "edit-1" {
-		t.Fatalf("edit call = turn %q message %#v", svc.gotEditTurnID, svc.gotEditMessage)
-	}
-	var got struct {
-		SourceBranchID string `json:"sourceBranchId"`
-		ActiveBranchID string `json:"activeBranchId"`
-		TurnID         string `json:"turnId"`
-	}
-	mustJSON(t, body, &got)
-	if got.SourceBranchID != "branch-root" || got.ActiveBranchID != "branch-child" || got.TurnID != "turn-edited" {
-		t.Fatalf("response = %+v", got)
-	}
-}
-
-func TestEditConversationRouteRefusalsUseEditCodes(t *testing.T) {
-	cases := []struct {
-		name       string
-		err        error
-		wantStatus int
-		wantCode   string
-	}{
-		{"blank", nil, http.StatusBadRequest, "CHAT_EDIT_TURN_INVALID"},
-		{"unsupported", chatsvc.ErrForkUnsupported, http.StatusConflict, "CHAT_EDIT_UNSUPPORTED"},
-		{"busy", chatsvc.ErrTurnRunning, http.StatusConflict, "CHAT_EDIT_BUSY"},
-		{"ambiguous provider delivery", fmt.Errorf("%w: send turn: provider unavailable", chatsvc.ErrEditDeliveryUncertain), http.StatusConflict, "CHAT_EDIT_UNCERTAIN"},
-		{"idempotency conflict", chatsvc.ErrEditIdempotencyConflict, http.StatusConflict, "CHAT_EDIT_IDEMPOTENCY_CONFLICT"},
-		{"legacy durable rejection", chatsvc.ErrEditDeliveryRejected, http.StatusConflict, "CHAT_EDIT_REJECTED"},
-		{"provider refused", chatsvc.ErrProviderRefused, http.StatusConflict, "CHAT_PROVIDER_REFUSED"},
-		{"missing turn", fmt.Errorf("%w: %w", chatsvc.ErrEditTurnInvalid, domain.ErrNoConversationTurn), http.StatusNotFound, "CHAT_EDIT_TURN_INVALID"},
-		{"invalid stored content", chatsvc.ErrEditTurnInvalid, http.StatusBadRequest, "CHAT_EDIT_TURN_INVALID"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			svc := &fakeChatService{editErr: tc.err}
-			srv := newChatTestServer(t, svc)
-			request := `{"text":"edited"}`
-			if tc.name == "blank" {
-				request = `{"text":"   "}`
-			}
-			body, status, _ := doRequest(t, srv, http.MethodPost,
-				"/api/v1/sessions/ao-1/conversation/turns/turn-2/edit", request)
-			assertErrorCode(t, body, status, tc.wantStatus, tc.wantCode)
-		})
-	}
-}
 
 func TestActivateConversationBranchRouteResumesWithoutBody(t *testing.T) {
 	svc := &fakeChatService{activate: "branch-root"}

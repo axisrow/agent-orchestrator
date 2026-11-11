@@ -388,7 +388,7 @@ export const SessionChatSurface = memo(function SessionChatSurface({
 	);
 	const promptSuggestion = useConversationPromptSuggestion(snapshot, Boolean(
 		targetChatControllerReady && !controllerBusy && !localEchos.length &&
-		!commands.rollbackPending && !commands.editMessagePending && !commands.activateBranchPending && !commands.compacting &&
+		!commands.rollbackPending && !commands.activateBranchPending && !commands.compacting &&
 		!session.isTerminated && session.provisionState !== "failed" && session.provisionState !== "provisioning" &&
 		!isLoading && !error && !refreshError && !unavailable &&
 		!agentSwitching && !switchLocksChat && !handoffDialogOpen &&
@@ -590,9 +590,6 @@ export const SessionChatSurface = memo(function SessionChatSurface({
 				onOpenFiles={onOpenFiles}
 				onOpenFile={onOpenFile}
 				retryControl={commands.retryControl}
-				onEditMessage={commands.editMessage}
-				editMessagePending={commands.editMessagePending}
-				editMessageError={commands.editMessageError}
 				onActivateBranch={commands.activateBranch}
 				activateBranchPending={commands.activateBranchPending}
 				activateBranchError={commands.activateBranchError}
@@ -615,12 +612,10 @@ export const SessionChatSurface = memo(function SessionChatSurface({
 						? commands.promoteQueuedTurn
 						: undefined
 				}
-				onEditQueuedTurn={commands.editQueuedTurn}
 				onCancelQueuedTurn={commands.cancelQueuedTurn}
 				onReorderQueuedTurns={commands.reorderQueuedTurns}
 				promoteQueuedTurnPendingTurnId={commands.promoteQueuedTurnPendingTurnId}
 				cancelQueuedTurnPendingTurnId={commands.cancelQueuedTurnPendingTurnId}
-				editQueuedTurnPendingTurnId={commands.editQueuedTurnPendingTurnId}
 			/>
 			{shownSwitchPresentation ? (
 				<ChatAgentSwitchStatus

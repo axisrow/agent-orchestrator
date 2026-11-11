@@ -47,11 +47,9 @@ import type {
 	ChatConfigOptionValue,
 	ChatModel,
 	ChatSkill,
-	ChatEditOutcome,
 	ChatSteerOutcome,
 	PlanStep,
 	PlanStepStatus,
-	QueuedMessageEditOptions,
 	SessionMode,
 	ThreadStatus,
 	TurnSettings,
@@ -91,10 +89,6 @@ interface ConversationRetryMutationInput extends ConversationSessionMutationInpu
 	sourceTurnId: string;
 }
 
-interface ConversationEditMutationInput extends ConversationRetryMutationInput {
-	text: string;
-}
-
 export const conversationQueryRoot = ["conversation"] as const;
 
 export function conversationQueryKey(sessionId: string, hostId?: string) {
@@ -111,7 +105,7 @@ export function conversationConfigOptionsQueryKey(sessionId: string, hostId?: st
 
 const conversationDispatchTrackingQueryKey = ["conversation-dispatch-tracking"] as const;
 const conversationLocalEchosQueryKey = ["conversation-local-echos"] as const;
-type ConversationDispatchOperation = "edit" | "retry" | "send";
+type ConversationDispatchOperation = "retry" | "send";
 interface ConversationDispatchDescriptor {
 	operation: ConversationDispatchOperation;
 	requestId: string;
@@ -823,23 +817,6 @@ export function useConversationCommands(sessionId: string | undefined, hostId?: 
 		onSuccess: invalidate,
 	});
 
-	const editQueuedTurn = useMutation({
-		mutationFn: async ({ turnId, text, ...options }: { turnId: string; text: string } & QueuedMessageEditOptions) => {
-			const { error } = await clientForSessionHost(hostId).POST(
-				"/api/v1/sessions/{sessionId}/conversation/turns/{turnId}/queue/edit",
-				{
-					params: {
-						path: { sessionId: sessionId as string, turnId },
-					},
-					headers: options.attachments?.length ? { "X-AO-Attachment-Upload": "1" } : undefined,
-					body: { text, ...options },
-				},
-			);
-			if (error) throw error;
-		},
-		onSuccess: invalidate,
-	});
-
 	const reorderQueuedTurns = useMutation({
 		mutationFn: async (turnIds: string[]) => {
 			const { error } = await clientForSessionHost(hostId).POST(
@@ -922,43 +899,6 @@ export function useConversationCommands(sessionId: string | undefined, hostId?: 
 		},
 	});
 
-	const editMessage = useMutation({
-		mutationFn: async ({
-			targetSessionId,
-			sourceTurnId,
-			requestId,
-			text,
-		}: ConversationEditMutationInput) => {
-			const { data, error } = await clientForSessionHost(hostId).POST(
-				"/api/v1/sessions/{sessionId}/conversation/turns/{turnId}/edit",
-				{
-					params: {
-						path: { sessionId: targetSessionId, turnId: sourceTurnId },
-					},
-					body: { text, clientMessageId: requestId },
-				},
-			);
-			if (error) throw error;
-			return data;
-		},
-		onSuccess: (data, variables) => {
-			if (data?.turnId) {
-				acceptConversationDispatch(
-					queryClient,
-					stateKey(variables.targetSessionId),
-					variables.requestId,
-					data.turnId,
-				);
-			} else {
-				releaseConversationDispatch(queryClient, stateKey(variables.targetSessionId), variables.requestId);
-			}
-			void refreshSessionInBackground(variables.targetSessionId);
-		},
-		onError: (_error, variables) => {
-			releaseConversationDispatch(queryClient, stateKey(variables.targetSessionId), variables.requestId);
-		},
-	});
-
 	const activateBranch = useMutation({
 		mutationFn: async (branchId: string) => {
 			const { data, error } = await clientForSessionHost(hostId).POST(
@@ -1000,7 +940,6 @@ export function useConversationCommands(sessionId: string | undefined, hostId?: 
 	const sendTargetsCurrentSession = send.variables?.targetSessionId === sessionId;
 	const interruptTargetsCurrentSession = interrupt.variables?.targetSessionId === sessionId;
 	const retryTargetsCurrentSession = retryTurn.variables?.targetSessionId === sessionId;
-	const editTargetsCurrentSession = editMessage.variables?.targetSessionId === sessionId;
 
 	return {
 		send: (input: string | ConversationSendInput) => {
@@ -1090,33 +1029,6 @@ export function useConversationCommands(sessionId: string | undefined, hostId?: 
 						? retryTurn.variables?.sourceTurnId
 						: undefined,
 		},
-		editMessage: async (turnId: string, text: string, clientMessageId?: string): Promise<ChatEditOutcome> => {
-			if (!sessionId) return Promise.reject(new Error("No conversation session is selected."));
-			const requestId = clientMessageId ?? crypto.randomUUID();
-			if (!claimConversationDispatch(queryClient, stateSessionId as string, requestId, "edit", turnId)) {
-				return Promise.reject(new Error("Conversation work is already being sent for this session."));
-			}
-			try {
-			await editMessage.mutateAsync({
-				requestId,
-				sourceTurnId: turnId,
-				targetSessionId: sessionId,
-				text,
-			});
-			return { status: "accepted" };
-			} catch (error) {
-				const outcome = editNonAcceptance(error);
-				if (outcome) return outcome;
-				throw error;
-			}
-		},
-		editMessagePending:
-			trackedDispatch?.operation === "edit" ||
-			(editMessage.isPending && editTargetsCurrentSession),
-		editMessageError:
-			editTargetsCurrentSession && editMessage.error
-				? apiErrorMessage(editMessage.error)
-				: undefined,
 		activateBranch: (branchId: string) => activateBranch.mutateAsync(branchId),
 		activateBranchPending: activateBranch.isPending,
 		activateBranchError: activateBranch.error ? apiErrorMessage(activateBranch.error) : undefined,
@@ -1133,10 +1045,6 @@ export function useConversationCommands(sessionId: string | undefined, hostId?: 
 		},
 		promoteQueuedTurn: (turnId: string) => promoteQueuedTurn.mutateAsync(turnId),
 		cancelQueuedTurn: (turnId: string) => cancelQueuedTurn.mutateAsync(turnId),
-		editQueuedTurn: (turnId: string, text: string, options?: QueuedMessageEditOptions) => {
-			if (!sessionId) return Promise.reject(new Error("No conversation session is selected."));
-			return editQueuedTurn.mutateAsync({ turnId, text, ...options });
-		},
 		reorderQueuedTurns: (turnIds: string[]) => {
 			if (!sessionId) return Promise.reject(new Error("No conversation session is selected."));
 			return reorderQueuedTurns.mutateAsync(turnIds);
@@ -1145,7 +1053,6 @@ export function useConversationCommands(sessionId: string | undefined, hostId?: 
 			? promoteQueuedTurn.variables
 			: undefined,
 		cancelQueuedTurnPendingTurnId: cancelQueuedTurn.isPending ? cancelQueuedTurn.variables : undefined,
-		editQueuedTurnPendingTurnId: editQueuedTurn.isPending ? editQueuedTurn.variables?.turnId : undefined,
 		sendPending: send.isPending && sendTargetsCurrentSession,
 		steerPending: steer.isPending,
 		/**
@@ -1229,24 +1136,6 @@ function steerNonAcceptance(error: unknown): ChatSteerOutcome | undefined {
 		status: "not-accepted",
 		reason: steerRefusal(error) ?? apiErrorMessage(error),
 	};
-}
-
-const DEFINITIVE_EDIT_NON_ACCEPTANCE_CODES = new Set([
-	"CHAT_EDIT_REJECTED",
-	"CHAT_EDIT_UNSUPPORTED",
-	"CHAT_EDIT_BUSY",
-	"CHAT_EDIT_TURN_INVALID",
-	"CHAT_PROVIDER_REFUSED",
-	"SESSION_MODE_MISMATCH",
-	"SESSION_NOT_FOUND",
-	"CHAT_CONTROLLER_NOT_READY",
-	"CHAT_AUTH_REQUIRED",
-]);
-
-function editNonAcceptance(error: unknown): ChatEditOutcome | undefined {
-	const code = apiErrorCode(error);
-	if (!code || !DEFINITIVE_EDIT_NON_ACCEPTANCE_CODES.has(code)) return undefined;
-	return { status: "not-accepted", reason: apiErrorMessage(error) };
 }
 
 /**
@@ -1726,7 +1615,6 @@ function toMessage(wire: WireMessage): ConversationMessage {
 			sourceMessageId: item.sourceMessageId || undefined,
 			sourceRevision: item.sourceRevision ?? undefined,
 		})),
-		editAvailable: wire.editAvailable ?? undefined,
 		continuation: wire.continuation || undefined,
 		streaming: wire.streaming,
 		senderSessionId: wire.senderSessionId,

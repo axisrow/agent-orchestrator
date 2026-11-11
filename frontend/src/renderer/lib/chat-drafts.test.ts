@@ -2,28 +2,18 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
 	acknowledgeChatComposerMutation,
-	acknowledgeChatInlineEditMutation,
 	activateChatDraftScope,
 	beginChatComposerMutation,
-	beginChatInlineEditMutation,
 	cancelChatComposerMutation,
-	cancelChatInlineEditMutation,
 	clearAcceptedChatComposer,
-	clearAcceptedChatInlineEdit,
 	clearRejectedChatComposerDelivery,
-	clearRejectedChatInlineEditDelivery,
-	clearUncertainChatInlineEditDelivery,
 	clearUncertainChatComposerDelivery,
 	discardUnsentChatComposerDelivery,
 	finishChatComposerMutation,
-	finishChatInlineEditMutation,
 	getChatComposerMutation,
-	getChatInlineEditMutation,
 	markChatComposerDeliveryAccepted,
-	markChatInlineEditDeliveryAccepted,
 	parkChatComposerDelivery,
 	prepareChatComposerDelivery,
-	prepareChatInlineEditDelivery,
 	readChatSessionDraft,
 	restoreUnsentChatComposerDelivery,
 	reviveUnsentChatComposerDelivery,
@@ -31,7 +21,6 @@ import {
 	writeChatAttachments,
 	writeChatComposerText,
 	writeChatExcerptReferences,
-	writeChatInlineEdit,
 	type DraftStorage,
 	type ChatDraftScope,
 } from "./chat-drafts";
@@ -239,20 +228,8 @@ describe("Chat draft storage", () => {
 			},
 			storage,
 		);
-		const oldEdit = prepareChatInlineEditDelivery(
-			first,
-			{
-				turnId: "old-turn",
-				text: "old edit",
-				content: [],
-				clientMessageId: "old-edit-delivery",
-			},
-			storage,
-		);
 		expect(oldSend.ok).toBe(true);
-		expect(oldEdit.ok).toBe(true);
 		expect(beginChatComposerMutation(first)).toBeTypeOf("symbol");
-		expect(beginChatInlineEditMutation(first)).toBeTypeOf("symbol");
 
 		expect(activateChatDraftScope(replacement, storage)).toMatchObject({
 			ok: true,
@@ -274,15 +251,7 @@ describe("Chat draft storage", () => {
 				storage,
 			).ok,
 		).toBe(true);
-		expect(
-			writeChatInlineEdit(
-				replacement,
-				{ turnId: "new-turn", text: "replacement edit", content: [] },
-				storage,
-			).ok,
-		).toBe(true);
-
-		// These model late FileReader/staging, send, edit, and stale-render callbacks
+		// These model late FileReader/staging, send, and stale-render callbacks
 		// from the deleted incarnation after the replacement already owns storage.
 		expect(writeChatComposerText(first, "late old text", storage).ok).toBe(false);
 		expect(
@@ -308,14 +277,6 @@ describe("Chat draft storage", () => {
 				storage,
 			).ok,
 		).toBe(false);
-		expect(
-			markChatInlineEditDeliveryAccepted(
-				first,
-				"old-edit-delivery",
-				oldEdit.mutation!.revision,
-				storage,
-			).ok,
-		).toBe(false);
 		expect(activateChatDraftScope(first, storage)).toMatchObject({
 			ok: false,
 			reason: "obsolete",
@@ -329,11 +290,9 @@ describe("Chat draft storage", () => {
 				text: "replacement draft",
 				attachments: [{ id: "new-attachment", path: ".ao/attachments/new.png" }],
 			},
-			inlineEdit: { turnId: "new-turn", text: "replacement edit" },
 		});
 		expect(restored.composer.delivery).toBeUndefined();
 		expect(getChatComposerMutation(first)).toEqual({ pending: false });
-		expect(getChatInlineEditMutation(first)).toEqual({ pending: false });
 	});
 
 	it("keeps both incarnations fail closed until an interrupted authoritative purge finishes", () => {
@@ -396,20 +355,7 @@ describe("Chat draft storage", () => {
 			composerRevision,
 			clearAcceptedChatComposer(first, composerRevision, storage),
 		);
-		const inlineRevision = writeChatInlineEdit(
-			first,
-			{ turnId: "turn-1", text: "accepted edit", content: [] },
-			storage,
-		).draft.inlineEdit!.revision;
-		const inlineToken = beginChatInlineEditMutation(first)!;
-		finishChatInlineEditMutation(
-			first,
-			inlineToken,
-			inlineRevision,
-			clearAcceptedChatInlineEdit(first, inlineRevision, storage),
-		);
 		expect(getChatComposerMutation(first).accepted).toBeDefined();
-		expect(getChatInlineEditMutation(first).accepted).toBeDefined();
 
 		expect(activateChatDraftScope(replacement, storage)).toMatchObject({
 			ok: true,
@@ -417,7 +363,6 @@ describe("Chat draft storage", () => {
 			previousIncarnation: first.incarnation,
 		});
 		expect(getChatComposerMutation(first)).toEqual({ pending: false });
-		expect(getChatInlineEditMutation(first)).toEqual({ pending: false });
 	});
 
 	it("warned abandon clears only an uncertain steer journal", () => {
@@ -457,7 +402,7 @@ describe("Chat draft storage", () => {
 		});
 		expect(readChatSessionDraft(scope, storage).composer.delivery).toBeUndefined();
 	});
-	it("round-trips independent composer, attachment, and inline-edit state per session", () => {
+	it("round-trips independent composer and attachment state per session", () => {
 		const storage = new MemoryStorage();
 		writeChatComposerText("session/a", "composer A", storage);
 		writeChatAttachments(
@@ -473,15 +418,6 @@ describe("Chat draft storage", () => {
 			],
 			storage,
 		);
-		writeChatInlineEdit(
-			"session/a",
-			{
-				turnId: "turn-a",
-				text: "edit A",
-				content: [{ type: "image", name: "a.png" }],
-			},
-			storage,
-		);
 		writeChatComposerText("session/b", "composer B", storage);
 
 		const sessionA = readChatSessionDraft("session/a", storage);
@@ -492,7 +428,6 @@ describe("Chat draft storage", () => {
 				path: ".ao/attachments/attachment-a.png",
 			}),
 		]);
-		expect(sessionA.inlineEdit).toEqual(expect.objectContaining({ turnId: "turn-a", text: "edit A" }));
 		expect(readChatSessionDraft("session/b", storage).composer.text).toBe("composer B");
 	});
 
@@ -517,34 +452,6 @@ describe("Chat draft storage", () => {
 			cleared: true,
 		});
 		expect(readChatSessionDraft("session-a", storage).composer.text).toBe("");
-	});
-
-	it("clears inline-edit metadata without touching the independent composer", () => {
-		const storage = new MemoryStorage();
-		writeChatComposerText("session-a", "keep composer", storage);
-		writeChatInlineEdit("session-a", { turnId: "turn-a", text: "discard edit", content: [] }, storage);
-
-		expect(writeChatInlineEdit("session-a", undefined, storage).ok).toBe(true);
-		const restored = readChatSessionDraft("session-a", storage);
-		expect(restored.inlineEdit).toBeUndefined();
-		expect(restored.composer.text).toBe("keep composer");
-	});
-
-	it("does not clear a newer inline edit when an older accepted edit completes", () => {
-		const storage = new MemoryStorage();
-		const accepted = writeChatInlineEdit(
-			"session-a",
-			{ turnId: "turn-a", text: "submitted edit", content: [] },
-			storage,
-		).draft.inlineEdit?.revision;
-		expect(accepted).toBeTypeOf("string");
-		writeChatInlineEdit("session-a", { turnId: "turn-a", text: "newer remounted edit", content: [] }, storage);
-
-		expect(clearAcceptedChatInlineEdit("session-a", accepted!, storage)).toMatchObject({
-			ok: true,
-			cleared: false,
-		});
-		expect(readChatSessionDraft("session-a", storage).inlineEdit?.text).toBe("newer remounted edit");
 	});
 
 	it("rejects corrupt and foreign-session records", () => {
@@ -841,129 +748,6 @@ describe("Chat draft storage", () => {
 		expect(restored.composer.delivery).toBeUndefined();
 	});
 
-	it("persists and accepts an inline-edit delivery with one stable client id", () => {
-		const storage = new MemoryStorage();
-		const prepared = prepareChatInlineEditDelivery(
-			"session-edit-proof",
-			{
-				turnId: "turn-1",
-				text: "durable edit",
-				content: [],
-				clientMessageId: "edit-proof-1",
-			},
-			storage,
-		);
-
-		expect(prepared).toMatchObject({
-			ok: true,
-			mutation: {
-				state: "dispatching",
-				turnId: "turn-1",
-				requestText: "durable edit",
-				clientMessageId: "edit-proof-1",
-			},
-		});
-		expect(
-			markChatInlineEditDeliveryAccepted(
-				"session-edit-proof",
-				"edit-proof-1",
-				prepared.mutation!.revision,
-				storage,
-			),
-		).toMatchObject({ ok: true });
-		expect(readChatSessionDraft("session-edit-proof", storage).inlineEditDelivery?.state).toBe(
-			"accepted",
-		);
-	});
-
-	it("clears only a definitively rejected inline-edit journal", () => {
-		const storage = new MemoryStorage();
-		const prepared = prepareChatInlineEditDelivery(
-			"session-edit-rejected",
-			{
-				turnId: "turn-1",
-				text: "keep rejected edit",
-				content: [],
-				clientMessageId: "edit-rejected-1",
-			},
-			storage,
-		);
-		expect(prepared.ok).toBe(true);
-
-		expect(
-			clearRejectedChatInlineEditDelivery(
-				"session-edit-rejected",
-				"edit-rejected-1",
-				prepared.mutation!.revision,
-				storage,
-			),
-		).toMatchObject({ ok: true });
-		const restored = readChatSessionDraft("session-edit-rejected", storage);
-		expect(restored.inlineEdit?.text).toBe("keep rejected edit");
-		expect(restored.inlineEditDelivery).toBeUndefined();
-	});
-
-	it("explicitly abandons only an uncertain inline-edit journal", () => {
-		const storage = new MemoryStorage();
-		const prepared = prepareChatInlineEditDelivery(
-			"session-edit-uncertain",
-			{
-				turnId: "turn-1",
-				text: "possibly delivered edit",
-				content: [{ type: "image", name: "preserved.png" }],
-				clientMessageId: "edit-uncertain-1",
-			},
-			storage,
-		);
-		expect(prepared.ok).toBe(true);
-
-		expect(
-			clearUncertainChatInlineEditDelivery(
-				"session-edit-uncertain",
-				"edit-uncertain-1",
-				prepared.mutation!.revision,
-				storage,
-			),
-		).toMatchObject({ ok: true });
-		const restored = readChatSessionDraft("session-edit-uncertain", storage);
-		expect(restored.inlineEdit).toMatchObject({
-			turnId: "turn-1",
-			text: "possibly delivered edit",
-			content: [{ type: "image", name: "preserved.png" }],
-		});
-		expect(restored.inlineEditDelivery).toBeUndefined();
-	});
-
-	it("clears only the accepted delivery journal when a later inline edit exists", () => {
-		const storage = new MemoryStorage();
-		const prepared = prepareChatInlineEditDelivery(
-			"session-later-edit",
-			{
-				turnId: "turn-1",
-				text: "submitted edit",
-				content: [],
-				clientMessageId: "submitted-edit-1",
-			},
-			storage,
-		);
-		expect(prepared.ok).toBe(true);
-		writeChatInlineEdit(
-			"session-later-edit",
-			{ turnId: "turn-1", text: "newer edit", content: [] },
-			storage,
-		);
-
-		expect(
-			clearAcceptedChatInlineEdit(
-				"session-later-edit",
-				prepared.mutation!.revision,
-				storage,
-			),
-		).toMatchObject({ ok: true, cleared: false });
-		const restored = readChatSessionDraft("session-later-edit", storage);
-		expect(restored.inlineEdit?.text).toBe("newer edit");
-		expect(restored.inlineEditDelivery).toBeUndefined();
-	});
 
 	it("keeps only in-flight mutation ownership across remounts and evicts it once settled", () => {
 		const storage = new MemoryStorage();
@@ -988,19 +772,12 @@ describe("Chat draft storage", () => {
 			accepted: { revision, result: { ok: true, cleared: true } },
 		});
 
-		const inlineToken = beginChatInlineEditMutation(sessionId);
-		expect(inlineToken).toBeTypeOf("symbol");
-		expect(getChatInlineEditMutation(sessionId).pending).toBe(true);
-		cancelChatInlineEditMutation(sessionId, inlineToken!);
-		expect(getChatInlineEditMutation(sessionId)).toEqual({ pending: false });
-
 		acknowledgeChatComposerMutation(
 			sessionId,
 			getChatComposerMutation(sessionId).accepted!.sequence,
 		);
 		unsubscribeRemount();
 		expect(getChatComposerMutation(sessionId)).toEqual({ pending: false });
-		expect(getChatInlineEditMutation(sessionId)).toEqual({ pending: false });
 	});
 
 	it("keeps an accepted send when the old passive cleanup runs before the replacement subscribes", () => {
@@ -1102,29 +879,16 @@ describe("Chat draft storage", () => {
 		for (const sessionId of sessionIds) {
 			const composerRevision = writeChatComposerText(sessionId, "accepted", storage).draft.composer
 				.revision;
-			const inlineRevision = writeChatInlineEdit(
-				sessionId,
-				{ turnId: "turn-1", text: "accepted edit", content: [] },
-				storage,
-			).draft.inlineEdit!.revision;
 			const unsubscribeOldSurface = subscribeChatDraftRuntime(sessionId, () => undefined);
 			const composerToken = beginChatComposerMutation(sessionId)!;
-			const inlineToken = beginChatInlineEditMutation(sessionId)!;
 			// The replacement has rendered from the in-flight snapshot, but its passive
 			// subscription is deliberately delayed until every request below settles.
 			expect(getChatComposerMutation(sessionId)).toEqual({ pending: true });
-			expect(getChatInlineEditMutation(sessionId)).toEqual({ pending: true });
 			finishChatComposerMutation(
 				sessionId,
 				composerToken,
 				composerRevision,
 				clearAcceptedChatComposer(sessionId, composerRevision, storage),
-			);
-			finishChatInlineEditMutation(
-				sessionId,
-				inlineToken,
-				inlineRevision,
-				clearAcceptedChatInlineEdit(sessionId, inlineRevision, storage),
 			);
 			unsubscribeOldSurface();
 		}
@@ -1132,19 +896,13 @@ describe("Chat draft storage", () => {
 		for (const sessionId of sessionIds) {
 			const unsubscribeReplacement = subscribeChatDraftRuntime(sessionId, () => undefined);
 			const acceptedComposer = getChatComposerMutation(sessionId).accepted;
-			const acceptedInline = getChatInlineEditMutation(sessionId).accepted;
 			expect(acceptedComposer).toBeDefined();
-			expect(acceptedInline).toBeDefined();
 			acknowledgeChatComposerMutation(sessionId, acceptedComposer!.sequence);
 			expect(getChatComposerMutation(sessionId)).toEqual({ pending: false });
-			expect(getChatInlineEditMutation(sessionId).accepted).toBe(acceptedInline);
-			acknowledgeChatInlineEditMutation(sessionId, acceptedInline!.sequence);
-			expect(getChatInlineEditMutation(sessionId)).toEqual({ pending: false });
 			unsubscribeReplacement();
 
 			const unsubscribeLaterMount = subscribeChatDraftRuntime(sessionId, () => undefined);
 			expect(getChatComposerMutation(sessionId)).toEqual({ pending: false });
-			expect(getChatInlineEditMutation(sessionId)).toEqual({ pending: false });
 			unsubscribeLaterMount();
 		}
 	});
@@ -1182,17 +940,11 @@ describe("Chat draft storage", () => {
 
 	it("waits for every mutation receipt to be acknowledged before evicting an unmounted runtime", () => {
 		const storage = new MemoryStorage();
-		const sessionId = "runtime-two-pending-mutations";
+		const sessionId = "runtime-pending-mutation";
 		const composerRevision = writeChatComposerText(sessionId, "send once", storage).draft
 			.composer.revision;
-		const inlineRevision = writeChatInlineEdit(
-			sessionId,
-			{ turnId: "turn-1", text: "edit once", content: [] },
-			storage,
-		).draft.inlineEdit!.revision;
 		const unsubscribe = subscribeChatDraftRuntime(sessionId, () => undefined);
 		const composerToken = beginChatComposerMutation(sessionId)!;
-		const inlineToken = beginChatInlineEditMutation(sessionId)!;
 		unsubscribe();
 
 		finishChatComposerMutation(
@@ -1202,29 +954,12 @@ describe("Chat draft storage", () => {
 			clearAcceptedChatComposer(sessionId, composerRevision, storage),
 		);
 		expect(getChatComposerMutation(sessionId).accepted?.revision).toBe(composerRevision);
-		expect(getChatInlineEditMutation(sessionId).pending).toBe(true);
-
-		finishChatInlineEditMutation(
-			sessionId,
-			inlineToken,
-			inlineRevision,
-			clearAcceptedChatInlineEdit(sessionId, inlineRevision, storage),
-		);
-		expect(getChatComposerMutation(sessionId).accepted?.revision).toBe(composerRevision);
-		expect(getChatInlineEditMutation(sessionId).accepted?.revision).toBe(inlineRevision);
 
 		acknowledgeChatComposerMutation(
 			sessionId,
 			getChatComposerMutation(sessionId).accepted!.sequence,
 		);
 		expect(getChatComposerMutation(sessionId)).toEqual({ pending: false });
-		expect(getChatInlineEditMutation(sessionId).accepted?.revision).toBe(inlineRevision);
-		acknowledgeChatInlineEditMutation(
-			sessionId,
-			getChatInlineEditMutation(sessionId).accepted!.sequence,
-		);
-		expect(getChatComposerMutation(sessionId)).toEqual({ pending: false });
-		expect(getChatInlineEditMutation(sessionId)).toEqual({ pending: false });
 	});
 
 	it("does not let a deleted runtime's late unsubscribe evict a later in-flight owner", () => {
