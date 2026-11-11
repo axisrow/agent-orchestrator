@@ -547,3 +547,7 @@ a19069ef40d34c6b16fe896baff41325b210e05f skipped fix(chat): usage-limit refusals
 f54d5cc3cca456bb880214d6c9736f4f2420d22e taken fix(inspector): Summary artifacts newest first with update time (#8032)
 32fd8d243f4fcb96ac27423215926c52183b4fde taken fix(chat): reconnect after a question pending across a restart (#7919)
 b7da7bd3e5bd13d9e8496553fffc7844c5ba3c7f taken fix(codex): read auth from a custom model provider env_key (#7959)
+db597d9b16d831cdd4b94a892e374077a2b8491f taken fix(chat): keep typing during an account move (#7992)
+923dc4ce2f8414d3470afc64b98da03544dc5c49 skipped feat(chat): open images in rendered pages at full size (#7901)
+d25418c4a22954cf71650eafd259280ea06eaf26 skipped fix(artifacts): show a poster frame for video artifact cards (#7671)
+30c44d77e5532f57033b4b7ea551c18c2733f276 skipped fix(chat): reduce repeated file lookups, historical turn rendering (#7988) — форк-релевантен, свести отдельным заходом
