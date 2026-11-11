@@ -619,3 +619,5 @@ a05f130f47bf2d6f3fd662301d119d78ca013e72 skipped feat(import): import Conductor 
 400d0134656b6215517736ba58e041345199ee19 skipped feat(remote): per-device tokens and one-time pairing codes (#8081)
 4511197a110ac822ac0d127f2e052cbb82be99b8 taken fix: honor Agy worker permission modes (#8066)
 59b66e9abb4daa88dac0d3d8b8a55254420afb2f skipped fix(terminal): mouse-tracking clicks (#8141) — ручное взаимодействие + тумблер настроек
+4a0f4bc2e06f0d9648601ec49f093492af4890a7 skipped feat(mobile): start New task in the project last worked in (#8140)
+3d37c1a5720bc1715fd64f3d394562cbf160384c taken fix(desktop): bound interface-transition polling (#8114)
