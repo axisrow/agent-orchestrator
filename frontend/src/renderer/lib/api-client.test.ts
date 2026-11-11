@@ -3,6 +3,7 @@ import {
 	apiClient,
 	apiErrorDetails,
 	apiErrorMessage,
+	CLIENT_TIME_ZONE_HEADER,
 	getApiBaseUrl,
 	hasTrustedApiBaseUrl,
 	normalizeApiOperation,
@@ -17,6 +18,29 @@ vi.mock("./telemetry", () => ({
 }));
 
 const captureMock = vi.mocked(captureRendererEvent);
+
+describe("client time zone header", () => {
+	afterEach(() => { vi.restoreAllMocks(); vi.clearAllMocks(); });
+	const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+	it("leaves reads untagged so polling GETs need no CORS preflight", async () => {
+		setApiBaseUrl("http://127.0.0.1:3001");
+		const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 200 }));
+		await apiClient.GET("/api/v1/projects");
+		const [input, init] = fetchSpy.mock.calls[0] ?? [];
+		const headers = input instanceof Request ? input.headers : new Headers((init as RequestInit | undefined)?.headers);
+		expect(headers.has(CLIENT_TIME_ZONE_HEADER)).toBe(false);
+	});
+
+	it("tags writes through the local daemon client", async () => {
+		setApiBaseUrl("http://127.0.0.1:3001");
+		const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 200 }));
+		await apiClient.POST("/api/v1/sessions", { body: {} as never });
+		const [input, init] = fetchSpy.mock.calls[0] ?? [];
+		const headers = input instanceof Request ? input.headers : new Headers((init as RequestInit | undefined)?.headers);
+		expect(headers.get(CLIENT_TIME_ZONE_HEADER)).toBe(zone);
+	});
+});
 
 describe("apiClient runtime base URL", () => {
 	afterEach(() => {

@@ -272,7 +272,29 @@ function reportApiError(
 	});
 }
 
+// Agent prompts name the user's time zone. The daemon may run on a remote host
+// in another zone, so the app reports its own. Only writes carry it: spawns are
+// POSTs, and a custom header on GETs would add a CORS preflight per polled URL.
+export const CLIENT_TIME_ZONE_HEADER = "X-AO-Client-Time-Zone";
+let clientTimeZone: { value: string; at: number } | undefined;
+function currentTimeZone(): string {
+	const now = Date.now();
+	if (!clientTimeZone || now - clientTimeZone.at > 60_000) {
+		let value = "";
+		try { value = Intl.DateTimeFormat().resolvedOptions().timeZone ?? ""; } catch { /* unsupported */ }
+		clientTimeZone = { value, at: now };
+	}
+	return clientTimeZone.value;
+}
+export function tagClientTimeZone(input: Request): void {
+	if (input.method === "GET" || input.method === "HEAD" || input.method === "OPTIONS") return;
+	const zone = currentTimeZone();
+	if (!zone || input.headers.has(CLIENT_TIME_ZONE_HEADER)) return;
+	try { input.headers.set(CLIENT_TIME_ZONE_HEADER, zone); } catch { /* immutable headers: send without it */ }
+}
+
 async function runtimeFetch(input: Request): Promise<Response> {
+	tagClientTimeZone(input);
 	const operation = normalizeApiOperation(input.method, new URL(input.url).pathname);
 	const visibilityOwned = operation === "GET /api/v1/projects" || operation === "GET /api/v1/sessions" || operation === "GET /api/v1/sessions/:id/agent-switches";
 	const baseUrl = runtimeApiBaseUrl;

@@ -47,7 +47,9 @@ type systemPromptConfig struct {
 	OrchestratorPromptOverride       string
 	GlobalWorkerPromptOverride       string
 	GlobalOrchestratorPromptOverride string
-	AdditionalSections               []string
+	// TimeZone is the user's IANA zone name; empty omits the section.
+	TimeZone           string
+	AdditionalSections []string
 }
 
 type projectRulesConfig struct {
@@ -149,6 +151,9 @@ func buildSystemPromptText(cfg systemPromptConfig) string {
 	}
 	if rolePrompt := strings.TrimSpace(cfg.RolePrompt); rolePrompt != "" {
 		sections = append(sections, rolePrompt)
+	}
+	if zone := timeZonePrompt(cfg.TimeZone); zone != "" {
+		sections = append(sections, zone)
 	}
 	sections = append(sections, publishingScopePrompt(), systemPromptGuard())
 	for _, section := range cfg.AdditionalSections {
