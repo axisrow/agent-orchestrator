@@ -578,3 +578,9 @@ ab300e0934884c8dfa4f71db8c32cea8d6827f44 skipped feat(chat): mark sent skills an
 5c65e8046e4548675d69c71c763ea7e3e55f5066 skipped fix(chat): entrance animations replay on switch (#8067) — ручной визуал
 edaecb715c3ccbfead8316ea8e3b19b67b5af4e1 skipped fix(chat): sent attachments and steered messages immediately (#8063) — attachment-UI на отсутствующих поверхностях; steer-часть покрыта #7963
 5a79f665dac247d31be8df222ca3cffd7d7eafea skipped fix(import): say Orchestrator, rename import telemetry (#8058) — import выпилен в форке
+5d3f9a4907b08c8126265a98419b9d8a084558e2 skipped feat(board): open the archive as a searchable modal of compact rows (#8065)
+5b789f110ffe28cccf9c43286075155c0e02427c skipped feat(topbar): ship the new tab UI to everyone, drop the previous top bar (#8077)
+0d7281796b93e91c12701a8d81f38af2136a2e51 skipped feat(artifacts): new page header with location and type filters, plus bulk delete (#8073)
+70ad21d2bbfbce02f7eeee910d2f03543c60c7a4 skipped docs: add a Move from Conductor guide for the Cloud shutdown (#8057)
+b0fabec156467dee330a9d18c8ae77c709dba63e skipped feat(chat): fold agent actions into Worked for, collapse Agent Reports, drop harness logos (#7822)
+cfbaacf114b2207970a9d2582e33c04b25c1e27a skipped fix: artifact selection checkbox styling (#8080) — ручной UI
