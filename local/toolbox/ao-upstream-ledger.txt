@@ -551,3 +551,18 @@ db597d9b16d831cdd4b94a892e374077a2b8491f taken fix(chat): keep typing during an 
 923dc4ce2f8414d3470afc64b98da03544dc5c49 skipped feat(chat): open images in rendered pages at full size (#7901)
 d25418c4a22954cf71650eafd259280ea06eaf26 skipped fix(artifacts): show a poster frame for video artifact cards (#7671)
 30c44d77e5532f57033b4b7ea551c18c2733f276 skipped fix(chat): reduce repeated file lookups, historical turn rendering (#7988) — форк-релевантен, свести отдельным заходом
+01612ebf5e38204c641752973516eb3985feb948 skipped test(e2e): compare settled screenshots in the occlusion check, keep failures (#8031)
+d2f4d8242d73980be9772105ede1c680f77b0035 skipped feat: add full-history find in chat (#7684)
+a249c69cc478c7fa8b6ec9e5b273054398e880bf skipped fix(desktop): CLI shadow toast to Settings entry (#8039) — cli-shadow выпилен, ручной UI
+610860ba97910e12d8d662bf82df1a5efbb9dc59 skipped feat(terminal): label terminals with the title their program sets (#8018)
+c9b7237eb8ba1b7b858e5316f32dac48e0517ab5 skipped fix(shell): session switches without blocking sidebar (#8013) — ручной UI топбара
+be49556dd1db9f23ab06d69731bda15eb456bd49 skipped feat(telemetry): rename events and fix identity, install, session, onboarding and setup telemetry (#7854)
+7e1d6a88564616d12ae8c11f2e96e01764b85d45 skipped feat(artifacts): compact preview modal header, share Scratchpad files (#8043)
+70fe56943a1465bfa8f088719c9e879ee33ad078 skipped fix(artifacts): let a cloud file's menu Edit open the editor (#8048)
+5f1f2e15dde0b9bb14abb5d8ae41d9f29bb07dd0 skipped fix(mobile): stop Android crashing when a machine edit is saved (#7943)
+e35298b8faf728f15059652156be57bae4c918fd skipped fix(mobile): build the Android worker-row menu only while it is open (#7950)
+ca31aa27a809e6436500368effdd22e7b6d666af skipped fix(mobile): follow account machine renames without a re-sign-in (#7990)
+5da2663b8e5dbb2194465bde15b3e1268b8909e2 skipped feat(mobile): show, share and copy an artifact's public link (#8028)
+0e7d774a94e0b41bc7465b6a7ecc8fce310adc5d taken fix(chat): let compacted Claude sessions switch from Terminal to Chat (#8026)
+1a19062ca3123b6caa9de7139b5d79b6499d39db skipped fix(frontend): label orchestrator session Orchestrator (#8053) — ручной UI-копирайт
+dd756d670b67af7efbf0da9f47e4cdb047105156 taken fix(desktop): kept worktrees not a top bar error (#8055)

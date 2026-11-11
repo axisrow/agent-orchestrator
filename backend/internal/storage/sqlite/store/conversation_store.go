@@ -1255,7 +1255,7 @@ func (s *Store) appendUserMessage(
 			if moveErr != nil && !errors.Is(moveErr, sql.ErrNoRows) {
 				return false, fmt.Errorf("check account move of %s: %w", session, moveErr)
 			}
-			if moveErr != nil || !transitionRowToDomain(move).AccountMoveAwaitsTarget() {
+			if moveErr != nil || !interfaceTransitionToDomain(move).AccountMoveAwaitsTarget() {
 				return false, domain.ErrSessionNotProvisioning
 			}
 		}
