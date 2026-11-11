@@ -342,6 +342,10 @@ type ListSessionsQuery struct {
 // CleanupSessionsQuery is the query string accepted by POST /api/v1/sessions/cleanup.
 type CleanupSessionsQuery struct {
 	Project string `query:"project,omitempty" description:"Project id filter. When omitted, clean terminated sessions across all projects."`
+	// OlderThan is the age a terminated session must exceed before its dirty
+	// worktree is force-reclaimed after preserving uncommitted work. Empty
+	// uses the daemon default (168h).
+	OlderThan string `query:"olderThan,omitempty" description:"Go duration (e.g. 168h, 720h). Dirty terminated worktrees at least this old are stashed to refs/ao/preserved/<session-id> and removed; younger ones are preserved. Clean worktrees are reclaimed at any age."`
 }
 
 // ArtifactFileQuery is the query string accepted by DELETE /api/v1/sessions/{sessionId}/artifact-files.
@@ -1204,6 +1208,16 @@ type CleanupSkippedSession struct {
 	Reason    string           `json:"reason"`
 }
 
+// CleanupReclaimedSession reports one reclaimed workspace: the released path,
+// the reclaimed size, and — when uncommitted work existed — the git ref that
+// preserves it (refs/ao/preserved/<session-id>).
+type CleanupReclaimedSession struct {
+	SessionID    domain.SessionID `json:"sessionId"`
+	Path         string           `json:"path"`
+	Bytes        int64            `json:"bytes"`
+	PreservedRef string           `json:"preservedRef,omitempty"`
+}
+
 // CleanupSessionsResponse is the body of POST /api/v1/sessions/cleanup.
 type CleanupSessionsResponse struct {
 	OK bool `json:"ok"`
@@ -1213,6 +1227,8 @@ type CleanupSessionsResponse struct {
 	// so teardown completed without reclaiming anything.
 	AlreadyGone []domain.SessionID      `json:"alreadyGone"`
 	Skipped     []CleanupSkippedSession `json:"skipped"`
+	// Reclaimed carries per-workspace detail for the sessions in Cleaned.
+	Reclaimed []CleanupReclaimedSession `json:"reclaimed"`
 }
 
 // SendSessionMessageRequest is the body of POST /api/v1/sessions/{sessionId}/send.
