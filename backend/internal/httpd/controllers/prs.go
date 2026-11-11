@@ -124,7 +124,7 @@ func writePRError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, prsvc.ErrPRPreconditions):
 		envelope.WriteAPIError(w, r, http.StatusUnprocessableEntity, "unprocessable", "PR_PRECONDITIONS_UNMET", "PR merge preconditions are not met", nil)
 	case errors.Is(err, prsvc.ErrPRProviderUnavailable):
-		envelope.WriteAPIError(w, r, http.StatusServiceUnavailable, "unavailable", "PR_PROVIDER_UNAVAILABLE", "Pull request provider is unreachable; try again", nil)
+		envelope.WriteAPIError(w, r, http.StatusServiceUnavailable, "unavailable", "PR_PROVIDER_UNAVAILABLE", providerUnavailableMessage(err), nil)
 	case errors.Is(err, prsvc.ErrNothingToResolve):
 		envelope.WriteAPIError(w, r, http.StatusUnprocessableEntity, "unprocessable", "NOTHING_TO_RESOLVE", "No unresolved review threads to resolve", nil)
 	default:
@@ -136,4 +136,18 @@ func writePRError(w http.ResponseWriter, r *http.Request, err error) {
 // io.ErrUnexpectedEOF means a truncated/malformed body — bad request, not absent.
 func isEmptyBody(err error) bool {
 	return errors.Is(err, io.EOF)
+}
+
+// providerUnavailableMessage builds the banner text for an exhausted refresh:
+// the service has already spent its bounded retries, so the user needs the
+// underlying cause and the next step, not a bare "try again".
+func providerUnavailableMessage(err error) string {
+	detail := strings.TrimPrefix(err.Error(), prsvc.ErrPRProviderUnavailable.Error()+": ")
+	if detail == "" {
+		detail = err.Error()
+	}
+	if runes := []rune(detail); len(runes) > 300 {
+		detail = string(runes[:300]) + "…"
+	}
+	return "Pull request provider is unreachable after retries; check the connection and try again. Reason: " + detail
 }
