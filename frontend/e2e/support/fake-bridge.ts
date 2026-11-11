@@ -115,6 +115,9 @@ export async function installFakeBridge(page: Page, opts: FakeBridgeOptions = {}
 					readText: async () => "",
 					writeImage: async () => undefined,
 				},
+				crash: {
+					report: () => undefined,
+				},
 				chatImage: {
 					fetch: async () => ({ bytes: new Uint8Array(), mimeType: "image/png" }),
 					save: async () => true,
@@ -956,6 +959,7 @@ export async function installFakeAgent(page: Page, opts: FakeAgentOptions = {}):
 				},
 				menu: { action: async () => undefined, notifyShellFocus: () => undefined },
 				clipboard: { writeText: async () => undefined, readText: async () => "", writeImage: async () => undefined },
+				crash: { report: () => undefined },
 				chatImage: {
 					fetch: async () => ({ bytes: new Uint8Array(), mimeType: "image/png" }),
 					save: async () => true,
