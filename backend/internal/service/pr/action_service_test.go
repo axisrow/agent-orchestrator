@@ -108,6 +108,9 @@ func (f *fakeActionWriter) MarkPRReviewThreadResolved(_ context.Context, _ strin
 type fakeSCMAction struct {
 	observation     ports.SCMObservation
 	review          ports.SCMReviewObservation
+	fetchErrs       []error                // scripted per-call failures for FetchPullRequests
+	fetchObs        []ports.SCMObservation // per-call observation overrides for FetchPullRequests
+	fetchCalls      int
 	mergeErr        error
 	request         ports.SCMMergeRequest
 	mergeCalls      int
@@ -132,6 +135,13 @@ func (f *fakeActionLifecycle) ApplySCMObservation(_ context.Context, sessionID d
 }
 
 func (f *fakeSCMAction) FetchPullRequests(context.Context, []ports.SCMPRRef) ([]ports.SCMObservation, error) {
+	f.fetchCalls++
+	if len(f.fetchErrs) >= f.fetchCalls {
+		return nil, f.fetchErrs[f.fetchCalls-1]
+	}
+	if len(f.fetchObs) >= f.fetchCalls {
+		return []ports.SCMObservation{f.fetchObs[f.fetchCalls-1]}, nil
+	}
 	return []ports.SCMObservation{f.observation}, nil
 }
 
@@ -312,6 +322,165 @@ func TestActionServiceMerge_ProviderOutageIsNotUnknownPR(t *testing.T) {
 	_, err = svc.Merge(context.Background(), MergeRequest{PRID: "42", PRURL: pr.URL, ExpectedHeadSHA: pr.HeadSHA})
 	if !errors.Is(err, ErrPRProviderUnavailable) || errors.Is(err, ErrPRNotFound) {
 		t.Fatalf("reader failure error = %v, want ErrPRProviderUnavailable", err)
+	}
+}
+
+// A single transient provider failure on the merge refresh is absorbed by the
+// bounded retry: the first click succeeds and the user never sees the outage.
+func TestActionServiceMerge_SingleTransientRefreshFailureRetriesOnce(t *testing.T) {
+	pr, scm := mergeableActionFixture()
+	scm.fetchErrs = []error{errors.New("github scm: POST graphql: net/http: TLS handshake timeout")}
+	svc := NewActionService(ActionDeps{Store: &fakeActionStore{pr: pr, ok: true}, Reader: scm, Merger: scm, RetryBackoff: time.Millisecond})
+	result, err := svc.Merge(context.Background(), MergeRequest{PRID: "42", PRURL: pr.URL, ExpectedHeadSHA: pr.HeadSHA})
+	if err != nil || result.State != domain.PRStateMerged || result.MergeCommitSHA != "merge-sha" {
+		t.Fatalf("result=%+v err=%v, want first-click merge success", result, err)
+	}
+	if scm.fetchCalls != 2 || scm.mergeCalls != 1 {
+		t.Fatalf("fetch calls=%d merge calls=%d, want 2 refresh attempts and one squash", scm.fetchCalls, scm.mergeCalls)
+	}
+}
+
+// A persistent outage exhausts the bounded retries and surfaces the provider
+// unavailable sentinel with the last provider cause attached.
+func TestActionServiceMerge_PersistentOutageExhaustsRetries(t *testing.T) {
+	pr, scm := mergeableActionFixture()
+	scm.fetchErrs = []error{
+		errors.New("github scm: POST graphql: net/http: TLS handshake timeout"),
+		errors.New("github scm: POST graphql: context deadline exceeded"),
+		errors.New("unreached"),
+	}
+	var logs bytes.Buffer
+	svc := NewActionService(ActionDeps{
+		Store:        &fakeActionStore{pr: pr, ok: true},
+		Reader:       scm,
+		Merger:       scm,
+		RetryBackoff: time.Millisecond,
+		Logger:       slog.New(slog.NewTextHandler(&logs, nil)),
+	})
+	_, err := svc.Merge(context.Background(), MergeRequest{PRID: "42", PRURL: pr.URL, ExpectedHeadSHA: pr.HeadSHA})
+	if !errors.Is(err, ErrPRProviderUnavailable) || !strings.Contains(err.Error(), "context deadline exceeded") {
+		t.Fatalf("err = %v, want provider unavailable with the last cause", err)
+	}
+	if scm.fetchCalls != mergeRefreshAttempts || scm.mergeCalls != 0 {
+		t.Fatalf("fetch calls=%d merge calls=%d, want exactly %d refresh attempts and no squash", scm.fetchCalls, scm.mergeCalls, mergeRefreshAttempts)
+	}
+	if !strings.Contains(logs.String(), "pr merge refresh failed after retries") || !strings.Contains(logs.String(), "attempts=2") {
+		t.Fatalf("missing retry diagnostics: %s", logs.String())
+	}
+}
+
+// A retry whose refresh finds the PR already merged reports success without a
+// second squash: the earlier click won, and the lost response must not become
+// an error or a duplicate merge.
+func TestActionServiceMerge_RetryFindsAlreadyMergedSucceedsWithoutSecondSquash(t *testing.T) {
+	pr, scm := mergeableActionFixture()
+	pr.SessionID = "session-1"
+	mergedAt := time.Date(2026, 11, 11, 9, 30, 0, 0, time.UTC)
+	scm.fetchErrs = []error{errors.New("github scm: POST graphql: net/http: TLS handshake timeout")}
+	// Positional scripting: call 1 is consumed by fetchErrs[0], so the merged
+	// observation is the second call's scripted outcome.
+	scm.fetchObs = []ports.SCMObservation{{}, {
+		Fetched:    true,
+		PR:         ports.SCMPRObservation{URL: pr.URL, Number: pr.Number, HeadSHA: pr.HeadSHA, Merged: true, MergeCommitSHA: "abc123merge"},
+		ObservedAt: mergedAt,
+	}}
+	writer := &fakeActionWriter{}
+	lifecycle := &fakeActionLifecycle{}
+	svc := NewActionService(ActionDeps{
+		Store:        &fakeActionStore{pr: pr, ok: true},
+		Reader:       scm,
+		Merger:       scm,
+		MergeWriter:  writer,
+		Lifecycle:    lifecycle,
+		RetryBackoff: time.Millisecond,
+	})
+	result, err := svc.Merge(context.Background(), MergeRequest{PRID: "42", PRURL: pr.URL, ExpectedHeadSHA: pr.HeadSHA})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.State != domain.PRStateMerged || result.MergeCommitSHA != "abc123merge" || !result.StateChangedAt.Equal(mergedAt) {
+		t.Fatalf("result = %#v, want already-merged success from the provider observation", result)
+	}
+	if scm.mergeCalls != 0 {
+		t.Fatalf("merge calls = %d, want 0: no second squash after an already-merged outcome", scm.mergeCalls)
+	}
+	// The merged row and the session notice are persisted eagerly: a terminated
+	// session is never reconciled by the observer, so waiting for its tick
+	// would drop the merge.
+	if writer.writeCalls != 1 || writer.mergeCommitSHA != "abc123merge" || writer.mergedURL != pr.URL {
+		t.Fatalf("writer calls=%d sha=%q url=%q, want one eager merged-state write", writer.writeCalls, writer.mergeCommitSHA, writer.mergedURL)
+	}
+	if lifecycle.calls != 1 || lifecycle.sessionID != pr.SessionID || !lifecycle.obs.PR.Merged || lifecycle.obs.PR.MergeCommitSHA != "abc123merge" {
+		t.Fatalf("lifecycle calls=%d session=%q observation=%+v, want one eager merge notice", lifecycle.calls, lifecycle.sessionID, lifecycle.obs)
+	}
+}
+
+// An ambiguous squash failure gets one recheck: when the provider shows the PR
+// already merged, the action reports success instead of a duplicate-click error.
+func TestActionServiceMerge_AmbiguousFailureRecheckFindsMerged(t *testing.T) {
+	pr, scm := mergeableActionFixture()
+	scm.mergeErr = errors.New("github scm: POST merge: context deadline exceeded")
+	scm.fetchObs = []ports.SCMObservation{scm.observation, {
+		Fetched: true,
+		PR:      ports.SCMPRObservation{URL: pr.URL, Number: pr.Number, HeadSHA: pr.HeadSHA, Merged: true, MergeCommitSHA: "deadbeef000"},
+	}}
+	writer := &fakeActionWriter{}
+	lifecycle := &fakeActionLifecycle{}
+	svc := NewActionService(ActionDeps{
+		Store:        &fakeActionStore{pr: pr, ok: true},
+		Reader:       scm,
+		Merger:       scm,
+		MergeWriter:  writer,
+		Lifecycle:    lifecycle,
+		RetryBackoff: time.Millisecond,
+	})
+	result, err := svc.Merge(context.Background(), MergeRequest{PRID: "42", PRURL: pr.URL, ExpectedHeadSHA: pr.HeadSHA})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.State != domain.PRStateMerged || result.MergeCommitSHA != "deadbeef000" {
+		t.Fatalf("result = %#v, want merged success from the recheck", result)
+	}
+	if scm.mergeCalls != 1 || scm.fetchCalls != 2 {
+		t.Fatalf("merge calls=%d fetch calls=%d, want one squash and one recheck", scm.mergeCalls, scm.fetchCalls)
+	}
+	if writer.writeCalls != 1 || writer.mergeCommitSHA != "deadbeef000" || lifecycle.calls != 1 || !lifecycle.obs.PR.Merged {
+		t.Fatalf("writer calls=%d sha=%q lifecycle calls=%d, want eager persistence on the recheck path", writer.writeCalls, writer.mergeCommitSHA, lifecycle.calls)
+	}
+}
+
+// An ambiguous failure the recheck cannot confirm still surfaces the original
+// merge error: a failed lookup must not masquerade as success.
+func TestActionServiceMerge_AmbiguousFailureWithoutMergeSurfacesError(t *testing.T) {
+	pr, scm := mergeableActionFixture()
+	scm.mergeErr = errors.New("github scm: POST merge: connection reset by peer")
+	svc := NewActionService(ActionDeps{Store: &fakeActionStore{pr: pr, ok: true}, Reader: scm, Merger: scm, RetryBackoff: time.Millisecond})
+	_, err := svc.Merge(context.Background(), MergeRequest{PRID: "42", PRURL: pr.URL, ExpectedHeadSHA: pr.HeadSHA})
+	if err == nil || !strings.Contains(err.Error(), "merge pull request") {
+		t.Fatalf("err = %v, want the original merge error", err)
+	}
+	if scm.mergeCalls != 1 || scm.fetchCalls != 2 {
+		t.Fatalf("merge calls=%d fetch calls=%d, want one squash and one recheck", scm.mergeCalls, scm.fetchCalls)
+	}
+}
+
+// Regression: head and readiness sentinels reject without spending retries —
+// only transient provider unavailability warrants a retry.
+func TestActionServiceMerge_GuardFailuresDoNotRetry(t *testing.T) {
+	pr, scm := mergeableActionFixture()
+	scm.observation.PR.HeadSHA = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	svc := NewActionService(ActionDeps{Store: &fakeActionStore{pr: pr, ok: true}, Reader: scm, Merger: scm, RetryBackoff: time.Millisecond})
+	_, err := svc.Merge(context.Background(), MergeRequest{PRID: "42", PRURL: pr.URL, ExpectedHeadSHA: pr.HeadSHA})
+	if !errors.Is(err, ErrPRHeadChanged) || scm.fetchCalls != 1 || scm.mergeCalls != 0 {
+		t.Fatalf("refresh head error=%v fetch calls=%d merge calls=%d, want head-changed with no retry", err, scm.fetchCalls, scm.mergeCalls)
+	}
+
+	pr, scm = mergeableActionFixture()
+	scm.observation.Mergeability = ports.SCMMergeabilityObservation{State: string(domain.MergeConflicting), Mergeable: false}
+	svc = NewActionService(ActionDeps{Store: &fakeActionStore{pr: pr, ok: true}, Reader: scm, Merger: scm, RetryBackoff: time.Millisecond})
+	_, err = svc.Merge(context.Background(), MergeRequest{PRID: "42", PRURL: pr.URL, ExpectedHeadSHA: pr.HeadSHA})
+	if !errors.Is(err, ErrPRPreconditions) || scm.fetchCalls != 1 || scm.mergeCalls != 0 {
+		t.Fatalf("not-mergeable error=%v fetch calls=%d merge calls=%d, want preconditions with no retry", err, scm.fetchCalls, scm.mergeCalls)
 	}
 }
 

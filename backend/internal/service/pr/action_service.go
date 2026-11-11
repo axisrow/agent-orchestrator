@@ -50,6 +50,10 @@ type mergeStateWriter interface {
 	MarkPRMerged(ctx context.Context, prURL, mergeCommitSHA string, mergedAt time.Time) error
 }
 
+// mergeRefreshAttempts bounds the merge-action provider refresh: one retry
+// absorbs a single transient provider failure before the user sees an error.
+const mergeRefreshAttempts = 2
+
 // ActionDeps contains the storage and SCM boundaries used by ActionService.
 type ActionDeps struct {
 	Store        actionStore
@@ -62,12 +66,19 @@ type ActionDeps struct {
 	Lifecycle    actionLifecycle
 	Clock        func() time.Time
 	Logger       *slog.Logger
+	// RetryBackoff waits between bounded refresh retries and before the
+	// ambiguous-merge recheck. Zero defaults to mergeRefreshBackoff.
+	RetryBackoff time.Duration
 	// ThreadWriter updates one resolved thread and its comments without
 	// replacing a potentially newer SCM observation.
 	ThreadWriter interface {
 		MarkPRReviewThreadResolved(context.Context, string, string) error
 	}
 }
+
+// mergeRefreshBackoff is the wait between bounded refresh retries and before
+// the ambiguous-merge recheck.
+const mergeRefreshBackoff = 1500 * time.Millisecond
 
 // ActionService validates current pull request state before applying mutations.
 type ActionService struct {
@@ -80,6 +91,7 @@ type ActionService struct {
 	lifecycle    actionLifecycle
 	clock        func() time.Time
 	logger       *slog.Logger
+	retryBackoff time.Duration
 	threadWriter interface {
 		MarkPRReviewThreadResolved(context.Context, string, string) error
 	}
@@ -107,6 +119,10 @@ func NewActionService(deps ActionDeps) *ActionService {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	retryBackoff := deps.RetryBackoff
+	if retryBackoff <= 0 {
+		retryBackoff = mergeRefreshBackoff
+	}
 	return &ActionService{
 		store:        deps.Store,
 		resolve:      resolve,
@@ -117,6 +133,7 @@ func NewActionService(deps ActionDeps) *ActionService {
 		lifecycle:    deps.Lifecycle,
 		clock:        clock,
 		logger:       logger,
+		retryBackoff: retryBackoff,
 		threadWriter: threadWriter,
 	}
 }
@@ -179,12 +196,21 @@ func (s *ActionService) Merge(ctx context.Context, request MergeRequest) (MergeR
 		return MergeResult{}, fmt.Errorf("%w: pull request repository is unknown", ErrPRPreconditions)
 	}
 	ref := ports.SCMPRRef{Repo: repo, Number: tracked.Number, URL: tracked.URL}
-	fresh, review, err := s.fetchMergeReadiness(ctx, ref)
+	started := s.clock()
+	fresh, review, refreshRetries, err := s.refreshMergeReadinessWithRetry(ctx, ref)
 	if err != nil {
 		return MergeResult{}, err
 	}
 	if !strings.EqualFold(fresh.PR.HeadSHA, expectedHead) {
 		return MergeResult{}, ErrPRHeadChanged
+	}
+	// The provider already merged this PR (an earlier click whose response was
+	// lost, or an outside merge). Report success instead of erroring on the
+	// readiness guard or attempting a second squash.
+	if fresh.PR.Merged {
+		s.logger.Info("pr merge action found the pull request already merged", "pr", tracked.URL, "refresh_retries", refreshRetries, "duration", s.clock().Sub(started))
+		s.persistMergedOutcome(ctx, tracked, fresh, fresh.PR.MergeCommitSHA)
+		return mergedResultFromObservation(tracked, fresh, s.clock()), nil
 	}
 	published, err := s.publishedReviewIDs(ctx, tracked.URL)
 	if err != nil {
@@ -204,16 +230,39 @@ func (s *ActionService) Merge(ctx context.Context, request MergeRequest) (MergeR
 		case errors.Is(err, ports.ErrSCMNotMergeable):
 			return MergeResult{}, fmt.Errorf("%w: %w", ErrPRNotMergeable, err)
 		default:
+			// The squash may have landed before the failure: an ambiguous error
+			// gets one recheck, and an already-merged provider state wins over
+			// surfacing an error the user would answer with a duplicate click.
+			if rechecked, ok := s.recheckMerged(ctx, ref); ok {
+				s.logger.Info("pr merge action found the pull request already merged after an ambiguous failure", "pr", tracked.URL, "duration", s.clock().Sub(started), "err", err)
+				s.persistMergedOutcome(ctx, tracked, rechecked, rechecked.PR.MergeCommitSHA)
+				return mergedResultFromObservation(tracked, rechecked, s.clock()), nil
+			}
 			return MergeResult{}, fmt.Errorf("merge pull request: %w", err)
 		}
 	}
+	s.logger.Info("pr merge action completed", "pr", tracked.URL, "refresh_retries", refreshRetries, "duration", s.clock().Sub(started))
+	mergedAt := s.persistMergedOutcome(ctx, tracked, fresh, out.MergeCommitSHA)
+	return MergeResult{
+		PRNumber:       tracked.Number,
+		Method:         string(ports.SCMMergeSquash),
+		State:          domain.PRStateMerged,
+		MergeCommitSHA: out.MergeCommitSHA,
+		StateChangedAt: mergedAt,
+	}, nil
+}
+
+// persistMergedOutcome eagerly records a provider-confirmed merge in local
+// state and notifies the session lifecycle — for every success path, including
+// already-merged outcomes: a terminated session is never reconciled by the
+// observer (discoverSubjects skips it), so its merge notice must not wait for
+// a background tick. Errors are log-only: the remote merge already happened
+// and callers must keep receiving the authoritative success.
+func (s *ActionService) persistMergedOutcome(ctx context.Context, tracked domain.PullRequest, fresh ports.SCMObservation, mergeCommitSHA string) time.Time {
 	mergedAt := s.clock().UTC()
 	persisted := false
 	if s.mergeWriter != nil {
-		if err := s.mergeWriter.MarkPRMerged(ctx, tracked.URL, out.MergeCommitSHA, mergedAt); err != nil {
-			// GitHub has already committed the irreversible remote mutation. Keep
-			// returning the authoritative success so callers do not retry a merge
-			// that already happened; the observer will reconcile the durable row.
+		if err := s.mergeWriter.MarkPRMerged(ctx, tracked.URL, mergeCommitSHA, mergedAt); err != nil {
 			s.logger.Error("pr merge succeeded but local state persistence failed", "pr", tracked.URL, "err", err)
 		} else {
 			persisted = true
@@ -224,19 +273,83 @@ func (s *ActionService) Merge(ctx context.Context, request MergeRequest) (MergeR
 		fresh.PR.Merged = true
 		fresh.PR.Closed = false
 		fresh.PR.State = string(domain.PRStateMerged)
-		fresh.PR.MergeCommitSHA = out.MergeCommitSHA
+		fresh.PR.MergeCommitSHA = mergeCommitSHA
 		fresh.ObservedAt = mergedAt
 		if err := s.lifecycle.ApplySCMObservation(ctx, tracked.SessionID, fresh); err != nil {
 			s.logger.Error("pr merge succeeded but lifecycle notification failed", "session", tracked.SessionID, "pr", tracked.URL, "err", err)
 		}
 	}
+	return mergedAt
+}
+
+// refreshMergeReadinessWithRetry runs the merge refresh with a bounded retry:
+// a single transient provider failure is absorbed with one backoff wait, while
+// not-found and readiness sentinels surface without retrying.
+func (s *ActionService) refreshMergeReadinessWithRetry(ctx context.Context, ref ports.SCMPRRef) (ports.SCMObservation, ports.SCMReviewObservation, int, error) {
+	var fresh ports.SCMObservation
+	var review ports.SCMReviewObservation
+	var retries int
+	for attempt := 0; ; attempt++ {
+		var err error
+		fresh, review, err = s.fetchMergeReadiness(ctx, ref)
+		if err == nil {
+			return fresh, review, retries, nil
+		}
+		if !errors.Is(err, ErrPRProviderUnavailable) || attempt+1 >= mergeRefreshAttempts {
+			if errors.Is(err, ErrPRProviderUnavailable) {
+				s.logger.Warn("pr merge refresh failed after retries", "pr", ref.URL, "attempts", attempt+1, "err", err)
+			}
+			return ports.SCMObservation{}, ports.SCMReviewObservation{}, retries, err
+		}
+		retries++
+		if waitErr := s.waitForRetry(ctx); waitErr != nil {
+			return ports.SCMObservation{}, ports.SCMReviewObservation{}, retries, waitErr
+		}
+	}
+}
+
+// recheckMerged performs one delayed provider lookup to learn whether an
+// ambiguously failed squash actually landed. Any non-merged outcome (including
+// a failed lookup) reports false so the original merge error surfaces.
+func (s *ActionService) recheckMerged(ctx context.Context, ref ports.SCMPRRef) (ports.SCMObservation, bool) {
+	if err := s.waitForRetry(ctx); err != nil {
+		return ports.SCMObservation{}, false
+	}
+	observations, err := s.reader.FetchPullRequests(ctx, []ports.SCMPRRef{ref})
+	if err != nil {
+		return ports.SCMObservation{}, false
+	}
+	if len(observations) == 1 && observations[0].Fetched && observations[0].PR.Merged {
+		return observations[0], true
+	}
+	return ports.SCMObservation{}, false
+}
+
+func (s *ActionService) waitForRetry(ctx context.Context) error {
+	timer := time.NewTimer(s.retryBackoff)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+// mergedResultFromObservation reports a merged outcome the provider confirmed
+// without a fresh squash: an earlier attempt or an outside merge won the race.
+func mergedResultFromObservation(tracked domain.PullRequest, fresh ports.SCMObservation, now time.Time) MergeResult {
+	changedAt := fresh.ObservedAt
+	if changedAt.IsZero() {
+		changedAt = now.UTC()
+	}
 	return MergeResult{
 		PRNumber:       tracked.Number,
 		Method:         string(ports.SCMMergeSquash),
 		State:          domain.PRStateMerged,
-		MergeCommitSHA: out.MergeCommitSHA,
-		StateChangedAt: mergedAt,
-	}, nil
+		MergeCommitSHA: fresh.PR.MergeCommitSHA,
+		StateChangedAt: changedAt,
+	}
 }
 
 func (s *ActionService) fetchMergeReadiness(ctx context.Context, ref ports.SCMPRRef) (ports.SCMObservation, ports.SCMReviewObservation, error) {

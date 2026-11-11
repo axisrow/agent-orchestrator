@@ -2,10 +2,13 @@ package controllers_test
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -121,6 +124,20 @@ func TestPRsRoutes_Merge_InvalidJSON(t *testing.T) {
 	assertErrorCode(t, body, status, http.StatusBadRequest, "INVALID_JSON")
 	if svc.mergeRequest.PRID != "" {
 		t.Fatalf("service reached with request = %#v", svc.mergeRequest)
+	}
+}
+
+// After the service's bounded retries the banner must carry the underlying
+// cause, not just "try again".
+func TestPRsRoutes_Merge_ProviderUnavailableMessageCarriesCause(t *testing.T) {
+	svc := &fakePRService{mergeErr: fmt.Errorf("%w: refresh pull request before merge: %w", prsvc.ErrPRProviderUnavailable, errors.New("net/http: TLS handshake timeout"))}
+	srv := newPRTestServer(t, svc)
+
+	body, status, headers := doRequest(t, srv, "POST", "/api/v1/prs/42/merge", validMergeBody)
+	assertJSON(t, headers)
+	assertErrorCode(t, body, status, http.StatusServiceUnavailable, "PR_PROVIDER_UNAVAILABLE")
+	if !strings.Contains(string(body), "net/http: TLS handshake timeout") || !strings.Contains(string(body), "after retries") {
+		t.Fatalf("banner missing cause: %s", body)
 	}
 }
 
