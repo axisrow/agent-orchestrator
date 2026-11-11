@@ -571,3 +571,8 @@ dd756d670b67af7efbf0da9f47e4cdb047105156 taken fix(desktop): kept worktrees not 
 64dcbc3d76b30eb4f2376f9d6e28f4e171151f2a skipped fix(frontend): light active tab styling (#8054) — ручной UI
 bc85aa8ee6d24cee89e1606d5b6b6cd209a6c7f1 skipped feat(chat): keep tool calls collapsed until the reader opens them (#8052)
 27a81af6e97f040c6562ff03d98ab5cab6e17a52 skipped fix(chat): sent attachments above bubble (#8056) — ручной UI вложений, DU поверх выпиленного редактора
+7b550c6d9698aaa9e717683594d4757d2bb8dc13 skipped feat: import local agent sessions with native resume (#6364)
+089795de7f0d94bcde140f1f72b8356af561d89c skipped feat(inspector): preview the newest artifacts in the Summary (#8044)
+ab300e0934884c8dfa4f71db8c32cea8d6827f44 skipped feat(chat): mark sent skills and files as colored text in user messages (#8062)
+4bf230e0c319e96ca74644fd93724531d5446259 skipped feat(chat): light markdown in your own messages, list keys in the composer (#8064)
+5c65e8046e4548675d69c71c763ea7e3e55f5066 skipped fix(chat): entrance animations replay on switch (#8067) — ручной визуал
