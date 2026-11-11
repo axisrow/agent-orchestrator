@@ -1504,6 +1504,68 @@ func TestCISummaryCancelledChecksAreNotFailures(t *testing.T) {
 	}
 }
 
+// Issue #319: a repo without real CI (only a claude responder workflow)
+// shows a single SKIPPED check on PRs. Skipped rows decide nothing, so an
+// all-skipped latest-run set must read vacuously green instead of pinning
+// ci_state=unknown and holding the readiness card in "Checking" forever.
+// Conservativeness stays: an unknown row (completed without a conclusion)
+// keeps the set unknown.
+func TestCISummaryAllSkippedRollupIsVacuouslyGreen(t *testing.T) {
+	unknownRun := actionsCheckRun("Ghost", "no-conclusion", "", 1)
+	cases := []struct {
+		name       string
+		nodes      []map[string]any
+		wantCI     domain.CIState
+		wantFailed []string
+	}{
+		{
+			name:   "all-skipped rollup is passing",
+			nodes:  []map[string]any{actionsCheckRun("claude", "claude", "SKIPPED", 1)},
+			wantCI: domain.CIPassing,
+		},
+		{
+			name:   "skipped beside passing is passing",
+			nodes:  []map[string]any{actionsCheckRun("claude", "claude", "SKIPPED", 1), actionsCheckRun("Go", "build", "SUCCESS", 2)},
+			wantCI: domain.CIPassing,
+		},
+		{
+			name:       "skipped beside failing is failing",
+			nodes:      []map[string]any{actionsCheckRun("claude", "claude", "SKIPPED", 1), actionsCheckRun("Go", "build", "FAILURE", 2)},
+			wantCI:     domain.CIFailing,
+			wantFailed: []string{"build"},
+		},
+		{
+			name:   "unknown-only rollup stays unknown",
+			nodes:  []map[string]any{unknownRun},
+			wantCI: domain.CIUnknown,
+		},
+		{
+			name:   "skipped beside unknown stays unknown",
+			nodes:  []map[string]any{actionsCheckRun("claude", "claude", "SKIPPED", 1), unknownRun},
+			wantCI: domain.CIUnknown,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pr := rollupPR("PENDING", tc.nodes...)
+			if got := ciSummaryFromGraphQL(pr); got != tc.wantCI {
+				t.Fatalf("ciSummaryFromGraphQL = %q, want %q", got, tc.wantCI)
+			}
+			obs := scmObservationFromGraphQL(ports.SCMPRRef{Repo: ports.SCMRepo{Provider: "github", Host: "github.com", Owner: "octocat", Name: "hello", Repo: "octocat/hello"}, Number: 42}, pr)
+			if obs.CI.Summary != string(tc.wantCI) {
+				t.Fatalf("observer CI summary = %q, want %q", obs.CI.Summary, tc.wantCI)
+			}
+			var failed []string
+			for _, ch := range obs.CI.FailedChecks {
+				failed = append(failed, ch.Name)
+			}
+			if !slices.Equal(failed, tc.wantFailed) {
+				t.Fatalf("failed checks = %v, want %v", failed, tc.wantFailed)
+			}
+		})
+	}
+}
+
 // Issue #230 acceptance: once a cancelled (or startup-failed) check re-runs
 // green (GitHub updates the conclusion in place) the repeat observation must
 // flip to passing with mergeability recomputed — even when the aggregate

@@ -377,14 +377,16 @@ func ciSummaryFromGraphQL(pr map[string]any) domain.CIState {
 // (issue #227). With nothing running, failure-class entries win; a cancelled
 // latest run is not a failure (#8000): it settles the set as unknown even
 // beside passing checks, and only a failure-free, cancellation-free set is
-// passing (unknown when no context carries a decidable state).
+// passing. An all-skipped set — nothing ran, so nothing can be red — reads
+// vacuously green, but an unknown-class row (completed without a conclusion)
+// keeps the set unknown (issue #319).
 // Re-running a failed workflow creates a new CheckRun while the superseded
 // red run stays in statusCheckRollup.contexts (issue #230, BeamCraft#407:
 // 42 contexts for 32 checks; the aggregate counted the superseded runs and
 // stayed FAILURE over an all-green latest set), so raw nodes must be
 // collapsed before classification.
 func ciStateFromContextNodes(rawNodes []map[string]any) domain.CIState {
-	pending, failing, passing, cancelled := false, false, false, false
+	pending, failing, passing, cancelled, skipped, unknown := false, false, false, false, false, false
 	for _, n := range latestRunNodesByName(rawNodes) {
 		switch checkStatusFromGraphQL(n) {
 		case domain.PRCheckFailed:
@@ -395,6 +397,10 @@ func ciStateFromContextNodes(rawNodes []map[string]any) domain.CIState {
 			pending = true
 		case domain.PRCheckPassed:
 			passing = true
+		case domain.PRCheckSkipped:
+			skipped = true
+		default:
+			unknown = true
 		}
 	}
 	switch {
@@ -405,6 +411,12 @@ func ciStateFromContextNodes(rawNodes []map[string]any) domain.CIState {
 	case cancelled:
 		return domain.CIUnknown
 	case passing:
+		return domain.CIPassing
+	case skipped && !unknown:
+		// Every latest run skipped and nothing decided anything: a check
+		// that never ran cannot be red, so the set is vacuously green
+		// (issue #319 — a repo whose only workflow is a claude responder
+		// skips on PRs). A mixed-in unknown row keeps the verdict unknown.
 		return domain.CIPassing
 	default:
 		return domain.CIUnknown
