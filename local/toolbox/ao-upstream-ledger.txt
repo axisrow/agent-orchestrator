@@ -566,3 +566,4 @@ ca31aa27a809e6436500368effdd22e7b6d666af skipped fix(mobile): follow account mac
 0e7d774a94e0b41bc7465b6a7ecc8fce310adc5d taken fix(chat): let compacted Claude sessions switch from Terminal to Chat (#8026)
 1a19062ca3123b6caa9de7139b5d79b6499d39db skipped fix(frontend): label orchestrator session Orchestrator (#8053) — ручной UI-копирайт
 dd756d670b67af7efbf0da9f47e4cdb047105156 taken fix(desktop): kept worktrees not a top bar error (#8055)
+4d195b13a623db5336ecdf6346597427e908101e taken fix(remote): passwordless requests out of lockout (#8027)
