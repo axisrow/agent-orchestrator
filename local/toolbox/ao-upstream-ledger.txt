@@ -567,3 +567,5 @@ ca31aa27a809e6436500368effdd22e7b6d666af skipped fix(mobile): follow account mac
 1a19062ca3123b6caa9de7139b5d79b6499d39db skipped fix(frontend): label orchestrator session Orchestrator (#8053) — ручной UI-копирайт
 dd756d670b67af7efbf0da9f47e4cdb047105156 taken fix(desktop): kept worktrees not a top bar error (#8055)
 4d195b13a623db5336ecdf6346597427e908101e taken fix(remote): passwordless requests out of lockout (#8027)
+496791b4f8536bd94f749cf519c6b13082de1ee1 skipped fix(mobile): show failed tool servers the way the desktop does (#8037)
+64dcbc3d76b30eb4f2376f9d6e28f4e171151f2a skipped fix(frontend): light active tab styling (#8054) — ручной UI
