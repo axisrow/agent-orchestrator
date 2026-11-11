@@ -84,9 +84,14 @@ func newAutomationCommand(ctx *commandContext) *cobra.Command {
 }
 
 func newAutomationCreateCommand(ctx *commandContext) *cobra.Command {
-	var project, name, prompt, rrule, cron, timezone, kind, harness string
+	var project, name, prompt, promptFile, rrule, cron, timezone, kind, harness string
 	var disabled, jsonOutput bool
 	cmd := &cobra.Command{Use: "create", Short: "Create a recurring automation", Args: usageArgs(cobra.NoArgs), RunE: func(cmd *cobra.Command, _ []string) error {
+		resolvedPrompt, err := resolveFlagText(cmd, prompt, promptFile, "prompt", "prompt-file")
+		if err != nil {
+			return err
+		}
+		prompt = resolvedPrompt
 		if strings.TrimSpace(project) == "" || strings.TrimSpace(name) == "" || strings.TrimSpace(prompt) == "" {
 			return usageError{errors.New("--project, --name, and --prompt are required")}
 		}
@@ -108,12 +113,13 @@ func newAutomationCreateCommand(ctx *commandContext) *cobra.Command {
 		if jsonOutput {
 			return writeJSON(cmd.OutOrStdout(), response)
 		}
-		_, err := fmt.Fprintf(cmd.OutOrStdout(), "created automation %s (%s), next run %s\n", response.Automation.ID, response.Automation.DisplayName, formatAutomationTime(response.Automation.NextRunAt))
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "created automation %s (%s), next run %s\n", response.Automation.ID, response.Automation.DisplayName, formatAutomationTime(response.Automation.NextRunAt))
 		return err
 	}}
 	cmd.Flags().StringVar(&project, "project", "", "Project id")
 	cmd.Flags().StringVar(&name, "name", "", "Display name")
 	cmd.Flags().StringVar(&prompt, "prompt", "", "Session task prompt")
+	cmd.Flags().StringVar(&promptFile, "prompt-file", "", "Session task prompt: read it from this file, or - for stdin (so shell metacharacters never pass through a command line)")
 	cmd.Flags().StringVar(&rrule, "rrule", "", "RFC 5545 recurrence rule")
 	cmd.Flags().StringVar(&cron, "cron", "", "Supported five-field cron expression")
 	cmd.Flags().StringVar(&timezone, "timezone", "", "IANA timezone (defaults to local zone when available)")
@@ -196,9 +202,14 @@ func newAutomationGetCommand(ctx *commandContext) *cobra.Command {
 }
 
 func newAutomationUpdateCommand(ctx *commandContext) *cobra.Command {
-	var name, prompt, rrule, cron, timezone, kind, harness string
+	var name, prompt, promptFile, rrule, cron, timezone, kind, harness string
 	var enabled, jsonOutput bool
 	cmd := &cobra.Command{Use: "update <id>", Short: "Update an automation", Args: usageArgs(cobra.ExactArgs(1)), RunE: func(cmd *cobra.Command, args []string) error {
+		resolvedPrompt, err := resolveFlagText(cmd, prompt, promptFile, "prompt", "prompt-file")
+		if err != nil {
+			return err
+		}
+		prompt = resolvedPrompt
 		body := automationUpdateDTO{}
 		changed := false
 		stringFlag := func(flag string, value string, target **string) {
@@ -209,7 +220,11 @@ func newAutomationUpdateCommand(ctx *commandContext) *cobra.Command {
 			}
 		}
 		stringFlag("name", name, &body.DisplayName)
-		stringFlag("prompt", prompt, &body.Prompt)
+		if cmd.Flags().Changed("prompt") || cmd.Flags().Changed("prompt-file") {
+			promptValue := prompt
+			body.Prompt = &promptValue
+			changed = true
+		}
 		stringFlag("rrule", rrule, &body.RRule)
 		stringFlag("cron", cron, &body.Cron)
 		stringFlag("timezone", timezone, &body.Timezone)
@@ -232,11 +247,12 @@ func newAutomationUpdateCommand(ctx *commandContext) *cobra.Command {
 		if jsonOutput {
 			return writeJSON(cmd.OutOrStdout(), response)
 		}
-		_, err := fmt.Fprintf(cmd.OutOrStdout(), "updated automation %s (%s)\n", response.Automation.ID, response.Automation.DisplayName)
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "updated automation %s (%s)\n", response.Automation.ID, response.Automation.DisplayName)
 		return err
 	}}
 	cmd.Flags().StringVar(&name, "name", "", "New display name")
 	cmd.Flags().StringVar(&prompt, "prompt", "", "New task prompt")
+	cmd.Flags().StringVar(&promptFile, "prompt-file", "", "New task prompt: read it from this file, or - for stdin (so shell metacharacters never pass through a command line)")
 	cmd.Flags().StringVar(&rrule, "rrule", "", "Replace schedule with RRule")
 	cmd.Flags().StringVar(&cron, "cron", "", "Replace schedule with cron")
 	cmd.Flags().StringVar(&timezone, "timezone", "", "IANA timezone")

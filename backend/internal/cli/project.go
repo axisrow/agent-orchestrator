@@ -194,6 +194,7 @@ type projectSetConfigOptions struct {
 	reviewers          []string
 	ownAccounts        []string
 	configJSON         string
+	configJSONFile     string
 	clear              bool
 	json               bool
 }
@@ -357,6 +358,11 @@ func newProjectSetConfigCommand(ctx *commandContext) *cobra.Command {
 			current := func() (projectConfig, error) {
 				return ctx.currentProjectConfig(cmd.Context(), id)
 			}
+			configJSON, err := resolveFlagText(cmd, opts.configJSON, opts.configJSONFile, "config-json", "config-json-file")
+			if err != nil {
+				return err
+			}
+			opts.configJSON = configJSON
 			config, err := buildProjectConfig(opts, cmd.Flags().Changed, current)
 			if err != nil {
 				return err
@@ -398,6 +404,7 @@ func newProjectSetConfigCommand(ctx *commandContext) *cobra.Command {
 	f.StringArrayVar(&opts.reviewers, "reviewer", nil, "Reviewer harness that reviews worker PRs (repeatable; e.g. claude-code)")
 	f.StringArrayVar(&opts.ownAccounts, "own-account", nil, "GitHub account treated as own for PR review ownership (repeatable; also splits commas)")
 	f.StringVar(&opts.configJSON, "config-json", "", "Full config as a JSON object (overrides field flags)")
+	f.StringVar(&opts.configJSONFile, "config-json-file", "", "Full config: read this JSON object from a file, or - for stdin (overrides field flags; so shell metacharacters never pass through a command line)")
 	f.BoolVar(&opts.clear, "clear", false, "Clear all config")
 	f.BoolVar(&opts.json, "json", false, "Output the updated project as JSON")
 	return cmd
@@ -411,6 +418,7 @@ var projectConfigFlags = []string{
 	"orchestrator-rules", "worker-prompt", "orchestrator-prompt",
 	"env", "symlink", "post-create",
 	"tracker-intake", "tracker-repo", "tracker-assignee", "reviewer", "own-account",
+	"config-json-file",
 }
 
 // buildProjectConfig turns the set-config flags into the typed config sent to

@@ -198,7 +198,7 @@ func jsonKeyPaths(typ reflect.Type, prefix string, out map[string]bool) {
 // is registered but missing from projectConfigFlags, which would make a call
 // with only that flag a "provide at least one config flag" usage error.
 func TestProjectConfigFlagsListsEveryFieldFlag(t *testing.T) {
-	notFieldFlags := map[string]bool{"config-json": true, "clear": true, "json": true}
+	notFieldFlags := map[string]bool{"config-json": true, "config-json-file": true, "clear": true, "json": true}
 	cmd := newProjectSetConfigCommand(&commandContext{})
 	cmd.LocalFlags().VisitAll(func(f *pflag.Flag) {
 		if !notFieldFlags[f.Name] && !slices.Contains(projectConfigFlags, f.Name) {

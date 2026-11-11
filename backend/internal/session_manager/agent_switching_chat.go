@@ -277,8 +277,6 @@ func (m *Manager) executeChatAgentSwitch(
 	result, err = m.finalizeAgentSwitchHandoff(
 		ctx, store, result, writtenFinal, false, sourceTranscriptStatus)
 	if err != nil {
-		if errors.Is(err, errAgentSwitchFinalArtifactVerify) {
-		}
 		return result, fmt.Errorf("switch Chat agent %s: record finalized handoff: %w", id, err)
 	}
 	finalSystemPrompt := appendAgentSwitchContinuation(systemPrompt, continuation)
@@ -317,9 +315,6 @@ func (m *Manager) executeChatAgentSwitch(
 	}
 	defer releaseCodexAdmission()
 
-	if resumable {
-	} else {
-	}
 	historyMode := ports.ChatHistoryImport
 	if resumable {
 		historyMode = ports.ChatHistoryDeferred
