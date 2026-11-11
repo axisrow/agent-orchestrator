@@ -577,3 +577,4 @@ ab300e0934884c8dfa4f71db8c32cea8d6827f44 skipped feat(chat): mark sent skills an
 4bf230e0c319e96ca74644fd93724531d5446259 skipped feat(chat): light markdown in your own messages, list keys in the composer (#8064)
 5c65e8046e4548675d69c71c763ea7e3e55f5066 skipped fix(chat): entrance animations replay on switch (#8067) — ручной визуал
 edaecb715c3ccbfead8316ea8e3b19b67b5af4e1 skipped fix(chat): sent attachments and steered messages immediately (#8063) — attachment-UI на отсутствующих поверхностях; steer-часть покрыта #7963
+5a79f665dac247d31be8df222ca3cffd7d7eafea skipped fix(import): say Orchestrator, rename import telemetry (#8058) — import выпилен в форке
