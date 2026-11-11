@@ -10,6 +10,10 @@ export default defineConfig({
 	testDir: "e2e",
 	use: {
 		baseURL: `http://127.0.0.1:${port}`,
+		// The container-only smoke failures (chat-contrast, #318 follow-up) carry
+		// their real page state only in a trace; error-context.md alone kept the
+		// cause invisible.
+		trace: "retain-on-failure",
 	},
 	webServer: {
 		// dev:web serves the renderer alone (VITE_NO_ELECTRON=1) — no Electron child to

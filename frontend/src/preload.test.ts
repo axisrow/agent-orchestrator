@@ -113,6 +113,15 @@ describe("preload telemetry generation bridge", () => {
 	});
 });
 
+describe("preload crash report bridge", () => {
+	it("sends crash reports as fire-and-forget messages", () => {
+		const report = { surface: "session_detail", operation: "lazy_chunk", name: "Error", message: "boom" };
+		exposedBridge().crash.report(report);
+		expect(electronMocks.send).toHaveBeenCalledWith("crash:report", report);
+		expect(electronMocks.invoke).not.toHaveBeenCalled();
+	});
+});
+
 describe("preload openFolderPath bridge", () => {
 	// The dispatcher's "active listener" is module-level state that outlives a
 	// single test, exactly like the real renderer's mounted subscription — so

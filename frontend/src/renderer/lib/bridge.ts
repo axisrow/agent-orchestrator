@@ -124,6 +124,9 @@ export const aoBridge: AoBridge =
 			onClearQueues: () => () => false,
 			signalAgentSwitchVisibility: () => false,
 		},
+		crash: {
+			report: () => undefined,
+		},
 		browser: {
 			nativeCompositionEnabled: false,
 			reconnectRuntime: async () => undefined,
