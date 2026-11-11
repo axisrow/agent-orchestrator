@@ -500,3 +500,50 @@ b235e55b5c9732528c06ee0b2d565a0f967784bc skipped fix: follow GitHub repo renames
 426805362b0591d45e2a1b0448dd3d187b1513b5 skipped fix(claim-pr): accept PRs on a renamed or transferred GitHub origin (#7951) — зависимости (ports.GitHubRepositoryResolver, newGitHubRepoResolver) из скипнутой цепочки #7947; живого кейса переименованного origin в форке нет
 c903429fbd980fc7e6f6c0715ef6dc1b902ed2d8 taken fix(chat): stop auto-opening links from finished agent replies (#7946) — сведён вручную: авто-угадывание ссылок выплачено целиком, форковый externalLinksDefault (AO_LINKS_EXTERNAL) и agent-switch settlement-код сохранены
 850d1ad0e201f4e708ba7a9517817826165b6641 skipped fix(desktop): tab ⋮ menu and right-click menu list the same rows (#7955) — поверхность таб-меню/split-panes выпилена в форке (SplitView/TabContextMenu/TerminalAgentControls/ShellTerminalTab удалены)
+c7c850a345bfd5481d99ee335291dd6bfcb69986 taken fix(chat): show the working state while Claude runs a cycle on its own (#7953)
+b30492e53435ecec1921a1a2ec2dc8df699e9d42 skipped feat(chat): show MCP tool calls in plain words (#7956)
+661fe00111710fe1fded4ae0ec2a5bbf2f66846b taken fix(spawn): show CLI-spawned workers as starting, not stopped (#7957)
+1c3022d6dac0226126aa86f7d3610bc51bfefc3e taken fix(scm): re-observe a session PR when its agent changes it (#7964)
+b55606b29028d12cd749b6a2f4b7166ab47fc875 taken fix(settings): size the QR canvas height as well as its width (#7949)
+ec19fd919d04fd358fda64230ca2213b36c7a284 skipped fix(shell): align top bar and sidebar, add button press states (#7970)
+43599f1c88c452ed802ef90dc9f43288b2601f5d skipped feat(desktop): add top bar commands to the macOS menu bar (#7971)
+65307f85c7aa1c4c653bba43264154c85065fa9d taken fix(acp): allow redundant nested workspace directories (#7559)
+8912917478d1787d9a2376ae4188867341ad32cc skipped fix(mobile): keep a loader up through chat/terminal switches (#7908)
+a76ac679918237f7b63595f46be95943614b9e46 skipped feat(inspector): add Summary with the account picker to orchestrator sessions (#7978)
+449b6fea513b14130548a1e3972ef92815f9e55c skipped fix(cloud): reopen a Cloud chat instantly and load its history newest first (#7935)
+09358854a683afdbca547ffc3ecdcfd024b0007b skipped ci: run only the lanes a PR's files can affect, gated by ci-ok (#7941)
+c80c56250529ff8f40bf683ff485a9b5abed7a81 taken fix(settings): shorten the remote hosts toggle description (#7994)
+5a713c419b8122fc91bc41b8f39d1d16942790b7 skipped ci: cut Go CI runner time ~5x and the slowest PR check from 10 to ~4.5 minutes (#7533)
+d533ca496e5f7d0be56a4e30bf643885ff82fb2d skipped feat(desktop): show unread orchestrator replies on its buttons (#7969)
+b0274c05e7711dba64b7483b207a69e96b3c1f3b taken fix(scm): stop reporting cancelled checks as CI failing (#8000)
+00411a4fc7d876689ad91fb288ade8af67f87144 skipped feat(artifacts): show published artifact links to agents (#7966)
+1ce19d5d41463ba83d02c3c32d47fb2ec5f6d214 skipped fix(remote): quick tunnel when AO Cloud cannot make fixed address (#7977) — remote_host_link выпилен в форке
+d022509b3c6b82dc4714640eb304a3ceb040d654 skipped fix(mobile): accept host:port and an empty Port in Connect manually (#7981) (#7995)
+4b082ed788de5609113eee2cb16c433cb5fca49b skipped fix(opencode): resolve permission blocks on reply in OpenCode 1 (#7596) — opencode v1 вырезан в форке
+204c96a355f668099995e001e5754fc99dd0f1d8 taken fix(agents): find node for npm Gemini/auth probes; show configured agent while orchestrator starts (#7922)
+63192c4c62e1ba61a6d009b54490bd5b27aa138d skipped fix(opencode): keep subagent sessions out of parent identity (#7597) — opencode v1 вырезан
+ec04a886a5bb3558f21a8c1a886db6e5e5ed1055 skipped feat(desktop): switch app icons to Myna UI (#7903)
+2c02ea7ef2c93b4571b528f661ce2f5bba13cc61 skipped fix(inspector): worker Artifacts tab whenever artifacts are listed (#8011) — уже реализовано в форке
+bdb8347224aee35bdda9547e486f26be33c6405c taken fix: show orchestrator artifacts in session inspector
+64129be1bfac1b20dab5ea267e91fc3444133e65 skipped fix(desktop): link hover cards settle and compact (#8001) — link-preview выпилен в форке
+c6759b73b4dfbafdff872cc10803d38bdf3bf833 skipped feat(ui): unify button and control styling (#7999)
+b44a0083204f2cd5507f835973208729c23d5036 skipped fix(chat): plain Worked label not selectable (#8015) — уже select-none в форк-версии
+3f7cb2e95e354592cec68ebae1ba49a68ea2e862 skipped fix(mobile): keep the chat's clear glass bar to iOS 27, the stack's bar elsewhere (#7998)
+8793f1f4ce496e9492422d87351c00c4db909cae skipped fix(mobile): keep the Workers "N updated" pill below the machine chip row (#7982) (#7997)
+3b868c31ad1e3700a90b183a627f18d56f2013b8 skipped fix(mobile): send no stand-in effort for a default-model new task (#7979) (#7996)
+fd1b11aec6fcaa898ba95e696acba68ff6833e93 skipped fix(chat): edit a message in place (#7858) — редактирование сообщений выпиливается из форка по решению владельца
+cfdfe16cc219db891272b0bdf7aa7d8d3bf24444 taken fix(tmux): treat tmux 3.5 "no such session" as a missing session (#7315)
+8d34d773fc95677f1b99fa2b0fa8c3edb20d80b7 skipped fix: say Orchestrator instead of AO (#7685) — брендинг-ренейм апстрима, не фикс
+c147beb01c560b5cd3563ef46b6b73df96e48cbf taken fix(claudecode): stop repeating model discovery in warnings (#7205)
+b1d1ecb810895e264b833f4e82f23ecb505c3523 skipped feat(desktop): warn when another ao on PATH shadows the app's CLI (#7783)
+3c2e2a52c9879fb8d5740689f1f8c11db6427baa skipped fix(updates): full-width download track, single v (#7876) — auto-updater выпилен в форке
+72661926f48c4b9712cfe147bba69dece8be8321 skipped docs(skill): document ao spawn --effort (#7536)
+05436d27d4d1b9600e538778618f60609013c1ca skipped fix(inspector): Created session for standalone (#7541) — standalone-workspace в рендерере форка нет
+f793ce1823da50daa27f149f70fe8fe034930dd7 skipped fix(artifacts): Add feedback on local HTML artifact page (#8012) — page-рендеринг артефактов в форке отсутствует
+9735f8382adc00a021ad71399810b2b795ce754e skipped feat(chat): name each step by what it did, and show the running one beside the loader (#7840)
+aebf2029c4cdfe8b4d5804b3c30bf3dcde06aaa9 taken fix(chat): move a steered message out of the queue dock at the click (#7963)
+6f4f9415ae0676f6936a9fd33a757ca33f766c22 skipped fix(desktop): keep the parked swipe arrows from scrolling the pane sideways (#8024)
+a19069ef40d34c6b16fe896baff41325b210e05f skipped fix(chat): usage-limit refusals and reset time (#7991) — usage-limit механика выпилена в форке
+f54d5cc3cca456bb880214d6c9736f4f2420d22e taken fix(inspector): Summary artifacts newest first with update time (#8032)
+32fd8d243f4fcb96ac27423215926c52183b4fde taken fix(chat): reconnect after a question pending across a restart (#7919)
+b7da7bd3e5bd13d9e8496553fffc7844c5ba3c7f taken fix(codex): read auth from a custom model provider env_key (#7959)
