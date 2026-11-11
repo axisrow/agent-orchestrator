@@ -64,20 +64,6 @@ func (h *historyRecorder) Fork(_ context.Context, anchor *string) (string, error
 	return h.forkedTo, nil
 }
 
-func (h *historyRecorder) lastForkAnchor() *string {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if len(h.forkAnchors) == 0 {
-		return nil
-	}
-	anchor := h.forkAnchors[len(h.forkAnchors)-1]
-	if anchor == nil {
-		return nil
-	}
-	anchorCopy := *anchor
-	return &anchorCopy
-}
-
 // SetTitle records the name and, like the real provider, reports it back on the event
 // stream. That echo is the only path by which a title reaches AO's rows.
 func (h *historyRecorder) SetTitle(_ context.Context, title string) error {
@@ -140,17 +126,6 @@ func completeTurn(t *testing.T, h *harness, text, providerTurn string) string {
 		},
 	)
 	return turn.ID
-}
-
-func requireMessageTexts(t *testing.T, messages []domain.ConversationMessage, want []string) {
-	t.Helper()
-	got := make([]string, 0, len(messages))
-	for _, message := range messages {
-		got = append(got, message.Text)
-	}
-	if fmt.Sprint(got) != fmt.Sprint(want) {
-		t.Fatalf("message texts = %#v, want %#v", got, want)
-	}
 }
 
 func requireBranchPoint(

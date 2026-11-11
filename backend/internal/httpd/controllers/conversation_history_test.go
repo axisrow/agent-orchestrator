@@ -32,8 +32,8 @@ type fakeChatService struct {
 	retryTurn   domain.ConversationTurn
 	retryErr    error
 
-	gotTurnID string
-	gotTitle  string
+	gotTurnID   string
+	gotTitle    string
 	gotBranchID string
 }
 

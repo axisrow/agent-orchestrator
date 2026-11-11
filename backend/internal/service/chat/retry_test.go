@@ -357,7 +357,6 @@ func TestRetryTurnRefusesWhileBusy(t *testing.T) {
 	}
 }
 
-
 func TestRetryTurnRefusesNonHumanPrompt(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
