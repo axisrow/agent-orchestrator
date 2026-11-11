@@ -74,7 +74,6 @@ describe("parseRendererCrashReport", () => {
 		expect(parseRendererCrashReport([report])).toBeNull();
 		expect(parseRendererCrashReport({ ...report, message: 42 })).toBeNull();
 		expect(parseRendererCrashReport({ ...report, message: undefined })).toBeNull();
-		expect(parseRendererCrashReport({ ...report, operation: "x".repeat(121) })).toBeNull();
 	});
 
 	it("drops malformed optional fields without losing the report", () => {
@@ -82,8 +81,10 @@ describe("parseRendererCrashReport", () => {
 		expect(parsed).toEqual({ surface: report.surface, operation: report.operation, name: report.name, message: report.message });
 	});
 
-	it("caps oversized strings and accepts boundary-length values", () => {
-		expect(parseRendererCrashReport({ ...report, message: "x".repeat(4001) })).toBeNull();
+	it("truncates oversized fields to their caps instead of dropping the report", () => {
+		const truncated = parseRendererCrashReport({ ...report, message: "x".repeat(4001), stack: "y".repeat(16001) });
+		expect(truncated?.message).toHaveLength(4000);
+		expect(truncated?.stack).toHaveLength(16000);
 		const atCap = parseRendererCrashReport({ ...report, message: "x".repeat(4000), stack: "x".repeat(16000) });
 		expect(atCap?.message).toHaveLength(4000);
 		expect(atCap?.stack).toHaveLength(16000);

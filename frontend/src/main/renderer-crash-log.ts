@@ -14,17 +14,17 @@ const FIELD_CAPS = {
 } as const;
 
 // The renderer is untrusted input for this sink: only allowlisted string
-// fields within caps survive. A malformed required field drops the whole
-// report; a malformed optional field only drops that field, so diagnostics
-// never lose a report over a type mismatch in componentStack.
+// fields survive. A malformed required field drops the whole report; a
+// malformed optional field only drops that field. Oversized fields truncate
+// rather than reject — a 4001-character Zod or GraphQL error message still
+// lands, with its tail clipped.
 export function parseRendererCrashReport(input: unknown): RendererCrashReport | null {
 	if (!input || typeof input !== "object" || Array.isArray(input)) return null;
 	const value = input as Record<string, unknown>;
 	const read = (field: keyof typeof FIELD_CAPS): string | undefined => {
 		const raw = value[field];
-		if (raw === undefined) return undefined;
-		if (typeof raw !== "string" || raw.length > FIELD_CAPS[field]) return undefined;
-		return raw;
+		if (typeof raw !== "string") return undefined;
+		return raw.slice(0, FIELD_CAPS[field]);
 	};
 	const surface = read("surface");
 	const operation = read("operation");
