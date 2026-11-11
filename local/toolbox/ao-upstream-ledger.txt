@@ -591,3 +591,7 @@ d1143d57bcb5306a4a8ca8c060afd14a1510afbc skipped fix(chat): sign-in on refused r
 84e351e19131afe8bc771e1c66c851922704605d skipped fix(usage): keep last limits on refresh failure (#8097) — usage-page/pricing в форке отсутствуют
 fbc1a8e5e934ab9d7ac6dbbb9df39aa4bbe9d106 skipped fix(import): hide the import actions until the first scan returns (#8076)
 f5cfc55100171ab3850f25555c368f98452cd565 skipped fix(remote): credential storage and lockout (#8038) — pairing/прокси на cloud-поверхностях; CLI-часть влилась автомержем
+8a04b8e99b5eac4621fd08db323d415a744ffc0c skipped feat(daemon): record write lock holds over 1s in telemetry (#7967)
+3671709827a7f8db86494302f56ca69587ac0e0b skipped feat: make Add to chat excerpts reliable across formatted content (#7850)
+e5368cf4e637bfa4106ccd02ee65135f3ccec436 skipped fix: trim long /btw seed history to newest complete turns (#6599)
+c679cab3e416e16033dce645d97be5e8b82866e7 skipped fix(chat): attachment tiles in packaged builds (#8107) — attachment-UI на отсутствующих поверхностях
