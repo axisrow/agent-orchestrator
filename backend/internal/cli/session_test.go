@@ -622,7 +622,7 @@ func TestSessionCleanup_YesSkipsPrompt(t *testing.T) {
 	}
 	want := []string{
 		"GET /api/v1/sessions?active=false&project=demo",
-		"POST /api/v1/sessions/cleanup?project=demo",
+		"POST /api/v1/sessions/cleanup?olderThan=168h0m0s&project=demo",
 	}
 	if got := log.all(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("requests = %#v, want %#v", got, want)
@@ -669,6 +669,92 @@ func TestSessionCleanup_ReportsAlreadyGoneWorkspacesSeparately(t *testing.T) {
 	}
 	if strings.Contains(out, "Cleaned: demo-orch") {
 		t.Fatalf("a workspace that was already gone must not be reported as cleaned:\n%s", out)
+	}
+}
+
+// TestSessionCleanup_ReportsReclaimedWorkspaces: the #312 report names each
+// reclaimed workspace with its size and, when uncommitted work existed, the
+// preserve ref it was saved to before removal.
+func TestSessionCleanup_ReportsReclaimedWorkspaces(t *testing.T) {
+	cfg := setConfigEnv(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/sessions":
+			_, _ = io.WriteString(w, `{"sessions":[`+
+				sessionJSON("demo-old", "demo", "worker", "terminated", true)+`]}`)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/sessions/cleanup":
+			_, _ = io.WriteString(w, `{"ok":true,"cleaned":["demo-old"],"alreadyGone":[],"skipped":[],"reclaimed":[`+
+				`{"sessionId":"demo-old","path":"/ws/demo-old","bytes":1073741824,"preservedRef":"refs/ao/preserved/demo-old"}]}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	writeRunFileFor(t, cfg, srv)
+
+	out, errOut, err := executeCLI(t, Deps{
+		ProcessAlive: func(int) bool { return true },
+	}, "session", "cleanup", "--project", "demo", "--yes")
+	if err != nil {
+		t.Fatalf("session cleanup failed: %v\nstderr=%s", err, errOut)
+	}
+	for _, want := range []string{
+		"  Cleaned: demo-old",
+		"/ws/demo-old, 1.0 GiB reclaimed",
+		"Preserved uncommitted work: refs/ao/preserved/demo-old",
+		"Cleanup complete. 1 session cleaned, 1.0 GiB reclaimed.",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("cleanup output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestParseOlderThan(t *testing.T) {
+	cases := []struct {
+		in   string
+		want time.Duration
+	}{
+		{"7d", 168 * time.Hour},
+		{"12h", 12 * time.Hour},
+		{"30m", 30 * time.Minute},
+		{"168h", 168 * time.Hour},
+		{"0", 0},
+		{"0s", 0},
+		{" 7d ", 168 * time.Hour},
+	}
+	for _, tc := range cases {
+		got, err := parseOlderThan(tc.in)
+		if err != nil || got != tc.want {
+			t.Fatalf("parseOlderThan(%q) = %v, %v; want %v", tc.in, got, err, tc.want)
+		}
+	}
+	for _, bad := range []string{"", "-7d", "d", "7x"} {
+		if _, err := parseOlderThan(bad); err == nil {
+			t.Fatalf("parseOlderThan(%q) = nil error, want rejection", bad)
+		}
+	}
+}
+
+// TestSessionCleanup_RejectsBadOlderThan: a typo'd threshold fails before any
+// request is made, so nothing is reclaimed on a malformed flag.
+func TestSessionCleanup_RejectsBadOlderThan(t *testing.T) {
+	cfg := setConfigEnv(t)
+	srv, log := sessionCommandServer(t)
+	writeRunFileFor(t, cfg, srv)
+
+	out, _, err := executeCLI(t, Deps{
+		ProcessAlive: func(int) bool { return true },
+	}, "session", "cleanup", "--older-than", "soon", "--yes")
+	if err == nil {
+		t.Fatalf("invalid --older-than must fail:\n%s", out)
+	}
+	if !strings.Contains(err.Error(), "invalid --older-than") {
+		t.Fatalf("error must name the flag: %v", err)
+	}
+	if len(log.all()) != 0 {
+		t.Fatalf("no request must be sent on a malformed flag: %v", log.all())
 	}
 }
 

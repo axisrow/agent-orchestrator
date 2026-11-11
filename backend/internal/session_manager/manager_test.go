@@ -5413,6 +5413,238 @@ func TestCleanup_WorkspaceProjectDirtyRowsAreSkipped(t *testing.T) {
 	}
 }
 
+// seedTerminatedOld seeds a terminated session whose row stopped moving
+// olderThan ago — the shape of a session terminated weeks before a cleanup
+// sweep reaches it.
+func seedTerminatedOld(st *fakeStore, id domain.SessionID, meta domain.SessionMetadata, olderThan time.Duration) {
+	seedTerminal(st, id, meta)
+	rec := st.sessions[id]
+	rec.UpdatedAt = time.Now().Add(-olderThan)
+	st.sessions[id] = rec
+}
+
+// TestCleanupWithOptions_ForcesAgedDirtyWorkspaceAfterStash: the #312 policy.
+// A terminated session old enough under DirtyAge gets the shutdown treatment —
+// StashUncommitted into refs/ao/preserved/<id>, then ForceDestroy — instead of
+// being skipped forever with preserved_dirty.
+func TestCleanupWithOptions_ForcesAgedDirtyWorkspaceAfterStash(t *testing.T) {
+	m, st, _, ws := newManager()
+	ws.destroyErr = fmt.Errorf("gitworktree: refusing to remove: %w", ports.ErrWorkspaceDirty)
+	ws.stashRef = "refs/ao/preserved/mer-1"
+	seedTerminatedOld(st, "mer-1", domain.SessionMetadata{WorkspacePath: "/ws/mer-1"}, 8*24*time.Hour)
+
+	res, err := m.CleanupWithOptions(ctx, "mer", CleanupOptions{DirtyAge: 7 * 24 * time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Cleaned) != 1 || res.Cleaned[0] != "mer-1" {
+		t.Fatalf("cleaned = %v, want mer-1 reclaimed", res.Cleaned)
+	}
+	if len(res.Skipped) != 0 {
+		t.Fatalf("skipped = %v, want none", res.Skipped)
+	}
+	if len(res.Reclaimed) != 1 {
+		t.Fatalf("reclaimed = %+v, want one entry", res.Reclaimed)
+	}
+	item := res.Reclaimed[0]
+	if item.SessionID != "mer-1" || item.WorkspacePath != "/ws/mer-1" || item.PreservedRef != "refs/ao/preserved/mer-1" {
+		t.Fatalf("reclaimed item = %+v", item)
+	}
+	if ws.stashCalls != 1 {
+		t.Fatalf("stash calls = %d, want exactly one capture before force removal", ws.stashCalls)
+	}
+	// Capture strictly precedes the force removal.
+	stashIndex, forceIndex := -1, -1
+	for i, call := range ws.calls {
+		switch {
+		case strings.HasPrefix(call, "StashUncommitted:"):
+			stashIndex = i
+		case strings.HasPrefix(call, "ForceDestroy:"):
+			forceIndex = i
+		}
+	}
+	if stashIndex == -1 || forceIndex == -1 || stashIndex > forceIndex {
+		t.Fatalf("workspace calls = %v, want StashUncommitted before ForceDestroy", ws.calls)
+	}
+}
+
+// TestCleanupWithOptions_PreservesYoungDirtyWorkspace: the age filter. A
+// recently terminated session keeps the conservative behavior — the dirty
+// worktree is reported skipped, never stashed, never force-removed.
+func TestCleanupWithOptions_PreservesYoungDirtyWorkspace(t *testing.T) {
+	m, st, _, ws := newManager()
+	ws.destroyErr = fmt.Errorf("gitworktree: refusing to remove: %w", ports.ErrWorkspaceDirty)
+	seedTerminatedOld(st, "mer-1", domain.SessionMetadata{WorkspacePath: "/ws/mer-1"}, time.Hour)
+
+	res, err := m.CleanupWithOptions(ctx, "mer", CleanupOptions{DirtyAge: 7 * 24 * time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Cleaned) != 0 || len(res.Reclaimed) != 0 {
+		t.Fatalf("young dirty workspace reclaimed: %+v", res)
+	}
+	if len(res.Skipped) != 1 || res.Skipped[0].Reason != "workspace has uncommitted changes" {
+		t.Fatalf("skipped = %+v, want the dirty refusal", res.Skipped)
+	}
+	if ws.stashCalls != 0 {
+		t.Fatal("a young dirty worktree must not be stashed")
+	}
+	for _, call := range ws.calls {
+		if strings.HasPrefix(call, "ForceDestroy:") {
+			t.Fatalf("young dirty worktree force-removed: %v", ws.calls)
+		}
+	}
+}
+
+// TestCleanupWithOptions_KeepsWorkspaceWhenStashFails: the force path only
+// removes AFTER the capture succeeded. A failing StashUncommitted preserves
+// the workspace for a later run — an uncaptured worktree is never deleted.
+func TestCleanupWithOptions_KeepsWorkspaceWhenStashFails(t *testing.T) {
+	m, st, _, ws := newManager()
+	ws.destroyErr = fmt.Errorf("gitworktree: refusing to remove: %w", ports.ErrWorkspaceDirty)
+	ws.stashErr = errors.New("gitworktree: stale worktree")
+	seedTerminatedOld(st, "mer-1", domain.SessionMetadata{WorkspacePath: "/ws/mer-1"}, 8*24*time.Hour)
+
+	res, err := m.CleanupWithOptions(ctx, "mer", CleanupOptions{DirtyAge: 7 * 24 * time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Cleaned) != 0 || len(res.Reclaimed) != 0 {
+		t.Fatalf("stash failure must not reclaim: %+v", res)
+	}
+	if len(res.Skipped) != 1 || res.Skipped[0].Reason != "workspace has uncommitted changes" {
+		t.Fatalf("skipped = %+v, want the dirty refusal", res.Skipped)
+	}
+	for _, call := range ws.calls {
+		if strings.HasPrefix(call, "ForceDestroy:") {
+			t.Fatalf("worktree force-removed after a failed capture: %v", ws.calls)
+		}
+	}
+}
+
+// TestCleanup_WithoutOptionsNeverForcesDirty pins the conservative default:
+// plain Cleanup (no policy) keeps the pre-#312 behavior for every caller that
+// has not opted in, no matter how old the terminated row is.
+func TestCleanup_WithoutOptionsNeverForcesDirty(t *testing.T) {
+	m, st, _, ws := newManager()
+	ws.destroyErr = fmt.Errorf("gitworktree: refusing to remove: %w", ports.ErrWorkspaceDirty)
+	seedTerminatedOld(st, "mer-1", domain.SessionMetadata{WorkspacePath: "/ws/mer-1"}, 365*24*time.Hour)
+
+	res, err := m.Cleanup(ctx, "mer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Cleaned) != 0 || len(res.Reclaimed) != 0 {
+		t.Fatalf("plain Cleanup must not force dirty worktrees: %+v", res)
+	}
+	if len(res.Skipped) != 1 || res.Skipped[0].Reason != "workspace has uncommitted changes" {
+		t.Fatalf("skipped = %+v, want the dirty refusal", res.Skipped)
+	}
+	if ws.stashCalls != 0 {
+		t.Fatal("plain Cleanup must not capture either")
+	}
+}
+
+// TestCleanupWithOptions_LiveWorkspaceStillWinsOverForce: the age policy never
+// bypasses the live-workspace guard. A dirty aged worktree shared with a live
+// successor stays skipped.
+func TestCleanupWithOptions_LiveWorkspaceStillWinsOverForce(t *testing.T) {
+	m, st, _, ws := newManager()
+	ws.destroyErr = fmt.Errorf("gitworktree: refusing to remove: %w", ports.ErrWorkspaceDirty)
+	ws.stashRef = "refs/ao/preserved/mer-1"
+	seedTerminatedOld(st, "mer-1", domain.SessionMetadata{WorkspacePath: "/ws/shared"}, 8*24*time.Hour)
+	live := mkLive("mer-2")
+	live.Metadata.WorkspacePath = "/ws/shared"
+	st.sessions["mer-2"] = live
+
+	res, err := m.CleanupWithOptions(ctx, "mer", CleanupOptions{DirtyAge: 7 * 24 * time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Cleaned) != 0 || len(res.Reclaimed) != 0 {
+		t.Fatalf("live-shared workspace reclaimed: %+v", res)
+	}
+	if len(res.Skipped) != 1 || res.Skipped[0].Reason != "workspace in use by a live session" {
+		t.Fatalf("skipped = %+v, want the live-workspace guard", res.Skipped)
+	}
+	if ws.stashCalls != 0 {
+		t.Fatal("the force path must not run behind a live workspace")
+	}
+}
+
+// TestCleanupWithOptions_ReportCarriesReclaimedSize: the report names the
+// workspace path and how much disk the removal released, so the #312 GC run
+// is auditable against the filesystem.
+func TestCleanupWithOptions_ReportCarriesReclaimedSize(t *testing.T) {
+	m, st, _, _ := newManager()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "build-artifact.bin"), make([]byte, 2048), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	seedTerminal(st, "mer-1", domain.SessionMetadata{WorkspacePath: dir})
+
+	res, err := m.CleanupWithOptions(ctx, "mer", CleanupOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Reclaimed) != 1 {
+		t.Fatalf("reclaimed = %+v, want one entry", res.Reclaimed)
+	}
+	item := res.Reclaimed[0]
+	if item.WorkspacePath != dir || item.Bytes != 2048 {
+		t.Fatalf("reclaimed item = %+v, want path %q and 2048 bytes", item, dir)
+	}
+	if item.PreservedRef != "" {
+		t.Fatalf("clean workspace must report no preserve ref, got %q", item.PreservedRef)
+	}
+}
+
+// TestCleanupWithOptions_ForceReclaimsDirtyWorktreeWithRealGit runs the #312
+// policy against the real git worktree adapter: the dirty worktree is captured
+// into refs/ao/preserved/<id> in the parent repo, the directory is removed,
+// and git's worktree registration is pruned — the exact reclaim a manual
+// rm -rf + worktree prune used to need.
+func TestCleanupWithOptions_ForceReclaimsDirtyWorktreeWithRealGit(t *testing.T) {
+	m, st, _, repo := newGitTaskPreparationManager(t)
+	if _, err := m.PrepareTaskWorkspace(context.Background(), st.projects["mer"]); err != nil {
+		t.Fatal(err)
+	}
+	rec := st.sessions["mer-1"]
+	file := filepath.Join(rec.Metadata.WorkspacePath, "leftover.txt")
+	if err := os.WriteFile(file, []byte("uncommitted work\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	worktreePath := rec.Metadata.WorkspacePath
+	rec.IsTerminated = true
+	rec.UpdatedAt = time.Now().Add(-8 * 24 * time.Hour)
+	st.sessions[rec.ID] = rec
+
+	res, err := m.CleanupWithOptions(context.Background(), "mer", CleanupOptions{DirtyAge: 7 * 24 * time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Cleaned) != 1 || res.Cleaned[0] != rec.ID {
+		t.Fatalf("cleaned = %v, want %s", res.Cleaned, rec.ID)
+	}
+	if len(res.Reclaimed) != 1 {
+		t.Fatalf("reclaimed = %+v, want one entry", res.Reclaimed)
+	}
+	wantRef := "refs/ao/preserved/" + string(rec.ID)
+	item := res.Reclaimed[0]
+	if item.PreservedRef != wantRef || item.WorkspacePath != worktreePath || item.Bytes == 0 {
+		t.Fatalf("reclaimed item = %+v, want ref %q, path %q, nonzero bytes", item, wantRef, worktreePath)
+	}
+	if _, err := os.Stat(worktreePath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("worktree dir still present after force reclaim: %v", err)
+	}
+	// The preserve commit must be recoverable from the parent repo.
+	runManagerGit(t, repo, "rev-parse", "--verify", wantRef+"^{commit}")
+	// And git's worktree registration must be pruned.
+	if out := runManagerGit(t, repo, "worktree", "list", "--porcelain"); strings.Contains(out, worktreePath) {
+		t.Fatalf("worktree still registered after reclaim:\n%s", out)
+	}
+}
+
 func TestSpawn_DefaultsBranchFromSessionID(t *testing.T) {
 	m, st, _, _ := newManager()
 	s, _, _, err := m.Spawn(ctx, ports.SpawnConfig{ProjectID: "mer", Kind: domain.KindWorker})

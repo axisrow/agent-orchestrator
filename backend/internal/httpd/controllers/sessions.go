@@ -2183,7 +2183,29 @@ func (c *SessionsController) cleanup(w http.ResponseWriter, r *http.Request) {
 		apispec.NotImplemented(w, r, "POST", "/api/v1/sessions/cleanup")
 		return
 	}
-	out, err := c.Svc.Cleanup(r.Context(), domain.ProjectID(r.URL.Query().Get("project")))
+	// ageCleaner is the optional cleanup-policy capability (production service
+	// implements it; focused test fakes keep the plain Cleanup only).
+	type ageCleaner interface {
+		CleanupWithAge(ctx context.Context, project domain.ProjectID, olderThan time.Duration) (sessionsvc.CleanupOutcome, error)
+	}
+	var (
+		out sessionsvc.CleanupOutcome
+		err error
+	)
+	if raw := r.URL.Query().Get("olderThan"); raw != "" {
+		olderThan, parseErr := time.ParseDuration(raw)
+		if parseErr != nil || olderThan < 0 {
+			envelope.WriteAPIError(w, r, http.StatusBadRequest, "bad_request", "INVALID_OLDER_THAN", "olderThan must be a non-negative Go duration, e.g. 168h", nil)
+			return
+		}
+		if ac, ok := c.Svc.(ageCleaner); ok {
+			out, err = ac.CleanupWithAge(r.Context(), domain.ProjectID(r.URL.Query().Get("project")), olderThan)
+		} else {
+			out, err = c.Svc.Cleanup(r.Context(), domain.ProjectID(r.URL.Query().Get("project")))
+		}
+	} else {
+		out, err = c.Svc.Cleanup(r.Context(), domain.ProjectID(r.URL.Query().Get("project")))
+	}
 	if err != nil {
 		envelope.WriteError(w, r, err)
 		return
@@ -2192,8 +2214,14 @@ func (c *SessionsController) cleanup(w http.ResponseWriter, r *http.Request) {
 	for _, skip := range out.Skipped {
 		skipped = append(skipped, CleanupSkippedSession{SessionID: skip.SessionID, Reason: skip.Reason})
 	}
+	reclaimed := make([]CleanupReclaimedSession, 0, len(out.Reclaimed))
+	for _, item := range out.Reclaimed {
+		reclaimed = append(reclaimed, CleanupReclaimedSession{
+			SessionID: item.SessionID, Path: item.Path, Bytes: item.Bytes, PreservedRef: item.PreservedRef,
+		})
+	}
 	envelope.WriteJSON(w, http.StatusOK, CleanupSessionsResponse{
-		OK: true, Cleaned: out.Cleaned, AlreadyGone: out.AlreadyGone, Skipped: skipped,
+		OK: true, Cleaned: out.Cleaned, AlreadyGone: out.AlreadyGone, Skipped: skipped, Reclaimed: reclaimed,
 	})
 }
 

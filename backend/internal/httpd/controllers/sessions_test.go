@@ -61,6 +61,7 @@ type fakeSessionService struct {
 	cleanupProjects            []domain.ProjectID
 	cleanupResult              []domain.SessionID
 	cleanupSkipped             []sessionsvc.CleanupSkipped
+	cleanupAges                []time.Duration
 	workspaceFiles             sessionsvc.WorkspaceFiles
 	workspaceListHook          func(context.Context) error
 	workspaceFile              sessionsvc.WorkspaceFileDetail
@@ -542,6 +543,13 @@ func (f *fakeSessionService) Cleanup(_ context.Context, project domain.ProjectID
 		cleaned = []domain.SessionID{"ao-1"}
 	}
 	return sessionsvc.CleanupOutcome{Cleaned: cleaned, Skipped: f.cleanupSkipped}, nil
+}
+
+// CleanupWithAge is the optional age-aware cleanup capability: the fake
+// records the parsed threshold so tests can pin query-param handling.
+func (f *fakeSessionService) CleanupWithAge(_ context.Context, project domain.ProjectID, olderThan time.Duration) (sessionsvc.CleanupOutcome, error) {
+	f.cleanupAges = append(f.cleanupAges, olderThan)
+	return f.Cleanup(context.Background(), project)
 }
 
 func (f *fakeSessionService) Rename(_ context.Context, id domain.SessionID, displayName string) error {
@@ -5095,6 +5103,47 @@ func TestSessionsAPI_CleanupWithProjectFilter(t *testing.T) {
 	}
 	if len(svc.cleanupProjects) != 1 || svc.cleanupProjects[0] != "ao" {
 		t.Fatalf("cleanupProjects = %#v, want [ao]", svc.cleanupProjects)
+	}
+}
+
+// TestSessionsAPI_CleanupWithOlderThanParam: the age threshold flows through
+// the query string into the cleanup capability, and a malformed value is
+// rejected without calling the service.
+func TestSessionsAPI_CleanupWithOlderThanParam(t *testing.T) {
+	svc := newFakeSessionService()
+	svc.cleanupResult = []domain.SessionID{"ao-1"}
+	svc.cleanupSkipped = []sessionsvc.CleanupSkipped{{SessionID: "ao-2", Reason: "workspace has uncommitted changes"}}
+	srv := newSessionTestServer(t, svc)
+
+	body, status, _ := doRequest(t, srv, "POST", "/api/v1/sessions/cleanup?olderThan=48h", "")
+	if status != http.StatusOK {
+		t.Fatalf("cleanup = %d, want 200; body=%s", status, body)
+	}
+	var got struct {
+		OK        bool `json:"ok"`
+		Reclaimed []struct {
+			SessionID    string `json:"sessionId"`
+			Path         string `json:"path"`
+			Bytes        int64  `json:"bytes"`
+			PreservedRef string `json:"preservedRef"`
+		} `json:"reclaimed"`
+	}
+	mustJSON(t, body, &got)
+	if !got.OK {
+		t.Fatalf("cleanup response = %#v", got)
+	}
+	if len(svc.cleanupAges) != 1 || svc.cleanupAges[0] != 48*time.Hour {
+		t.Fatalf("cleanupAges = %v, want [48h]", svc.cleanupAges)
+	}
+
+	for _, bad := range []string{"soon", "-5s"} {
+		_, status, _ = doRequest(t, srv, "POST", "/api/v1/sessions/cleanup?olderThan="+bad, "")
+		if status != http.StatusBadRequest {
+			t.Fatalf("olderThan=%q status = %d, want 400", bad, status)
+		}
+	}
+	if len(svc.cleanupAges) != 1 {
+		t.Fatalf("a malformed olderThan must not reach the service: ages=%v", svc.cleanupAges)
 	}
 }
 

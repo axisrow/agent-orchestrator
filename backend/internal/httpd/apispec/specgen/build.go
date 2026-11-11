@@ -343,6 +343,7 @@ var schemaNames = map[string]string{ //nolint:gosec // Public OpenAPI type names
 	"ControllersInterfaceTransitionNoticeAckResponse":     "AcknowledgeSessionInterfaceTransitionNoticeResponse",
 	"ControllersCleanupSessionsResponse":                  "CleanupSessionsResponse",
 	"ControllersCleanupSkippedSession":                    "CleanupSkippedSession",
+	"ControllersCleanupReclaimedSession":                  "CleanupReclaimedSession",
 	"ControllersWorkspaceFileQuery":                       "WorkspaceFileQuery",
 	"ControllersArtifactFileQuery":                        "ArtifactFileQuery",
 	"ControllersArtifactFileResponse":                     "ArtifactFileResponse",

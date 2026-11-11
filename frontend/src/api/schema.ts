@@ -4641,10 +4641,18 @@ export interface components {
             sessionId: string;
             takenOverFrom: string[];
         };
+        CleanupReclaimedSession: {
+            /** Format: int64 */
+            bytes: number;
+            path: string;
+            preservedRef?: string;
+            sessionId: string;
+        };
         CleanupSessionsResponse: {
             alreadyGone: string[];
             cleaned: string[];
             ok: boolean;
+            reclaimed: components["schemas"]["CleanupReclaimedSession"][];
             skipped: components["schemas"]["CleanupSkippedSession"][];
         };
         CleanupSkippedSession: {
@@ -20795,6 +20803,8 @@ export interface operations {
             query?: {
                 /** @description Project id filter. When omitted, clean terminated sessions across all projects. */
                 project?: string;
+                /** @description Go duration (e.g. 168h, 720h). Dirty terminated worktrees at least this old are stashed to refs/ao/preserved/<session-id> and removed; younger ones are preserved. Clean worktrees are reclaimed at any age. */
+                olderThan?: string;
             };
             header?: never;
             path?: never;
