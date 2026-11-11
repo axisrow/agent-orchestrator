@@ -615,3 +615,7 @@ defedf5d65fff0c2306f7410835d36a4f0b5cb94 skipped fix(kanban): card statuses matc
 7cbc1b35d3dd40d2813dddbeb45ed3851534a2ba taken fix(styles): let text and font utilities apply to buttons and inputs (#8136)
 6e6454870f8866be55098b42c9d7b20f5b53a488 skipped fix(artifacts): section headers as headings (#8135) — ручной UI
 5f39d2c86b900635ae496bd7af3f0af3949890b6 skipped fix(chat): harness logos again (#8130) — визуал, picker выпилен
+a05f130f47bf2d6f3fd662301d119d78ca013e72 skipped feat(import): import Conductor chats; agent sets up Conductor settings (#8059)
+400d0134656b6215517736ba58e041345199ee19 skipped feat(remote): per-device tokens and one-time pairing codes (#8081)
+4511197a110ac822ac0d127f2e052cbb82be99b8 taken fix: honor Agy worker permission modes (#8066)
+59b66e9abb4daa88dac0d3d8b8a55254420afb2f skipped fix(terminal): mouse-tracking clicks (#8141) — ручное взаимодействие + тумблер настроек
