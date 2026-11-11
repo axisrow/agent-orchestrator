@@ -595,3 +595,10 @@ f5cfc55100171ab3850f25555c368f98452cd565 skipped fix(remote): credential storage
 3671709827a7f8db86494302f56ca69587ac0e0b skipped feat: make Add to chat excerpts reliable across formatted content (#7850)
 e5368cf4e637bfa4106ccd02ee65135f3ccec436 skipped fix: trim long /btw seed history to newest complete turns (#6599)
 c679cab3e416e16033dce645d97be5e8b82866e7 skipped fix(chat): attachment tiles in packaged builds (#8107) — attachment-UI на отсутствующих поверхностях
+7cc8a34bba8831299d84269972ddb5dd310a5259 skipped feat(artifacts): one-click Publish and Republish, and artifact names in the UI font (#8093)
+c9e3d5a2543bb5dd0f5cec4842e1b39ce379f04e skipped feat(automations): redesign the page with starters up front, a list toolbar, and plain-language schedules (#8088)
+e152ab2d75ebab23891da03c1d02cdd81eb71275 skipped feat(artifacts): list only the deliverables an agent registers (#7855)
+80dde14037c457127da0b08c80fdd292fbf7f782 skipped fix(updater): show notes for the selected stable release (#8110)
+6b8d13d88102ced4e6feed28ac69441e0f568b4f skipped feat(artifacts): projects use their sidebar icon on the Artifacts page (#8113)
+30cd5ff3da39757df8023441dcb45f8e7c5b2aec skipped feat(brand): trace Ruto from the desktop icon and generate every icon from it, with a Liquid Glass app icon (#8069)
+6554304e6f9020cc80200c9c04ebec78e8ad4ced skipped fix(sentry): bound error volume (#8087) — Sentry выпилен в форке
