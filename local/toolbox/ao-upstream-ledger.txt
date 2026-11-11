@@ -588,3 +588,4 @@ d429710c1892e5ad2958928836ad73ce61bc227e skipped feat(usage): add a Usage page w
 2fe46249c75bb072690d518c29a0b86acfd835fd skipped fix(sidebar): unpin sessions from offline hosts (#8094) — ручной UI сайдбара
 04f9ee1ab3ebbc802fb66495ed8ec5717dc574a6 skipped feat(sidebar): open a project's archive from its row menu (#8092)
 d1143d57bcb5306a4a8ca8c060afd14a1510afbc skipped fix(chat): sign-in on refused resume (#7993) — OAuth-логин-флоу; форк на gateway-токенах
+84e351e19131afe8bc771e1c66c851922704605d skipped fix(usage): keep last limits on refresh failure (#8097) — usage-page/pricing в форке отсутствуют
