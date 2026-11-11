@@ -224,7 +224,6 @@ func TestRetryTurnRouteRefusalsAreTyped(t *testing.T) {
 	}
 }
 
-
 func TestActivateConversationBranchRouteResumesWithoutBody(t *testing.T) {
 	svc := &fakeChatService{activate: "branch-root"}
 	srv := newChatTestServer(t, svc)

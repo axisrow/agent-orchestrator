@@ -128,25 +128,6 @@ func completeTurn(t *testing.T, h *harness, text, providerTurn string) string {
 	return turn.ID
 }
 
-func requireBranchPoint(
-	t *testing.T,
-	snapshot chatsvc.Snapshot,
-	turnID, previousBranchID, nextBranchID string,
-) {
-	t.Helper()
-	for _, point := range snapshot.BranchPoints {
-		if point.TurnID != turnID {
-			continue
-		}
-		if point.PreviousBranchID != previousBranchID || point.NextBranchID != nextBranchID || point.Total != 2 {
-			t.Fatalf("branch point for %s = %+v, want previous=%q next=%q total=2",
-				turnID, point, previousBranchID, nextBranchID)
-		}
-		return
-	}
-	t.Fatalf("snapshot has no branch point for turn %s: %+v", turnID, snapshot.BranchPoints)
-}
-
 // The end-to-end shape of an undo: the provider is asked to forget, and AO's timeline
 // stops showing what it forgot.
 func TestRollbackDiscardsTheTurnAndEverythingAfterIt(t *testing.T) {
