@@ -203,3 +203,14 @@ jobs:
 
       - name: Run renderer smoke suite
         run: CI=true npm run test:e2e:renderer
+
+      - name: Upload smoke failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: renderer-smoke-failure
+          path: |
+            frontend/test-results/
+            frontend/playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore
