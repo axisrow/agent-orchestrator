@@ -10588,6 +10588,31 @@ paths:
         gateway config
       tags:
       - sessions
+  /api/v1/sessions/worktrees:
+    get:
+      operationId: listSessionWorktrees
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListWorktreesResponse'
+          description: OK
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: List session worktrees with their on-disk sizes
+      tags:
+      - sessions
   /api/v1/settings:
     get:
       operationId: getSettings
@@ -16446,6 +16471,15 @@ components:
       - entries
       - truncated
       type: object
+    ListWorktreesResponse:
+      properties:
+        worktrees:
+          items:
+            $ref: '#/components/schemas/WorktreeView'
+          type: array
+      required:
+      - worktrees
+      type: object
     MCPConfig:
       properties:
         configs:
@@ -20475,6 +20509,25 @@ components:
       - name
       - path
       - type
+      type: object
+    WorktreeView:
+      properties:
+        bytes:
+          format: int64
+          type: integer
+        path:
+          type: string
+        projectId:
+          type: string
+        sessionId:
+          type: string
+        terminated:
+          type: boolean
+      required:
+      - sessionId
+      - path
+      - bytes
+      - terminated
       type: object
 tags:
 - description: Supported and locally runnable agent adapters

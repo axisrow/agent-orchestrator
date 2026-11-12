@@ -196,6 +196,45 @@ func TestTaskPreparationsStayOutOfSessionReads(t *testing.T) {
 	}
 }
 
+func TestWorktreesListsRegisteredWorkspacesAcrossProjects(t *testing.T) {
+	st := newFakeStore()
+	liveDir := t.TempDir()
+	writeWorktreeFile(t, liveDir, "kept.txt", 2048)
+	doneDir := t.TempDir()
+	writeWorktreeFile(t, doneDir, "reclaim.txt", 1024)
+	st.sessions["mer-1"] = domain.SessionRecord{ID: "mer-1", ProjectID: "mer", Metadata: domain.SessionMetadata{WorkspacePath: liveDir}}
+	st.sessions["mer-2"] = domain.SessionRecord{ID: "mer-2", ProjectID: "mer", IsTerminated: true, Metadata: domain.SessionMetadata{WorkspacePath: doneDir}}
+	st.sessions["mer-3"] = domain.SessionRecord{ID: "mer-3", ProjectID: "mer"}
+	st.sessions["mer-4"] = domain.SessionRecord{ID: "mer-4", ProjectID: "mer", IsTaskPreparation: true, Metadata: domain.SessionMetadata{WorkspacePath: t.TempDir()}}
+	st.sessions["mer-5"] = domain.SessionRecord{ID: "mer-5", ProjectID: "other"}
+
+	got, err := (&Service{store: st}).Worktrees(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("worktrees = %+v, want the two sessions with a registered workspace", got)
+	}
+	byID := map[domain.SessionID]WorktreeUsage{}
+	for _, ws := range got {
+		byID[ws.SessionID] = ws
+	}
+	live, done := byID["mer-1"], byID["mer-2"]
+	if live.Terminated || live.ProjectID != "mer" || live.Path != liveDir || live.Bytes != 2048 {
+		t.Fatalf("live worktree = %+v, want 2048 bytes in %s", live, liveDir)
+	}
+	if !done.Terminated || done.Bytes != 1024 {
+		t.Fatalf("terminated worktree = %+v, want 1024 bytes", done)
+	}
+}
+
+func writeWorktreeFile(t *testing.T, dir, name string, size int64) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), make([]byte, size), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestGetRecordReadsOnlyTheStoredRow(t *testing.T) {
 	st := newFakeStore()
 	st.sessions["mer-1"] = domain.SessionRecord{ID: "mer-1", ProjectID: "mer", Metadata: domain.SessionMetadata{PreviewURL: "http://localhost:5173/"}}

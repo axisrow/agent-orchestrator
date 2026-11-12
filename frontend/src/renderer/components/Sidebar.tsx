@@ -498,6 +498,7 @@ function useSelection() {
 		select: (state) => state.location.pathname,
 	});
 	const goHome = useCallback(() => void navigate({ to: "/" }), [navigate]);
+	const goOverview = useCallback(() => void navigate({ to: "/overview" }), [navigate]);
 	const goAutomations = useCallback(() => void navigate({ to: "/automations" }), [navigate]);
 	const goArtifacts = useCallback(() => void navigate({ to: "/artifacts" }), [navigate]);
 	const goGlobalSettings = useCallback(() => openGlobalSettings(), [openGlobalSettings]);
@@ -526,6 +527,7 @@ function useSelection() {
 		activeProjectId: params.hostId ? undefined : params.projectId,
 		activeSessionId: params.hostId ? undefined : params.sessionId,
 		goHome,
+		goOverview,
 		goAutomations,
 		goArtifacts,
 		// Settings is a modal — open it in place so the current page (session
@@ -535,7 +537,7 @@ function useSelection() {
 		goSettings,
 		goProject,
 		goSession,
-	}), [goArtifacts, goAutomations, goConnectMobile, goGlobalSettings, goHome, goProject, goSession, goSettings, params.hostId, params.projectId, params.sessionId, pathname]);
+	}), [goArtifacts, goAutomations, goConnectMobile, goGlobalSettings, goHome, goOverview, goProject, goSession, goSettings, params.hostId, params.projectId, params.sessionId, pathname]);
 }
 
 // Colour tracks the session's board section, preserving SCM state while the
@@ -923,15 +925,16 @@ export function Sidebar({
 		>
 			<SidebarHeader className="gap-0 p-0 px-3 pt-2 group-data-[collapsible=icon]:px-1.5 group-data-[collapsible=icon]:pt-2">
 				{/*
-				 * Brand → home. Design contracts (do not regress):
-				 * - Click navigates home; do NOT add hover/focus *fill* (styles.css
-				 *   opts `[data-sidebar-brand]` out of `.sidebar-focusless` wash).
+				 * Brand → overview. Design contracts (do not regress):
+				 * - Click opens the cross-project overview (#325); do NOT add
+				 *   hover/focus *fill* (styles.css opts `[data-sidebar-brand]` out of
+				 *   `.sidebar-focusless` wash).
 				 * - Keyboard focus uses the dedicated outline rule in styles.css —
 				 *   never `focus-visible:outline-none` (global kill would leave it blind).
-				 * - No separate "home" affordance on the mark — the whole brand is the control.
+				 * - No separate affordance on the mark — the whole brand is the control.
 				 */}
 				<button
-					aria-label={t("shell.goHome")}
+					aria-label={t("shell.openOverview")}
 					className={cn(
 						"group/brand flex w-full shrink-0 items-center gap-1.5 rounded-md px-0.5 text-left",
 						// macOS/Linux show the brand in TitlebarNav instead.
@@ -940,7 +943,7 @@ export function Sidebar({
 						commandPaletteEnabled ? "pb-2" : "pb-3",
 					)}
 					data-sidebar-brand=""
-					onClick={() => selection.goHome()}
+					onClick={() => selection.goOverview()}
 					type="button"
 				>
 					<span

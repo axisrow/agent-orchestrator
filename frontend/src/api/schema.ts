@@ -3559,6 +3559,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sessions/worktrees": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List session worktrees with their on-disk sizes */
+        get: operations["listSessionWorktrees"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings": {
         parameters: {
             query?: never;
@@ -5816,6 +5833,9 @@ export interface components {
             sessionId: string;
             truncated: boolean;
         };
+        ListWorktreesResponse: {
+            worktrees: components["schemas"]["WorktreeView"][];
+        };
         MCPConfig: {
             configs?: string[];
             strict?: boolean;
@@ -7419,6 +7439,14 @@ export interface components {
             status?: "unmodified" | "modified" | "added" | "deleted" | "renamed";
             /** @enum {string} */
             type: "file" | "dir";
+        };
+        WorktreeView: {
+            /** Format: int64 */
+            bytes: number;
+            path: string;
+            projectId?: string;
+            sessionId: string;
+            terminated: boolean;
         };
     };
     responses: never;
@@ -20660,6 +20688,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProviderStalenessResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    listSessionWorktrees: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListWorktreesResponse"];
                 };
             };
             /** @description Internal Server Error */

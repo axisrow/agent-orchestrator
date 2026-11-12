@@ -1237,6 +1237,23 @@ type CleanupSessionsResponse struct {
 	Reclaimed []CleanupReclaimedSession `json:"reclaimed"`
 }
 
+// WorktreeView is one session workspace's registration and its current size
+// on disk. Terminated sessions' worktrees are the ones
+// POST /api/v1/sessions/cleanup can reclaim; Bytes is the same measure the
+// cleanup report returns as reclaimed.
+type WorktreeView struct {
+	SessionID  domain.SessionID `json:"sessionId"`
+	ProjectID  domain.ProjectID `json:"projectId,omitempty"`
+	Path       string           `json:"path"`
+	Bytes      int64            `json:"bytes"`
+	Terminated bool             `json:"terminated"`
+}
+
+// ListWorktreesResponse is the body of GET /api/v1/sessions/worktrees.
+type ListWorktreesResponse struct {
+	Worktrees []WorktreeView `json:"worktrees"`
+}
+
 // SendSessionMessageRequest is the body of POST /api/v1/sessions/{sessionId}/send.
 type SendSessionMessageRequest struct {
 	// SenderSessionID is cooperative loopback attribution, not authentication.

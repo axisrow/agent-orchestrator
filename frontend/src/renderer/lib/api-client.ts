@@ -150,6 +150,8 @@ const ROUTE_TEMPLATES = [
 	"/api/v1/sessions/{sessionId}/workspace/file",
 	"/api/v1/sessions/{sessionId}/workspace/files",
 	"/api/v1/sessions/cleanup",
+	// Fork delta: read-only worktree usage for the cross-project overview (#325).
+	"/api/v1/sessions/worktrees",
 	// Fork delta: process footprint surface.
 	"/api/v1/system/processes",
 	"/api/v1/system/processes/kill",

@@ -62,6 +62,8 @@ type fakeSessionService struct {
 	cleanupResult              []domain.SessionID
 	cleanupSkipped             []sessionsvc.CleanupSkipped
 	cleanupAges                []time.Duration
+	worktrees                  []sessionsvc.WorktreeUsage
+	worktreesErr               error
 	workspaceFiles             sessionsvc.WorkspaceFiles
 	workspaceListHook          func(context.Context) error
 	workspaceFile              sessionsvc.WorkspaceFileDetail
@@ -550,6 +552,13 @@ func (f *fakeSessionService) Cleanup(_ context.Context, project domain.ProjectID
 func (f *fakeSessionService) CleanupWithAge(_ context.Context, project domain.ProjectID, olderThan time.Duration) (sessionsvc.CleanupOutcome, error) {
 	f.cleanupAges = append(f.cleanupAges, olderThan)
 	return f.Cleanup(context.Background(), project)
+}
+
+func (f *fakeSessionService) Worktrees(_ context.Context) ([]sessionsvc.WorktreeUsage, error) {
+	if f.worktreesErr != nil {
+		return nil, f.worktreesErr
+	}
+	return f.worktrees, nil
 }
 
 func (f *fakeSessionService) Rename(_ context.Context, id domain.SessionID, displayName string) error {
@@ -5192,6 +5201,40 @@ func TestSessionsAPI_CleanupWithoutProjectFilter(t *testing.T) {
 	}
 	if len(svc.cleanupProjects) != 1 || svc.cleanupProjects[0] != "" {
 		t.Fatalf("cleanupProjects = %#v, want empty project filter", svc.cleanupProjects)
+	}
+}
+
+func TestSessionsAPI_ListWorktrees(t *testing.T) {
+	svc := newFakeSessionService()
+	svc.worktrees = []sessionsvc.WorktreeUsage{
+		{SessionID: "ao-1", ProjectID: "beamcraft", Path: "/tmp/wt-ao-1", Bytes: 4096, Terminated: false},
+		{SessionID: "ao-2", Path: "/tmp/wt-ao-2", Bytes: 8192, Terminated: true},
+	}
+	srv := newSessionTestServer(t, svc)
+
+	body, status, _ := doRequest(t, srv, "GET", "/api/v1/sessions/worktrees", "")
+	if status != http.StatusOK {
+		t.Fatalf("worktrees = %d, want 200; body=%s", status, body)
+	}
+	var got struct {
+		Worktrees []struct {
+			SessionID  string `json:"sessionId"`
+			ProjectID  string `json:"projectId"`
+			Path       string `json:"path"`
+			Bytes      int64  `json:"bytes"`
+			Terminated bool   `json:"terminated"`
+		} `json:"worktrees"`
+	}
+	mustJSON(t, body, &got)
+	if len(got.Worktrees) != 2 {
+		t.Fatalf("worktrees response = %#v", got)
+	}
+	first, second := got.Worktrees[0], got.Worktrees[1]
+	if first.SessionID != "ao-1" || first.ProjectID != "beamcraft" || first.Path != "/tmp/wt-ao-1" || first.Bytes != 4096 || first.Terminated {
+		t.Fatalf("first worktree = %+v", first)
+	}
+	if second.SessionID != "ao-2" || second.ProjectID != "" || second.Bytes != 8192 || !second.Terminated {
+		t.Fatalf("second worktree = %+v", second)
 	}
 }
 

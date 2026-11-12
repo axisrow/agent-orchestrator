@@ -1313,6 +1313,47 @@ func (s *Service) CleanupWithAge(ctx context.Context, project domain.ProjectID, 
 	return out, nil
 }
 
+// WorktreeUsage is one session's registered workspace and its current on-disk
+// size. Terminated sessions' workspaces are the ones POST /sessions/cleanup
+// can reclaim; live ones ride along so the cross-project view shows the whole
+// footprint.
+type WorktreeUsage struct {
+	SessionID  domain.SessionID
+	ProjectID  domain.ProjectID
+	Path       string
+	Bytes      int64
+	Terminated bool
+}
+
+// Worktrees lists every session's registered workspace with its on-disk size,
+// across all projects. Read-only over existing rows: the size is the same
+// measure the cleanup report reports as reclaimed (file sizes summed without
+// following symlinks), and nothing under the workspace is modified.
+func (s *Service) Worktrees(ctx context.Context) ([]WorktreeUsage, error) {
+	recs, err := s.listRecords(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	out := make([]WorktreeUsage, 0, len(recs))
+	for _, rec := range recs {
+		if rec.IsTaskPreparation {
+			continue
+		}
+		path := rec.Metadata.WorkspacePath
+		if path == "" {
+			continue
+		}
+		out = append(out, WorktreeUsage{
+			SessionID:  rec.ID,
+			ProjectID:  rec.ProjectID,
+			Path:       path,
+			Bytes:      sessionmanager.WorkspaceDirBytes(path),
+			Terminated: rec.IsTerminated,
+		})
+	}
+	return out, nil
+}
+
 // TeardownProject stops every live session in a project concurrently, then asks
 // the session manager to reclaim terminal workspaces. The expensive per-session
 // work (agent/runtime shutdown, controller teardown) is independent, so running

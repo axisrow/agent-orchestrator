@@ -417,6 +417,10 @@ type WorkspaceSubscriptionOptions = {
 	subscribed?: boolean;
 	enabled?: boolean;
 	includeCloud?: boolean;
+	// The shell keeps the global default (false) and polls instead; surfaces
+	// that show live state without their own poll (the cross-project overview)
+	// opt into a focus refresh.
+	refetchOnWindowFocus?: boolean;
 };
 
 // How long sightings of unknown projects are gathered into one project-list
@@ -608,7 +612,12 @@ function isCloudNotFound(error: unknown): boolean {
 }
 
 export function useWorkspaceQuery(options: WorkspaceSubscriptionOptions = {}) {
-	const local = useQuery({ ...workspaceQueryOptions, subscribed: options.subscribed, enabled: options.enabled });
+	const local = useQuery({
+		...workspaceQueryOptions,
+		subscribed: options.subscribed,
+		enabled: options.enabled,
+		refetchOnWindowFocus: options.refetchOnWindowFocus,
+	});
 	const includeCloud = options.includeCloud !== false;
 	const cloudOptions = { ...options, enabled: includeCloud && options.enabled !== false };
 	const cloud = useCloudProjectsQuery(cloudOptions);
