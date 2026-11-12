@@ -10530,6 +10530,16 @@ paths:
           description: Project id filter. When omitted, clean terminated sessions
             across all projects.
           type: string
+      - description: Go duration (e.g. 168h, 720h). Dirty terminated worktrees at
+          least this old are stashed to refs/ao/preserved/<session-id> and removed;
+          younger ones are preserved. Clean worktrees are reclaimed at any age.
+        in: query
+        name: olderThan
+        schema:
+          description: Go duration (e.g. 168h, 720h). Dirty terminated worktrees at
+            least this old are stashed to refs/ao/preserved/<session-id> and removed;
+            younger ones are preserved. Clean worktrees are reclaimed at any age.
+          type: string
       responses:
         "200":
           content:
@@ -13241,6 +13251,22 @@ components:
       - branchChanged
       - takenOverFrom
       type: object
+    CleanupReclaimedSession:
+      properties:
+        bytes:
+          format: int64
+          type: integer
+        path:
+          type: string
+        preservedRef:
+          type: string
+        sessionId:
+          type: string
+      required:
+      - sessionId
+      - path
+      - bytes
+      type: object
     CleanupSessionsResponse:
       properties:
         alreadyGone:
@@ -13253,6 +13279,10 @@ components:
           type: array
         ok:
           type: boolean
+        reclaimed:
+          items:
+            $ref: '#/components/schemas/CleanupReclaimedSession'
+          type: array
         skipped:
           items:
             $ref: '#/components/schemas/CleanupSkippedSession'
@@ -13262,6 +13292,7 @@ components:
       - cleaned
       - alreadyGone
       - skipped
+      - reclaimed
       type: object
     CleanupSkippedSession:
       properties:
