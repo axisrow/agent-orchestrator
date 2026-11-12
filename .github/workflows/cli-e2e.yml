@@ -25,7 +25,10 @@ jobs:
         # Windows leg disabled by owner decision (#135): the fork does not want
         # Windows coverage; the runner environment additionally broke the
         # workspace/session suites with access-denied file locks (see #135).
-        os: [ubuntu-latest, macos-15]
+        # macOS leg disabled by owner decision (2026-11-12): the owner tests
+        # macOS locally, and the hosted macos-15 arm64 pool kept cancelling
+        # jobs before acquiring a runner during capacity crunches.
+        os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     defaults:
       run:
