@@ -49,11 +49,14 @@ function overviewStatus(session: WorkspaceSession): Exclude<StatusFilter, "all">
 // Whether the session's merge gate is open, and the one fact holding it shut
 // when it is not. Reads the same facts the PR card's ao merge flow reads:
 // PR open, checks green, no conflicts, review approved (or not required), no
-// unresolved comments.
+// unresolved comments. Returns undefined when no fact holds a verdict —
+// a closed PR shows the split-archive phrase, and an unknown CI state (the
+// fork maps cancelled checks to unknown) must not read as provider-blocked.
 function overviewMergeGate(session: WorkspaceSession, t: (key: MessageKey, values?: Record<string, unknown>) => string): { open: boolean; label: string } | undefined {
 	const [pr] = sessionPRDisplaySummaries(session);
 	if (!pr) return undefined;
 	if (pr.state === "merged") return { open: true, label: t("displayStatus.merged") };
+	if (pr.state === "closed") return { open: false, label: t("displayStatus.closedWithoutMerge") };
 	if (pr.state === "draft") return { open: false, label: t("overview.gateDraft") };
 	if (prCanMerge(pr)) return { open: true, label: t("overview.gateOpen") };
 	if (pr.review.decision === "changes_requested") return { open: false, label: t("overview.gateChanges") };
@@ -62,6 +65,7 @@ function overviewMergeGate(session: WorkspaceSession, t: (key: MessageKey, value
 	if (pr.ci.state === "failing") return { open: false, label: t("overview.gateCi") };
 	if (pr.mergeability.state === "conflicting") return { open: false, label: t("overview.gateConflicts") };
 	if (pr.ci.state === "pending") return { open: false, label: t("overview.gateChecks") };
+	if (pr.ci.state === "unknown") return undefined;
 	return { open: false, label: t("overview.gateProvider") };
 }
 

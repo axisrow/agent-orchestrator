@@ -95,6 +95,17 @@ function workspaces(): WorkspaceSummary[] {
 					title: "changes requested",
 					prs: [pr({ url: "https://github.com/aoagents/agent-orchestrator/pull/3", number: 3, review: "changes_requested" })],
 				}),
+				session({
+					id: "s-closed",
+					title: "closed without merge",
+					kanbanColumn: "archive",
+					prs: [pr({ url: "https://github.com/aoagents/agent-orchestrator/pull/4", number: 4, state: "closed" })],
+				}),
+				session({
+					id: "s-unknown-ci",
+					title: "cancelled checks",
+					prs: [pr({ url: "https://github.com/aoagents/agent-orchestrator/pull/5", number: 5, ci: "unknown" })],
+				}),
 				session({ id: "s-blocked", title: "needs you", activity: { state: "waiting_input", lastActivityAt: "" } }),
 				session({
 					id: "s-exited",
@@ -153,20 +164,26 @@ describe("OverviewPage", () => {
 		render(<OverviewPage />);
 
 		// Stages from kanbanColumn/status: building → Working, ready → Ready,
-		// provisioning → Spawning; a terminated session lands in Archive even
-		// when its stale activity still says active.
+		// provisioning → Spawning; terminated sessions land in Archive even
+		// when their stale activity still says active.
 		expect(screen.getByText("Spawning")).toBeInTheDocument();
 		expect(screen.getAllByText("Working").length).toBeGreaterThan(0);
 		expect(screen.getAllByText("Ready").length).toBeGreaterThan(0);
-		expect(screen.getByText("Archive")).toBeInTheDocument();
+		expect(screen.getAllByText("Archive").length).toBe(2);
 		expect(screen.getByText("Exited")).toBeInTheDocument();
 
-		// Merge gate: open only when the PR facts allow a merge.
+		// Merge gate: open only when the PR facts allow a merge; a closed PR
+		// shows the split-archive phrase, and unknown CI (cancelled checks on
+		// the fork) renders no verdict instead of a false provider-block.
 		expect(screen.getByText("Gate open")).toBeInTheDocument();
 		expect(screen.getByText("Checks running")).toBeInTheDocument();
 		expect(screen.getByText("Changes requested")).toBeInTheDocument();
+		expect(screen.getByText("Closed without merge")).toBeInTheDocument();
 		expect(screen.getByText("#1")).toBeInTheDocument();
 		expect(screen.getByText("#2")).toBeInTheDocument();
+		const unknownCiRow = screen.getByRole("button", { name: "cancelled checks" }).closest("tr")!;
+		expect(unknownCiRow.textContent).toContain("#5");
+		expect(unknownCiRow.textContent).not.toContain("Blocked by provider");
 	});
 
 	it("links a session through the session route target", () => {
