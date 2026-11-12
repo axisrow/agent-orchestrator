@@ -32,8 +32,8 @@ type fakeChatService struct {
 	retryTurn   domain.ConversationTurn
 	retryErr    error
 
-	gotTurnID string
-	gotTitle  string
+	gotTurnID   string
+	gotTitle    string
 	gotBranchID string
 }
 
@@ -223,7 +223,6 @@ func TestRetryTurnRouteRefusalsAreTyped(t *testing.T) {
 		})
 	}
 }
-
 
 func TestActivateConversationBranchRouteResumesWithoutBody(t *testing.T) {
 	svc := &fakeChatService{activate: "branch-root"}

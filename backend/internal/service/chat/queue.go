@@ -55,7 +55,6 @@ func (c *Controller) CancelQueuedTurn(ctx context.Context, turnID string) error 
 	return c.store.CancelQueuedTurnByID(ctx, c.conversation.ID, turnID, c.now())
 }
 
-
 // ReorderQueuedTurns permutes undispatched queue rows without changing their text.
 func (c *Controller) ReorderQueuedTurns(ctx context.Context, turnIDs []string) error {
 	c.sendMu.Lock()

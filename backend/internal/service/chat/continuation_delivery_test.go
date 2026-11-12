@@ -283,4 +283,3 @@ func continuationProviderContext(message ports.ChatUserMessage) string {
 	}
 	return text
 }
-

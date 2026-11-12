@@ -17,7 +17,6 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/storage/sqlite/store"
 )
 
-
 type cancelQueuedStub struct {
 	*fakeConversationService
 	session domain.SessionID

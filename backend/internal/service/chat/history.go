@@ -140,7 +140,6 @@ func (s *Service) ForkConversation(ctx context.Context, id domain.SessionID) (st
 	return forked, nil
 }
 
-
 // ActivateBranch resumes a durable provider branch in the same worktree and
 // swaps controllers without sending a new prompt.
 func (s *Service) ActivateBranch(ctx context.Context, id domain.SessionID, branchID string) (string, error) {

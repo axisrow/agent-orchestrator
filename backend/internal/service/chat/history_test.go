@@ -64,20 +64,6 @@ func (h *historyRecorder) Fork(_ context.Context, anchor *string) (string, error
 	return h.forkedTo, nil
 }
 
-func (h *historyRecorder) lastForkAnchor() *string {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if len(h.forkAnchors) == 0 {
-		return nil
-	}
-	anchor := h.forkAnchors[len(h.forkAnchors)-1]
-	if anchor == nil {
-		return nil
-	}
-	anchorCopy := *anchor
-	return &anchorCopy
-}
-
 // SetTitle records the name and, like the real provider, reports it back on the event
 // stream. That echo is the only path by which a title reaches AO's rows.
 func (h *historyRecorder) SetTitle(_ context.Context, title string) error {
@@ -140,36 +126,6 @@ func completeTurn(t *testing.T, h *harness, text, providerTurn string) string {
 		},
 	)
 	return turn.ID
-}
-
-func requireMessageTexts(t *testing.T, messages []domain.ConversationMessage, want []string) {
-	t.Helper()
-	got := make([]string, 0, len(messages))
-	for _, message := range messages {
-		got = append(got, message.Text)
-	}
-	if fmt.Sprint(got) != fmt.Sprint(want) {
-		t.Fatalf("message texts = %#v, want %#v", got, want)
-	}
-}
-
-func requireBranchPoint(
-	t *testing.T,
-	snapshot chatsvc.Snapshot,
-	turnID, previousBranchID, nextBranchID string,
-) {
-	t.Helper()
-	for _, point := range snapshot.BranchPoints {
-		if point.TurnID != turnID {
-			continue
-		}
-		if point.PreviousBranchID != previousBranchID || point.NextBranchID != nextBranchID || point.Total != 2 {
-			t.Fatalf("branch point for %s = %+v, want previous=%q next=%q total=2",
-				turnID, point, previousBranchID, nextBranchID)
-		}
-		return
-	}
-	t.Fatalf("snapshot has no branch point for turn %s: %+v", turnID, snapshot.BranchPoints)
 }
 
 // The end-to-end shape of an undo: the provider is asked to forget, and AO's timeline
