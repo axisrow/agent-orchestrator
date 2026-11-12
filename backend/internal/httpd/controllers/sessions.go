@@ -115,6 +115,7 @@ type SessionService interface {
 	DeleteArtifacts(ctx context.Context, id domain.SessionID) error
 	RollbackSpawn(ctx context.Context, id domain.SessionID) (sessionsvc.RollbackOutcome, error)
 	Cleanup(ctx context.Context, project domain.ProjectID) (sessionsvc.CleanupOutcome, error)
+	Worktrees(ctx context.Context) ([]sessionsvc.WorktreeUsage, error)
 	Rename(ctx context.Context, id domain.SessionID, displayName string) error
 	SetPreview(ctx context.Context, id domain.SessionID, previewURL string) (domain.Session, error)
 	SetTerminateOnPRMerge(ctx context.Context, id domain.SessionID, terminate bool) (domain.Session, error)
@@ -247,6 +248,7 @@ func (c *SessionsController) Register(r chi.Router) {
 	r.Get("/sessions", c.list)
 	r.Post("/sessions", c.spawn)
 	r.Post("/sessions/cleanup", c.cleanup)
+	r.Get("/sessions/worktrees", c.listWorktrees)
 	r.Get("/sessions/provider-staleness", c.listProviderStaleness)
 	r.Post("/sessions/apply-provider", c.applyProvider)
 	r.Get("/sessions/{sessionId}", c.get)
@@ -2232,6 +2234,29 @@ func (c *SessionsController) cleanup(w http.ResponseWriter, r *http.Request) {
 	envelope.WriteJSON(w, http.StatusOK, CleanupSessionsResponse{
 		OK: true, Cleaned: out.Cleaned, AlreadyGone: out.AlreadyGone, Skipped: skipped, Reclaimed: reclaimed,
 	})
+}
+
+func (c *SessionsController) listWorktrees(w http.ResponseWriter, r *http.Request) {
+	if c.Svc == nil {
+		apispec.NotImplemented(w, r, "GET", "/api/v1/sessions/worktrees")
+		return
+	}
+	worktrees, err := c.Svc.Worktrees(r.Context())
+	if err != nil {
+		envelope.WriteError(w, r, err)
+		return
+	}
+	views := make([]WorktreeView, 0, len(worktrees))
+	for _, ws := range worktrees {
+		views = append(views, WorktreeView{
+			SessionID:  ws.SessionID,
+			ProjectID:  ws.ProjectID,
+			Path:       ws.Path,
+			Bytes:      ws.Bytes,
+			Terminated: ws.Terminated,
+		})
+	}
+	envelope.WriteJSON(w, http.StatusOK, ListWorktreesResponse{Worktrees: views})
 }
 
 func (c *SessionsController) send(w http.ResponseWriter, r *http.Request) {

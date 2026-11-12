@@ -111,9 +111,9 @@ Sidebar and inspector share `ResizeHandle`. Do not regress:
 - While dragging, width **must stop at the same min/max as the panel**. Never follow raw `clientX` past limits. Inspector also clamps against computed CSS `max-width` (`--session-inspector-max-width`); prop/`rangeRef` max alone is insufficient.
 - Call sites must pass the same `minWidth`/`maxWidth` as `useResizable`.
 
-### Brand → home
+### Brand → overview
 
-The sidebar brand mark/name is the home control. Click navigates home. Do **not** add hover or focus fill behind the brand (`[data-sidebar-brand]` opts out of `.sidebar-focusless` wash in `styles.css`).
+The sidebar brand mark/name opens the cross-project overview table (issue #325, owner directive 2026-11-12). Do **not** add hover or focus fill behind the brand (`[data-sidebar-brand]` opts out of `.sidebar-focusless` wash in `styles.css`). In the macOS/Linux titlebar only the inner brand label opts out of window drag; that inner control is the clickable one, and the rest of the row stays draggable. Home remains the launch default and the command palette's home target.
 
 ## 4. Navigation and project rows
 
@@ -430,3 +430,4 @@ Approve only when the answer to every applicable check is yes. Otherwise classif
 | 2026-10-09 | Home: with Developer Mode and Cloud on, Clone to the cloud replaces the standalone cell; card labels use verb + source; cards rest on `bg-card` and hover to `bg-accent`; recent rows sit under the grid with no heading of their own, one 40px line each (no path), hover pill on `bg-card` | A fifth full-width row broke the 2×2 grid; the old translucent hover made cards darker instead of lifting them; the separate recent-projects title and two-line rows made home taller than it needs to be. |
 | 2026-10-14 | Installed agent rows show muted "Installed" text; install is one ghost "Install · <method>" with a borderless chevron menu | A disabled filled button read as a control, and the bordered split pill broke the settings rule that only inputs, selects and switches carry an edge or fill. Supersedes the 2026-09-04 disabled-button row. |
 | 2026-10-14 | Settings cards: no outline, filled background groups them, hairline dividers between items, rows fit their content with 10px vertical padding | The person asked for borders only between items, not around containers. Rows sit 16px in from the card edge and the page title and section headings follow that inset. |
+| 2026-11-12 | Brand opens the cross-project overview table; home stays the launch default | Owner directive (#325): the logo click must answer "what is happening across projects" without poking through each project. Supersedes the 2026-09-16 brand→home row. |

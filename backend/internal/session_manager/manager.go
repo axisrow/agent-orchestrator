@@ -5884,7 +5884,7 @@ func (m *Manager) teardownWorkspace(ctx context.Context, rec domain.SessionRecor
 	// Sampled before any teardown step so the report reflects what this run
 	// released. A missing directory reports zero without walking, so
 	// already-gone workspaces cost one stat instead of a full walk.
-	freed := workspaceDirBytes(ws.Path)
+	freed := WorkspaceDirBytes(ws.Path)
 
 	if rows, ok, rowErr := m.workspaceProjectRows(ctx, rec); rowErr != nil {
 		m.logger.Warn("cleanup: workspace rows failed", "sessionID", rec.ID, "error", rowErr)
@@ -5953,10 +5953,11 @@ func (m *Manager) forceReclaimDirty(ctx context.Context, rec domain.SessionRecor
 	return &CleanupReclaim{SessionID: rec.ID, WorkspacePath: ws.Path, Bytes: freed, PreservedRef: ref}, nil
 }
 
-// workspaceDirBytes sums the file sizes under path without following
+// WorkspaceDirBytes sums the file sizes under path without following
 // symlinks. Errors and unreadable entries count as zero: the value feeds the
-// cleanup report, not any reclaim decision.
-func workspaceDirBytes(path string) int64 {
+// cleanup report and the read-only worktree-usage view, not any reclaim
+// decision.
+func WorkspaceDirBytes(path string) int64 {
 	if path == "" {
 		return 0
 	}

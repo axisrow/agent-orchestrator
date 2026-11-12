@@ -341,6 +341,8 @@ var schemaNames = map[string]string{ //nolint:gosec // Public OpenAPI type names
 	"ControllersCleanupSessionsResponse":                  "CleanupSessionsResponse",
 	"ControllersCleanupSkippedSession":                    "CleanupSkippedSession",
 	"ControllersCleanupReclaimedSession":                  "CleanupReclaimedSession",
+	"ControllersWorktreeView":                             "WorktreeView",
+	"ControllersListWorktreesResponse":                    "ListWorktreesResponse",
 	"ControllersWorkspaceFileQuery":                       "WorkspaceFileQuery",
 	"ControllersArtifactFileQuery":                        "ArtifactFileQuery",
 	"ControllersArtifactFileResponse":                     "ArtifactFileResponse",
@@ -3208,6 +3210,15 @@ func sessionOperations() []operation {
 			pathParams: []any{controllers.CleanupSessionsQuery{}},
 			resps: []respUnit{
 				{http.StatusOK, controllers.CleanupSessionsResponse{}},
+				{http.StatusInternalServerError, envelope.APIError{}},
+				{http.StatusNotImplemented, envelope.APIError{}},
+			},
+		},
+		{
+			method: http.MethodGet, path: "/api/v1/sessions/worktrees", id: "listSessionWorktrees", tag: "sessions",
+			summary: "List session worktrees with their on-disk sizes",
+			resps: []respUnit{
+				{http.StatusOK, controllers.ListWorktreesResponse{}},
 				{http.StatusInternalServerError, envelope.APIError{}},
 				{http.StatusNotImplemented, envelope.APIError{}},
 			},

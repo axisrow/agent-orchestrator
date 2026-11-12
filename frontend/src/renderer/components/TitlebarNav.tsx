@@ -149,8 +149,9 @@ export function TitlebarNav({
           inert={!showBrand}
           transition={transition}
         >
-          {/* Not a button on purpose. Only the label opts out of window drag (for
-              the build-info tooltip); the rest of the row stays draggable. */}
+          {/* The brand opens the cross-project overview (#325). Only this inner
+              control opts out of window drag — the rest of the row stays
+              draggable, matching the BuildInfoTooltip trigger around it. */}
           <span
             className="inline-flex select-none items-center gap-1.5 translate-y-0.5 whitespace-nowrap text-base font-semibold leading-tight tracking-tight-lg text-foreground"
             data-sidebar-brand=""
@@ -158,10 +159,15 @@ export function TitlebarNav({
             style={{ maxWidth: brandMaxWidth }}
           >
             <BuildInfoTooltip>
-              <span className="inline-flex min-w-0 items-center gap-1.5">
+              <button
+                type="button"
+                aria-label={t("shell.openOverview")}
+                className="inline-flex min-w-0 items-center gap-1.5 rounded-xs text-inherit focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => void router.navigate({ to: "/overview" })}
+              >
                 <AOMascot className="h-5.5 w-5.5 shrink-0" />
                 <span className="min-w-0 truncate" data-brand-label="">Orchestrator</span>
-              </span>
+              </button>
             </BuildInfoTooltip>
           </span>
         </motion.div>

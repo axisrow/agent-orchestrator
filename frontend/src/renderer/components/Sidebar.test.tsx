@@ -707,14 +707,14 @@ describe("Sidebar", () => {
 		expect(artifacts.textContent).toBe("Artifacts");
 	});
 
-	it("navigates home from the brand row", async () => {
+	it("opens the overview from the brand row", async () => {
 		const user = userEvent.setup();
 		mockParams.projectId = "proj-1";
 		renderSidebar();
 
-		await user.click(screen.getByRole("button", { name: "Go to home" }));
+		await user.click(screen.getByRole("button", { name: "Open overview" }));
 
-		expect(navigateMock).toHaveBeenCalledWith({ to: "/" });
+		expect(navigateMock).toHaveBeenCalledWith({ to: "/overview" });
 	});
 
 	it("suppresses focus chrome without removing keyboard focusability", () => {
