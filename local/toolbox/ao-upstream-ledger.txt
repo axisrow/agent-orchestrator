@@ -624,3 +624,4 @@ a05f130f47bf2d6f3fd662301d119d78ca013e72 skipped feat(import): import Conductor 
 59a0179c8f0d67c5e0285ad3a339378fb36217ba skipped fix(spawn): 120s setup budget, auto-start breaker (#8119) — форк-релевантен (ядро спавна), свести отдельным заходом; sentry/attribution/workspace-search части — выпилены
 34f6c898142f754ac20e43933cf6a81f595a7f6e taken fix(prompt): tell agents the user local time zone (#8152)
 82b34f229dabaa69e82a98572c5fb2211ad62c70 skipped fix(chat): no Orchestrator CLI in narration and step rows (#8156) — ручной UI, activity-step отсутствует
+47c1b1af168158404708a05286191e9e9b7cb685 skipped feat(tabs): ⋮ always on the session tab, ghost close button over the icon on others (#8079)
