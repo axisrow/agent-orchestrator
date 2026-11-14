@@ -3004,6 +3004,7 @@
 	"overview.selectAll": "Selecionar sessões",
 	"overview.showArchived": "Mostrar arquivadas",
 	"overview.hideArchived": "Ocultar arquivadas",
+	"overview.archivedCount": "Arquivadas ({{count}})",
 	"overview.undeliveredCount": "{{count}} não entregues",
 	"overview.toggleProject": "Mostrar ou ocultar as sessões de {{name}}",
 	"overview.openOrchestrator": "Abrir o orquestrador de {{name}}",

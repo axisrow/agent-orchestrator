@@ -2158,6 +2158,7 @@
 	"overview.selectAll": "Выбрать сессии",
 	"overview.showArchived": "Показать архивные",
 	"overview.hideArchived": "Скрыть архивные",
+	"overview.archivedCount": "Архивные ({{count}})",
 	"overview.undeliveredCount": "{{count}} недоставленных",
 	"overview.toggleProject": "Показать или скрыть сессии {{name}}",
 	"overview.openOrchestrator": "Открыть оркестратор проекта {{name}}",

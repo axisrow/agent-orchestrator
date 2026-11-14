@@ -127,7 +127,8 @@ function pr(overrides: Partial<WorkspaceSession["prs"][number]> & { url: string;
 		review: "approved",
 		mergeability: "mergeable",
 		reviewComments: false,
-		updatedAt: "2026-11-12T00:00:00Z",
+		// Fresh by default so fixtures never rot past the visibility window.
+		updatedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
 		...overrides,
 	};
 }
@@ -195,6 +196,16 @@ function workspaces(): WorkspaceSummary[] {
 					isTerminated: true,
 					kanbanColumn: "archive",
 					prs: [pr({ url: "https://github.com/aoagents/agent-orchestrator/pull/7", number: 7 })],
+				}),
+				session({
+					id: "s-archived-stale-pr",
+					title: "stale review",
+					isTerminated: true,
+					kanbanColumn: "archive",
+					// The issue's flood case: an open PR whose "Review required"
+					// has been sitting for weeks. A fixed date only grows staler,
+					// so the fixture stays valid as the wall clock moves on.
+					prs: [pr({ url: "https://github.com/aoagents/agent-orchestrator/pull/8", number: 8, updatedAt: "2026-10-18T00:00:00Z" })],
 				}),
 				session({ id: "s-spawning", title: "just spawned", provisionState: "provisioning" }),
 			],
@@ -304,6 +315,60 @@ describe("OverviewPage", () => {
 		// undelivered messages are the GC and merge signals the screen exists for.
 		expect(screen.getByRole("button", { name: "dirty archive" })).toBeInTheDocument();
 		expect(screen.getByRole("button", { name: "archive with pr" })).toBeInTheDocument();
+	});
+
+	it("hides a terminated review session whose open PR went stale past the activity window", async () => {
+		const user = userEvent.setup();
+		h.workspaces = workspaces();
+		h.worktrees = worktrees();
+		renderPage();
+
+		// The issue's flood case: the PR is still open, but it has not moved
+		// in weeks, so a fresh PR keeps its session visible while the stale
+		// one hides with the toggle off and returns once the toggle asks.
+		expect(screen.getByRole("button", { name: "archive with pr" })).toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "stale review" })).not.toBeInTheDocument();
+		await user.click(screen.getByRole("button", { name: "Show archived" }));
+		expect(screen.getByRole("button", { name: "stale review" })).toBeInTheDocument();
+	});
+
+	it("shows the hidden archive scale next to the toggle until the toggle reveals it", async () => {
+		const user = userEvent.setup();
+		h.workspaces = workspaces();
+		h.worktrees = worktrees();
+		renderPage();
+
+		// The plain terminated row and the stale-review row are what the
+		// default view currently hides.
+		expect(screen.getByTestId("overview-archived-count").textContent).toBe("Archived (2)");
+		await user.click(screen.getByRole("button", { name: "Show archived" }));
+		expect(screen.queryByTestId("overview-archived-count")).not.toBeInTheDocument();
+	});
+
+	it("treats an Archive stage filter as an explicit request for archived rows", async () => {
+		const user = userEvent.setup();
+		h.workspaces = workspaces();
+		h.worktrees = worktrees();
+		renderPage();
+
+		await user.click(screen.getByRole("combobox", { name: "Stage" }));
+		await user.click(screen.getByRole("option", { name: "Archive" }));
+
+		expect(screen.getByRole("button", { name: "stale review" })).toBeInTheDocument();
+		expect(screen.queryByTestId("overview-archived-count")).not.toBeInTheDocument();
+	});
+
+	it("treats an Exited status filter as an explicit request for archived rows", async () => {
+		const user = userEvent.setup();
+		h.workspaces = workspaces();
+		h.worktrees = worktrees();
+		renderPage();
+
+		await user.click(screen.getByRole("combobox", { name: "Status" }));
+		await user.click(screen.getByRole("option", { name: "Exited" }));
+
+		expect(screen.getByRole("button", { name: "stale review" })).toBeInTheDocument();
+		expect(screen.queryByTestId("overview-archived-count")).not.toBeInTheDocument();
 	});
 
 	it("shows undelivered counters from the delivery journal", () => {

@@ -2965,6 +2965,7 @@
 	"overview.selectAll": "Sitzungen auswählen",
 	"overview.showArchived": "Archivierte anzeigen",
 	"overview.hideArchived": "Archivierte ausblenden",
+	"overview.archivedCount": "Archivierte ({{count}})",
 	"overview.undeliveredCount": "{{count}} unzustellbar",
 	"overview.toggleProject": "Sitzungen von {{name}} ein- oder ausklappen",
 	"overview.openOrchestrator": "Orchestrator von {{name}} öffnen",

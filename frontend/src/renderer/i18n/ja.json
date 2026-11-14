@@ -2965,6 +2965,7 @@
 	"overview.selectAll": "セッションを選択",
 	"overview.showArchived": "アーカイブを表示",
 	"overview.hideArchived": "アーカイブを隠す",
+	"overview.archivedCount": "アーカイブ ({{count}})",
 	"overview.undeliveredCount": "未配信 {{count}} 件",
 	"overview.toggleProject": "{{name}} のセッションを開閉",
 	"overview.openOrchestrator": "{{name}} のオーケストレーターを開く",
