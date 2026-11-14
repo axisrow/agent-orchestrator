@@ -1,4 +1,5 @@
 import { AppLink } from "../AppLink";
+import { pageHidden } from "../../lib/page-hidden";
 import { useAgentAccountLabel } from "../../hooks/useAgentAccounts";
 /**
  * Timeline entries for the Chat surface.
@@ -248,7 +249,9 @@ function useSmoothStreamingText(message: ConversationMessage): string {
 
 		targetRef.current = message.text;
 		targetGraphemesRef.current = targetGraphemes;
-		if (!message.streaming || reducedMotion) {
+		// A hidden window draws no frames, so a reveal would stall and replay once the
+		// reader is back. Show what arrived now; the fade treats it as settled too.
+		if (!message.streaming || reducedMotion || pageHidden()) {
 			cancelDrain();
 			visibleRef.current = message.text;
 			visibleGraphemeCountRef.current = targetGraphemes.length;
@@ -1033,6 +1036,8 @@ export function ActivityTransition({
 	useEffect(() => {
 		if (previousValue.current === value) return;
 		previousValue.current = value;
+		// A change made while the window is hidden would dip on the reader's return.
+		if (pageHidden()) return;
 		setSettling(true);
 	}, [value]);
 

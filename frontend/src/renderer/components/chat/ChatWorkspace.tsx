@@ -106,6 +106,7 @@ import {
 	type TurnOutcomeRetryControl,
 } from "./ChatTimelineItems";
 import { ChatLinkProvider, ChatOpeningRef } from "./ChatMarkdown";
+import { pageHidden } from "../../lib/page-hidden";
 import { ChatImageSourceProvider } from "./chat-image-source";
 import type { ComposerPromptSuggestion } from "./ComposerEditor";
 import { ChatComposer, type ChatComposerHandle } from "./ChatComposer";
@@ -2449,6 +2450,7 @@ export function Timeline({
 		markWritten,
 		isOwnScroll,
 		isFlying,
+		isGliding,
 		reaim,
 		endFlight,
 	} = useScrollFollow(getScroller);
@@ -2844,7 +2846,10 @@ export function Timeline({
 				.filter(
 					(item) =>
 						!seenHumanMessageIds.current?.has(itemKey(item)) &&
-						item.sequence > (lastSeenLatestSequence.current ?? -Infinity),
+						item.sequence > (lastSeenLatestSequence.current ?? -Infinity) &&
+						// A prompt or local echo that lands while the window is hidden was not
+						// watched arrive; it must not play its entrance on the reader's return.
+						!pageHidden(),
 				)
 				.map(itemKey),
 		);
@@ -3152,14 +3157,30 @@ export function Timeline({
 	// over the first frames (and may arrive in more than one snapshot), so keep
 	// snapping briefly after the first real layout instead of animating across them.
 	const followOrSnapToEnd = useCallback((node: HTMLElement) => {
-		if (viewportResize.current || !initialLayoutDone.current || performance.now() - initialLayoutAt.current < INITIAL_SNAP_MS) {
+		// The same snap covers rows the reader did not watch arrive (anything landing
+		// while the window is hidden, where a glide would only start once they are
+		// back), and the moments after the window is seen again while rows that
+		// landed hidden measure.
+		const now = performance.now();
+		const hidden = pageHidden();
+		const opening = !initialLayoutDone.current || now - initialLayoutAt.current < INITIAL_SNAP_MS;
+		if (viewportResize.current || opening || hidden) {
+			if (!viewportResize.current && !opening && isFlying()) {
+				// The reader's own send or Jump to latest keeps on course to the new end;
+				// an automatic follow glide stops and lands. Hidden, neither could play.
+				if (!hidden && isGliding()) {
+					reaim();
+					return;
+				}
+				cancelScrollFollow();
+			}
 			if (viewportResize.current) cancelScrollFollow();
 			node.scrollTop = node.scrollHeight;
 			markWritten(node.scrollTop);
 			return;
 		}
 		followEnd();
-	}, [followEnd, markWritten, cancelScrollFollow]);
+	}, [followEnd, markWritten, cancelScrollFollow, isFlying, isGliding, reaim]);
 
 	const syncScrollLayout = useCallback(() => {
 		anchorGeometry.current = null;
@@ -3239,6 +3260,29 @@ export function Timeline({
 	useEffect(() => {
 		syncScrollLayout();
 	}, [pinned, snapshot.latestSequence, groups.length, syncScrollLayout]);
+	// The window is seen again: what landed while it was hidden is history, a glide
+	// queued then (it cannot play without frames) is dropped, a reader at the end
+	// stays at the end, and the rows that landed hidden measure in place instead of
+	// being chased down the log. Read through a ref so streamed chunks (new layout
+	// callbacks) never re-register it.
+	const onPageShown = useRef(() => {});
+	onPageShown.current = () => {
+		if (isFlying()) cancelScrollFollow();
+		const node = scroller.current;
+		if (!node || !initialLayoutDone.current) return;
+		if (pinnedRef.current) {
+			syncPromptSpacer();
+			followOrSnapToEnd(node);
+		}
+		updateScrollbar();
+	};
+	useEffect(() => {
+		const onVisibilityChange = () => {
+			if (!pageHidden()) onPageShown.current();
+		};
+		document.addEventListener("visibilitychange", onVisibilityChange);
+		return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+	}, []);
 	useLayoutEffect(() => {
 		restoreViewportResize();
 	}, [virtualHeight, restoreViewportResize]);

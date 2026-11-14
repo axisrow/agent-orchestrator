@@ -33,6 +33,7 @@ import {
 	useContext,
 	useEffect,
 	useMemo,
+	useRef,
 	useState,
 	type MouseEvent as ReactMouseEvent,
 	type ReactNode,
@@ -42,6 +43,7 @@ import remarkGfm from "remark-gfm";
 import { WrapText } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { isHostLocalWebLink } from "../../lib/loopback";
+import { pageHidden } from "../../lib/page-hidden";
 import { canonicalLanguage } from "../../lib/code-highlight";
 import { fenceOf } from "../../lib/markdown-fence";
 import { EMOJI_GRAPHEME, rehypeStreamFade } from "../../lib/rehype-stream-fade";
@@ -176,9 +178,14 @@ export const ChatMarkdown = memo(function ChatMarkdown({
 	if (streaming && !fading) setFading(true);
 	// A reply already on screen when its chat opens (switching to a chat
 	// mid-stream) is not new; only characters that arrive afterwards fade in. A
-	// reply that arrives later fades from its first character.
+	// reply that arrives later fades from its first character. Text that arrives
+	// while the window is hidden is not watched either: its fade could only play
+	// once the reader is back, replaying the whole stretch at once.
 	const chatOpening = useContext(ChatOpeningRef);
-	const [settledOffset] = useState(() => (chatOpening.current ? text.length : 0));
+	const [openedOffset] = useState(() => (chatOpening.current ? text.length : 0));
+	const hiddenOffset = useRef(0);
+	if (pageHidden()) hiddenOffset.current = text.length;
+	const settledOffset = Math.max(openedOffset, hiddenOffset.current);
 	const streamingRehype = useMemo<Options["rehypePlugins"]>(() => [[rehypeStreamFade, { settledOffset }]], [settledOffset]);
 	useEffect(() => {
 		if (streaming) return;
