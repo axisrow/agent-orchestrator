@@ -804,8 +804,21 @@ function selectTraySessions(workspaces: WorkspaceSummary[]): TraySessionEntry[] 
 	const entries: TraySessionEntry[] = [];
 	for (const workspace of workspaces) {
 		for (const session of workerSessions(workspace.sessions)) {
-			const zone = attentionZone(session);
-			if ((zone === "merge" && session.status === "merged") || (zone !== "action" && zone !== "merge")) continue;
+			// The tray is a human-input queue: an item stays while its underlying
+			// condition is unresolved (issue #328). `status` folds the session
+			// row's liveness into the classification — the daemon lets
+			// IsTerminated dominate the SCM facts, so a review-runner row that
+			// finished and was terminated while its PR is still open and unmerged
+			// read "terminated" and silently left the tray. That unresolved
+			// condition lives on `scmStatus`, which the daemon derives from pure
+			// PR facts (state/CI/review decision), so classify a terminated row
+			// from it. Nothing else mutates this set: menu selection, menu close,
+			// navigation and window-focus refetches carry the same facts and
+			// re-derive the same items.
+			const status =
+				session.status === "terminated" ? (session.scmStatus ?? session.status) : session.status;
+			const zone = attentionZone(status);
+			if ((zone === "merge" && status === "merged") || (zone !== "action" && zone !== "merge")) continue;
 			entries.push({
 				projectId: session.workspaceId,
 				projectName: workspace.name,

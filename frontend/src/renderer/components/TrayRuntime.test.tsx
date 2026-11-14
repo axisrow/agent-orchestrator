@@ -9,15 +9,21 @@ const h = vi.hoisted(() => ({
 	listener: null as null | ((target: { projectId: string; sessionId: string }) => void),
 }));
 
+/** Mirrors selectTraySessions (useWorkspaceQuery.ts) — keep in step with it. */
+const traySessions = (workspaces: WorkspaceSummary[]) =>
+	workspaces.flatMap((workspace) =>
+		workerSessions(workspace.sessions).flatMap((session) => {
+			const status =
+				session.status === "terminated" ? (session.scmStatus ?? session.status) : session.status;
+			const zone = attentionZone(status);
+			if ((zone === "merge" && status === "merged") || (zone !== "action" && zone !== "merge")) return [];
+			return [{ projectId: workspace.id, projectName: workspace.name, sessionId: session.id, title: session.title, zone }];
+		}),
+	);
+
 vi.mock("../hooks/useWorkspaceQuery", () => ({
 	useWorkspaceTraySessions: () => ({
-		data: h.workspaces.flatMap((workspace) =>
-			workerSessions(workspace.sessions).flatMap((session) => {
-				const zone = attentionZone(session);
-				if ((zone === "merge" && session.status === "merged") || (zone !== "action" && zone !== "merge")) return [];
-				return [{ projectId: workspace.id, projectName: workspace.name, sessionId: session.id, title: session.title, zone }];
-			}),
-		),
+		data: traySessions(h.workspaces),
 	}),
 	workspaceQueryKey: ["workspaces"],
 }));
@@ -105,5 +111,23 @@ describe("TrayRuntime", () => {
 		render(<TrayRuntime />);
 		const pushed = h.setAttentionState.mock.calls.at(-1)?.[0]?.sessions ?? [];
 		expect(pushed.some((entry: { sessionId: string }) => entry.sessionId === "s-merged")).toBe(false);
+	});
+
+	// Issue #328: interacting with the menu must never mutate the attention set.
+	it("selecting a session only navigates and leaves the pushed set untouched", () => {
+		h.workspaces = workspaces();
+		render(<TrayRuntime />);
+		const pushesAfterRender = h.setAttentionState.mock.calls.length;
+		act(() => h.listener?.({ projectId: "proj-1", sessionId: "s-merge" }));
+		expect(h.navigateToSession).toHaveBeenCalledWith("proj-1", "s-merge");
+		expect(h.setAttentionState).toHaveBeenCalledTimes(pushesAfterRender);
+	});
+
+	it("re-renders over unchanged facts without re-pushing the set", () => {
+		h.workspaces = workspaces();
+		const { rerender } = render(<TrayRuntime />);
+		const pushesAfterRender = h.setAttentionState.mock.calls.length;
+		rerender(<TrayRuntime />);
+		expect(h.setAttentionState).toHaveBeenCalledTimes(pushesAfterRender);
 	});
 });
