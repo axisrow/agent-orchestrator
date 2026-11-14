@@ -640,6 +640,106 @@ describe("useWorkspaceQuery", () => {
 			{ projectId: "proj-1", projectName: "my-app", sessionId: "mergeable", title: "Mergeable", zone: "merge" },
 		]);
 	});
+
+	// Issue #328: the tray is a human-input queue. Items persist while their
+	// underlying condition is unresolved — classified from durable PR/session
+	// facts, never from the session row's liveness or any menu interaction.
+	const terminatedReviewSession = (overrides: Record<string, unknown> = {}) => ({
+		id: "review-332",
+		projectId: "proj-1",
+		displayName: "review PR 332",
+		harness: "codex",
+		kind: "worker",
+		isTerminated: true,
+		status: "terminated",
+		scmStatus: "mergeable",
+		updatedAt: "2026-11-12T19:43:00Z",
+		prs: [{
+			url: "https://github.com/example/repo/pull/332",
+			number: 332,
+			state: "open",
+			ci: "passing",
+			review: "none",
+			mergeability: "mergeable",
+			updatedAt: "2026-11-12T19:43:00Z",
+		}],
+		...overrides,
+	});
+
+	it("keeps a terminated review-runner session whose PR still awaits a human", async () => {
+		respondWith({
+			projects: { data: { projects: [{ id: "proj-1", name: "my-app", path: "/p" }] }, error: undefined },
+			sessions: {
+				data: { sessions: [terminatedReviewSession(), terminatedReviewSession({ id: "review-960", displayName: "review PR 960", scmStatus: "merge_blocked", prs: [{ url: "https://github.com/example/repo/pull/960", number: 960, state: "open", ci: "passing", review: "review_required", mergeability: "blocked", updatedAt: "2026-11-12T19:43:00Z" }] })] },
+				error: undefined,
+			},
+		});
+
+		const { result } = renderHook(() => useWorkspaceTraySessions(), { wrapper });
+		await waitFor(() => expect(result.current.isSuccess).toBe(true));
+		// The merge-ready one holds its merge-zone item; the review-required one
+		// keeps today's tray semantics (only action/merge zones surface).
+		expect(result.current.data).toEqual([
+			{ projectId: "proj-1", projectName: "my-app", sessionId: "review-332", title: "review PR 332", zone: "merge" },
+		]);
+	});
+
+	it("drops a terminated session only once its own PR condition resolves", async () => {
+		respondWith({
+			projects: { data: { projects: [{ id: "proj-1", name: "my-app", path: "/p" }] }, error: undefined },
+			sessions: {
+				data: {
+					sessions: [
+						terminatedReviewSession(),
+						terminatedReviewSession({
+							id: "review-960",
+							displayName: "review PR 960",
+							status: "merged",
+							scmStatus: "merged",
+							prs: [{ url: "https://github.com/example/repo/pull/960", number: 960, state: "merged", ci: "passing", review: "none", mergeability: "unknown", updatedAt: "2026-11-13T12:09:58Z" }],
+						}),
+					],
+				},
+				error: undefined,
+			},
+		});
+
+		const { result } = renderHook(() => useWorkspaceTraySessions(), { wrapper });
+		await waitFor(() => expect(result.current.isSuccess).toBe(true));
+		expect(result.current.data).toEqual([
+			{ projectId: "proj-1", projectName: "my-app", sessionId: "review-332", title: "review PR 332", zone: "merge" },
+		]);
+	});
+
+	it("keeps unresolved items across a refetch carrying the same facts", async () => {
+		respondWith({
+			projects: { data: { projects: [{ id: "proj-1", name: "my-app", path: "/p" }] }, error: undefined },
+			sessions: { data: { sessions: [terminatedReviewSession()] }, error: undefined },
+		});
+
+		const { result } = renderHook(() => useWorkspaceTraySessions(), { wrapper });
+		await waitFor(() => expect(result.current.isSuccess).toBe(true));
+		const before = result.current.data;
+		await act(async () => {
+			await result.current.refetch();
+		});
+		expect(result.current.data).toEqual(before);
+		expect(result.current.data).toHaveLength(1);
+	});
+
+	it("does not keep a terminated session without an unresolved SCM condition", async () => {
+		respondWith({
+			projects: { data: { projects: [{ id: "proj-1", name: "my-app", path: "/p" }] }, error: undefined },
+			sessions: {
+				data: { sessions: [terminatedReviewSession({ scmStatus: undefined, prs: [] })] },
+				error: undefined,
+			},
+		});
+
+		const { result } = renderHook(() => useWorkspaceTraySessions(), { wrapper });
+		await waitFor(() => expect(result.current.isSuccess).toBe(true));
+		expect(result.current.data).toEqual([]);
+	});
 });
 
 describe("useWorkspaceScope board presentation", () => {

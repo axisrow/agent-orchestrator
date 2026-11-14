@@ -132,6 +132,20 @@ describe("createTrayController", () => {
 		expect(openSession).toHaveBeenCalledWith({ projectId: "proj-1", sessionId: "s1" });
 	});
 
+	// Issue #328: menu interaction must never mutate the attention set.
+	it("selecting one item keeps its siblings and the rendered menu intact", () => {
+		const { controller, tray, openSession } = setup();
+		controller.setState({
+			sessions: [entry({ sessionId: "s1", title: "one", zone: "merge" }), entry({ sessionId: "s2", title: "two", zone: "merge" })],
+		});
+		const labelsBefore = sessionItems(tray).map((i) => i.label);
+		const items = sessionItems(tray);
+		items[0].click?.();
+		expect(openSession).toHaveBeenCalledTimes(1);
+		expect(sessionItems(tray).map((i) => i.label)).toEqual(labelsBefore);
+		expect(tray.title).toBe("2");
+	});
+
 	it("marks the icon as a macOS template so the menu bar can tint it", () => {
 		setup();
 		expect(setTemplateImage).toHaveBeenCalledWith(true);
