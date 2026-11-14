@@ -70,7 +70,6 @@ import type {
 	CloudCpGitHubUserConnection,
 	CloudCpGitHubRepositoriesPage,
 	CloudCpPutAgentConnectionRequest,
-	CloudCpPutGitHubPATRequest,
 	CloudCpSendMessageRequest,
 	CloudCpSendMessageResponse,
 	CloudCpSteerTurnResponse,
@@ -135,8 +134,6 @@ import type {
 	CloudCpTerminalTicketResponse,
 	CloudCpUpdateProjectRequest,
 	CloudCpUpdateSessionPreferencesRequest,
-	CloudCpValidateRepositoryAccessRequest,
-	CloudCpValidateRepositoryAccessResponse,
 } from "./types";
 
 const API_PREFIX = "/api/cloud/v1";
@@ -634,13 +631,9 @@ export interface CloudCpClient {
 		body: CloudCpSwitchSessionAgentAccountRequest,
 		options?: CloudCpRequestOptions,
 	): Promise<CloudCpStartInterfaceTransitionResponse>;
-	putGitHubPAT(body: CloudCpPutGitHubPATRequest, options?: CloudCpRequestOptions): Promise<CloudCpProviderConnectionResponse>;
+	/** Removes a GitHub token saved before Cloud reached GitHub through the App (DELETE /me/github-pat). */
 	deleteGitHubPAT(options?: CloudCpRequestOptions): Promise<void>;
 	listGitHubRepos(options?: CloudCpRequestOptions): Promise<CloudCpGitHubReposResponse>;
-	validateSavedRepositoryAccess(
-		body: CloudCpValidateRepositoryAccessRequest,
-		options?: CloudCpRequestOptions,
-	): Promise<CloudCpValidateRepositoryAccessResponse>;
 
 	// GitHub App connect flow. See the type comments in ./types for the flow.
 	startGitHubInstallation(
@@ -1353,11 +1346,8 @@ export function createCloudCpClient(options: CloudCpClientOptions): CloudCpClien
 			requestJson("GET", `/orgs/${seg(orgId)}/sessions/${seg(sessionId)}/agent-account`, { signal: o?.signal }),
 		switchSessionAgentAccount: (orgId, sessionId, body, o) =>
 			requestJson("PUT", `/orgs/${seg(orgId)}/sessions/${seg(sessionId)}/agent-account`, { body, signal: o?.signal }),
-		putGitHubPAT: (body, o) => requestJson("PUT", "/me/github-pat", { body, signal: o?.signal }),
 		deleteGitHubPAT: (o) => requestVoid("DELETE", "/me/github-pat", { signal: o?.signal }),
 		listGitHubRepos: (o) => requestJson("GET", "/me/github/repos", { signal: o?.signal }),
-		validateSavedRepositoryAccess: (body, o) =>
-			requestJson("POST", "/me/github-pat/validate-saved-repository", { body, signal: o?.signal }),
 
 		startGitHubInstallation: (orgId, o) =>
 			requestJson("POST", `/orgs/${seg(orgId)}/github/installations/start`, { signal: o?.signal }),
