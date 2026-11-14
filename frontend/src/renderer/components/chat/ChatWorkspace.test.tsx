@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { Profiler } from "react";
 import { placeLexicalCaret, typeInLexicalEditor } from "../../test/lexical";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ChatWorkspace, promptSpacerHeight, promptTopInset } from "./ChatWorkspace";
+import { ChatWorkspace, forgetReadingPositions, promptSpacerHeight, promptTopInset } from "./ChatWorkspace";
 import { AssistantMessage, HumanMessage, OriginMessage } from "./ChatTimelineItems";
 import { ChatLinkProvider } from "./ChatMarkdown";
 import {
@@ -187,6 +187,7 @@ function stubGeometry(
 }
 
 beforeEach(() => {
+	forgetReadingPositions();
 	writeText.mockClear();
 	menuAction.mockClear();
 	previousTabListeners.clear();
