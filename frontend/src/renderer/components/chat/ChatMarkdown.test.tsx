@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { aoBridge } from "../../lib/bridge";
@@ -32,15 +33,23 @@ function renderWithLinkHandler(
 	workspacePaths: string[] = [],
 	onFileOpen?: (path: string, line?: number) => void,
 ) {
+	// Link workspaces are read through the query client on demand; the provider
+	// links nothing without one (as in an isolated production tree).
 	return render(
-		<ChatLinkProvider onLinkOpen={onLinkOpen} onFileOpen={onFileOpen} workspacePaths={workspacePaths}>
-			<ChatMarkdown text={text} />
-		</ChatLinkProvider>,
+		<QueryClientProvider client={new QueryClient()}>
+			<ChatLinkProvider onLinkOpen={onLinkOpen} onFileOpen={onFileOpen} workspacePaths={workspacePaths}>
+				<ChatMarkdown text={text} />
+			</ChatLinkProvider>
+		</QueryClientProvider>,
 	);
 }
 
 function renderWithSessionLinkHandler(text: string, onSessionLinkOpen: (url: string) => void) {
-	return render(<ChatLinkProvider onSessionLinkOpen={onSessionLinkOpen}><ChatMarkdown text={text} /></ChatLinkProvider>);
+	return render(
+		<QueryClientProvider client={new QueryClient()}>
+			<ChatLinkProvider onSessionLinkOpen={onSessionLinkOpen}><ChatMarkdown text={text} /></ChatLinkProvider>
+		</QueryClientProvider>,
+	);
 }
 
 describe("ChatMarkdown", () => {

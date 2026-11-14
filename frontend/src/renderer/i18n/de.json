@@ -1660,6 +1660,7 @@
 	"shell.moreArtifacts": "+{{count}} weitere",
 	"shell.openArtifactsInInspector": "Im Inspektor öffnen",
 	"artifacts.sessionEmpty": "Diese Sitzung hat noch keine Artefakte.",
+	"artifacts.notListedYet": "{{name}} ist noch nicht unter den Artefakten dieser Sitzung. Die Datei öffnet sich hier, sobald die Sitzung sie aufführt.",
 	"artifacts.back": "Zurück zu den Artefakten",
 	"artifacts.copyMarkdown": "Als Markdown kopieren",
 	"artifacts.copyContents": "Inhalt kopieren",

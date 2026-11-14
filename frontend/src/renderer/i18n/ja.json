@@ -1660,6 +1660,7 @@
 	"shell.moreArtifacts": "他 {{count}} 件",
 	"shell.openArtifactsInInspector": "インスペクターで開く",
 	"artifacts.sessionEmpty": "このセッションにはまだアーティファクトがありません。",
+	"artifacts.notListedYet": "{{name}} はまだこのセッションのアーティファクトにありません。セッションに表示されると、ここで開きます。",
 	"artifacts.back": "アーティファクトに戻る",
 	"artifacts.copyMarkdown": "Markdownとしてコピー",
 	"artifacts.copyContents": "内容をコピー",

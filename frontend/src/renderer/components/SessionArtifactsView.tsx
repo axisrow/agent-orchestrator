@@ -318,21 +318,30 @@ export function SessionArtifactsView({
 	const { t } = useTranslation();
 	const artifacts = useMemo(() => sortedArtifacts(session.artifactFiles ?? []), [session.artifactFiles]);
 	const [selectedPath, setSelectedPath] = useState<string | null>(null);
+	// A file a request opened before the session listed it, until the list has
+	// it. Only that file gets the not-listed-yet note: one that leaves the list
+	// later (deleted here or by the agent) is gone, not on its way.
+	const [awaitedPath, setAwaitedPath] = useState<string | null>(null);
 	const [toolbarHost, setToolbarHost] = useState<HTMLElement | null>(null);
 	const [fullscreen, setFullscreen] = useState(false);
 	const [previewVersion, setPreviewVersion] = useState<number | null>(null);
 	const openArtifactPreview = useOpenArtifactPreview(session.id, hostId);
 	const uiKey = sessionUiKey(session.id, hostId);
 
-	useEffect(() => setSelectedPath(null), [uiKey]);
+	useEffect(() => { setSelectedPath(null); setAwaitedPath(null); }, [uiKey]);
 	// History is per file: opening another one starts on its live content.
 	useEffect(() => setPreviewVersion(null), [selectedPath, uiKey]);
 	const exitFullscreen = useMemo(() => () => setFullscreen(false), []);
 	useEffect(() => {
-		if (request) setSelectedPath(request.path);
+		if (request) {
+			setSelectedPath(request.path);
+			setAwaitedPath(request.path);
+		}
 	}, [request]);
 
 	const selected = artifacts.find((artifact) => artifact.path === selectedPath);
+	// The awaited file is listed once the lookup finds it.
+	if (awaitedPath !== null && selected) setAwaitedPath(null);
 	// Versions are read back as text, so a binary file such as an image gets no
 	// History. This shares the viewer's cached read of the file.
 	const selectedFile = useQuery({
@@ -404,7 +413,14 @@ export function SessionArtifactsView({
 				{/* The artifact directory is on this machine only for a local session. */}
 				{!hostId && !session.cloud && artifacts.length > 0 ? <OpenArtifactsFolderButtons sessionId={session.id} /> : null}
 			</div>
-			{artifacts.length === 0 ? (
+			{/* A file opened by its path (a chat link to one the agent just wrote)
+			    shows once the session lists it; until then, say so rather than
+			    leave the gallery as if nothing was asked. */}
+			{selectedPath !== null && selectedPath === awaitedPath ? (
+				<PanelMessage action={<Button onClick={() => setSelectedPath(null)} size="sm" type="button" variant="secondary">{t("artifacts.back")}</Button>}>
+					{t("artifacts.notListedYet", { name: selectedPath })}
+				</PanelMessage>
+			) : artifacts.length === 0 ? (
 				<PanelMessage>{t("artifacts.sessionEmpty")}</PanelMessage>
 			) : (
 				<ul className="board-scrollbar flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto px-3 pb-3 pt-1">

@@ -30,14 +30,17 @@ import {
 	createContext,
 	Fragment,
 	memo,
+	useCallback,
 	useContext,
 	useEffect,
+	useLayoutEffect,
 	useMemo,
 	useRef,
 	useState,
 	type MouseEvent as ReactMouseEvent,
 	type ReactNode,
 } from "react";
+import { QueryClientContext } from "@tanstack/react-query";
 import Markdown, { defaultUrlTransform, type Components, type Options } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { WrapText } from "lucide-react";
@@ -47,8 +50,9 @@ import { pageHidden } from "../../lib/page-hidden";
 import { canonicalLanguage } from "../../lib/code-highlight";
 import { fenceOf } from "../../lib/markdown-fence";
 import { EMOJI_GRAPHEME, rehypeStreamFade } from "../../lib/rehype-stream-fade";
-import { artifactLinkForPath, findSessionLinks, isAoLink, remarkSessionLinks } from "../../lib/session-links";
+import { artifactLinkForPath, artifactLinkForTarget, findSessionLinks, hasArtifactDirectorySegment, isAoLink, remarkSessionLinks, sessionArtifactPath } from "../../lib/session-links";
 import { useSessionLinkSource } from "../../lib/use-session-link-navigation";
+import type { WorkspaceSummary } from "../../types/workspace";
 import {
 	isPotentialWorkspaceFileLink,
 	isWebLink,
@@ -103,6 +107,7 @@ const InsideMarkdownLink = createContext(false);
 const SafeOriginContent = createContext(false);
 const REMOTE_PREVIEW_UNAVAILABLE = "This link points to the remote host. Preview is unavailable on this device.";
 const OpenChatLink = createContext<{
+	sessionId?: string;
 	open?: (url: string) => void;
 	openFile?: (path: string, line?: number) => void;
 	remoteHost?: boolean;
@@ -112,8 +117,30 @@ const OpenChatLink = createContext<{
 	workspacePaths: string[];
 }>({ workspacePaths: [] });
 const EMPTY_WORKSPACE_PATHS: string[] = [];
+const EMPTY_LINK_WORKSPACES: WorkspaceSummary[] = [];
+/**
+ * The workspaces this chat's session and artifact links resolve against,
+ * read once for the chat, from the first link that asks, and shared by every
+ * link in it. Empty outside a ChatLinkProvider, or without a query client to
+ * read them with.
+ */
+const ChatLinkWorkspaces = createContext<{ workspaces: WorkspaceSummary[]; demand?: () => void }>({ workspaces: EMPTY_LINK_WORKSPACES });
+
+/**
+ * Reads the link workspaces for its ChatLinkProvider. A leaf beside the chat,
+ * not a wrapper around it, so starting the read never remounts the chat.
+ */
+function ChatLinkWorkspacesSource({ hostId, kind, onWorkspaces }: { hostId?: string; kind?: "cloud"; onWorkspaces: (workspaces: WorkspaceSummary[]) => void }) {
+	const { workspaces } = useSessionLinkSource(hostId, kind);
+	// A source with no data answers a fresh [] on every render; one empty list
+	// keeps the provider's re-render from asking again.
+	const shared = workspaces.length === 0 ? EMPTY_LINK_WORKSPACES : workspaces;
+	useLayoutEffect(() => onWorkspaces(shared), [onWorkspaces, shared]);
+	return null;
+}
 
 export function ChatLinkProvider({
+	sessionId,
 	onLinkOpen,
 	onFileOpen,
 	remoteHost,
@@ -123,6 +150,7 @@ export function ChatLinkProvider({
 	workspacePaths = EMPTY_WORKSPACE_PATHS,
 	children,
 }: {
+	sessionId?: string;
 	onLinkOpen?: (url: string) => void;
 	onFileOpen?: (path: string, line?: number) => void;
 	remoteHost?: boolean;
@@ -133,10 +161,23 @@ export function ChatLinkProvider({
 	children: ReactNode;
 }) {
 	const value = useMemo(
-		() => ({ open: onLinkOpen, openFile: onFileOpen, openSession: onSessionLinkOpen, remoteHost, sessionLinkHostId, sessionLinkSourceKind, workspacePaths }),
-		[onLinkOpen, onFileOpen, onSessionLinkOpen, remoteHost, sessionLinkHostId, sessionLinkSourceKind, workspacePaths],
+		() => ({ sessionId, open: onLinkOpen, openFile: onFileOpen, openSession: onSessionLinkOpen, remoteHost, sessionLinkHostId, sessionLinkSourceKind, workspacePaths }),
+		[sessionId, onLinkOpen, onFileOpen, onSessionLinkOpen, remoteHost, sessionLinkHostId, sessionLinkSourceKind, workspacePaths],
 	);
-	return <OpenChatLink.Provider value={value}>{children}</OpenChatLink.Provider>;
+	// The link workspaces come from queries, read only once something in the
+	// chat asks for them. A render without a query client (an isolated tree)
+	// links nothing to an artifact rather than throwing.
+	const hasQueryClient = useContext(QueryClientContext) !== undefined;
+	const [linkWorkspacesDemanded, setLinkWorkspacesDemanded] = useState(false);
+	const [linkWorkspaces, setLinkWorkspaces] = useState(EMPTY_LINK_WORKSPACES);
+	const demandLinkWorkspaces = useCallback(() => setLinkWorkspacesDemanded(true), []);
+	const linkWorkspacesValue = useMemo(() => ({ workspaces: linkWorkspaces, demand: demandLinkWorkspaces }), [linkWorkspaces, demandLinkWorkspaces]);
+	return <OpenChatLink.Provider value={value}>
+		<ChatLinkWorkspaces.Provider value={linkWorkspacesValue}>{children}</ChatLinkWorkspaces.Provider>
+		{hasQueryClient && linkWorkspacesDemanded
+			? <ChatLinkWorkspacesSource key={`${sessionLinkHostId ?? ""}:${sessionLinkSourceKind ?? ""}`} hostId={sessionLinkHostId} kind={sessionLinkSourceKind} onWorkspaces={setLinkWorkspaces} />
+			: null}
+	</OpenChatLink.Provider>;
 }
 
 function chatUrlTransform(url: string, key: string): string | undefined {
@@ -309,15 +350,50 @@ function compactEmoji(children: ReactNode): ReactNode {
 	return children;
 }
 
-function MarkdownLink({ href, children }: { href?: string; children?: ReactNode }) {
+type MarkdownLinkProps = { href?: string; children?: ReactNode };
+
+function MarkdownLink(props: MarkdownLinkProps) {
+	const { href } = props;
+	// Safe-origin text links only what it wrote as an ao:// link. Mapping its
+	// file links to artifacts first would hand the safe-origin check a link the
+	// text never wrote, so they stay text there. A chat that cannot open an
+	// artifact link keeps the file link it can open.
 	const safeOriginContent = useContext(SafeOriginContent);
-	const { open: onLinkOpen, openFile: onFileOpen, openSession: onSessionLinkOpen, remoteHost, workspacePaths } = useContext(OpenChatLink);
+	const { openSession } = useContext(OpenChatLink);
+	return href && !safeOriginContent && openSession && !isWebLink(href) && !isAoLink(href) && hasArtifactDirectorySegment(href)
+		? <ArtifactFileLink {...props} href={href} />
+		: <MarkdownLinkTarget {...props} />;
+}
+
+/**
+ * A link to the file a session artifact was written to (the worker writes it
+ * under .../artifacts/<session>/<path>), opened as that artifact when the
+ * session lists it: the file lives outside the checkout, so the workspace file
+ * view cannot read it.
+ */
+function ArtifactFileLink(props: MarkdownLinkProps & { href: string }) {
+	const artifact = artifactLinkForTarget(props.href, useChatLinkWorkspaces());
+	return artifact
+		? <MarkdownLinkTarget {...props} href={artifact} />
+		: <MarkdownLinkTarget {...props} />;
+}
+
+function MarkdownLinkTarget({ href, children }: MarkdownLinkProps) {
+	const safeOriginContent = useContext(SafeOriginContent);
+	const { sessionId, open: onLinkOpen, openFile: onFileOpen, openSession: onSessionLinkOpen, remoteHost, workspacePaths } = useContext(OpenChatLink);
 	const filePath = href && onFileOpen
 		? workspaceFilePath(href, workspacePaths) ?? findWorkspaceFilePath(href, workspacePaths) ?? explicitWorkspaceFilePath(href)
 		: undefined;
 	const sessionLink = Boolean(href && isAoLink(href));
 	if (safeOriginContent && !sessionLink) return <>{children}</>;
-	const openInFiles = filePath && href && !/\.html?$/i.test(filePath) ? workspaceFileOpenTarget(href, filePath) : undefined;
+	// An HTML file opens as a page in the Browser, except one in this session's
+	// artifact directory: the file opener shows it in Artifacts, listed or not.
+	// That file is named by the link's own path, never by a workspace file that
+	// shares its name, and the link's query or fragment is cut while the target
+	// is still encoded, so a name's own "#" or "?" (%23, %3F) stays.
+	const linkedFile = href && sessionId && onFileOpen ? explicitWorkspaceFilePath(href.split(/[?#]/, 1)[0]!) : undefined;
+	const ownArtifact = linkedFile && sessionId && sessionArtifactPath(linkedFile, sessionId) ? linkedFile : undefined;
+	const openInFiles = ownArtifact ?? (filePath && href && !/\.html?$/i.test(filePath) ? workspaceFileOpenTarget(href, filePath) : undefined);
 	if (remoteHost && href && (isHostLocalWebLink(href) || (isPotentialWorkspaceFileLink(href) && !openInFiles))) {
 		return <span className="text-muted-foreground" title={REMOTE_PREVIEW_UNAVAILABLE}>
 			{children}<span className="sr-only"> (remote preview unavailable)</span>
@@ -329,7 +405,7 @@ function MarkdownLink({ href, children }: { href?: string; children?: ReactNode 
 			href={href}
 			onBrowserOpen={onLinkOpen}
 			inAppLink={href ? () => browserLink : undefined}
-			filePath={filePath && href ? workspaceFileOpenTarget(href, filePath) : filePath}
+			filePath={ownArtifact ?? (filePath && href ? workspaceFileOpenTarget(href, filePath) : filePath)}
 			onFileOpen={onFileOpen}
 			onClick={(event) => {
 				if (href && sessionLink) {
@@ -445,11 +521,17 @@ function MermaidFence({ code }: { code: string }) {
 		: diagram;
 }
 
+/** The workspaces this chat's session links resolve against: the local daemon's, a remote host's, or Cloud's. */
+export function useChatLinkWorkspaces(): WorkspaceSummary[] {
+	const { workspaces, demand } = useContext(ChatLinkWorkspaces);
+	// Before paint, so a link already known to name an artifact never shows as a file link first.
+	useLayoutEffect(() => demand?.(), [demand]);
+	return workspaces;
+}
+
 /** Inline code naming a listed session artifact, linked to that artifact. */
 function ArtifactPathCode({ text, children }: { text: string; children: ReactNode }) {
-	const { sessionLinkHostId, sessionLinkSourceKind } = useContext(OpenChatLink);
-	const { workspaces } = useSessionLinkSource(sessionLinkHostId, sessionLinkSourceKind);
-	const href = artifactLinkForPath(text, workspaces);
+	const href = artifactLinkForPath(text, useChatLinkWorkspaces());
 	return href ? <MarkdownLink href={href}>{children}</MarkdownLink> : <>{children}</>;
 }
 

@@ -1684,6 +1684,7 @@
 	"shell.moreArtifacts": "+{{count}} de plus",
 	"shell.openArtifactsInInspector": "Ouvrir dans l’inspecteur",
 	"artifacts.sessionEmpty": "Cette session n’a pas encore d’artefacts.",
+	"artifacts.notListedYet": "{{name}} ne figure pas encore parmi les artefacts de cette session. Il s’ouvrira ici dès que la session le listera.",
 	"artifacts.back": "Retour aux artefacts",
 	"artifacts.copyMarkdown": "Copier en Markdown",
 	"artifacts.copyContents": "Copier le contenu",

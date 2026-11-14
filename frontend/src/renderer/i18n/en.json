@@ -1969,6 +1969,7 @@
 	"shell.moreArtifacts": "+{{count}} more",
 	"shell.openArtifactsInInspector": "Open in inspector",
 	"artifacts.sessionEmpty": "No artifacts in this session yet.",
+	"artifacts.notListedYet": "{{name}} isn't in this session's artifacts yet. It opens here once the session lists it.",
 	"artifacts.back": "Back to artifacts",
 	"artifacts.copyMarkdown": "Copy as Markdown",
 	"artifacts.copyContents": "Copy contents",
