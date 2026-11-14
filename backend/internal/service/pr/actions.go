@@ -13,6 +13,11 @@ type ActionManager interface {
 	GetIdentity(ctx context.Context, prID string) (Identity, error)
 	Merge(ctx context.Context, request MergeRequest) (MergeResult, error)
 	ResolveComments(ctx context.Context, prID string, commentIDs []string) (ResolveResult, error)
+	// Retarget points one open pull request stacked on a merged branch at the
+	// repository's default branch.
+	Retarget(ctx context.Context, request RetargetRequest) (RetargetResult, error)
+	// DefaultBranch reads the tracked PR repository's default branch.
+	DefaultBranch(ctx context.Context, prID, prURL string) (string, error)
 }
 
 // Identity is the tracked pull request identity a caller needs to observe
@@ -31,12 +36,30 @@ type MergeRequest struct {
 	ExpectedHeadSHA string
 }
 
-// MergeResult is the successful outcome of a PR merge.
+// MergeResult is the successful outcome of a PR merge. Retargetable lists the
+// open pull requests still stacked on the merged branch, by number, so the
+// card can offer pointing them at the default branch.
 type MergeResult struct {
 	PRNumber       int
 	Method         string
 	State          domain.PRState
 	MergeCommitSHA string
+	StateChangedAt time.Time
+	Retargetable   []int
+}
+
+// RetargetRequest asks to point Child, an open pull request stacked on the
+// tracked PR's head branch, at the repository's default branch.
+type RetargetRequest struct {
+	PRID  string
+	PRURL string
+	Child int
+}
+
+// RetargetResult is the successful outcome of a retarget.
+type RetargetResult struct {
+	Child          int
+	Base           string
 	StateChangedAt time.Time
 }
 

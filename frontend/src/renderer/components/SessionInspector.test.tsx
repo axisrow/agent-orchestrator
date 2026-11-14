@@ -764,6 +764,126 @@ describe("SessionInspector PR section", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  // A base that isn't the default branch is how a stack child lands in its
+  // parent's branch, so Merge asks first and only a confirm merges.
+  it("asks before merging into a side branch and proceeds only on confirmation", async () => {
+    postMock.mockImplementation(async (path: string) => path === "/api/v1/prs/{id}/merge" ? {
+      data: {
+        ok: true,
+        prNumber: 7,
+        method: "squash",
+        state: "merged",
+        stateChangedAt: "2026-10-19T11:06:22Z",
+      },
+      error: undefined,
+    } : {
+      data: { ok: true, sessionId: "sess-1" },
+      error: undefined,
+    });
+    const sidePR = prSummary(7, "open", {
+      url: "https://example.com/pr/7",
+      headSha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      targetBranch: "feature/parent-head",
+      review: {
+        decision: "approved",
+        hasUnresolvedHumanComments: false,
+        unresolvedBy: [],
+      },
+    });
+    const respond = commonGetsResponder();
+    getMock.mockImplementation(async (path: string) => path === "/api/v1/sessions/{sessionId}/pr"
+      ? { data: { prs: [sidePR], linkedPrs: [] } }
+      : path === "/api/v1/prs/{id}/default-branch"
+        ? { data: { defaultBranch: "master" }, error: undefined }
+        : respond(path));
+    renderWithQuery(
+      <SessionInspector session={session([pr(7, "open")])} />,
+      undefined,
+      (client) => {
+        seedPRSummaries(client, [sidePR]);
+      },
+    );
+
+    const mergeButton = screen.getByRole("button", { name: "Merge PR #7" });
+    await waitFor(() => expect(mergeButton).toBeEnabled());
+    fireEvent.click(mergeButton);
+
+    const dialog = await screen.findByRole("dialog");
+    expect(postMock).not.toHaveBeenCalled();
+    expect(dialog).toHaveTextContent("feature/parent-head");
+    expect(dialog).toHaveTextContent("master");
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(postCallsFor("/api/v1/prs/{id}/merge")).toHaveLength(0);
+
+    fireEvent.click(mergeButton);
+    await screen.findByRole("dialog");
+    fireEvent.click(screen.getByRole("button", { name: "Merge" }));
+    await waitFor(() => expect(postCallsFor("/api/v1/prs/{id}/merge")).toHaveLength(1));
+  });
+
+  // The merge outcome lists children still targeting the merged branch; the
+  // card offers one click each and clears the row once the daemon retargets.
+  it("offers retargeting a stacked child after the merge lands", async () => {
+    postMock.mockImplementation(async (path: string, init?: { body?: unknown }) => {
+      if (path === "/api/v1/prs/{id}/merge") {
+        return {
+          data: {
+            ok: true,
+            prNumber: 7,
+            method: "squash",
+            state: "merged",
+            stateChangedAt: "2026-10-19T11:06:22Z",
+            retargetable: [604],
+          },
+          error: undefined,
+        };
+      }
+      if (path === "/api/v1/prs/{id}/retarget") {
+        expect((init?.body as { child: number }).child).toBe(604);
+        return { data: { ok: true, child: 604, base: "main" }, error: undefined };
+      }
+      return { data: { ok: true, sessionId: "sess-1" }, error: undefined };
+    });
+    const readyPR = prSummary(7, "open", {
+      url: "https://example.com/pr/7",
+      headSha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      review: {
+        decision: "approved",
+        hasUnresolvedHumanComments: false,
+        unresolvedBy: [],
+      },
+    });
+    const respond = commonGetsResponder();
+    getMock.mockImplementation(async (path: string) => path === "/api/v1/sessions/{sessionId}/pr"
+      ? { data: { prs: [readyPR], linkedPrs: [] } }
+      : path === "/api/v1/prs/{id}/default-branch"
+        ? { data: { defaultBranch: "main" }, error: undefined }
+        : respond(path));
+    renderWithQuery(
+      <SessionInspector session={session([pr(7, "open")])} />,
+      undefined,
+      (client) => {
+        seedPRSummaries(client, [readyPR]);
+      },
+    );
+
+    const mergeButton = screen.getByRole("button", { name: "Merge PR #7" });
+    await waitFor(() => expect(mergeButton).toBeEnabled());
+    fireEvent.click(mergeButton);
+
+    // The default read succeeded and equals the base, so nothing asks.
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    const offer = await screen.findByTestId("pr-retarget-offer");
+    expect(offer).toHaveTextContent("#604");
+    fireEvent.click(screen.getByRole("button", { name: "Retarget to main" }));
+
+    await waitFor(() => expect(postCallsFor("/api/v1/prs/{id}/retarget")).toHaveLength(1));
+    await waitFor(() => expect(screen.queryByTestId("pr-retarget-offer")).not.toBeInTheDocument());
+  });
+
   it("merges a ready cloud pull request through the control plane", async () => {
     const requests: Array<{ path: string; method: string; body?: string }> = [];
     const originalBridge = (window as unknown as { aoBridge?: unknown }).aoBridge;

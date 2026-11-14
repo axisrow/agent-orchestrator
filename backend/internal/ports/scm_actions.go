@@ -17,6 +17,10 @@ var ErrSCMNotMergeable = errors.New("scm: pull request not mergeable")
 // the requested mutation.
 var ErrSCMUnsupported = errors.New("scm: unsupported operation")
 
+// ErrSCMRejected indicates that the provider refused a well-formed mutation,
+// for example an invalid base change or a validation failure.
+var ErrSCMRejected = errors.New("scm: provider rejected mutation")
+
 // SCMMergeMethod identifies the provider merge strategy.
 type SCMMergeMethod string
 
@@ -133,4 +137,27 @@ type SCMReviewPublisher interface {
 // service falls back to keeping the run's outcome unknown.
 type SCMReviewPublicationFinder interface {
 	FindPublishedReview(ctx context.Context, ref SCMPRRef, bodyMarker string) (SCMReviewPublishResult, bool, error)
+}
+
+// SCMBaseChanger retargets a pull request onto another base branch through an
+// SCM provider, the provider's own update of the base reference.
+type SCMBaseChanger interface {
+	// ChangePullRequestBase points PR's base at base and confirms the provider
+	// took it. Providers return ErrSCMRejected when they refuse the change.
+	ChangePullRequestBase(ctx context.Context, pr SCMPRRef, base string) error
+}
+
+// SCMRepoReader reads repository-level facts through an SCM provider.
+type SCMRepoReader interface {
+	// DefaultBranch returns the repository's default branch name.
+	DefaultBranch(ctx context.Context, repo SCMRepo) (string, error)
+}
+
+// SCMBaseBranchPRLister lists open pull requests by the branch they target, so
+// the pull requests stacked on a merged branch can be found again. Providers
+// return an empty list, not an error, when nothing targets the branch.
+type SCMBaseBranchPRLister interface {
+	// FindOpenPRsByBaseBranch returns the open pull requests whose base is
+	// branch in the repository itself; pull requests from forks are not listed.
+	FindOpenPRsByBaseBranch(ctx context.Context, repo SCMRepo, base string) ([]SCMPRRef, error)
 }

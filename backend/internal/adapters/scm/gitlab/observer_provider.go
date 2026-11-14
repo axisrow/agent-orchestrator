@@ -259,6 +259,43 @@ func (p *Provider) ListOpenPRsByBranch(ctx context.Context, repo ports.SCMRepo, 
 	return result, nil
 }
 
+// FindOpenPRsByBaseBranch lists the open merge requests whose target branch is
+// branch in repo itself, where a stack's children live. MRs from forks are
+// dropped, matching ListOpenPRsByBranch.
+func (p *Provider) FindOpenPRsByBaseBranch(ctx context.Context, repo ports.SCMRepo, base string) ([]ports.SCMPRRef, error) {
+	q := url.Values{
+		"state":         {"opened"},
+		"target_branch": {base},
+	}
+	path := fmt.Sprintf("/projects/%s/merge_requests", projectPath(repo.Owner, repo.Name))
+	hc, err := p.clientForRepoErr(repo)
+	if err != nil {
+		return nil, err
+	}
+	var refs []ports.SCMPRRef
+	_, err = hc.doGETPaginated(ctx, path, q, func(body []byte) error {
+		var mrs []restMR
+		if err := json.Unmarshal(body, &mrs); err != nil {
+			return fmt.Errorf("gitlab scm: unmarshal base-branch MR list: %w", err)
+		}
+		for i := range mrs {
+			if mrs[i].SourceProjectID != 0 && mrs[i].SourceProjectID != mrs[i].TargetProjectID {
+				continue
+			}
+			refs = append(refs, ports.SCMPRRef{
+				Repo:   repo,
+				Number: mrs[i].IID,
+				URL:    mrs[i].WebURL,
+			})
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return refs, nil
+}
+
 type restMR struct {
 	ID                  int64  `json:"id"`
 	IID                 int    `json:"iid"`

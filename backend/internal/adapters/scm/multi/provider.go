@@ -365,3 +365,45 @@ func (m *Provider) AuthenticatedIdentityForProvider(ctx context.Context, provide
 	}
 	return resolver.AuthenticatedIdentity(ctx)
 }
+
+// ChangePullRequestBase delegates to the sub-provider matching pr.Repo.Provider
+// when that provider can retarget a pull request's base branch.
+func (m *Provider) ChangePullRequestBase(ctx context.Context, pr ports.SCMPRRef, base string) error {
+	p, err := m.resolve(pr.Repo.Provider)
+	if err != nil {
+		return err
+	}
+	changer, ok := p.(ports.SCMBaseChanger)
+	if !ok {
+		return fmt.Errorf("%w: pull request base changes for provider %q", ports.ErrSCMUnsupported, pr.Repo.Provider)
+	}
+	return changer.ChangePullRequestBase(ctx, pr, base)
+}
+
+// DefaultBranch delegates to the sub-provider matching repo.Provider when that
+// provider can read the repository's default branch.
+func (m *Provider) DefaultBranch(ctx context.Context, repo ports.SCMRepo) (string, error) {
+	p, err := m.resolve(repo.Provider)
+	if err != nil {
+		return "", err
+	}
+	reader, ok := p.(ports.SCMRepoReader)
+	if !ok {
+		return "", fmt.Errorf("%w: default branch for provider %q", ports.ErrSCMUnsupported, repo.Provider)
+	}
+	return reader.DefaultBranch(ctx, repo)
+}
+
+// FindOpenPRsByBaseBranch delegates to the sub-provider matching repo.Provider
+// when that provider can list open pull requests by their base branch.
+func (m *Provider) FindOpenPRsByBaseBranch(ctx context.Context, repo ports.SCMRepo, base string) ([]ports.SCMPRRef, error) {
+	p, err := m.resolve(repo.Provider)
+	if err != nil {
+		return nil, err
+	}
+	lister, ok := p.(ports.SCMBaseBranchPRLister)
+	if !ok {
+		return nil, fmt.Errorf("%w: base branch listing for provider %q", ports.ErrSCMUnsupported, repo.Provider)
+	}
+	return lister.FindOpenPRsByBaseBranch(ctx, repo, base)
+}

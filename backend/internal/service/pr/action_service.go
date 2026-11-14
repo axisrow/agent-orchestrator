@@ -74,6 +74,14 @@ type ActionDeps struct {
 	ThreadWriter interface {
 		MarkPRReviewThreadResolved(context.Context, string, string) error
 	}
+	// BaseChanger retargets a pull request's base branch; nil where unsupported.
+	BaseChanger ports.SCMBaseChanger
+	// RepoReader reads repository facts such as the default branch; nil where
+	// unsupported.
+	RepoReader ports.SCMRepoReader
+	// BaseLister lists open pull requests by their base branch, the read that
+	// finds the children of a merged stack layer; nil where unsupported.
+	BaseLister ports.SCMBaseBranchPRLister
 }
 
 // mergeRefreshBackoff is the wait between bounded refresh retries and before
@@ -95,6 +103,9 @@ type ActionService struct {
 	threadWriter interface {
 		MarkPRReviewThreadResolved(context.Context, string, string) error
 	}
+	baseChanger ports.SCMBaseChanger
+	repoReader  ports.SCMRepoReader
+	baseLister  ports.SCMBaseBranchPRLister
 }
 
 var _ ActionManager = (*ActionService)(nil)
@@ -135,6 +146,9 @@ func NewActionService(deps ActionDeps) *ActionService {
 		logger:       logger,
 		retryBackoff: retryBackoff,
 		threadWriter: threadWriter,
+		baseChanger:  deps.BaseChanger,
+		repoReader:   deps.RepoReader,
+		baseLister:   deps.BaseLister,
 	}
 }
 
@@ -210,7 +224,10 @@ func (s *ActionService) Merge(ctx context.Context, request MergeRequest) (MergeR
 	if fresh.PR.Merged {
 		s.logger.Info("pr merge action found the pull request already merged", "pr", tracked.URL, "refresh_retries", refreshRetries, "duration", s.clock().Sub(started))
 		s.persistMergedOutcome(ctx, tracked, fresh, fresh.PR.MergeCommitSHA)
-		return mergedResultFromObservation(tracked, fresh, s.clock()), nil
+		s.logNonDefaultBaseMerge(ctx, repo, fresh.PR, fresh.PR.MergeCommitSHA)
+		result := mergedResultFromObservation(tracked, fresh, s.clock())
+		result.Retargetable = s.retargetableChildren(ctx, repo, fresh.PR.SourceBranch, []int{tracked.Number})
+		return result, nil
 	}
 	published, err := s.publishedReviewIDs(ctx, tracked.URL)
 	if err != nil {
@@ -236,19 +253,24 @@ func (s *ActionService) Merge(ctx context.Context, request MergeRequest) (MergeR
 			if rechecked, ok := s.recheckMerged(ctx, ref); ok {
 				s.logger.Info("pr merge action found the pull request already merged after an ambiguous failure", "pr", tracked.URL, "duration", s.clock().Sub(started), "err", err)
 				s.persistMergedOutcome(ctx, tracked, rechecked, rechecked.PR.MergeCommitSHA)
-				return mergedResultFromObservation(tracked, rechecked, s.clock()), nil
+				s.logNonDefaultBaseMerge(ctx, repo, rechecked.PR, rechecked.PR.MergeCommitSHA)
+				result := mergedResultFromObservation(tracked, rechecked, s.clock())
+				result.Retargetable = s.retargetableChildren(ctx, repo, rechecked.PR.SourceBranch, []int{tracked.Number})
+				return result, nil
 			}
 			return MergeResult{}, fmt.Errorf("merge pull request: %w", err)
 		}
 	}
 	s.logger.Info("pr merge action completed", "pr", tracked.URL, "refresh_retries", refreshRetries, "duration", s.clock().Sub(started))
 	mergedAt := s.persistMergedOutcome(ctx, tracked, fresh, out.MergeCommitSHA)
+	s.logNonDefaultBaseMerge(ctx, repo, fresh.PR, out.MergeCommitSHA)
 	return MergeResult{
 		PRNumber:       tracked.Number,
 		Method:         string(ports.SCMMergeSquash),
 		State:          domain.PRStateMerged,
 		MergeCommitSHA: out.MergeCommitSHA,
 		StateChangedAt: mergedAt,
+		Retargetable:   s.retargetableChildren(ctx, repo, fresh.PR.SourceBranch, []int{tracked.Number}),
 	}, nil
 }
 

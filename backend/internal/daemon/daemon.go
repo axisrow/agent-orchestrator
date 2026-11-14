@@ -816,6 +816,9 @@ func Run() error {
 			Writer:       store,
 			MergeWriter:  store,
 			ThreadWriter: store,
+			BaseChanger:  prReader,
+			RepoReader:   prReader,
+			BaseLister:   prReader,
 			Lifecycle:    lcStack.LCM,
 			Logger:       log,
 		})

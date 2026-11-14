@@ -27,6 +27,12 @@ type fakePRService struct {
 	mergeRequest  prsvc.MergeRequest
 	resolveResult prsvc.ResolveResult
 	resolveErr    error
+	retargetReq   prsvc.RetargetRequest
+	retargetRes   prsvc.RetargetResult
+	retargetErr   error
+	retargetCalls int
+	branch        string
+	branchErr     error
 }
 
 func (f *fakePRService) GetIdentity(_ context.Context, prID string) (prsvc.Identity, error) {
@@ -41,6 +47,16 @@ func (f *fakePRService) Merge(_ context.Context, request prsvc.MergeRequest) (pr
 
 func (f *fakePRService) ResolveComments(_ context.Context, _ string, _ []string) (prsvc.ResolveResult, error) {
 	return f.resolveResult, f.resolveErr
+}
+
+func (f *fakePRService) Retarget(_ context.Context, request prsvc.RetargetRequest) (prsvc.RetargetResult, error) {
+	f.retargetCalls++
+	f.retargetReq = request
+	return f.retargetRes, f.retargetErr
+}
+
+func (f *fakePRService) DefaultBranch(_ context.Context, _, _ string) (string, error) {
+	return f.branch, f.branchErr
 }
 
 func newPRTestServer(t *testing.T, svc prsvc.ActionManager) *httptest.Server {
@@ -67,6 +83,75 @@ func TestPRsRoutes_NilService_ResolveCommentsReturns501(t *testing.T) {
 	body, status, headers := doRequest(t, srv, "POST", "/api/v1/prs/1/resolve-comments", "")
 	assertJSON(t, headers)
 	assertErrorCode(t, body, status, http.StatusNotImplemented, "NOT_IMPLEMENTED")
+}
+
+// ---- Default branch and retarget ----
+
+func TestPRsRoutes_DefaultBranch_200(t *testing.T) {
+	svc := &fakePRService{branch: "master"}
+	srv := newPRTestServer(t, svc)
+
+	body, status, _ := doRequest(t, srv, "GET", "/api/v1/prs/42/default-branch?prUrl=https://github.com/acme/widgets/pull/42", "")
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", status, body)
+	}
+	var resp struct {
+		DefaultBranch string `json:"defaultBranch"`
+	}
+	mustJSON(t, body, &resp)
+	if resp.DefaultBranch != "master" {
+		t.Errorf("defaultBranch = %q, want master", resp.DefaultBranch)
+	}
+}
+
+func TestPRsRoutes_DefaultBranch_MissingURL400(t *testing.T) {
+	srv := newPRTestServer(t, &fakePRService{branch: "master"})
+	body, status, headers := doRequest(t, srv, "GET", "/api/v1/prs/42/default-branch", "")
+	assertJSON(t, headers)
+	assertErrorCode(t, body, status, http.StatusBadRequest, "INVALID_PR")
+}
+
+func TestPRsRoutes_DefaultBranch_ProviderUnavailable501(t *testing.T) {
+	srv := newPRTestServer(t, &fakePRService{branchErr: prsvc.ErrUnsupported})
+	body, status, headers := doRequest(t, srv, "GET", "/api/v1/prs/42/default-branch?prUrl=https://github.com/acme/widgets/pull/42", "")
+	assertJSON(t, headers)
+	assertErrorCode(t, body, status, http.StatusNotImplemented, "SCM_UNSUPPORTED")
+}
+
+func TestPRsRoutes_Retarget_200(t *testing.T) {
+	svc := &fakePRService{retargetRes: prsvc.RetargetResult{Child: 604, Base: "master", StateChangedAt: time.Date(2026, 11, 14, 10, 0, 0, 0, time.UTC)}}
+	srv := newPRTestServer(t, svc)
+
+	body, status, _ := doRequest(t, srv, "POST", "/api/v1/prs/603/retarget", `{"prUrl":"https://github.com/acme/widgets/pull/603","child":604}`)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", status, body)
+	}
+	var resp struct {
+		OK    bool   `json:"ok"`
+		Child int    `json:"child"`
+		Base  string `json:"base"`
+	}
+	mustJSON(t, body, &resp)
+	if !resp.OK || resp.Child != 604 || resp.Base != "master" {
+		t.Errorf("unexpected retarget response: %+v", resp)
+	}
+	if svc.retargetCalls != 1 || svc.retargetReq.PRID != "603" || svc.retargetReq.Child != 604 {
+		t.Fatalf("retarget request = %#v", svc.retargetReq)
+	}
+}
+
+func TestPRsRoutes_Retarget_RequiresChild(t *testing.T) {
+	srv := newPRTestServer(t, &fakePRService{})
+	body, status, headers := doRequest(t, srv, "POST", "/api/v1/prs/603/retarget", `{"prUrl":"https://github.com/acme/widgets/pull/603"}`)
+	assertJSON(t, headers)
+	assertErrorCode(t, body, status, http.StatusBadRequest, "INVALID_PR")
+}
+
+func TestPRsRoutes_Retarget_Rejected422(t *testing.T) {
+	srv := newPRTestServer(t, &fakePRService{retargetErr: prsvc.ErrPRRejected})
+	body, status, headers := doRequest(t, srv, "POST", "/api/v1/prs/603/retarget", `{"prUrl":"https://github.com/acme/widgets/pull/603","child":604}`)
+	assertJSON(t, headers)
+	assertErrorCode(t, body, status, http.StatusUnprocessableEntity, "PR_ACTION_REJECTED")
 }
 
 // ---- Merge: 200 ----

@@ -27,6 +27,58 @@ func (c *PRsController) Register(r chi.Router) {
 	r.Get("/prs/{id}", c.get)
 	r.Post("/prs/{id}/merge", c.merge)
 	r.Post("/prs/{id}/resolve-comments", c.resolveComments)
+	r.Get("/prs/{id}/default-branch", c.defaultBranch)
+	r.Post("/prs/{id}/retarget", c.retarget)
+}
+
+// defaultBranch reads the tracked PR repository's default branch, the fact the
+// merge confirmation compares the PR's base against.
+func (c *PRsController) defaultBranch(w http.ResponseWriter, r *http.Request) {
+	if c.Svc == nil {
+		apispec.NotImplemented(w, r, "GET", "/api/v1/prs/{id}/default-branch")
+		return
+	}
+	prID := chi.URLParam(r, "id")
+	prURL := strings.TrimSpace(r.URL.Query().Get("prUrl"))
+	if !prIDPattern.MatchString(prID) || prURL == "" {
+		envelope.WriteAPIError(w, r, http.StatusBadRequest, "bad_request", "INVALID_PR", "PR number and URL are required", nil)
+		return
+	}
+	branch, err := c.Svc.DefaultBranch(r.Context(), prID, prURL)
+	if err != nil {
+		writePRError(w, r, err)
+		return
+	}
+	envelope.WriteJSON(w, http.StatusOK, GetPRDefaultBranchResponse{DefaultBranch: branch})
+}
+
+// retarget points one open pull request stacked on the tracked PR's head
+// branch at the repository's default branch, after the tracked PR merged.
+func (c *PRsController) retarget(w http.ResponseWriter, r *http.Request) {
+	if c.Svc == nil {
+		apispec.NotImplemented(w, r, "POST", "/api/v1/prs/{id}/retarget")
+		return
+	}
+	prID := chi.URLParam(r, "id")
+	if !prIDPattern.MatchString(prID) {
+		envelope.WriteAPIError(w, r, http.StatusBadRequest, "bad_request", "INVALID_PR", "Invalid PR number", nil)
+		return
+	}
+	var in RetargetPRRequest
+	if err := decodeJSON(r, &in); err != nil {
+		envelope.WriteAPIError(w, r, http.StatusBadRequest, "bad_request", "INVALID_JSON", "Invalid JSON body", nil)
+		return
+	}
+	if strings.TrimSpace(in.PRURL) == "" || in.Child <= 0 {
+		envelope.WriteAPIError(w, r, http.StatusBadRequest, "bad_request", "INVALID_PR", "PR URL and child PR number are required", nil)
+		return
+	}
+	res, err := c.Svc.Retarget(r.Context(), prsvc.RetargetRequest{PRID: prID, PRURL: in.PRURL, Child: in.Child})
+	if err != nil {
+		writePRError(w, r, err)
+		return
+	}
+	envelope.WriteJSON(w, http.StatusOK, RetargetPRResponse{OK: true, Child: res.Child, Base: res.Base})
 }
 
 func (c *PRsController) get(w http.ResponseWriter, r *http.Request) {
@@ -80,6 +132,7 @@ func (c *PRsController) merge(w http.ResponseWriter, r *http.Request) {
 		Method:         res.Method,
 		State:          res.State,
 		StateChangedAt: res.StateChangedAt,
+		Retargetable:   res.Retargetable,
 	})
 }
 
@@ -119,6 +172,12 @@ func writePRError(w http.ResponseWriter, r *http.Request, err error) {
 		envelope.WriteAPIError(w, r, http.StatusNotFound, "not_found", "PR_NOT_FOUND", "Unknown PR", nil)
 	case errors.Is(err, prsvc.ErrPRNotMergeable):
 		envelope.WriteAPIError(w, r, http.StatusConflict, "conflict", "PR_NOT_MERGEABLE", "PR is not mergeable", nil)
+	case errors.Is(err, prsvc.ErrInvalidAction):
+		envelope.WriteAPIError(w, r, http.StatusBadRequest, "bad_request", "INVALID_ACTION", "Invalid PR action", nil)
+	case errors.Is(err, prsvc.ErrPRRejected):
+		envelope.WriteAPIError(w, r, http.StatusUnprocessableEntity, "unprocessable", "PR_ACTION_REJECTED", "The SCM provider rejected the PR action", nil)
+	case errors.Is(err, prsvc.ErrUnsupported):
+		envelope.WriteAPIError(w, r, http.StatusNotImplemented, "not_implemented", "SCM_UNSUPPORTED", "The PR's SCM provider does not support this action", nil)
 	case errors.Is(err, prsvc.ErrPRHeadChanged):
 		envelope.WriteAPIError(w, r, http.StatusConflict, "conflict", "PR_HEAD_CHANGED", "PR head changed; refresh before merging", nil)
 	case errors.Is(err, prsvc.ErrPRPreconditions):

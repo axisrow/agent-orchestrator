@@ -4454,6 +4454,52 @@ paths:
       summary: Resolve a tracked pull request by number
       tags:
       - prs
+  /api/v1/prs/{id}/default-branch:
+    get:
+      operationId: getPRDefaultBranch
+      parameters:
+      - description: PR number.
+        in: path
+        name: id
+        required: true
+        schema:
+          description: PR number.
+          type: string
+      - description: The pull request's URL.
+        in: query
+        name: prUrl
+        required: true
+        schema:
+          description: The pull request's URL.
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetPRDefaultBranchResponse'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Bad Request
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: Read a pull request repository's default branch
+      tags:
+      - prs
   /api/v1/prs/{id}/merge:
     post:
       operationId: mergePR
@@ -4554,6 +4600,58 @@ paths:
                 $ref: '#/components/schemas/APIError'
           description: Not Implemented
       summary: Resolve review threads on a pull request
+      tags:
+      - prs
+  /api/v1/prs/{id}/retarget:
+    post:
+      operationId: retargetPR
+      parameters:
+      - description: PR number.
+        in: path
+        name: id
+        required: true
+        schema:
+          description: PR number.
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetargetPRRequest'
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetargetPRResponse'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Bad Request
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Unprocessable Entity
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: Point a pull request stacked on this one at the repository's default
+        branch
       tags:
       - prs
   /api/v1/push/devices:
@@ -15720,6 +15818,13 @@ components:
       required:
       - tokenSet
       type: object
+    GetPRDefaultBranchResponse:
+      properties:
+        defaultBranch:
+          type: string
+      required:
+      - defaultBranch
+      type: object
     GetPRResponse:
       properties:
         headSha:
@@ -16563,6 +16668,10 @@ components:
           type: boolean
         prNumber:
           type: integer
+        retargetable:
+          items:
+            type: integer
+          type: array
         state:
           enum:
           - merged
@@ -17788,6 +17897,31 @@ components:
       - sessionId
       - resumeMode
       - session
+      type: object
+    RetargetPRRequest:
+      properties:
+        child:
+          minimum: 1
+          type: integer
+        prUrl:
+          minLength: 1
+          type: string
+      required:
+      - prUrl
+      - child
+      type: object
+    RetargetPRResponse:
+      properties:
+        base:
+          type: string
+        child:
+          type: integer
+        ok:
+          type: boolean
+      required:
+      - ok
+      - child
+      - base
       type: object
     RetryTurnResponse:
       properties:
