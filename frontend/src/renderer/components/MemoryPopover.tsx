@@ -40,8 +40,8 @@ function toKillTarget(tree: ProcessTreeRow): ProcessKillTarget {
 	return { sessionId: tree.sessionId, rootPid: tree.rootPid, rootLstart: tree.rootLstart };
 }
 
-// The status bar's RAM/Swap segment: a hover tooltip names the AO footprint
-// (basic stats), a click opens the extended popover — full host memory
+// The overview resource strip's RAM/Swap segment: a hover tooltip names the AO
+// footprint (basic stats), a click opens the extended popover — full host memory
 // breakdown plus every AO process tree grouped by project. Orphaned trees
 // carry kill buttons (processes/kill), idle owned sessions carry Stop buttons
 // (sessions/{id}/kill — the board's Kill; the session stays resumable).

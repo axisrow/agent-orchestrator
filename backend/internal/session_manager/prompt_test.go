@@ -50,6 +50,8 @@ func TestBuildSystemPrompt_WorkerIncludesRulesAndOrchestrator(t *testing.T) {
 		"For a workspace project whose recorded session branch",
 		"`<session-branch>-<topic>`",
 		"Keep the full collision suffix",
+		"splits one task by size is not a stack",
+		"open each PR of the series against the default branch",
 		"ao session claim-pr <full-pr-url>",
 		"## Docker Containers Started By This Session",
 		"## Worktree Git Isolation",

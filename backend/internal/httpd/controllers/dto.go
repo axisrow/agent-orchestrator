@@ -2514,13 +2514,42 @@ type GetPRResponse struct {
 	HeadSHA string `json:"headSha" description:"Tracked head SHA of the pull request."`
 }
 
-// MergePRResponse is the body of POST /api/v1/prs/{id}/merge (200).
+// MergePRResponse is the body of POST /api/v1/prs/{id}/merge (200). Retargetable
+// lists the open pull requests still stacked on the merged branch, by number,
+// so the card can offer pointing them at the default branch.
 type MergePRResponse struct {
 	OK             bool           `json:"ok"`
 	PRNumber       int            `json:"prNumber"`
 	Method         string         `json:"method"`
 	State          domain.PRState `json:"state" enum:"merged"`
 	StateChangedAt time.Time      `json:"stateChangedAt"`
+	Retargetable   []int          `json:"retargetable,omitempty"`
+}
+
+// PRDefaultBranchQuery is the query of GET /api/v1/prs/{id}/default-branch.
+type PRDefaultBranchQuery struct {
+	PRURL string `query:"prUrl" required:"true" description:"The pull request's URL."`
+}
+
+// GetPRDefaultBranchResponse is the body of GET /api/v1/prs/{id}/default-branch.
+type GetPRDefaultBranchResponse struct {
+	// DefaultBranch is the repository's default branch, what an ordinary merge targets.
+	DefaultBranch string `json:"defaultBranch"`
+}
+
+// RetargetPRRequest is the body of POST /api/v1/prs/{id}/retarget. Child names
+// the open pull request stacked on this PR's head branch; the new base is the
+// repository's default branch, read from the provider at call time.
+type RetargetPRRequest struct {
+	PRURL string `json:"prUrl" minLength:"1"`
+	Child int    `json:"child" minimum:"1"`
+}
+
+// RetargetPRResponse is the body of POST /api/v1/prs/{id}/retarget (200).
+type RetargetPRResponse struct {
+	OK    bool   `json:"ok"`
+	Child int    `json:"child"`
+	Base  string `json:"base"`
 }
 
 // ResolveCommentsRequest is the optional body of POST /api/v1/prs/{id}/resolve-comments.

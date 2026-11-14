@@ -14,4 +14,12 @@ var (
 	// not be re-observed (network outage, rate limit, timeout), which is not
 	// the same as the PR not existing and must not surface as "Unknown PR".
 	ErrPRProviderUnavailable = errors.New("pr: provider unavailable")
+	// ErrInvalidAction is an invalid retarget request, such as a missing or
+	// self-referential child pull request number.
+	ErrInvalidAction = errors.New("pr: invalid action")
+	// ErrPRRejected is the provider refusing a well-formed mutation, such as a
+	// base change onto a branch it will not take.
+	ErrPRRejected = errors.New("pr: provider rejected mutation")
+	// ErrUnsupported is a mutation the PR's SCM provider cannot express.
+	ErrUnsupported = errors.New("pr: unsupported by provider")
 )

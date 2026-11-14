@@ -11,7 +11,7 @@ import {
 	type ProcessTreeRow,
 } from "../hooks/useProcessInventoryQuery";
 import { TooltipProvider } from "./ui/tooltip";
-import { StatusBar } from "./StatusBar";
+import { OverviewResources } from "./OverviewResources";
 
 const { getMock, postMock } = vi.hoisted(() => ({
 	getMock: vi.fn(),
@@ -23,12 +23,6 @@ vi.mock("../lib/api-client", () => ({
 		GET: getMock,
 		POST: postMock,
 	},
-}));
-
-vi.mock("motion/react", () => ({
-	AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-	motion: {},
-	useReducedMotion: () => true,
 }));
 
 const host: HostMemory = {
@@ -95,7 +89,7 @@ function inventory(overrides: Partial<ProcessInventory> = {}): ProcessInventory 
 	} as ProcessInventory;
 }
 
-function renderStatusBar(inventoryData: ProcessInventory | null) {
+function renderResources(inventoryData: ProcessInventory | null) {
 	const client = new QueryClient({
 		defaultOptions: { queries: { retry: false } },
 	});
@@ -105,13 +99,13 @@ function renderStatusBar(inventoryData: ProcessInventory | null) {
 	return render(
 		<QueryClientProvider client={client}>
 			<TooltipProvider>
-				<StatusBar />
+				<OverviewResources />
 			</TooltipProvider>
 		</QueryClientProvider>,
 	);
 }
 
-describe("StatusBar", () => {
+describe("OverviewResources", () => {
 	it("groups orphan trees by project and posts the whole group on its kill button", async () => {
 		const user = userEvent.setup();
 		const secondOrphan: ProcessTreeRow = { ...orphanTree, sessionId: "legacy-x-2", rootPid: 8124 };
@@ -119,7 +113,7 @@ describe("StatusBar", () => {
 			data: { results: [{ sessionId: "legacy-x", status: "killed" }, { sessionId: "legacy-x-2", status: "killed" }] },
 			error: undefined,
 		});
-		renderStatusBar(inventory({ trees: [ownedTree, orphanTree, secondOrphan] }));
+		renderResources(inventory({ trees: [ownedTree, orphanTree, secondOrphan] }));
 
 		await user.click(screen.getByTestId("status-bar-memory"));
 		expect(screen.getByText("legacy-x")).toBeInTheDocument();
@@ -138,35 +132,32 @@ describe("StatusBar", () => {
 	});
 
 	it("renders compact host memory segments with binary-formatted sizes", () => {
-		renderStatusBar(inventory());
+		renderResources(inventory());
 		expect(screen.getByTestId("status-bar-memory")).toHaveTextContent("20.4 GB / 24 GB");
 		expect(screen.getByTestId("status-bar-memory")).toHaveTextContent("6.9 GB / 8 GB");
-		// The bar is minimal: no sigma total, no AO/tmux/sessions byte segments.
+		// The strip is minimal: no sigma total, no AO/tmux/sessions byte segments.
 		expect(screen.queryByText(/Σ/)).toBeNull();
 		expect(screen.queryByText("90 MB")).toBeNull();
 		expect(screen.queryByText("sessions")).toBeNull();
 	});
 
-	it("shows the orphan badge and stop entry when orphans exist", () => {
-		renderStatusBar(inventory());
-		expect(screen.getByText("orphans")).toBeInTheDocument();
-		expect(screen.getByTestId("status-bar-stop")).toBeInTheDocument();
+	it("offers the screen-level stop entry when orphans exist", () => {
+		renderResources(inventory());
+		expect(screen.getByTestId("overview-stop-all")).toBeInTheDocument();
 	});
 
 	it("never offers stop controls for a session waiting on the user", () => {
 		const blocked: ProcessTreeRow = { ...ownedTree, sessionId: "blocked-1", rootPid: 90112, activityState: "blocked" };
 		const waiting: ProcessTreeRow = { ...ownedTree, sessionId: "waiting-1", rootPid: 90113, activityState: "waiting_input" };
-		renderStatusBar(inventory({ trees: [blocked, waiting] }));
-		expect(screen.queryByTestId("status-bar-stop")).toBeNull();
-		expect(screen.queryByText("idle workers")).toBeNull();
+		renderResources(inventory({ trees: [blocked, waiting] }));
+		expect(screen.queryByTestId("overview-stop-all")).toBeNull();
 	});
 
 	it("counts idle and exited owned trees as stoppable workers", () => {
 		const idle: ProcessTreeRow = { ...ownedTree, sessionId: "idle-1", rootPid: 90114, activityState: "idle" };
 		const exited: ProcessTreeRow = { ...ownedTree, sessionId: "exited-1", rootPid: 90115, activityState: "exited" };
-		renderStatusBar(inventory({ trees: [idle, exited] }));
-		expect(screen.getByTestId("status-bar-stop")).toBeInTheDocument();
-		expect(screen.getByText("idle workers")).toBeInTheDocument();
+		renderResources(inventory({ trees: [idle, exited] }));
+		expect(screen.getByTestId("overview-stop-all")).toBeInTheDocument();
 	});
 
 	it("isStoppableOwnedTree accepts only idle and exited owned trees", () => {
@@ -191,17 +182,14 @@ describe("StatusBar", () => {
 		const clean = inventory({ host: undefined });
 		clean.trees = [ownedTree];
 		clean.totals.orphansCount = 0;
-		renderStatusBar(clean);
-		expect(screen.queryByTestId("status-bar")).toBeNull();
+		renderResources(clean);
+		expect(screen.queryByTestId("overview-resources")).toBeNull();
 	});
 
 	it("renders nothing and stops polling when the daemon reports the surface disabled", () => {
 		const { refetchInterval } = processInventoryQueryOptions;
-		renderStatusBar(inventory({ disabled: true, trees: [orphanTree] }));
-		expect(screen.queryByTestId("status-bar")).toBeNull();
-		// AO_NO_PROCINVENTORY turns the surface off: no orphan badge bleeding
-		// through and no further refetch ticks.
-		expect(screen.queryByText("orphans")).toBeNull();
+		renderResources(inventory({ disabled: true, trees: [orphanTree] }));
+		expect(screen.queryByTestId("overview-resources")).toBeNull();
 		const stopped = refetchInterval({ state: { data: inventory({ disabled: true }) } } as Parameters<typeof refetchInterval>[0]);
 		expect(stopped).toBe(false);
 	});
@@ -212,7 +200,7 @@ describe("StatusBar", () => {
 			data: { results: [{ sessionId: "legacy-x", rootPid: 8123, status: "killed" }] },
 			error: undefined,
 		});
-		renderStatusBar(inventory());
+		renderResources(inventory());
 
 		await user.click(screen.getByTestId("status-bar-memory"));
 		expect(screen.getByText("Host memory")).toBeInTheDocument();
@@ -239,9 +227,9 @@ describe("StatusBar", () => {
 			data: { results: [{ sessionId: "legacy-x", rootPid: 8123, status: "killed" }] },
 			error: undefined,
 		});
-		renderStatusBar(inventory());
+		renderResources(inventory());
 
-		await user.click(screen.getByTestId("status-bar-stop"));
+		await user.click(screen.getByTestId("overview-stop-all"));
 		expect(screen.getByText("Stop idle sessions?")).toBeInTheDocument();
 		expect(screen.getByText("legacy-x · pid 8123 · 1.1 GB")).toBeInTheDocument();
 
