@@ -694,3 +694,50 @@ b44d9464224846652e42c12ec6f3bc67916dde74 skipped feat(mobile): choose the branch
 bd4d0d45407bbe607898c176889327fb8588a6f4 skipped feat(mobile): show pull requests as an inset-grouped list (#8218)
 df55908684c7e826db6b9665b0e277c4b30b171f skipped fix(desktop): bump bundled ACP Node runtime to 22.23.5 (#8196) — конфликт .github/workflows/frontend.yml (форк-CI дельта latest-run/scmPollKick) и bootstrap-self-hosted.sh; отложен
 541f3cb54e056285c2e44f6c7f191287b0c14984 skipped feat(inspector): PR details, actions, comments and activity in the session inspector (#7394)
+08cb91441c72ec9ff9bb68c590ecf993f4a6885c skipped fix(desktop): drop the dead Close tab row from the session tab's menu (#8291) — DU по TabContextMenu/TabMenuParity.test (выпилены), конфликт CenterPane.test (сторона форка пуста) и ChatWorkspace.test; отложен
+079a9b64729f120cf7c26d4ee49dc9c24bca54db skipped feat(split-panes): title bar on every pane to drag, close and resize (#8273)
+58c325211cb7f3e2005638f2743f23b02b31366f skipped fix(sidebar): remove projects optimistically instead of showing "Removing…" (#8275) — конфликт ConfirmDialog/Sidebar/useWorkspaceQuery/_shell (форк-дельта сайдбара и роутера), сторона форка по ConfirmDialog пуста (зависит от соседей); отложен
+683c4de4a015c29153b5220e6cba839e0cd2dd56 skipped fix(archive): label the archive's entry points Archived sessions (#8294) — DU×3 SessionsBoard (выпилен), конфликт DESIGN.md/Sidebar/command-palette/i18n×9; UI, отложен
+9879f6cb5bb2e3a23753af160210373402b9c7bd taken fix(chat): keep the provider adapter's stderr in the chat host's directory (#8295)
+88a03626081201121b4b90e487960a74764f6218 skipped fix(sessions): show a session branch as its topic and keep PRs off the root branch (#8301) — DU по SessionBranchSummary/SessionsBoard.test (выпилены), конфликт SessionInspector.test/SessionsBoardView/formatting; отложен
+ef4ffb8df4435ea9f02ef4e7928504ad019203e7 skipped fix(chat): restore agent logos on the transcript's switch divider (#8300) — конфликт ChatTimelineItems(.test) (форк-дельта таймлайна); UI, отложен
+8892282f0b87e0f8cf471e70b1c7b895ed309367 skipped fix(chat): keep OpenCode Go model routes selectable (#7307)
+bb90515d7e36aa918e6c89479276d1d930cb89fa skipped fix(chat): release queued messages after the host fails a stalled prompt (#8297) — конфликт acp/conversation.go (форк-дельта PTY flow control #177 в той же области); бэкенд-фикс, сводить с владельцем
+edfee50dfe791990db6433de8f7b49f2d7dfcaca skipped fix(chat): pause provider catalogs while remote host is offline (#8304) — конфликт SessionChatSurface/SessionView.remote.test (форк-дельта чат-поверхности); отложен
+fc423f98f8d3ce9c723850e9099aec848898572c skipped fix(chat): stop a provider that lost its ACP session so the chat can resume (#8195) — конфликт acp/conversation.go+driver.go (форк-дельта PTY flow control #177); бэкенд-фикс, сводить с владельцем
+34c77c20ccacb5d509a2727a1f991422bfde98a4 skipped feat(desktop): persist lifecycle and respawn records for app and daemon (#8194)
+a25ce92362d748f259f57228fa675b87c52f7605 skipped fix(chat): send messages entered in quick succession instead of dropping them (#8248) — DU по chat/batch.go (batched-delivery #7822 не взят), конфликт controller.go/ChatComposer/QueuedMessageDock; зависит от скипнутого субстрата, отложен
+05333168536ff4cbf5feee3b3decdd4565576005 skipped fix(accounts): show the CLI login and a saved account with the same login once (#7674) — DU по usage-limits (usage-панель форка своя), конфликт agentaccounts/AgentAccountsSection; отложен
+77daf0dd2d85f9add015a9339d24f4f1b1546933 skipped fix(chat): give the send button the same corner inset as the + button (#8316) — DU по IndependentSideChats (side chats выпилены), конфликт ChatComposer.test/ComposerEditor; UI, отложен
+114993498d560c84d8b0800163b4e507e9dd0b5c skipped fix(chat): clear stale model resolution when switching providers (#7790) — DU по provider_switch_test.go, конфликт conversation_store.go (форк-дельта стора); отложен
+5b2cabd791fb4bbef5c854897cb748700f4da127 skipped fix(chat): compact the composer's / and @ suggestion menus (#8313) — конфликт ComposerSuggestMenu (сторона форка пуста: зависит от скипнутых соседей-редизайнов композера); UI, отложен
+7435236930d504c7bee6ae560f738793cd5e4fbb skipped feat: configure provider keys across supported harnesses (#7312)
+b7f1fc19913b8eea33ab0db48a03630c117e3840 taken fix(chat): clear Claude model labels left on chats switched before #7790 (#8320)
+566746f6e18501a458f4231cf8f73db491847724 skipped fix(mobile): put the chat composer back down after the app resumes on Android (#8314)
+c5ef1ae0231c77528261c99d42e7be98e2ebda32 skipped feat: add Grok Build ACP Chat support (#8298)
+4a1078bae11f225aaf303cf5c4623946129ef970 skipped fix(mobile): offer the sign-in options again after cancelling a browser sign-in (#8286)
+9338f8465753f80cc96b19413bed22ddeeff22fc skipped fix(mobile): clear the chat header title when the route swaps to Terminal (#8285)
+e5ccb338cd0be7e7183f2d635d670d763b0bc7b5 skipped fix(mobile): size later-batch menu rows on their first render (#8281)
+64eaec95fd0c3036d46fdb6be95cd25eec30da93 skipped fix(mobile): don't call the phone offline while its requests are answered (#8308)
+7303a7244a087a073d8ce14d87ab35253054c716 skipped fix(sidebar): restore new-agent button for remote Scratchpad (#8318) — конфликт Sidebar(.test) (форк-дельта сайдбара +227 -824); отложен
+8c038d42aa56205524f62beee3a9f4d018312d86 skipped fix(cloud): start a Cloud chat with images; edit a queued Cloud message (#8236) — конфликт 17 файлов, cloud-поверхность + композер (cloud-контрол-плейн форк не берёт); отложен
+55ed9b5ba07f8465b42a0d87e2c179011d288700 skipped fix(remote): stop polling a remote host whose workspace stream fails (#8176) — конфликт workspace-file-events(.test) (форк-дельта той же области); отложен
+c8b22b94fc63913b2c892344eea920bfaf803344 skipped feat(sidebar): rename Scratchpad to Sessions and show it above Projects (#8323)
+938934be820a92d1490e99193325d5318048e5d3 skipped fix(chat): keep a new chat's first message still when the session opens (#8324) — DU по NewChatPage (страница new chat выпилена), конфликт _shell.tsx; отложен
+ccbf17c9cbbef93f7d1367ed8a79222fbea48ef3 skipped feat: Report a problem starts a bug-report agent (ao triage) (#6984)
+304995a5143e43e2fe1f4af00d4da8b50db9ea1f skipped feat(chat): restore worktree files when rolling back a turn (#7585)
+58416bee7583b0858e5a5198aac779b8257b8651 skipped feat(chat): show site favicons before web links in chat (#8332)
+d331675e539cb60cff6cfb2b835f45ba01de9e85 skipped feat(mobile): switch a chat's agent from the model menu, as desktop does (#8331)
+6fe7a5f3e674c39b74186545b75a15a23aed9987 skipped fix(share): open the publish panel at once and mark link access uniformly (#8302) — DU×14 (cloud-share/share-поверхность выпилена), конфликт 20+ файлов (dto, SessionArtifactsView, SessionInspector, i18n×9); отложен
+10f14253b179dc5f9f41ae91efaec407c06e18d0 skipped chore(mobile): bump app version to 2.4.0 (#8337)
+e7e2fdcbfedb589d2f9fb64189c6208124cc0eab skipped fix: restore and customize the Add to chat selection shortcut (#8284) — DU по ChatSelectionActions (выпилен), сторона форка пуста по shortcuts/SelectionAskButton/app-shortcuts (зависит от скипнутых соседей); отложен
+d48b9b6c2d77bb07521bd1228e831af58a897a1a skipped fix(inspector): keep PR chips from covering the earlier menu, and trim the PR card (#8336) — DU×4 PR-компоненты (PR-панель форка выпилена), конфликт SessionInspector/pr-display/i18n×9; отложен
+c1cb595c2e6afb9b3768292c85a2e2f251ed05e6 skipped feat(chat): move a usage-limited Chat session to another account and retry once (#7534)
+cb4fedce4fdbddca62a295d93bbce9ff6b72a7e0 skipped fix(terminal): forget a terminal's input timestamp once its runtime is destroyed (#7320) — конфликт daemon.go/manager.go/shellterm (крупная форк-дельта), сторона форка по terminal/manager пуста (зависит от соседей); отложен
+b9d60e0ad67716561b63bc7be40cc1046fd00778 skipped perf(artifacts): fast Artifacts page and tab with many artifacts (#8339)
+b6aa2f270e4970e0eb016c482b09f666434750cc skipped fix(chat): keep a remote chat's box open while its host is away and drop the raw transport error (#7431) — конфликт ChatWorkspace/ChatComposer/SessionChatSurface/useConversation/i18n×9 (форк-дельта чата); отложен
+a720c3da26dc87b74238c3c285106ce40b86c4bb skipped feat(desktop): open sessions from ao-app://sessions deep links (#8047)
+cc636a43e8b63e5b2a8b272ddf6cd2f669c1be6a skipped fix(grok): pre-trust the workspace so the first prompt cannot quit Grok (#8278) — DU×2: grok-харнес в форке выпилен; отложен
+48709b6a284d989e85d4b5a164718f2a7424b56a skipped chore(pricing): delete the frozen checked-in pricing catalog (#8305)
+232462cea886de429441cb03defc8b0bb85bb084 skipped feat(session): fork a session into a new session at any turn (#8111)
+d7470e2779974c88572ef7ab6a1279382488e5f1 skipped feat(chat): steer running turns on Qwen Code, Kimchi, and OMP (#7702)
