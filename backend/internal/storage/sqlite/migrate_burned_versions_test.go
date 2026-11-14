@@ -219,6 +219,7 @@ var shippedMigrations = map[int64]string{
 	20261026083409462: "20261026083409462_deepseek_chat_failure_code.sql",
 	20261028124744441: "20261028124744441_telemetry_incremental_vacuum.sql",
 	20261101145613011: "20261101145613011_repository_renames.sql",
+	20261113111818788: "20261113111818788_clear_switched_model_reroutes.sql",
 	// Fork-local migrations live in the reserved 9000+ range so a sync rebase
 	// can never renumber them onto a number upstream will claim. See
 	// migrate_fork_reserved_range_test.go for why.
