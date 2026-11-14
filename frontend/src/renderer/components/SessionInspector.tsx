@@ -38,6 +38,7 @@ import {
 } from "lucide-react";
 import type { components } from "../../api/schema";
 import { interfaceTransitionIsActive, useSessionInterfaceTransitionStatus } from "../hooks/useSessionInterfaceTransition";
+import { usePRDefaultBranch } from "../hooks/usePRDefaultBranch";
 import { reviewerConversationQueryKey } from "../hooks/useReviewerConversation";
 import { apiClient, apiErrorMessage } from "../lib/api-client";
 import { clientForSessionHost } from "../lib/host-clients";
@@ -1000,6 +1001,16 @@ function PRSummaryCard({
 	const { client: cloudClient, baseUrl: cloudBaseUrl } = useCloudCp();
 	const presentation = prCardPresentation(pr, aoReview);
 	const canMerge = prCanMerge(pr) && Boolean(pr.url && pr.headSha);
+	// The repository's default branch, what an ordinary merge targets. A failed
+	// read leaves the guard silent rather than blocking merges.
+	const defaultBranch = usePRDefaultBranch(pr, hostId, pr.state === "open" || pr.state === "draft").data;
+	// Merging into anything but the default branch is how a stack child lands in
+	// its parent's branch, so it asks first, naming the branch it would land in.
+	const offBase = Boolean(defaultBranch && pr.targetBranch && pr.targetBranch.toLowerCase() !== defaultBranch.toLowerCase());
+	const [confirmBase, setConfirmBase] = useState(false);
+	// Children still stacked on this PR's branch, offered for retargeting once
+	// the merge lands; empty again once each one moves to the default branch.
+	const [retargetable, setRetargetable] = useState<number[]>([]);
 	const mergePr = useMutation({
 		mutationFn: async () => {
 			if (usePreviewData) return;
@@ -1015,6 +1026,7 @@ function PRSummaryCard({
 			return data;
 		},
 		onSuccess: async (result) => {
+			if (!cloudOrgId && result?.retargetable?.length) setRetargetable(result.retargetable);
 			if (!cloudOrgId && result?.state === "merged") {
 				queryClient.setQueryData<{ prs: SessionPRSummary[]; linkedPrs: SessionPRReference[] }>(
 					sessionScmSummaryQueryKey(sessionId, hostId),
@@ -1037,6 +1049,22 @@ function PRSummaryCard({
 			]);
 		},
 	});
+	const retarget = useMutation({
+		mutationFn: async (child: number) => {
+			if (usePreviewData) return;
+			const { data, error } = await clientForSessionHost(hostId).POST("/api/v1/prs/{id}/retarget", {
+				params: { path: { id: String(pr.number) } },
+				// The daemon reads the default branch itself; the card only names the child.
+				body: { prUrl: pr.url, child },
+			});
+			if (error) throw new Error(apiErrorMessage(error, t("pr.retarget.failed", { number: child })));
+			return data;
+		},
+		onSuccess: (result) => {
+			if (result?.child) setRetargetable((current) => current.filter((number) => number !== result.child));
+			void queryClient.invalidateQueries({ queryKey: sessionScmSummaryQueryKey(sessionId, hostId) });
+		},
+	});
 	const mergeError = mergePr.error instanceof Error ? mergePr.error.message : null;
 	const viewModel: InspectorPullRequest = {
 		...pr,
@@ -1050,7 +1078,29 @@ function PRSummaryCard({
 			</button>
 		) : undefined,
 	};
-	return (
+	// One row per child still targeting the merged branch, offering the move to
+	// the default branch before its own merge lands there.
+	const retargetOffer = retargetable.length > 0 ? (
+		<div className="mt-1 flex min-w-0 flex-col gap-1" data-testid="pr-retarget-offer">
+			{retargetable.map((child) => (
+				<div className="flex items-center justify-between gap-2 rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground" key={child}>
+					<span className="min-w-0 truncate">{t("pr.retarget.offer", { number: child })}</span>
+					<Button
+						className="shrink-0"
+						disabled={retarget.isPending}
+						onClick={() => retarget.mutate(child)}
+						size="sm"
+						type="button"
+						variant="secondary"
+					>
+						{defaultBranch ? t("pr.retarget.action", { base: defaultBranch }) : t("pr.retarget.actionDefault")}
+					</Button>
+				</div>
+			))}
+			{retarget.error instanceof Error ? <p className="m-0 text-xs leading-normal text-error" role="status">{retarget.error.message}</p> : null}
+		</div>
+	) : null;
+	const card = (
 		<InspectorPullRequestCardView
 			countNounLabel={(count, noun) => `${count} ${t(prNounKeys[noun], { count })}`}
 			externalIcon={<ArrowUpRight aria-hidden="true" className="size-icon-2xs shrink-0" strokeWidth={2} />}
@@ -1061,7 +1111,10 @@ function PRSummaryCard({
 						aria-label={t("pr.merge.actionFor", { number: pr.number })}
 						className="gap-1 bg-success px-2 text-xs text-on-foreground hover:bg-success/80"
 						disabled={mergePr.isPending}
-						onClick={() => mergePr.mutate()}
+						onClick={() => {
+							if (offBase) setConfirmBase(true);
+							else mergePr.mutate();
+						}}
 						size="sm"
 						type="button"
 					>
@@ -1080,6 +1133,22 @@ function PRSummaryCard({
 			pr={viewModel}
 			pullRequestIcon={<GitPullRequest className="size-icon-sm shrink-0" aria-hidden="true" />}
 		/>
+	);
+	if (!retargetOffer && !offBase) return card;
+	return (
+		<>
+			{card}
+			{retargetOffer}
+			<ConfirmDialog
+				busy={mergePr.isPending}
+				confirmLabel={t("pr.merge.action")}
+				description={t("pr.merge.confirmBaseDescription", { base: pr.targetBranch, default: defaultBranch })}
+				onConfirm={() => { setConfirmBase(false); mergePr.mutate(); }}
+				onOpenChange={(next) => { setConfirmBase(next); if (!next) mergePr.reset(); }}
+				open={confirmBase}
+				title={t("pr.merge.confirmBaseTitle", { base: pr.targetBranch })}
+			/>
+		</>
 	);
 }
 

@@ -1755,6 +1755,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/prs/{id}/default-branch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a pull request repository's default branch */
+        get: operations["getPRDefaultBranch"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/prs/{id}/merge": {
         parameters: {
             query?: never;
@@ -1783,6 +1800,23 @@ export interface paths {
         put?: never;
         /** Resolve review threads on a pull request */
         post: operations["resolveComments"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/prs/{id}/retarget": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Point a pull request stacked on this one at the repository's default branch */
+        post: operations["retargetPR"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5554,6 +5588,9 @@ export interface components {
             model?: string;
             tokenSet: boolean;
         };
+        GetPRDefaultBranchResponse: {
+            defaultBranch: string;
+        };
         GetPRResponse: {
             /** @description Tracked head SHA of the pull request. */
             headSha: string;
@@ -5876,6 +5913,7 @@ export interface components {
             method: string;
             ok: boolean;
             prNumber: number;
+            retargetable?: number[];
             /** @enum {string} */
             state: "merged";
             /** Format: date-time */
@@ -6376,6 +6414,15 @@ export interface components {
             resumeMode: "native" | "saved_prompt" | "fresh";
             session: components["schemas"]["ControllersSessionView"];
             sessionId: string;
+        };
+        RetargetPRRequest: {
+            child: number;
+            prUrl: string;
+        };
+        RetargetPRResponse: {
+            base: string;
+            child: number;
+            ok: boolean;
         };
         RetryTurnResponse: {
             providerTurnId?: string;
@@ -13323,6 +13370,59 @@ export interface operations {
             };
         };
     };
+    getPRDefaultBranch: {
+        parameters: {
+            query: {
+                /** @description The pull request's URL. */
+                prUrl: string;
+            };
+            header?: never;
+            path: {
+                /** @description PR number. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GetPRDefaultBranchResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
     mergePR: {
         parameters: {
             query?: never;
@@ -13423,6 +13523,69 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResolveCommentsResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    retargetPR: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description PR number. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetargetPRRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetargetPRResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
                 };
             };
             /** @description Not Found */
