@@ -154,18 +154,21 @@ export function OverviewPage() {
 		});
 	}, [workspaces, projectFilter, statusFilter, stageFilter, showArchived, stuckBySession, worktreesBySession]);
 
-	// Selection operates on live rows only: a session that got terminated or
-	// filtered away silently drops out of the batch instead of killing a ghost.
+	// Only rows the screen currently shows may join a batch: the selection is
+	// intersected with the visible (filtered, non-terminated) session ids, so a
+	// filter change or a termination silently drops the row instead of letting
+	// Terminate reach a session the user can no longer see.
+	const selectableIds = useMemo(
+		() => groups.flatMap((group) => group.sessions.filter((session) => !session.isTerminated).map((session) => session.id)),
+		[groups],
+	);
+	const selectableIdSet = useMemo(() => new Set(selectableIds), [selectableIds]);
 	const selectedSessions = useMemo(
 		() =>
 			workspaces
 				.flatMap((project) => project.sessions)
-				.filter((session) => selectedIds.has(session.id) && !session.isTerminated),
-		[workspaces, selectedIds],
-	);
-	const selectableIds = useMemo(
-		() => groups.flatMap((group) => group.sessions.filter((session) => !session.isTerminated).map((session) => session.id)),
-		[groups],
+				.filter((session) => selectedIds.has(session.id) && selectableIdSet.has(session.id)),
+		[workspaces, selectableIdSet, selectedIds],
 	);
 	const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selectedIds.has(id));
 	const someSelected = selectableIds.some((id) => selectedIds.has(id));

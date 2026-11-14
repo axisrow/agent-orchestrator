@@ -435,6 +435,39 @@ describe("OverviewPage", () => {
 		});
 	});
 
+	it("drops filtered-away rows from the batch instead of terminating invisible sessions", async () => {
+		const user = userEvent.setup();
+		h.workspaces = workspaces();
+		h.worktrees = worktrees();
+		h.terminateMutate.mockResolvedValue(undefined);
+		renderPage();
+
+		await user.click(screen.getByRole("checkbox", { name: "Select gate open" }));
+		await user.click(screen.getByRole("checkbox", { name: "Select needs you" }));
+		expect(screen.getByTestId("overview-bulk-bar").textContent).toContain("2 selected");
+
+		// Filtering hides one of the two rows: the batch shrinks to what the
+		// screen still shows, so Terminate can never reach the hidden session.
+		await user.click(screen.getByRole("combobox", { name: "Status" }));
+		await user.click(screen.getByRole("option", { name: "Blocked" }));
+
+		expect(screen.getByTestId("overview-bulk-bar").textContent).toContain("1 selected");
+		await user.click(within(screen.getByTestId("overview-bulk-bar")).getByRole("button", { name: "Terminate" }));
+
+		const dialog = await screen.findByRole("dialog");
+		// One surviving row renders the single-session dialog naming session
+		// and project; the filtered-away row is not part of it.
+		expect(dialog.textContent).toContain("Terminate needs you?");
+		expect(dialog.textContent).toContain("beamcraft");
+		expect(dialog.textContent).not.toContain("gate open");
+
+		await user.click(within(dialog).getByRole("button", { name: "Terminate selected sessions" }));
+		await waitFor(() => {
+			expect(h.terminateMutate).toHaveBeenCalledTimes(1);
+		});
+		expect(h.terminateMutate).toHaveBeenCalledWith(expect.objectContaining({ id: "s-blocked" }));
+	});
+
 	it("selects every visible non-terminated session from the header checkbox", async () => {
 		const user = userEvent.setup();
 		h.workspaces = workspaces();
