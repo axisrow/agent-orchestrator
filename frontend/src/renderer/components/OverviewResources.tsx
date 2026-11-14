@@ -1,5 +1,5 @@
-import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { AlertTriangle } from "lucide-react";
 import { apiClient } from "../lib/api-client";
@@ -11,17 +11,17 @@ import {
 	type ProcessKillTarget,
 } from "../hooks/useProcessInventoryQuery";
 import { workspaceQueryKey } from "../hooks/useWorkspaceQuery";
-import { Badge } from "./ui/badge";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { MemoryPopover } from "./MemoryPopover";
 
-// Bottom strip of the content area (mounted inside <main>, so it always sits
-// right of the fixed sidebar at any width or collapse state), kept minimal:
-// host RAM/Swap (the MemoryPopover segment) plus the actionable counts —
-// orphaned trees and idle workers — with the batch stop/kill entry point.
-// Renders nothing while the inventory is unavailable, and hides entirely when
-// the daemon provides neither a host snapshot nor stoppable trees.
-export function StatusBar() {
+// The resource facts the bottom status bar used to carry (issue #330): host
+// RAM/Swap with the AO footprint (MemoryPopover), the agent count, and the
+// batch Stop entry. Orphaned trees render as the warning-marked section in the
+// overview list body rather than a badge; idle workers are ordinary list rows.
+// Hides entirely when the daemon reports the surface disabled
+// (AO_NO_PROCINVENTORY) or provides neither a host snapshot nor stoppable
+// trees — same rules the status bar had.
+export function OverviewResources() {
 	const { t } = useTranslation();
 	const queryClient = useQueryClient();
 	const [confirmOpen, setConfirmOpen] = useState(false);
@@ -32,8 +32,7 @@ export function StatusBar() {
 	const [pendingStopSessionId, setPendingStopSessionId] = useState<string | undefined>();
 	const { data } = useProcessInventoryQuery();
 
-	// AO_NO_PROCINVENTORY (the daemon reports disabled): the feature is off —
-	// hide the bar entirely; the shared query stops refetching on its own.
+	// AO_NO_PROCINVENTORY (the daemon reports disabled): the feature is off.
 	if (data?.disabled) return null;
 
 	const orphans = (data?.trees ?? []).filter((tree) => tree.state === "orphan");
@@ -60,14 +59,14 @@ export function StatusBar() {
 		}
 	};
 
-	// The bar-level Stop covers everything stoppable in one confirm: true
+	// The screen-level Stop covers everything stoppable in one confirm: true
 	// orphans go through the process-group kill, idle owned sessions through
 	// the daemon's own session kill (terminate + resumable later).
 	const runStopAll = async () => {
 		setBusy(true);
 		try {
 			if (orphans.length > 0) {
-				await killOrphans(orphans.map((tree) => toTarget(tree)));
+				await killOrphans(orphans.map(toTarget));
 			}
 			await stopSessions(idleOwned.map((tree) => tree.sessionId));
 			refresh();
@@ -86,8 +85,8 @@ export function StatusBar() {
 	return (
 		<>
 			<div
-				data-testid="status-bar"
-				className="flex h-7 shrink-0 items-center gap-3 border-t border-border/60 bg-sidebar px-3 text-caption text-muted-foreground"
+				data-testid="overview-resources"
+				className="flex h-7 shrink-0 items-center gap-3 border-b border-border/60 px-4 text-caption text-muted-foreground"
 			>
 				{data.host && (
 					<MemoryPopover
@@ -120,26 +119,13 @@ export function StatusBar() {
 						}}
 					/>
 				)}
-				{idleOwned.length > 0 && (
-					<Badge variant="warning">
-						{t("statusBar.idleBadge")}
-						<span className="tabular-nums">{idleOwned.length}</span>
-					</Badge>
-				)}
 				<span>
 					{t("statusBar.agentsCount")} <span className="tabular-nums">{data.trees.length}</span>
 				</span>
-				{orphans.length > 0 && (
-					<Badge variant="warning">
-						{t("statusBar.orphans")}
-						<span className="tabular-nums">{orphans.length}</span>
-						<AlertTriangle aria-hidden="true" />
-					</Badge>
-				)}
 				{orphans.length + idleOwned.length > 0 && (
 					<button
 						type="button"
-						data-testid="status-bar-stop"
+						data-testid="overview-stop-all"
 						className="text-caption text-destructive hover:underline focus-visible:underline disabled:pointer-events-none disabled:opacity-50"
 						onClick={() => {
 							setKillError(null);
@@ -200,4 +186,70 @@ export function StatusBar() {
 
 function toTarget(tree: { sessionId: string; rootPid: number; rootLstart: string }): ProcessKillTarget {
 	return { sessionId: tree.sessionId, rootPid: tree.rootPid, rootLstart: tree.rootLstart };
+}
+
+// The orphan section of the overview list body: one warning-marked row per
+// orphaned process tree with its own kill action (process-group kill, the
+// MemoryPopover's exact target shape). Session rows above carry the sessions;
+// these are the left-behind trees the list must not lose (issue #330).
+export function OverviewOrphans({ trees, onKilled }: {
+	trees: { sessionId: string; rootPid: number; rootLstart: string; rssBytes: number }[];
+	onKilled?: () => void;
+}) {
+	const { t } = useTranslation();
+	const [pendingSessionId, setPendingSessionId] = useState<string | undefined>();
+	const [error, setError] = useState<string | null>(null);
+	const bytes = trees.reduce((sum, tree) => sum + tree.rssBytes, 0);
+
+	const kill = (tree: { sessionId: string; rootPid: number; rootLstart: string }) => {
+		setError(null);
+		setPendingSessionId(tree.sessionId);
+		void apiClient
+			.POST("/api/v1/system/processes/kill", { body: { targets: [toTarget(tree)] } })
+			.then(({ error }) => {
+				if (error) throw new Error("kill failed");
+			})
+			.catch(() => setError(t("statusBar.killFailed")))
+			.finally(() => {
+				setPendingSessionId(undefined);
+				onKilled?.();
+			});
+	};
+
+	return (
+		<section data-testid="overview-orphans" aria-label={t("overview.orphansSection", { count: trees.length })}>
+			<div className="flex h-8 items-center gap-2 rounded-md px-2.5 text-sm font-medium text-warning">
+				<AlertTriangle aria-hidden="true" className="size-icon-md shrink-0" />
+				<span className="min-w-0 flex-1 truncate">
+					{t("overview.orphansSection", { count: trees.length })}
+					<span className="ml-2 font-normal tabular-nums text-muted-foreground">{formatBytes(bytes)}</span>
+				</span>
+				{error ? (
+					<span role="alert" className="text-caption text-error">{error}</span>
+				) : null}
+			</div>
+			<ul className="space-y-px pl-0.5">
+				{trees.map((tree) => (
+					<li
+						key={`${tree.sessionId}-${tree.rootPid}`}
+						className="group/nav-row relative flex h-8 w-full items-center gap-2 rounded-lg px-2.5 pl-6 text-sm text-muted-foreground"
+					>
+						<AlertTriangle aria-hidden="true" className="size-3.5 shrink-0 text-warning" />
+						<span className="min-w-0 flex-1 truncate font-mono text-xs tabular-nums" title={tree.sessionId}>
+							{t("statusBar.treeRow", { session: tree.sessionId, pid: tree.rootPid, rss: formatBytes(tree.rssBytes) })}
+						</span>
+						<button
+							type="button"
+							aria-label={t("statusBar.killTreeAria", { session: tree.sessionId })}
+							disabled={pendingSessionId === tree.sessionId}
+							className="shrink-0 text-caption text-destructive hover:underline focus-visible:underline disabled:pointer-events-none disabled:opacity-50"
+							onClick={() => kill(tree)}
+						>
+							{pendingSessionId === tree.sessionId ? "…" : t("statusBar.killTree")}
+						</button>
+					</li>
+				))}
+			</ul>
+		</section>
+	);
 }
