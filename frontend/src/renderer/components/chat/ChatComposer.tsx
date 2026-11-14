@@ -160,6 +160,14 @@ function withAttachmentReferences(text: string, paths: string[]): string {
 	return `${lead}Attached files (read these files in the workspace):\n${paths.map((path) => `- ${path}`).join("\n")}`;
 }
 
+// Fork port of #8418's guard: the composer band rework it landed inside is not
+// taken, so only the focus check is ported.
+function isTextEntryFocused(): boolean {
+	const active = document.activeElement;
+	if (!(active instanceof HTMLElement)) return false;
+	return /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName) || active.closest('[contenteditable]:not([contenteditable="false"])') !== null;
+}
+
 /** How long a discarded unsent message can be brought back. */
 const UNSENT_UNDO_MS = 5000;
 
@@ -762,7 +770,13 @@ export const ChatComposer = memo(function ChatComposer({
 	useEffect(() => {
 		if (!autoFocus) return;
 
-		const onWindowFocus = () => focusEditor();
+		const onWindowFocus = () => {
+			// A click that activates the window can land in another field (the Browser
+			// address bar, a terminal) before this fires; taking focus would send the
+			// user's typing into the composer instead.
+			if (isTextEntryFocused()) return;
+			focusEditor();
+		};
 		const onVisibilityChange = () => {
 			if (document.visibilityState === "visible") focusEditor();
 		};
