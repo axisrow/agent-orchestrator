@@ -626,15 +626,15 @@ a05f130f47bf2d6f3fd662301d119d78ca013e72 skipped feat(import): import Conductor 
 82b34f229dabaa69e82a98572c5fb2211ad62c70 skipped fix(chat): no Orchestrator CLI in narration and step rows (#8156) — ручной UI, activity-step отсутствует
 47c1b1af168158404708a05286191e9e9b7cb685 skipped feat(tabs): ⋮ always on the session tab, ghost close button over the icon on others (#8079)
 d8fc46304c5072577a4cb530ca17c1eb96d854d5 skipped feat(artifacts): one list by last update, Published marks, multi-select filters (#8148)
-d69a11c578b527c244c31fd5d13ac3f5085a1928 skipped fix(browser): span the maximized browser to the window edges (#8074) — конфликт styles.css (UI), отложен
+d69a11c578b527c244c31fd5d13ac3f5085a1928 taken fix(browser): span the maximized browser to the window edges (#8074) — port-adapted 2026-11-14 (styles.css edge-to-edge + тесты; заодно full-width Files)
 aa1f35ec42125b1646181d2afd20571e4a7a943a skipped feat(desktop): pair with one-time codes and per-device tokens (#8082)
 59252a488b10f3bb510468e1d85fd74d0332f4b7 skipped feat(mobile): pair with one-time codes and per-device tokens (#8083)
 9d5652f562d60eca5acc3fdcce3a61fe3da49383 skipped fix(chat): copy and save images from remote-host chats (#8151) — конфликт chat-image-ipc.ts, сторона форка пуста: зависит от скипнутых соседей, отложен
-6d6b21a666eb378ebd1a6292559b143dae05816f skipped fix(chat): open a link to a listed artifact as that artifact (#8045) — конфликт 17 файлов (SessionArtifactsView, CloudSessionChatSurface, session-links, i18n×9, DU по выпиленному ChatWorkspaceWorkerUpdates.test), задевает форк-политику artifacts-меню и cloud-поверхность; свести с владельцем
+6d6b21a666eb378ebd1a6292559b143dae05816f taken fix(chat): open a link to a listed artifact as that artifact (#8045) — port-adapted 2026-11-14 (session-links/workspace-file-path/external-link-policy/ChatMarkdown-сплит/awaitedPath/i18n×9; cloud-часть и DU-тесты отброшены)
 7617bd74c6d571c644bdec4f3048f9f87d477664 skipped feat(cloud): show and update Cloud's harness versions beside local ones (#8078)
 debf01f331840d8fb6053f13f99e973386f9e7ae skipped feat(cloud): create cloud workspaces and upload local folders to them (#7805)
 8ee43b6205641555a8c9ed780ad4dbcc21143c3e skipped feat(desktop): one Share button in a session; share projects from Project settings (#8124)
-bd360d60f5665b733e960212b7345a28a3d4662a skipped fix(browser): keep the Browser page visible while a menu is open (#8173) — конфликт styles.css (UI), отложен
+bd360d60f5665b733e960212b7345a28a3d4662a skipped fix(browser): keep the Browser page visible while a menu is open (#8173) — скип: баги в форке нет, целевой селектор из непринятого #7708 (floating topbar ::before); revisit при взятии #7708-батча
 4d7c9cf63d895520e22d7581752eee49cd89c184 skipped fix(mobile): reuse only tokens issued for one-time codes on a pairing retry (#8170)
 3f56c13ec0cabefb663722cb62573812d929851a skipped fix(chat): settle a running turn when its controller stops (#8171) — конфликт SessionView/ChatWorkspace/ReviewerChatSurface/conversation.ts; settle-механика в форке выпилена (pull-семантика #273), отложен
 851b1ce0919b992ae745bb1b76913e4ef72be8ff skipped fix(commandcode): resolve symlinks when rebasing gitdir conditional includes (#8144)
@@ -652,7 +652,7 @@ e1482b3cd084e73058a5422b45123f227b7475c5 skipped perf(desktop): stop launch wait
 727064429df0ca9c9ef19fa37f6def2b48407658 skipped feat(mobile): sign in to Cloud coding agents through the browser (#8086)
 3cb3366d20c45257798898ef514995e979e317ed skipped feat(settings): give reasoning effort its own picker beside the model (#7952)
 bc2c51e60a01359f2842874f95b9d09c4a7cf21d skipped test: keep the enclosing AO session's environment out of backend tests (#8143)
-a2fb9907a617b370b57db69b29ea1ea031737c37 skipped fix: render artifacts in the Artifacts tab instead of ao preview (#8174) — конфликт 17 файлов (manager.go, ui-store, SessionInspector, SessionView, i18n×9, DU по useCloudArtifacts.test); артефакт-поверхность с форк-дельтой, сводить с владельцем
+a2fb9907a617b370b57db69b29ea1ea031737c37 skipped fix: render artifacts in the Artifacts tab instead of ao preview (#8174) — скип: стоит на registration-поверхности апстрима (ao artifact add + registered), которой в форке нет; продолжение скипнутой фичи
 a935ddfdd708dc89d77e31e12759aa556e3734a2 skipped Refactor sidebar update UI into dedicated component (#8020)
 f431ba139a8023b08e02f0f5f8782c77c8676c15 skipped feat(artifacts): cache gallery previews as WebP snapshots rendered offscreen (#8071)
 58e84ef58726260894a09b2e0fe982c40671f33a skipped fix(chat): render GitHub HTML in review comments instead of printing tags (#8150) — DU по AutomationMessage/WorkerUpdates (выпилено), конфликт ChatMarkdown; отложен
@@ -664,17 +664,17 @@ ea5d35adb932ab20fadf951ecd16dcc00c06070c skipped fix(chat): stop showing the mod
 c4dbe1e839ef0b335d95ce5ae8678e61cf974218 taken fix(terminal): keep paste in the search box out of the PTY (#7882)
 028e9bcdbaf961649dbb79c76c80c3610be3a937 skipped fix(chat): give the queued message dock a solid fill on translucent windows (#8049) — DU по e2e/shared-composer-layout.spec.ts (выпилен); UI styles.css, отложен
 1241bb23901d5d359d45fba40f607c013139bd4c taken fix(desktop): open links in the Orchestrator Browser on remote sessions (#8239)
-584c79e165b4efcfcb6b19812cda65d61d7b29ab skipped fix(chat): draw queued turns a steer carried at that steer (#8184) — конфликт ChatSteer.test/ChatWorkspace (форк-дельта чат-поверхности); отложен
+584c79e165b4efcfcb6b19812cda65d61d7b29ab skipped fix(chat): draw queued turns a steer carried at that steer (#8184) — скип: весь субстрат — скипнутый фит #7822 (batched-steer), в форке бага невоспроизводима; брать парой с #7822
 d3b1c3d649e0c7be4e3b7520f8b90ce90dbc6409 skipped fix(archive): navigate the archive as a grid and make its cards compact (#8234) — DU по SessionArchiveModal/SessionsBoard.test (выпилены), конфликт DESIGN.md/SessionsBoardAdapters/command.tsx/SessionsBoardView; UI, отложен
-ae3c44f07a6ae7cbec601b97541a84e485a39629 skipped fix(chat): stop replaying arrivals when returning to a chat (#8233) — конфликт ChatMarkdown/ChatTimelineItems/ChatWorkspace(.test)/useScrollFollow, DU по chat-entrance.ts (выпилен); отложен
+ae3c44f07a6ae7cbec601b97541a84e485a39629 taken fix(chat): stop replaying arrivals when returning to a chat (#8233) — port-adapted subset 2026-11-14 (hidden-window: page-hidden, instant/isGliding, settled-while-hidden, visibilitychange; entrance-gate половина непереносима — chat-entrance выпилен)
 249ab871a85f949109ba731ddf15017f80a3534a skipped feat: expose session import in docs and command palette (#8243)
 6c023566818dbce205ef6fb242f761d858a782d2 skipped fix(settings): give search-first settings pages their top padding back (#8251) — конфликт HarnessSettingsSection (форк-сторона пуста: зависит от скипнутого соседа #8243-класса settings-редизайна); UI, отложен
 0c805c8ce58d29e94a8ed69931b28676abeea527 skipped fix(chat): inset the composer's text and toolbar the same from both sides (#8258) — DU по IndependentSideChats(.test) (side chats выпилены), конфликт ChatComposer.test/ComposerEditor; UI, отложен
 7ed91c6a0ce79975aebf3ac4f7d35f183aba96ad skipped fix(files): keep the code selection alive across diff row rebuilds (#7512) — конфликт diffs/useCodeSelection и тестов, у большинства сторона форка пуста: зависит от скипнутых соседей; отложен
-a604321482eb83b7df8083e532f566c16c8200df skipped fix(chat): add gap between user bubble and its action row (#8259) — конфликт ChatTimelineItems (форк-дельта таймлайна); UI, отложен
-78e66b41576462cf50ccb1a6c24655a57efec5a7 skipped fix(topbar): stop drawing the divider between Open and the inspector tabs (#8260) — конфликт styles.css (UI); отложен
-769782a79018a7a745e5917edbea78b94c684516 skipped fix(chat): reopen a chat where the reader left it (#8261) — конфликт ChatWorkspace (форк-дельта чат-поверхности); отложен
-3c165974bf0a1bce5e0b633f5a774eb67001ed4f skipped fix(chat): start the live row's dots on the step icons' left edge (#8268) — конфликт ChatTimelineItems/SessionStartup/styles.css; UI, отложен
+a604321482eb83b7df8083e532f566c16c8200df taken fix(chat): add gap between user bubble and its action row (#8259) — port 2026-11-14 (2 строки классов)
+78e66b41576462cf50ccb1a6c24655a57efec5a7 skipped fix(topbar): stop drawing the divider between Open and the inspector tabs (#8260) — скип: .topbar-divider в форке не существует (непринятый #7708 floating topbar)
+769782a79018a7a745e5917edbea78b94c684516 taken fix(chat): reopen a chat where the reader left it (#8261) — port 2026-11-14 (LRU позиций чтения, 5 правок, конфликт текстовый)
+3c165974bf0a1bce5e0b633f5a774eb67001ed4f skipped fix(chat): start the live row's dots on the step icons' left edge (#8268) — скип навсегда: форк уже в целевой геометрии 12px+6px, нулевая дельта (LatticeLoader в форке нет)
 9628983380f8763a84022b5ee0ee3b19a40f82a6 skipped feat(projects): start new projects on the most preferred agent (Developer Mode) (#8252)
 1795e7c9e4bb8c53399476f4992d4b2e68a6b838 skipped refactor(sidebar): ship the new left sidebar design and delete the old one (#8274)
 cc810bba1f830eea7d733919feeaadedda968ef9 skipped feat(usage): show consumed usage % in usage indicators (#8272)
