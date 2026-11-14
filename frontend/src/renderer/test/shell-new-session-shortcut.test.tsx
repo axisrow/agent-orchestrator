@@ -247,9 +247,6 @@ vi.mock("../hooks/useAgentReadinessQuery", () => ({
 }));
 
 vi.mock("../components/NotificationCenter", () => ({ NotificationRuntime: () => null }));
-// The status bar's query needs a QueryClientProvider these tests don't mount;
-// stub it out like every other shell peripheral.
-vi.mock("../components/StatusBar", () => ({ StatusBar: () => null }));
 vi.mock("../components/HarnessUpdateNotice", () => ({ HarnessUpdateNotice: () => null }));
 vi.mock("../components/DaemonStartupLoader", () => ({
 	DaemonStartupLoader: () => <div data-testid="daemon-startup-loader" />,
