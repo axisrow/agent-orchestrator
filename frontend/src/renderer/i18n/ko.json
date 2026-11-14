@@ -2965,6 +2965,7 @@
 	"overview.selectAll": "세션 선택",
 	"overview.showArchived": "보관된 항목 표시",
 	"overview.hideArchived": "보관된 항목 숨기기",
+	"overview.archivedCount": "보관된 항목 ({{count}})",
 	"overview.undeliveredCount": "미전달 {{count}}건",
 	"overview.toggleProject": "{{name}} 세션 펼치기/접기",
 	"overview.openOrchestrator": "{{name}} 오케스트레이터 열기",
