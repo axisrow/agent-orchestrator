@@ -2954,6 +2954,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sessions/{sessionId}/pr/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Fetch a session's pull requests fresh from the provider, read-only */
+        post: operations["refreshSessionPRs"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sessions/{sessionId}/preview": {
         parameters: {
             query?: never;
@@ -5966,6 +5983,20 @@ export interface components {
             targetSha: string;
             title: string;
         };
+        PeekedSessionPRFacts: {
+            /** @enum {string} */
+            ci: "unknown" | "pending" | "passing" | "failing" | "none";
+            /** @enum {string} */
+            mergeability: "unknown" | "mergeable" | "conflicting" | "blocked" | "unstable";
+            number: number;
+            /** @enum {string} */
+            review: "none" | "approved" | "changes_requested" | "review_required";
+            /** @enum {string} */
+            state: "draft" | "open" | "merged" | "closed";
+            /** Format: date-time */
+            updatedAt: string;
+            url: string;
+        };
         PrepareTaskResponse: {
             ok: boolean;
             taskPreparation?: string;
@@ -6194,6 +6225,13 @@ export interface components {
             pat: string;
             refreshToken?: string;
             refreshTokenExpiresIn?: number;
+        };
+        RefreshSessionPRsResponse: {
+            ok: boolean;
+            prs: components["schemas"]["PeekedSessionPRFacts"][];
+            /** Format: date-time */
+            refreshedAt: string;
+            sessionId: string;
         };
         RegisterPushDeviceRequest: {
             /** @description Human-friendly device label. */
@@ -17988,6 +18026,65 @@ export interface operations {
             };
             /** @description Unprocessable Entity */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    refreshSessionPRs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Session identifier, e.g. project-1. */
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RefreshSessionPRsResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };
