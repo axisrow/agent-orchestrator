@@ -741,3 +741,74 @@ cc636a43e8b63e5b2a8b272ddf6cd2f669c1be6a skipped fix(grok): pre-trust the worksp
 48709b6a284d989e85d4b5a164718f2a7424b56a skipped chore(pricing): delete the frozen checked-in pricing catalog (#8305)
 232462cea886de429441cb03defc8b0bb85bb084 skipped feat(session): fork a session into a new session at any turn (#8111)
 d7470e2779974c88572ef7ab6a1279382488e5f1 skipped feat(chat): steer running turns on Qwen Code, Kimchi, and OMP (#7702)
+72262c63f93613270312f05a4ee988a6754f1dae skipped fix(artifacts): show a single Republish button once a published file changes (#8349) — DU: ShareArtifactPopover в форке не существует (artifact-share поверхность не берётся: #7151/#7615/#7278); i18n-ключи шаринга с ним же
+72c1d3c44d85daba26e0f4575a492050cb6e9244 skipped feat(accounts): agent accounts on remote hosts, per-session pick, and mobile switch (#8253)
+58bb9f853ae8b7236eaf33fceb03c579d3f6ae45 taken fix(chat): show a Claude model's real context window during its first turn (#8041)
+48352eddfda4eafc14e83e1789a3cfb911c1e206 skipped fix(scm): treat a gate job that failed in a cancelled run as cancelled (#8149) — параллель форк-фикса CI-наблюдения (#7964-семейство, TestCISummaryCancelledChecksAreNotFailures); их suite-механика несовместима с форкским батч-запросом/ciSummary, два их теста красные на форк-коде
+207861e32dd5c1ddf8a09af5c8a9d0a29da07c00 skipped feat(search): search every past session from Cmd+K and ao search (#7362)
+b378fad6906c9f77aefe122af601e25f188f46e0 skipped feat: let agents split the desktop window's panes with ao pane (#7873)
+db74eaec3abda35f7798dc00057a5827374c8534 skipped feat(cli): ao account commands and spawn --account (#8355)
+bafb440920db0783dbf05644be58140250092782 skipped refactor(accounts): remove the per-session "Stay on this account" switch (#8381)
+5815bb89f09b5d10b0c7e869c40aab1160c03f30 skipped feat(accounts): say why an account check failed instead of showing the CLI's error (#8365)
+cd19f93e9badfb9718720899e4198d18227fb27c skipped feat(chat): comment on selected text inline, with numbered annotation badges (#8340)
+c40128f1495608ae6fed867a430a4a558aacc90e taken fix(chat): identify Chat sessions to Claude Code as Orchestrator (#8342)
+4461aef88e41260caa913553dbf296569b1ffda9 skipped fix(desktop): make the Cloud Chat approval menu change the mode (#8287) — фикс unified-ветки approval-меню (PermissionRow + approvalModeLimits), которой в форке нет; форкский onSelect уже несёт маркер approvalMode, тесты юзают hermes/unified
+b54bf42e21fd8c98e3c5675db4f7dc10b4ce1bec skipped fix(cloud): approving a cloud Chat plan turns Plan mode off (#8290) — форкский CloudSessionChatSurface без Plan-mode/switch_mode механики (не берётся cloud-chat composer дельта); семейство скипнутого #8287
+f9a5911a4866553f96cc0564e8270735926217ec skipped fix(chat): widen the gap between activity row icons and labels (#8389) — CSS-косметика; ChatTimelineItems rowClass у форка переписан (целевых строк нет), SessionStartup отсутствует; частичный порт одной строки = разнобой гэпов
+5638512c19a502a8a10674569d74f4fdfac5743f skipped fix(desktop): list Cloud's own models in a Cloud New Task's picker (#8288)
+0cbf5b0f23f360b7b4f6495bb6e4f9527eeb786c skipped fix(desktop): bring the reader to the end on a Cloud Chat send (#8292) — юзает SENT_OUTSIDE_TRANSCRIPT из невзятого chat-стека; cloud-веток в форкском SessionChatSurface нет; семейство cloud-chat скипов #8287/#8290
+16f8ceb0e44510d672ba8d83a4176012f31ad04f skipped fix(desktop): say who the workspace row in Share means, never an email (#8293) — DU×5: ShareSessionDialog/CloudProjectSharingSettings/share-linkAccess в форке нет (cloud-sharing поверхность, семейство #7615/#7151)
+a6df84132032aa57b8b3fe84a484aeeeb37d891d taken fix(desktop): stay put when a review starts from the inspector (#8347) — резолв=ours: форк уже stay-put (reviewer-терминал onOpenReviewerTerminal, вкладку не переключает)
+16146672aea233ba44aabb7c9de43c4346e2f928 skipped fix(split-panes): remove the focus outline that flashes on a pane (#8391) — DU: SplitView.tsx в форке нет (split-panes поверхность вырезана), SplitFocusOutline не существует
+22229a800fe01716c7f1b52fa813e0b95dfd1e32 skipped fix(chat): stop the error flash under the model picker when opening a session (#8394) — баг у форка есть (блочный p role=alert в TurnSettingsBar), но их фикс вписан в unified picker-row структуру апстрима; форк-эквивалент — отдельным заходом при подтверждённой боли
+56043bd54fe914cccba4b3540b9fe2885a9911d1 skipped fix(usage): stop showing a login no account holds as open in Windows (#8299) — сквош стоит на problemKind/AgentAccountProblemKind-стеке (не берётся) + readSeq поверх форк-cachedReading адаптации agentaccounts
+ebc057b440bf16f506ae62d2d4213095b4666ca7 skipped feat(chat): offer a login when a turn fails on a refused login (#7769)
+ea017f2efd489651f673f0a1f2ca04fe060ffb76 skipped feat(chat): steer Antigravity through agy acp (#8016)
+396b5482e48b42538f4a8c2369b311dd575a68b4 skipped feat(chat): steer Hermes with its /steer command (#8022)
+97c92bddd3778e9d14ea28e09a9679be6f2970ab skipped feat(desktop): show skills by readable name in the / menu (#8409)
+23efbeffa4eb5e78bea2ccaf3fb6b103acb2e07a skipped fix(settings): move account handoff help into tooltip (#8412) — DU: settings/harness/harness-ui.tsx в форке нет; тултип-механика стоит на их harness-стеке
+ef126a94993f91c0ec833bdde63436d0a9a8c70e skipped feat(palette): refresh Cmd+K with nested lists, menu parity and a shorter blank list (#8410)
+f694f06af8b909cc2cf326161f5cbf74e9e0be1f skipped fix(browser): let Chrome mode agents act while their window is covered (#8396) — DU: browser-extension (chrome-api/executor) вырезан в форке (#7557-семейство), browser.md тоже не наш
+adf9f6a303a60be99543c74fa3bd1b7cf3675253 skipped perf(browser): let Chromium throttle hidden, idle browser sessions (#8400)
+a32cc3a1209c8c89742c87e8bba54e0643a1060f skipped fix(accounts): don't read a signed-out account's unknown org as another org (#8382) — agentAccountLabel/twins-механики в форкском useAgentAccounts нет; test-хук DU
+28bc83fd954cedc30969903c102d60132399fe44 skipped fix(chat): draw turns a queue drain carried right after the leader's message (#8384) — batchedDeliveries/atCarryingSteer-машины в форке нет (невзятый chat-стек), deliveredWithTurnId-поле приходит из их transport-стека
+a57efce94a57000d608274a55204d8162bf52bae skipped feat(cloud): contract and shared handoff note for switching a Cloud session's agent (#8309)
+a5aa15bce3439ded2e334ba0194fdcf08fa08dc9 skipped feat(cloud): switch a Cloud session's agent from the chat and terminal pickers (#8315)
+39d4910ce1b992849cd388d0839670167133cb71 skipped feat(cloud): contract for several accounts per coding agent (#8344)
+3435361db9f6e3aba6e7c50496b01ce5d7eb0e69 skipped feat(cloud): Cloud accounts in Harness settings and the session Summary (#8345)
+f903d96f4717fb07ca1d2bf9979b918553a6527b skipped feat(desktop): Browser and side chat tabs use the session strip's tab frame (#8296)
+dd606026ee2e1b69c5e97245f270a0b0bec08b1f skipped fix(cloud): steer queued messages into the running turn, durably (#8343) — cloud control-plane фича (contracts/cloud + CloudQueuedDelete + CloudSessionChatSurface); cloud-CP скипается по политике
+6bef8dd7e52ebdc4b0179500af1add644bc9ec87 skipped feat(cloud): UI-only Cloud parity quick wins (archive, restore, shells, file tabs, automations, notifications, PR conflicts, i18n, delete wording) (#8341)
+a8451c437ca79408e2d5029e97e802be121e44b1 skipped feat(share): drop the workspace row, share the project from the orchestrator and board cards; remove the Cloud GitHub PAT UI (#8307)
+5e2ecf1e164c7563b65890e2bf4bedb2ec68175d skipped fix(chat): draw Resolve conflicts and Update from base clicks as the user's action (#8404)
+582f23d42784441db33f0e2a1b0a01ff6831f1df skipped fix: make side chat closing and recovery reliable (#8242) — side chats выпилены в форке (#7309-семейство, скип навсегда)
+68ff3a63d3682525fafc1878aeaa008f48a85f7b skipped fix(cli): acknowledge reports inside Claude paste wrappers (#6387) — coordination-delivery машина (isAOCoordinationMessage/semantic_deliveries/accepted_delivery) в форке отсутствует; сквош тянет session-manager/lifecycle стек
+bc226752006d03d12713be9acb9802711c7ed621 skipped perf(desktop): log launch timestamps in one line (#8254)
+212e7fa2b779397f21d9c2a552a40ea4dee96953 skipped fix(settings): require multiple accounts for the handoff toggle (#8417) — юзает withoutSameLogins/sameLoginAs (same-logins стек не берётся, семейство #8382/#8412)
+39211af92cd2ac197589d0f6f35fef636e4e218e skipped fix(chat): show an annotation-only message as its annotation chip (#8435) — DU: ChatAnnotationSummary.tsx в форке нет (annotation-summary поверхность не берётся)
+6c3902a2252f8cfe6e7dbee1f0087d6f1c0c1d6d skipped feat(onboarding): import earlier chats as a first-run step, not on Home (#8109)
+736a3796a9ffb3b16295f3489fd8134b60a134fd skipped perf(browser): reclaim leftover temporary browser profiles and stale caches (#8407)
+c023bdb988ae6bd40d1d974a10f7db462f75f92d taken fix(chat): stop the composer stealing focus from the field you clicked (#8418) — порт-минимум: isTextEntryFocused-guard в onWindowFocus + 2 теста; их band/selection-guard хунки (невзятый composer-rework) не тащены
+0e151bf428379a8acdde8f04671df2adf7c53784 skipped perf(browser): stop scrolling elsewhere from re-positioning the browser (#8408)
+eb187686996a4eea862546670fb0f86fae3b1794 skipped fix(sessions): restore an archived worktree on its last branch (#7900) — юзает SetBranchStateRecorder/LastBranch из невзятого branch-state стека (в форке метода нет)
+53a545ad20fcd300c7c989f175f9a5c5d90fe58e skipped fix(remote): reconnect offline hosts sooner and show them as offline in the chat (#8350) — DU: SessionsBoard.tsx в форке нет; HostOfflineStatus/board-переработка стоит на невзятом sessions-board стеке
+1a5d2647f24d8ce3c98589406e0608f94986a8cd skipped fix(kimi): install mid-turn tool and permission hooks so working sessions are not shown Idle (#7399) — харнес kimi вырезан (keep-лист 2026-11-03)
+2504f058e233abaddc56d4146fff5bd78556a244 skipped feat(sessions): review someone else's PR with automatic fixing turned off (#8271)
+8a370e2d2387699fb9978ffa3c4495a65cb72089 skipped feat(browser): offer to continue in Chrome when a site refuses the Browser panel (#8413)
+9f60abf03db15dc5c8d1997ca44782eb910e3a39 skipped feat(review): choose reviewer effort from the session inspector picker (#8386)
+36efe8593577e19f46868c088f0831f070105c5b skipped feat: add Stakpak Agent TUI harness (#8199)
+0f45f79f5e8be24b1f51cb6e860f714803c1445b skipped fix(settings): close harness login automatically once connected (#8379) — HarnessHealthTab в форке нет, HarnessLoginPanel.lifecycle.test DU; их harness-settings login-стек не берётся
+5e908044d3a9c088fd354c1dced40fdebedba2c2 skipped feat: add Docker Agent native ACP Chat (#8204)
+70d59a0a1c2050b2a27b9b6bbe66578ab8172627 skipped fix(chat): open existing chats with the composer docked, not centered then dropped (#8470) — historyUnread вычисляется от conversationShown/renderShellFallback/provisionState (их standin-стек, у форка нет); без них docked-логика вырождается
+e3a90f708e90dc43fbfa561a739f37d0a9db11d8 taken fix(lifecycle): don't inject the PR author's own thread replies (#8462)
+495facbac8aff432dd3888c1b994ab7663cae858 skipped feat: add MiniMax Code TUI and gated ACP Chat binding (#8206)
+015a5a9c2aab3c32c3fa5ba984d3f059c8ad4855 skipped perf(chat): scope ::highlight() rules to the elements their ranges are in (#8477)
+7c9a92c5561544c758f4b4772bf388e117b94df0 skipped fix(sidebar): replace the Cloud pill with a filled cloud icon (#8478) — pill/CloudMark cloud-поверхности в форкском sidebar/NotificationCenter нет (облако урезано)
+40779b13971a09081d479119b46a12b280f754e8 skipped fix(reviews): show every PR comment and render CodeRabbit's HTML (#8454) — DU: PRMarkdown/AutomationMessage в форке нет (PR-панель выпилена)
+e103e99b37a72546e63bada75cf39d0607de3143 skipped fix(computer-use): show, request and name Orchestrator's own macOS permissions (#8321) — DU: session_manager/computer_use_prompt в форке нет (computer-use не берётся)
+c70c368fb9c3691bb2312b725e01aba885a68042 skipped feat(chat): show subagents as a team and open each one in a Subagents panel (#7176)
+0011f1a50694184a82ba4553bf1236b90908be58 skipped fix(chat): hide the conversation minimap by chat width, not the inspector (#8482) — UI-переработка minimap-видимости (111 строк workspace + тест + e2e) поверх их стека; inspectorOpenRef у форка жив — портить руками при подтверждённой боли (minimap наезжает на текст)
+e20463abfaac74b7324887213c379e830f9367aa skipped fix(cursor): explain rejected-login update failures and stop calling them Connected (#8127) — DU: cursor/auth в форке нет (харнес cursor вырезан)
+8d75dfbe2395960393b5384672884320c775465d skipped fix(palette): use the Cloud project delete wording the sidebar uses (#8425) — workspace.shared/CLOUD_PROJECT_KIND/deleteCloudProjectTitle cloud-CP механики палитры в форке нет
+e4ded08c6f150a632909e84bcc65d8cf772b4c2f taken fix(browser): read page text with a selector so --expect-text works (#8428)
+acfed6c192b76fb4b8417e98a30695a6fb00ef83 skipped chore(sentry): rotate desktop and daemon DSNs (#8492)
