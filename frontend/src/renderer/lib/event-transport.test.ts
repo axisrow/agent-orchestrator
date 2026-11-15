@@ -168,7 +168,6 @@ describe("createEventTransport", () => {
 		remoteA.emit("review_run_updated", JSON.stringify({ sessionId: "same", payload: { reviewId: "review-1", conversationId: "review-conversation" } }));
 		expect(client.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["remote-workspaces", "box-a"] }, { cancelRefetch: false });
 		expect(client.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["project-config", "box-a"] }, { cancelRefetch: false });
-		expect(client.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["session-usage", "detail", "box-a"] }, { cancelRefetch: false });
 		expect(client.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["session-reviews", "box-a"] }, { cancelRefetch: false });
 		expect(client.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["reviewer-conversation", "box-a", "review-1"] }, { cancelRefetch: false });
 		expect(client.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["remote-session-agent-switches", "box-a"] }, { cancelRefetch: false });
@@ -179,7 +178,6 @@ describe("createEventTransport", () => {
 		expect(client.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["remote-conversation", "box-a"] }, { cancelRefetch: false });
 		expect(client.invalidateQueries).not.toHaveBeenCalledWith({ queryKey: ["remote-workspaces", "box-b"] }, { cancelRefetch: false });
 		expect(client.invalidateQueries).not.toHaveBeenCalledWith({ queryKey: ["project-config", "box-b"] }, { cancelRefetch: false });
-		expect(client.invalidateQueries).not.toHaveBeenCalledWith({ queryKey: ["session-usage", "detail", "box-b"] }, { cancelRefetch: false });
 		expect(client.invalidateQueries).not.toHaveBeenCalledWith({ queryKey: ["session-reviews", "box-b"] }, { cancelRefetch: false });
 		expect(client.invalidateQueries).not.toHaveBeenCalledWith({ queryKey: ["reviewer-conversation", "box-b", "review-1"] }, { cancelRefetch: false });
 		expect(client.invalidateQueries).not.toHaveBeenCalledWith({ queryKey: ["remote-session-agent-switches", "box-b"] }, { cancelRefetch: false });
@@ -416,7 +414,6 @@ describe("createEventTransport", () => {
 			expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["workspaces"] }, { cancelRefetch: false });
 			expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["session-agent-switches"] }, { cancelRefetch: false });
 			expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["session-scm-summary"] }, { cancelRefetch: false });
-			expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["session-usage"] }, { cancelRefetch: false });
 			expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["editor-handoff"] }, { cancelRefetch: false });
 		} finally {
 			vi.useRealTimers();

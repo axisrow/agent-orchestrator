@@ -12,7 +12,6 @@ import {
 } from "../hooks/useReviewerConversation";
 import { agentSwitchesQueryRoot } from "../hooks/useAgentSwitches";
 import { sessionReviewsQueryKey } from "./session-reviews";
-import { sessionUsageQueryRoot } from "../hooks/useSessionUsageSummaries";
 import { agentSwitchVisibility } from "./agent-switch-visibility";
 import { codexAccountsQueryKey, writeCodexAccounts } from "../hooks/codex-accounts-state";
 import type { components } from "../../api/schema";
@@ -159,8 +158,6 @@ export function createEventTransport(queryClient: QueryClient): EventTransport {
 				if (reconnect) invalidate(["reviewer-conversation", hostId]);
 				invalidate(["session-scm-summary", hostId]);
 				invalidate(["session-reviews", hostId]);
-				invalidate(["session-usage", hostId]);
-				invalidate(["session-usage", "detail", hostId]);
 				invalidate(["remote-session-agent-switches", hostId]);
 				invalidate(["session-interface-transition", hostId]);
 				invalidate(["agent-readiness", hostId]);
@@ -245,7 +242,6 @@ export function createEventTransport(queryClient: QueryClient): EventTransport {
 					invalidate(workspaceQueryKey);
 					invalidate(agentSwitchesQueryRoot);
 					invalidate(sessionScmSummaryQueryKey());
-					invalidate(sessionUsageQueryRoot);
 					workspaceInvalidationPending = false;
 					lastWorkspaceRefreshAt = Date.now();
 					idOnlyWorkspaceRefreshPending = false;

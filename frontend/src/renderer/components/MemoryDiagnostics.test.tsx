@@ -24,9 +24,6 @@ vi.mock("../hooks/useWorkspaceQuery", () => ({
 	useWorkspaceQuery: () => ({ data: workspaces }),
 }));
 
-const usage = { data: new Map() };
-vi.mock("../hooks/useSessionUsageSummaries", () => ({ useSessionUsageSummaries: () => usage }));
-
 vi.mock("../lib/telemetry", () => ({ captureRendererEvent: vi.fn() }));
 
 const GIB = 1024 ** 3;

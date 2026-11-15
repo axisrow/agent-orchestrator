@@ -8,10 +8,9 @@ import type { SessionMemoryReading } from "../hooks/useSessionMemory";
 import { AppMemoryIndicator } from "./SessionMemoryPanel";
 import { TooltipProvider } from "./ui/tooltip";
 
-const { appMemoryMock, clipboardMock, memoryQueryMock, postMock, usageQueryMock, workspaceQueryMock } = vi.hoisted(() => ({
+const { appMemoryMock, clipboardMock, memoryQueryMock, postMock, workspaceQueryMock } = vi.hoisted(() => ({
 	appMemoryMock: vi.fn(),
 	clipboardMock: vi.fn(),
-	usageQueryMock: vi.fn(),
 	memoryQueryMock: vi.fn(),
 	postMock: vi.fn(),
 	workspaceQueryMock: vi.fn(),
@@ -30,8 +29,6 @@ vi.mock("../hooks/useSessionMemory", async (importOriginal) => {
 		},
 	};
 });
-
-vi.mock("../hooks/useSessionUsageSummaries", () => ({ useSessionUsageSummaries: usageQueryMock }));
 
 vi.mock("../hooks/useWorkspaceQuery", () => ({
 	workspaceQueryKey: ["workspaces"],
@@ -129,7 +126,6 @@ function renderButton() {
 beforeEach(() => {
 	postMock.mockReset().mockResolvedValue({ data: {} });
 	clipboardMock.mockReset().mockResolvedValue(undefined);
-	usageQueryMock.mockReset().mockReturnValue({ data: undefined });
 	const workspace: WorkspaceSummary = {
 		id: "p1",
 		name: "radic",
@@ -591,9 +587,6 @@ describe("AppMemoryIndicator", () => {
 			],
 		} as WorkspaceSummary;
 		workspaceQueryMock.mockReturnValue({ data: [workspace], isError: false, isSuccess: true });
-		usageQueryMock.mockReturnValue({
-			data: new Map([["s-big", { sessionId: "s-big", estimatedCost: { totalNanos: 5_460_000_000, coverage: "complete", providerAttribution: "observed", inputNanos: null, outputNanos: null, cachedInputNanos: null }, processedTokens: 412_000, totalTokens: 412_000, incomplete: false }]]),
-		});
 		const startedAt = new Date(Date.now() - 38_000).toISOString();
 		memoryQueryMock.mockReturnValue({
 			isError: false,
@@ -626,7 +619,6 @@ describe("AppMemoryIndicator", () => {
 		expect(report).toContain("Branch   ao/big-worker");
 		expect(report).toContain("PR       #5137 · open · CI passing");
 		expect(report).toContain("https://github.com/org/repo/pull/5137");
-		expect(report).toContain("Usage    $5.46 · 412K tok");
 		expect(report).toContain("Memory   2.1 GB · CPU 82%");
 		expect(report).toMatch(/claude\s+1.7 GB\s+80%\s+Agent/);
 		// The child keeps its indent, and the tree is not truncated the way the screen truncates it.

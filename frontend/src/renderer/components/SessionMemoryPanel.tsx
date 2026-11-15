@@ -16,9 +16,7 @@ import {
 } from "@aoagents/product-ui";
 import { cn } from "@/lib/utils";
 import { aoBridge } from "../lib/bridge";
-import { formatEstimatedCost } from "../lib/format-cost";
 import { formatTimeTerse } from "../lib/format-time";
-import { formatTokenCount } from "../lib/format-token-count";
 import { useWorkspaceQuery } from "../hooks/useWorkspaceQuery";
 import {
 	formatCPU,
@@ -37,7 +35,6 @@ import {
 	type SessionStepReading,
 	type SystemMemoryReading,
 } from "../hooks/useSessionMemory";
-import { useSessionUsageSummaries, type SessionUsageSummary } from "../hooks/useSessionUsageSummaries";
 import { isOrchestratorSession, type WorkspaceSession, type WorkspaceSummary } from "../types/workspace";
 import { Button } from "./ui/button";
 import {
@@ -260,8 +257,6 @@ export function SessionsTable({ onRows, projectId, underToolbar }: { onRows?: (r
 	const workspaces = useWorkspaceQuery().data ?? EMPTY_WORKSPACES;
 	const readings = useSessionMemory(projectId).data;
 	const app = useAppMemory().data?.app;
-	// Cost belongs in a shared report even though the window never shows it.
-	const usage = useSessionUsageSummaries(projectId).data;
 	const { state, facts } = usePressureFacts(projectId);
 	// Orchestrators are listed too: they hold memory like any session, and
 	// leaving them out made the rows add up to less than AO's total.
@@ -299,8 +294,8 @@ export function SessionsTable({ onRows, projectId, underToolbar }: { onRows?: (r
 	// The copy button sits above the table, so the rows it would copy travel
 	// up. Same order as the screen, so the text matches what was seen.
 	useEffect(() => {
-		onRows?.(live.map(({ session, reading }) => ({ session, reading, usage: usage?.get(session.id) })));
-	}, [live, usage, onRows]);
+		onRows?.(live.map(({ session, reading }) => ({ session, reading })));
+	}, [live, onRows]);
 	// Any number of rows open at once: comparing two trees is the point.
 	const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
 	const toggleExpanded = (id: string) =>
@@ -680,7 +675,6 @@ function StatusLine({ current, session, working }: { current?: SessionStepReadin
 export function sessionReport(
 	session: WorkspaceSession,
 	reading: SessionMemoryReading,
-	usage: SessionUsageSummary | undefined,
 	t: TFunction,
 ): string {
 	const working = session.activity?.state === "active";
@@ -697,9 +691,6 @@ export function sessionReport(
 		lines.push(`PR       #${pr.number} · ${pr.state}${pr.ci ? ` · CI ${pr.ci}` : ""}${pr.review ? ` · ${pr.review}` : ""}`);
 		lines.push(`         ${pr.url}`);
 	}
-	const cost = formatEstimatedCost(usage?.estimatedCost);
-	const tokens = usage?.processedTokens != null ? formatTokenCount(usage.processedTokens) : undefined;
-	if (cost || tokens) lines.push(`Usage    ${[cost, tokens].filter(Boolean).join(" · ")}`);
 	lines.push(`Memory   ${formatMemory(reading.rssBytes)} · CPU ${formatCPU(reading.cpuPercent)} · ${reading.sampledAt}`);
 
 	const tree = processTree(reading.processes);
@@ -740,7 +731,7 @@ function reviewerLabel(reviewer: ReviewerMemoryReading, titles: Map<string, stri
 }
 
 /** One row of the report: a session with its reading, in the order shown. */
-export type ReportRow = { session: WorkspaceSession; reading: SessionMemoryReading; usage?: SessionUsageSummary };
+export type ReportRow = { session: WorkspaceSession; reading: SessionMemoryReading };
 
 /**
  * Everything the window shows, as plain text for a bug report: the machine,
@@ -768,7 +759,7 @@ export function diagnosticsReport(
 		if (system.swapBytesPerSec > 0) lines.push(`Swapping ${formatMemory(system.swapBytesPerSec)}/s`);
 	}
 	lines.push(`Sessions ${rows.length}`);
-	return [`${lines.join("\n")}\n`, ...rows.map((row) => sessionReport(row.session, row.reading, row.usage, t)), ...aoReport(app, titles, t)].join("\n");
+	return [`${lines.join("\n")}\n`, ...rows.map((row) => sessionReport(row.session, row.reading, t)), ...aoReport(app, titles, t)].join("\n");
 }
 
 /** What AO holds besides the sessions, so the report's rows add up to its total
