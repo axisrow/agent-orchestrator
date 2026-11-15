@@ -234,7 +234,13 @@ export function usePRFactsRefresh(
 				// record and wipe both caches, and the facts-convergence effect
 				// (#336) would then see the patched summaries disagreeing with the
 				// unpatched workspace facts and do exactly that. Matching facts
-				// leave the comparison in agreement, so the patch survives.
+				// leave the comparison in agreement, so the patch survives. The
+				// comments flag rides along from the paired summary: the facts'
+				// reviewComments counts any author while the summary's flag is
+				// human-only, and an AO/bot thread in a frozen session would keep
+				// the pair in disagreement without it.
+				const paired = queryClient.getQueryData<{ prs: SessionPRSummary[]; linkedPrs: SessionPRReference[] }>(sessionScmSummaryQueryKey(sessionId, hostId));
+				const commentsByURL = new Map((paired?.prs ?? []).map((cached) => [cached.url, Boolean(cached.review.hasUnresolvedHumanComments)]));
 				queryClient.setQueryData<WorkspaceSummary[]>(workspaceQueryKeyForHost(hostId), (current) => {
 					if (!current) return current;
 					let changed = false;
@@ -253,6 +259,7 @@ export function usePRFactsRefresh(
 									ci: peeked.ci,
 									review: peeked.review,
 									mergeability: peeked.mergeability,
+									reviewComments: commentsByURL.get(fact.url) ?? fact.reviewComments,
 									updatedAt: peeked.updatedAt,
 								};
 							});

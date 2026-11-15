@@ -360,6 +360,59 @@ describe("usePRFactsRefresh", () => {
 		expect(refreshPostMock).toHaveBeenCalledTimes(1);
 	});
 
+	it("aligns the comments pair with the summary so a bot thread cannot resurrect the divergence", async () => {
+		// The workspace fact counts any author's unresolved comments; the
+		// summary's flag is human-only. A frozen session holding an AO thread
+		// has fact true / summary false, and leaving that pair alone would keep
+		// the convergence effect invalidating both caches away from the peek.
+		refreshPostMock.mockReset().mockResolvedValue({
+			data: {
+				ok: true,
+				sessionId: "sess-1",
+				refreshedAt: "2026-11-15T12:00:00Z",
+				prs: [{
+					url: prUrl, number: 1361, state: "open", ci: "passing",
+					review: "none", mergeability: "mergeable", updatedAt: "2026-11-15T12:00:00Z",
+				}],
+			},
+		});
+		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+		seedCard(queryClient, [staleSummary({
+			review: { decision: "none", hasUnresolvedHumanComments: false, unresolvedBy: [] },
+		})]);
+		queryClient.setQueryData<WorkspaceSummary[]>(workspaceQueryKey, [{
+			id: "ws-1",
+			name: "app",
+			kind: "single_repo",
+			path: "/tmp/app",
+			sessions: [{
+				id: "sess-1",
+				workspaceId: "ws-1",
+				workspaceName: "app",
+				title: "fix",
+				provider: "codex",
+				status: "terminated",
+				updatedAt: "2026-11-15T10:00:00Z",
+				prs: [{
+					url: prUrl, number: 1361, state: "open", ci: "passing",
+					review: "none", mergeability: "mergeable", reviewComments: true,
+					updatedAt: "2026-08-26T12:00:00Z",
+				}],
+			}],
+		}]);
+		const invalidate = vi.spyOn(queryClient, "invalidateQueries").mockImplementation(async () => undefined);
+		renderHook(() => usePRFactsRefresh("sess-1", staleSummary(), undefined, true), {
+			wrapper: ({ children }: { children: ReactNode }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>,
+		});
+
+		await waitFor(() => expect(refreshPostMock).toHaveBeenCalledTimes(1));
+		const workspaces = queryClient.getQueryData<WorkspaceSummary[]>(workspaceQueryKey);
+		// The patched fact carries the summary's human-only flag, so the pair
+		// agrees and no invalidation fires.
+		expect(workspaces?.[0]?.sessions[0]?.prs[0]?.reviewComments).toBe(false);
+		expect(invalidate).not.toHaveBeenCalled();
+	});
+
 	it("leaves fresh facts and a failed peek alone", async () => {
 		refreshPostMock.mockReset().mockRejectedValue(new Error("provider down"));
 		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
