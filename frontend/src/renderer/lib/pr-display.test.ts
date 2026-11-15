@@ -8,6 +8,8 @@ import {
 	prCanMerge,
 	prCardPresentation,
 	prDiffSummary,
+	prFactsStale,
+	PR_FACTS_STALE_MS,
 	prStatusRows,
 	prSummaryParts,
 	sessionPRDisplaySummaries,
@@ -1201,6 +1203,46 @@ describe("prSummaryParts", () => {
 			status: "None",
 			summary: "Draft PR · Not ready for review",
 		});
+	});
+});
+
+// A terminated session's PR record never refreshes on its own, so a card
+// opened onto it must not render an ancient snapshot as live: stale facts
+// hide the green merge verdict and hold the Merge button until the one-shot
+// refresh reconciles them (#338).
+describe("prFactsStale", () => {
+	const now = Date.parse("2026-11-15T12:00:00Z");
+
+	it("marks facts past the freshness threshold", () => {
+		const old = new Date(now - PR_FACTS_STALE_MS - 60_000).toISOString();
+		const fresh = new Date(now - 60_000).toISOString();
+		expect(prFactsStale(summary({ lastSeenAt: old }), now)).toBe(true);
+		expect(prFactsStale(summary({ lastSeenAt: fresh }), now)).toBe(false);
+	});
+
+	it("falls back to the observation stamps when the cursor is missing", () => {
+		const old = new Date(now - PR_FACTS_STALE_MS - 60_000).toISOString();
+		expect(prFactsStale(summary({ lastSeenAt: undefined, observedAt: old }), now)).toBe(true);
+		expect(prFactsStale(summary({ lastSeenAt: undefined, observedAt: old, updatedAt: old }), now)).toBe(true);
+	});
+
+	it("reads a zero observation stamp as stale, never as ancient-beyond-epoch", () => {
+		expect(prFactsStale(summary({ lastSeenAt: undefined, observedAt: "0001-01-01T00:00:00Z", updatedAt: "0001-01-01T00:00:00Z" }), now)).toBe(true);
+	});
+
+	it("downgrades a stale green merge verdict to the stale badge", () => {
+		// The presentation reads the real clock, so age the stamp from it.
+		const old = new Date(Date.now() - PR_FACTS_STALE_MS - 60_000).toISOString();
+		const stale = summary({ lastSeenAt: old });
+		const presentation = prCardPresentation(stale);
+		expect(presentation.primary.label).not.toBe("Ready to merge");
+		expect(presentation.primary.tone).toBe("warning");
+		expect(presentation.readiness?.tone).toBe("warning");
+		expect(presentation.readiness?.label).toMatch(/old/);
+		// Fresh facts keep the green verdict.
+		const freshPresentation = prCardPresentation(summary({ lastSeenAt: new Date(now - 60_000).toISOString() }));
+		expect(freshPresentation.primary.label).toBe("Ready to merge");
+		expect(freshPresentation.readiness?.tone).toBe("success");
 	});
 });
 

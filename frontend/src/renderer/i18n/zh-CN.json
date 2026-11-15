@@ -1076,6 +1076,8 @@
 	"pr.ci.passing": "通过",
 	"pr.ci.pending": "进行中",
 	"pr.ci.staleData": "数据可能已过期",
+	"pr.facts.stale": "数据已 {{age}} 未更新",
+	"pr.facts.staleDetail": "快照可能已过期——正在从服务商刷新。",
 	"pr.openedVia": "通过 AO",
 	"pr.merge.action": "合并",
 	"pr.merge.actionFor": "合并 PR #{{number}}",

@@ -430,6 +430,8 @@ var schemaNames = map[string]string{ //nolint:gosec // Public OpenAPI type names
 	"ControllersSessionPRMergeabilitySummary":             "SessionPRMergeabilitySummary",
 	"ControllersSessionPRConflictFile":                    "SessionPRConflictFile",
 	"ControllersListSessionPRsResponse":                   "ListSessionPRsResponse",
+	"ControllersPeekedSessionPRFacts":                     "PeekedSessionPRFacts",
+	"ControllersRefreshSessionPRsResponse":                "RefreshSessionPRsResponse",
 	"ControllersSetActivityRequest":                       "SetActivityRequest",
 	"ControllersSetActivityResponse":                      "SetActivityResponse",
 	"ControllersSetReviewActivityRequest":                 "SetReviewActivityRequest",
@@ -3111,6 +3113,18 @@ func sessionOperations() []operation {
 			resps: []respUnit{
 				{http.StatusOK, controllers.ListSessionPRsResponse{}},
 				{http.StatusNotFound, envelope.APIError{}},
+				{http.StatusInternalServerError, envelope.APIError{}},
+				{http.StatusNotImplemented, envelope.APIError{}},
+			},
+		},
+		{
+			method: http.MethodPost, path: "/api/v1/sessions/{sessionId}/pr/refresh", id: "refreshSessionPRs", tag: "sessions",
+			summary:    "Fetch a session's pull requests fresh from the provider, read-only",
+			pathParams: []any{controllers.SessionIDParam{}},
+			resps: []respUnit{
+				{http.StatusOK, controllers.RefreshSessionPRsResponse{}},
+				{http.StatusNotFound, envelope.APIError{}},
+				{http.StatusServiceUnavailable, envelope.APIError{}},
 				{http.StatusInternalServerError, envelope.APIError{}},
 				{http.StatusNotImplemented, envelope.APIError{}},
 			},

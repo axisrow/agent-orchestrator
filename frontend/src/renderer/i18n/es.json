@@ -1098,6 +1098,8 @@
 	"pr.ci.passing": "Correcto",
 	"pr.ci.pending": "Pendiente",
 	"pr.ci.staleData": "Los datos pueden estar obsoletos",
+	"pr.facts.stale": "Datos con {{age}} de antigüedad",
+	"pr.facts.staleDetail": "Esta vista puede estar desactualizada: actualizando desde el proveedor.",
 	"pr.openedVia": "vía AO",
 	"pr.merge.action": "Fusionar",
 	"pr.merge.actionFor": "Fusionar PR #{{number}}",

@@ -63,6 +63,7 @@ import { AwakeControl } from "./AwakeControl";
 import { SessionAccountSummary } from "./SessionAccountSummary";
 import {
 	sessionScmSummaryQueryKey,
+	usePRFactsRefresh,
 	useSessionScmSummary,
 	type SessionPRReference,
 	type SessionPRSummary,
@@ -71,7 +72,7 @@ import { sessionWorkspaceFilesQueryKey, sessionWorkspaceHistoryQueryOptions, use
 import { useCloudCp } from "../hooks/useCloudCp";
 import { useSessionBrowserLink } from "../hooks/useSessionBrowserLink";
 import { clearTerminateSessionState, useTerminateSession } from "../hooks/useTerminateSession";
-import { prBrowserUrl, prCanMerge, prCardPresentation, prNounKeys, prRepositoryFromUrl, sessionPRDisplaySummaries } from "../lib/pr-display";
+import { prBrowserUrl, prCanMerge, prCardPresentation, prFactsStale, prNounKeys, prRepositoryFromUrl, sessionPRDisplaySummaries } from "../lib/pr-display";
 import type { SessionArtifact, WorkspaceSession, WorkspaceSummary } from "../types/workspace";
 import {
 	openPRs,
@@ -1000,7 +1001,11 @@ function PRSummaryCard({
 	const workspaceKey = workspaceQueryKeyForHost(hostId);
 	const { client: cloudClient, baseUrl: cloudBaseUrl } = useCloudCp();
 	const presentation = prCardPresentation(pr, aoReview);
-	const canMerge = prCanMerge(pr, aoReview) && Boolean(pr.url && pr.headSha);
+	// Merge acts on the snapshot, so it must be fresh: stale facts keep the
+	// button down until the one-shot refresh below reconciles them (#338).
+	// Merging an already-merged PR stays safe on its own (#315).
+	const canMerge = prCanMerge(pr, aoReview) && !prFactsStale(pr) && Boolean(pr.url && pr.headSha);
+	usePRFactsRefresh(sessionId, pr, hostId, !cloudOrgId);
 	// The repository's default branch, what an ordinary merge targets. A failed
 	// read leaves the guard silent rather than blocking merges.
 	const defaultBranch = usePRDefaultBranch(pr, hostId, pr.state === "open" || pr.state === "draft").data;

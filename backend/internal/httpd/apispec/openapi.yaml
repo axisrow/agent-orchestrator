@@ -8363,6 +8363,51 @@ paths:
       summary: Claim an existing pull request for a session
       tags:
       - sessions
+  /api/v1/sessions/{sessionId}/pr/refresh:
+    post:
+      operationId: refreshSessionPRs
+      parameters:
+      - description: Session identifier, e.g. project-1.
+        in: path
+        name: sessionId
+        required: true
+        schema:
+          description: Session identifier, e.g. project-1.
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshSessionPRsResponse'
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Service Unavailable
+      summary: Fetch a session's pull requests fresh from the provider, read-only
+      tags:
+      - sessions
   /api/v1/sessions/{sessionId}/preview:
     delete:
       operationId: clearSessionPreview
@@ -16987,6 +17032,54 @@ components:
       - targetSha
       - status
       type: object
+    PeekedSessionPRFacts:
+      properties:
+        ci:
+          enum:
+          - unknown
+          - pending
+          - passing
+          - failing
+          - none
+          type: string
+        mergeability:
+          enum:
+          - unknown
+          - mergeable
+          - conflicting
+          - blocked
+          - unstable
+          type: string
+        number:
+          type: integer
+        review:
+          enum:
+          - none
+          - approved
+          - changes_requested
+          - review_required
+          type: string
+        state:
+          enum:
+          - draft
+          - open
+          - merged
+          - closed
+          type: string
+        updatedAt:
+          format: date-time
+          type: string
+        url:
+          type: string
+      required:
+      - url
+      - number
+      - state
+      - ci
+      - review
+      - mergeability
+      - updatedAt
+      type: object
     PrepareTaskResponse:
       properties:
         ok:
@@ -17539,6 +17632,25 @@ components:
           type: integer
       required:
       - pat
+      type: object
+    RefreshSessionPRsResponse:
+      properties:
+        ok:
+          type: boolean
+        prs:
+          items:
+            $ref: '#/components/schemas/PeekedSessionPRFacts'
+          type: array
+        refreshedAt:
+          format: date-time
+          type: string
+        sessionId:
+          type: string
+      required:
+      - ok
+      - sessionId
+      - prs
+      - refreshedAt
       type: object
     RegisterPushDeviceRequest:
       properties:
