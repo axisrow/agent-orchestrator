@@ -219,6 +219,25 @@ describe("session presentation", () => {
 		});
 	});
 
+	// Issue #344: a long in-flight tool call is life, not a stalled turn — the
+	// dot keeps breathing and the hover names the call with its elapsed time.
+	it("keeps breathing and names the call while a tool call is in flight", () => {
+		const inflight = sessionWith({
+			status: "working",
+			activity: {
+				state: "active",
+				lastActivityAt: "",
+				turnToolInflightName: "Bash",
+				turnToolInflightForMs: 43 * 60 * 1000,
+			},
+		});
+		expect(getSessionStatusDotView(inflight)).toEqual({
+			className: "bg-status-working",
+			breathe: true,
+			title: "Working on Bash 43m",
+		});
+	});
+
 	it("keeps board-section color while raw working activity starts the motion", () => {
 		const scmStatus = "mergeable" as const;
 

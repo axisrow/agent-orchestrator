@@ -184,6 +184,27 @@ describe("session presentation", () => {
 		).toBe("No signs of life 0s · In review · Working");
 	});
 
+	// Issue #344: a tool call still in flight is the opposite of silence. The
+	// hover names the call and its elapsed time, never "no signs of life".
+	it("names an in-flight tool call instead of a silence warning", () => {
+		expect(
+			sessionStatusTooltip("Working", {
+				state: "active",
+				lastActivityAt: "",
+				turnToolInflightName: "Bash",
+				turnToolInflightForMs: 43 * 60 * 1000 + 6000,
+			}),
+		).toBe("Working on Bash 43m");
+		expect(
+			sessionStatusTooltip("In review", {
+				state: "active",
+				lastActivityAt: "",
+				turnToolInflightName: "Bash",
+				turnToolInflightForMs: 60 * 1000,
+			}),
+		).toBe("Working on Bash 1m · In review");
+	});
+
 	it("centralizes timeline status treatment", () => {
 		expect(getSessionTimelinePillView("ci_failed")).toEqual({
 			label: "CI Failed",

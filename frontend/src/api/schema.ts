@@ -5021,6 +5021,9 @@ export interface components {
             /** Format: int64 */
             turnSilentForMs?: number;
             turnStalled: boolean;
+            /** Format: int64 */
+            turnToolInflightForMs?: number;
+            turnToolInflightName?: string;
             /** Format: date-time */
             updatedAt: string;
             /** @enum {string} */

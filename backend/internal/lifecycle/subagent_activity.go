@@ -28,6 +28,14 @@ type subagentChildFact struct {
 	At      int64 `json:"at"`
 }
 
+// subagentToolFlight is one tool call whose pre-tool-use hook has fired but
+// whose post has not arrived. The turn is blocked on real work for exactly
+// this window — the one silence the stall detector must not report (#344).
+type subagentToolFlight struct {
+	Name string `json:"name"`
+	At   int64  `json:"at"`
+}
+
 type subagentActivityFacts struct {
 	LaunchID        string                       `json:"launchId"`
 	NativeSessionID string                       `json:"nativeSessionId,omitempty"`
@@ -37,6 +45,10 @@ type subagentActivityFacts struct {
 	SnapshotAt      int64                        `json:"snapshotAt,omitempty"`
 	Children        map[string]subagentChildFact `json:"children,omitempty"`
 	PendingSpawns   map[string]int64             `json:"pendingSpawns,omitempty"`
+	// InflightTools tracks parent and child tool calls in flight, keyed by
+	// tool-use id. Cleared at turn boundaries, so a lost post cannot wedge a
+	// stale entry past the turn it belonged to.
+	InflightTools map[string]subagentToolFlight `json:"inflightTools,omitempty"`
 }
 
 // reduceSubagentActivity combines the parent turn with native child
@@ -57,8 +69,11 @@ func reduceSubagentActivity(
 		s.LaunchID == "" || (!s.Valid && s.SubagentID == "") {
 		return s, stored, nil
 	}
+	// Tool events may start the blob: their in-flight tracking is read-model
+	// liveness (#344), not just subagent bookkeeping, and the first turn's tool
+	// calls deserve it as much as later ones.
 	if stored == "" && s.SubagentID == "" &&
-		(s.Event != "stop" || s.RunningSubagentIDs == nil) {
+		(s.Event != "stop" || s.RunningSubagentIDs == nil) && !isToolUseEvent(s.Event) {
 		return s, "", nil
 	}
 	var facts subagentActivityFacts
@@ -81,6 +96,7 @@ func reduceSubagentActivity(
 	}
 	at := timeOr(s.Timestamp, now).UnixNano()
 	pruneSubagentFacts(&facts, at)
+	trackToolFlight(&facts, s, at)
 	newerSnapshot := rec.Harness == domain.HarnessClaudeCode && (s.Event == "stop" || s.Event == "subagent-stop") &&
 		s.RunningSubagentIDs != nil && at > facts.SnapshotAt
 	if s.Event == "terminal-idle" {
@@ -230,6 +246,27 @@ func hasRunningChild(children map[string]subagentChildFact) bool {
 		}
 	}
 	return false
+}
+
+// trackToolFlight folds one tool hook into the in-flight map: a pre opens the
+// call, a post (success or failure) closes it, and a turn boundary sweeps the
+// map — the one event class guaranteed to follow every call, so a lost post
+// cannot leave a stale entry masking real silence forever.
+func trackToolFlight(facts *subagentActivityFacts, s ports.ActivitySignal, at int64) {
+	switch {
+	case s.Event == "pre-tool-use" && s.ToolUseID != "":
+		if facts.InflightTools == nil {
+			facts.InflightTools = make(map[string]subagentToolFlight)
+		}
+		if len(facts.InflightTools) >= maxInflightTools {
+			facts.InflightTools = map[string]subagentToolFlight{}
+		}
+		facts.InflightTools[s.ToolUseID] = subagentToolFlight{Name: s.ToolName, At: at}
+	case isPostToolUseEvent(s.Event):
+		delete(facts.InflightTools, s.ToolUseID)
+	case isTurnBoundaryEvent(s.Event) || s.Event == "terminal-idle":
+		facts.InflightTools = nil
+	}
 }
 
 func expireRunningChildren(facts *subagentActivityFacts, at int64) {
