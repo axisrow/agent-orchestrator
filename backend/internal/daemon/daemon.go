@@ -1039,7 +1039,6 @@ func Run() error {
 		PRRefresh:          scmKick,
 		UsageHooks:         usageCollector,
 		UsageHookMetrics:   usageCollector.HookMetricsSnapshot,
-		UsageSummary:       usagesvc.NewSummaryReader(store),
 		SessionMemory:      memoryReader,
 		SessionSteps:       lcStack.LCM,
 		Telemetry:          telemetrySink,

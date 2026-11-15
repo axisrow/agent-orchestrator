@@ -30,6 +30,15 @@ type codexBudgetFixture struct {
 	now       time.Time
 }
 
+// testUsageMetrics builds a token metrics block for event fixtures; it moved
+// here from the removed summary_test.go.
+func testUsageMetrics(input, cachedInput, uncachedInput, output int64) domain.UsageTokenMetrics {
+	return domain.UsageTokenMetrics{
+		InputTokens: &input, CachedInputTokens: &cachedInput, UncachedInputTokens: &uncachedInput,
+		OutputTokens: &output,
+	}
+}
+
 func TestCollectorCodexBudgetCountsLogicalIDsAndAllowsExistingGenerations(t *testing.T) {
 	fixture := newCodexBudgetFixture(t, 2)
 	ctx := context.Background()
@@ -130,15 +139,6 @@ func TestCollectorCodexBudgetCountsLogicalIDsAndAllowsExistingGenerations(t *tes
 	}
 	if _, ok := watchableIDs[testCodexChildID]; !ok {
 		t.Fatal("partial binding made the admitted child source unwatchable")
-	}
-	reader := NewSummaryReader(fixture.store)
-	compact, err := reader.ListCompact(ctx, fixture.session.ProjectID)
-	if err != nil || len(compact) != 0 {
-		t.Fatalf("zero-usage compact summary=%+v err=%v, want no card metric", compact, err)
-	}
-	detail, err := reader.Get(ctx, fixture.session.ID)
-	if err != nil || !detail.Incomplete {
-		t.Fatalf("live detail summary=%+v err=%v", detail, err)
 	}
 }
 
@@ -424,21 +424,6 @@ func testCollectorCodexBudgetFinalizationWaitsThenPersistsPartialAcrossRestart(t
 	}, nil, 2)
 	mustNoError(t, restarted.BackfillActive(ctx), "restart backfill")
 	assertCodexBudgetMarker(t, store, session.ID, domain.UsageBindingPartial)
-
-	reader := NewSummaryReader(store)
-	compact, err := reader.ListCompact(ctx, session.ProjectID)
-	if err != nil || len(compact) != 1 {
-		t.Fatalf("compact=%+v err=%v", compact, err)
-	}
-	if compact[0].ProcessedTokens == nil || *compact[0].ProcessedTokens != 12 || !compact[0].Incomplete {
-		t.Fatalf("compact summary=%+v", compact[0])
-	}
-	detail, err := reader.Get(ctx, session.ID)
-	mustNoError(t, err)
-	if !detail.Incomplete ||
-		detail.Totals.InputTokens == nil || *detail.Totals.InputTokens != 10 {
-		t.Fatalf("detail summary=%+v", detail)
-	}
 }
 
 func newCodexBudgetFixture(t *testing.T, limit int) *codexBudgetFixture {

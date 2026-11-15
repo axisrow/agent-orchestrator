@@ -3954,40 +3954,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/usage/sessions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List compact token and estimated cost usage for session cards */
-        get: operations["listCompactSessionUsage"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/usage/sessions/{sessionId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get detailed token and estimated cost usage for one session */
-        get: operations["getSessionUsage"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/usage/sessions/memory": {
         parameters: {
             query?: never;
@@ -4878,18 +4844,6 @@ export interface components {
             /** Format: int64 */
             tokensBefore?: number;
         };
-        CompactSessionUsageResponse: {
-            estimatedCost: null | components["schemas"]["EstimatedCostResponse"];
-            incomplete: boolean;
-            /** @description Canonical input plus output. Null when either component is unknown. */
-            processedTokens: null | number;
-            sessionId: string;
-            /**
-             * Format: int64
-             * @description Deprecated compatibility alias for processedTokens.
-             */
-            totalTokens: number;
-        };
         ConsumeAgentAccountResetCreditRequest: {
             idempotencyKey: string;
         };
@@ -5538,26 +5492,6 @@ export interface components {
             forceDeviceReconciliation?: boolean;
             includeUsage?: boolean;
         };
-        EstimatedCostResponse: {
-            /** Format: int64 */
-            cachedInputNanos: null | number;
-            /** @enum {string} */
-            coverage: "complete" | "partial";
-            /**
-             * Format: int64
-             * @description Every non-cache-read input charge, cache writes included.
-             */
-            inputNanos: null | number;
-            /** Format: int64 */
-            outputNanos: null | number;
-            /**
-             * @description Whether contributing billing providers were detected, inferred from model ownership, or both.
-             * @enum {string}
-             */
-            providerAttribution: "observed" | "inferred" | "mixed";
-            /** Format: int64 */
-            totalNanos: number;
-        };
         ExitAgentResponse: {
             ok: boolean;
             session: components["schemas"]["ControllersSessionView"];
@@ -5778,9 +5712,6 @@ export interface components {
         ListAutomationsResponse: {
             automations: components["schemas"]["AutomationResponse"][];
             nextCursor?: string;
-        };
-        ListCompactSessionUsageResponse: {
-            sessions: components["schemas"]["CompactSessionUsageResponse"][];
         };
         ListCuesResponse: {
             cues: components["schemas"]["CueResponse"][];
@@ -6762,12 +6693,6 @@ export interface components {
             startedAt: string;
             tool: string;
         };
-        SessionUsageResponse: {
-            harnesses: components["schemas"]["UsageHarnessResponse"][];
-            incomplete: boolean;
-            sessionId: string;
-            totals: components["schemas"]["UsageTotalsResponse"];
-        };
         SessionWait: {
             /** @enum {string} */
             reason: "working" | "command" | "approval" | "starting" | "reviewer" | "resume";
@@ -7275,11 +7200,6 @@ export interface components {
             expectedFileFingerprint: string;
             path: string;
         };
-        UsageHarnessResponse: {
-            harness: string;
-            models: components["schemas"]["UsageModelResponse"][];
-            totals: components["schemas"]["UsageTotalsResponse"];
-        };
         UsageHookMetadata: {
             /** @enum {string} */
             harness: "claude-code" | "codex";
@@ -7289,25 +7209,6 @@ export interface components {
             subagentId?: string;
             subagentTranscriptPath?: string;
             transcriptPath?: string;
-        };
-        UsageModelResponse: {
-            modelId: string;
-            totals: components["schemas"]["UsageTotalsResponse"];
-        };
-        UsageTotalsResponse: {
-            /** @description Deprecated compatibility alias for cachedInputTokens. */
-            cacheReadTokens: null | number;
-            /** @description Input read from an existing provider cache. Cache hit percentage uses cachedInputTokens divided by inclusive inputTokens. */
-            cachedInputTokens: null | number;
-            estimatedCost: null | components["schemas"]["EstimatedCostResponse"];
-            /** @description Total input, including cached and uncached input. */
-            inputTokens: null | number;
-            /** @description Total output, including provider-specific subsets such as reasoning output. */
-            outputTokens: null | number;
-            /** @description Canonical input plus output. Null when either component is unknown. */
-            processedTokens: null | number;
-            /** @description Input not read from an existing provider cache. Includes cache writes. */
-            uncachedInputTokens: null | number;
         };
         UserConfigResponse: {
             agentConfig: components["schemas"]["AgentConfig"];
@@ -22033,97 +21934,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MemoryPressureResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["APIError"];
-                };
-            };
-            /** @description Not Implemented */
-            501: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["APIError"];
-                };
-            };
-        };
-    };
-    listCompactSessionUsage: {
-        parameters: {
-            query?: {
-                /** @description Optional project id filter for dashboard cards. */
-                projectId?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ListCompactSessionUsageResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["APIError"];
-                };
-            };
-            /** @description Not Implemented */
-            501: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["APIError"];
-                };
-            };
-        };
-    };
-    getSessionUsage: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Session identifier, e.g. project-1. */
-                sessionId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SessionUsageResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["APIError"];
                 };
             };
             /** @description Internal Server Error */

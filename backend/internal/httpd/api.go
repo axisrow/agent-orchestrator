@@ -41,9 +41,8 @@ type APIDeps struct {
 	// PushWatch reconciles worker branch tips after post-tool-use hooks so a
 	// push becomes an immediate daemon event; nil leaves the activity hook
 	// without push detection.
-	PushWatch    controllers.PushReconciler
-	UsageHooks   controllers.UsageHookRecorder
-	UsageSummary controllers.UsageSummaryService
+	PushWatch  controllers.PushReconciler
+	UsageHooks controllers.UsageHookRecorder
 	// UsageHookMetrics surfaces the usage hook-processing counters on /healthz.
 	// Nil keeps the probe payload unchanged. Counters exist so a wholesale hook
 	// outage cannot hide behind WARN spam while the state machine lies (#300).
@@ -220,7 +219,7 @@ func newAPIWithLogger(cfg config.Config, deps APIDeps, log *slog.Logger) *API {
 		},
 		automations:   &controllers.AutomationsController{Svc: deps.Automations},
 		desktop:       &controllers.DesktopWorkspaceController{Svc: deps.DesktopWorkspaces},
-		usage:         &controllers.UsageController{Svc: deps.UsageSummary, Log: loggerOrDefault(log), Memory: deps.SessionMemory, Steps: deps.SessionSteps, Pressure: memoryPressure(deps.SessionMemory)},
+		usage:         &controllers.UsageController{Log: loggerOrDefault(log), Memory: deps.SessionMemory, Steps: deps.SessionSteps, Pressure: memoryPressure(deps.SessionMemory)},
 		prs:           &controllers.PRsController{Svc: deps.PRs},
 		reviews:       &controllers.ReviewsController{Svc: deps.Reviews},
 		notifications: &controllers.NotificationsController{Svc: deps.Notifications, Stream: deps.NotificationStream},

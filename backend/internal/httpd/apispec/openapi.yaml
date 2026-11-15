@@ -11564,77 +11564,6 @@ paths:
       summary: Read the machine's memory-pressure verdict without sampling any process
       tags:
       - usage
-  /api/v1/usage/sessions:
-    get:
-      operationId: listCompactSessionUsage
-      parameters:
-      - description: Optional project id filter for dashboard cards.
-        in: query
-        name: projectId
-        schema:
-          description: Optional project id filter for dashboard cards.
-          type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ListCompactSessionUsageResponse'
-          description: OK
-        "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIError'
-          description: Internal Server Error
-        "501":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIError'
-          description: Not Implemented
-      summary: List compact token and estimated cost usage for session cards
-      tags:
-      - usage
-  /api/v1/usage/sessions/{sessionId}:
-    get:
-      operationId: getSessionUsage
-      parameters:
-      - description: Session identifier, e.g. project-1.
-        in: path
-        name: sessionId
-        required: true
-        schema:
-          description: Session identifier, e.g. project-1.
-          type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SessionUsageResponse'
-          description: OK
-        "404":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIError'
-          description: Not Found
-        "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIError'
-          description: Internal Server Error
-        "501":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIError'
-          description: Not Implemented
-      summary: Get detailed token and estimated cost usage for one session
-      tags:
-      - usage
   /api/v1/usage/sessions/memory:
     get:
       operationId: listSessionMemory
@@ -13979,36 +13908,6 @@ components:
           format: int64
           type: integer
       type: object
-    CompactSessionUsageResponse:
-      properties:
-        estimatedCost:
-          anyOf:
-          - type: "null"
-          - $ref: '#/components/schemas/EstimatedCostResponse'
-            type: object
-        incomplete:
-          type: boolean
-        processedTokens:
-          description: Canonical input plus output. Null when either component is
-            unknown.
-          minimum: 0
-          type:
-          - "null"
-          - integer
-        sessionId:
-          type: string
-        totalTokens:
-          description: Deprecated compatibility alias for processedTokens.
-          format: int64
-          minimum: 0
-          type: integer
-      required:
-      - sessionId
-      - processedTokens
-      - totalTokens
-      - incomplete
-      - estimatedCost
-      type: object
     ConsumeAgentAccountResetCreditRequest:
       properties:
         idempotencyKey:
@@ -15706,52 +15605,6 @@ components:
         includeUsage:
           type: boolean
       type: object
-    EstimatedCostResponse:
-      properties:
-        cachedInputNanos:
-          format: int64
-          minimum: 0
-          type:
-          - "null"
-          - integer
-        coverage:
-          enum:
-          - complete
-          - partial
-          type: string
-        inputNanos:
-          description: Every non-cache-read input charge, cache writes included.
-          format: int64
-          minimum: 0
-          type:
-          - "null"
-          - integer
-        outputNanos:
-          format: int64
-          minimum: 0
-          type:
-          - "null"
-          - integer
-        providerAttribution:
-          description: Whether contributing billing providers were detected, inferred
-            from model ownership, or both.
-          enum:
-          - observed
-          - inferred
-          - mixed
-          type: string
-        totalNanos:
-          format: int64
-          minimum: 0
-          type: integer
-      required:
-      - totalNanos
-      - inputNanos
-      - cachedInputNanos
-      - outputNanos
-      - coverage
-      - providerAttribution
-      type: object
     ExitAgentResponse:
       properties:
         ok:
@@ -16306,15 +16159,6 @@ components:
           type: string
       required:
       - automations
-      type: object
-    ListCompactSessionUsageResponse:
-      properties:
-        sessions:
-          items:
-            $ref: '#/components/schemas/CompactSessionUsageResponse'
-          type: array
-      required:
-      - sessions
       type: object
     ListCuesResponse:
       properties:
@@ -18807,24 +18651,6 @@ components:
       - startedAt
       - failed
       type: object
-    SessionUsageResponse:
-      properties:
-        harnesses:
-          items:
-            $ref: '#/components/schemas/UsageHarnessResponse'
-          type: array
-        incomplete:
-          type: boolean
-        sessionId:
-          type: string
-        totals:
-          $ref: '#/components/schemas/UsageTotalsResponse'
-      required:
-      - sessionId
-      - incomplete
-      - totals
-      - harnesses
-      type: object
     SessionWait:
       properties:
         reason:
@@ -20034,21 +19860,6 @@ components:
       - content
       - expectedFileFingerprint
       type: object
-    UsageHarnessResponse:
-      properties:
-        harness:
-          type: string
-        models:
-          items:
-            $ref: '#/components/schemas/UsageModelResponse'
-          type: array
-        totals:
-          $ref: '#/components/schemas/UsageTotalsResponse'
-      required:
-      - harness
-      - totals
-      - models
-      type: object
     UsageHookMetadata:
       properties:
         harness:
@@ -20070,72 +19881,6 @@ components:
           type: string
       required:
       - harness
-      type: object
-    UsageModelResponse:
-      properties:
-        modelId:
-          type: string
-        totals:
-          $ref: '#/components/schemas/UsageTotalsResponse'
-      required:
-      - modelId
-      - totals
-      type: object
-    UsageTotalsResponse:
-      properties:
-        cacheReadTokens:
-          description: Deprecated compatibility alias for cachedInputTokens.
-          minimum: 0
-          type:
-          - "null"
-          - integer
-        cachedInputTokens:
-          description: Input read from an existing provider cache. Cache hit percentage
-            uses cachedInputTokens divided by inclusive inputTokens.
-          minimum: 0
-          type:
-          - "null"
-          - integer
-        estimatedCost:
-          anyOf:
-          - type: "null"
-          - $ref: '#/components/schemas/EstimatedCostResponse'
-            type: object
-        inputTokens:
-          description: Total input, including cached and uncached input.
-          minimum: 0
-          type:
-          - "null"
-          - integer
-        outputTokens:
-          description: Total output, including provider-specific subsets such as reasoning
-            output.
-          minimum: 0
-          type:
-          - "null"
-          - integer
-        processedTokens:
-          description: Canonical input plus output. Null when either component is
-            unknown.
-          minimum: 0
-          type:
-          - "null"
-          - integer
-        uncachedInputTokens:
-          description: Input not read from an existing provider cache. Includes cache
-            writes.
-          minimum: 0
-          type:
-          - "null"
-          - integer
-      required:
-      - inputTokens
-      - cachedInputTokens
-      - uncachedInputTokens
-      - outputTokens
-      - processedTokens
-      - cacheReadTokens
-      - estimatedCost
       type: object
     UserConfigResponse:
       properties:
