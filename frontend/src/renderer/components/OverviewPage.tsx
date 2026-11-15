@@ -83,16 +83,22 @@ function overviewMergeGate(session: WorkspaceSession, t: (key: MessageKey, value
 	return { open: false, label: t("overview.gateProvider") };
 }
 
+// How long an open PR keeps counting as work after its last update (issue
+// #333): past this window a still-open "Review required" PR is a zombie
+// state, not a reason to keep a terminated session on the default view.
+const PR_ACTIVITY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
 // A terminated session hides from the default view (issue #330) unless it
-// still carries a signal: a kept dirty worktree cleanup would discard, an
-// open PR still waiting, or undelivered messages. Everything else about it is
-// history the "show archived" toggle can reveal.
+// still carries a signal: a kept dirty worktree cleanup would discard,
+// undelivered messages, or an open PR that moved within the activity
+// window (issue #333). Everything else about it is history the "show
+// archived" toggle can reveal.
 function hidesCleanlyTerminatedSession(session: WorkspaceSession, undelivered: number): boolean {
 	if (!session.isTerminated) return false;
 	if (session.workspaceCleanup === "preserved_dirty") return false;
-	if (openPRs(session).length > 0) return false;
 	if (undelivered > 0) return false;
-	return true;
+	const now = Date.now();
+	return !openPRs(session).some((pr) => now - (Date.parse(pr.updatedAt) || 0) < PR_ACTIVITY_WINDOW_MS);
 }
 
 function translator(t: (key: MessageKey, values?: Record<string, unknown>) => string) {
@@ -129,13 +135,22 @@ export function OverviewPage() {
 		[inventoryQuery.data],
 	);
 
+	// Showing archives is an explicit choice: the toggle, an Archive stage
+	// filter, or an Exited status filter (issue #333). Otherwise the
+	// visibility rule below keeps archived rows off the default view.
+	const archivesVisible = showArchived || statusFilter === "exited" || stageFilter === "archive";
+
 	const groups = useMemo(() => {
 		const visible = workspaces.filter((project) => projectFilter === "all" || project.id === projectFilter);
 		return visible.map((project) => {
+			let hiddenArchived = 0;
 			const matches = project.sessions.filter((session) => {
 				if (statusFilter !== "all" && overviewStatus(session) !== statusFilter) return false;
 				if (stageFilter !== "all" && (session.kanbanColumn ?? "building") !== stageFilter) return false;
-				if (!showArchived && hidesCleanlyTerminatedSession(session, stuckBySession.get(session.id) ?? 0)) return false;
+				if (!archivesVisible && hidesCleanlyTerminatedSession(session, stuckBySession.get(session.id) ?? 0)) {
+					hiddenArchived += 1;
+					return false;
+				}
 				return true;
 			});
 			const orchestrators = matches.filter((session) => session.kind === "orchestrator");
@@ -150,9 +165,10 @@ export function OverviewPage() {
 				bytes += ws.bytes;
 				if (ws.terminated) reclaimable += 1;
 			}
-			return { project, sessions: [...orchestrators, ...workers], bytes, reclaimable, undelivered };
+			return { project, sessions: [...orchestrators, ...workers], bytes, reclaimable, undelivered, hiddenArchived };
 		});
-	}, [workspaces, projectFilter, statusFilter, stageFilter, showArchived, stuckBySession, worktreesBySession]);
+	}, [workspaces, projectFilter, statusFilter, stageFilter, archivesVisible, stuckBySession, worktreesBySession]);
+	const hiddenArchivedCount = groups.reduce((total, group) => total + group.hiddenArchived, 0);
 
 	// Only rows the screen currently shows may join a batch: the selection is
 	// intersected with the visible (filtered, non-terminated) session ids, so a
@@ -317,6 +333,15 @@ export function OverviewPage() {
 					>
 						{showArchived ? t("overview.hideArchived") : t("overview.showArchived")}
 					</Button>
+					{hiddenArchivedCount > 0 && (
+						<span
+							data-testid="overview-archived-count"
+							className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground"
+							title={t("overview.archivedCount", { count: hiddenArchivedCount })}
+						>
+							{t("overview.archivedCount", { count: hiddenArchivedCount })}
+						</span>
+					)}
 					{filterSelect(projectFilter, setProjectFilter, t("overview.filterProject"), [
 						{ value: "all", label: t("overview.filterAll") },
 						...workspaces.map((project) => ({ value: project.id, label: project.name })),

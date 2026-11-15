@@ -1973,6 +1973,7 @@
 	"overview.selectAll": "Select sessions",
 	"overview.showArchived": "Show archived",
 	"overview.hideArchived": "Hide archived",
+	"overview.archivedCount": "Archived ({{count}})",
 	"overview.undeliveredCount": "{{count}} undelivered",
 	"overview.toggleProject": "Toggle sessions of {{name}}",
 	"overview.openOrchestrator": "Open the orchestrator of {{name}}",
