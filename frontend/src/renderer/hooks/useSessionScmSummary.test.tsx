@@ -35,6 +35,7 @@ vi.mock("../lib/host-clients", () => ({
 	clientForSessionHost: () => ({ POST: refreshPostMock }),
 }));
 
+describe("useSessionScmSummary cloud source", () => {
 	it.each(["scm.updated", "pull_request.created", "pull_request.claimed"])(
 		"refreshes the inspector after %s",
 		async (type) => {

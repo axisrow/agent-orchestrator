@@ -98,3 +98,60 @@ func TestPeekSessionPRsReportsSCMUnavailable(t *testing.T) {
 		t.Fatalf("peek with failing provider = %v, want ErrSCMUnavailable", err)
 	}
 }
+
+// The card's summaries fold AO's own review verdict into the provider's
+// silent aggregate (GitHub hides a self-review). The peek must return the
+// same folded decision, or a cache patch could overwrite a folded
+// changes_requested with none and paint the card green against AO's verdict.
+func TestPeekSessionPRsFoldsAORunVerdictIntoReview(t *testing.T) {
+	prURL := "https://github.com/acme/app/pull/11"
+	st := newFakeStore()
+	st.sessions["term-4"] = domain.SessionRecord{ID: "term-4", IsTerminated: true}
+	st.prs["term-4"] = []domain.PullRequest{{URL: prURL, Number: 11}}
+	st.reviewRuns["term-4"] = []domain.CurrentHeadReviewRun{{
+		SessionID: "term-4", PRURL: prURL, Status: domain.ReviewRunComplete,
+		Verdict: domain.VerdictChangesRequested, ID: "run-11", CreatedAt: time.Date(2026, 11, 14, 0, 0, 0, 0, time.UTC),
+	}}
+	svc := NewWithDeps(Deps{
+		Store: st,
+		SCM: fakeSCM{obs: ports.SCMObservation{
+			Fetched: true,
+			PR:      ports.SCMPRObservation{URL: prURL, Number: 11, State: string(domain.PRStateOpen)},
+			CI:      ports.SCMCIObservation{Summary: string(domain.CIPassing)},
+			Mergeability: ports.SCMMergeabilityObservation{
+				State: string(domain.MergeMergeable),
+			},
+			// The provider aggregate stays silent about AO's own review.
+			Review: ports.SCMReviewObservation{Decision: string(domain.ReviewNone)},
+		}},
+	})
+
+	got, err := svc.PeekSessionPRs(context.Background(), "term-4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Review != domain.ReviewChangesRequest {
+		t.Fatalf("peeked facts = %+v, want the AO changes_requested verdict folded in", got)
+	}
+
+	// A provider verdict wins over the AO run, exactly as the summaries fold it.
+	svc = NewWithDeps(Deps{
+		Store: st,
+		SCM: fakeSCM{obs: ports.SCMObservation{
+			Fetched: true,
+			PR:      ports.SCMPRObservation{URL: prURL, Number: 11, State: string(domain.PRStateOpen)},
+			CI:      ports.SCMCIObservation{Summary: string(domain.CIPassing)},
+			Mergeability: ports.SCMMergeabilityObservation{
+				State: string(domain.MergeMergeable),
+			},
+			Review: ports.SCMReviewObservation{Decision: string(domain.ReviewApproved)},
+		}},
+	})
+	got, err = svc.PeekSessionPRs(context.Background(), "term-4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Review != domain.ReviewApproved {
+		t.Fatalf("peeked facts = %+v, want the provider verdict to win", got)
+	}
+}

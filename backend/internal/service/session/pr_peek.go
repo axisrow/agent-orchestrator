@@ -37,6 +37,16 @@ func (s *Service) PeekSessionPRs(ctx context.Context, id domain.SessionID) ([]Pe
 	if err != nil {
 		return nil, err
 	}
+	// The card's summaries fold AO's own review verdict into the provider's
+	// aggregate (GitHub hides a review published under the author's account),
+	// so the peek must hand back the same folded decision: a raw provider
+	// aggregate would overwrite a folded changes_requested with none and paint
+	// the card green against AO's verdict.
+	headRuns, err := s.store.ListCurrentHeadReviewRunsForSession(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	latestRuns := latestReviewRunByPR(headRuns)
 	refs := make([]ports.SCMPRRef, 0, len(prs))
 	for _, pr := range prs {
 		// A terminal row cannot un-merge; reconciling one is the observer's job.
@@ -70,7 +80,7 @@ func (s *Service) PeekSessionPRs(ctx context.Context, id domain.SessionID) ([]Pe
 			Number:       obs.PR.Number,
 			State:        domain.PRState(obs.PR.State),
 			CI:           domain.CIState(obs.CI.Summary),
-			Review:       domain.ReviewDecision(obs.Review.Decision),
+			Review:       foldAORunDecision(domain.ReviewDecision(obs.Review.Decision), latestRuns[obs.PR.URL]),
 			Mergeability: domain.Mergeability(obs.Mergeability.State),
 			UpdatedAt:    now,
 		})
