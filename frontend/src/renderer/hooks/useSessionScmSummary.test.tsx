@@ -317,6 +317,29 @@ describe("usePRFactsRefresh", () => {
 		});
 		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 		seedCard(queryClient, [staleSummary()]);
+		// The workspace facts still say open: the peek must patch them too, or
+		// the facts-convergence effect would see the patched summaries disagree
+		// with the frozen workspace facts and invalidate both back to stale.
+		queryClient.setQueryData<WorkspaceSummary[]>(workspaceQueryKey, [{
+			id: "ws-1",
+			name: "app",
+			kind: "single_repo",
+			path: "/tmp/app",
+			sessions: [{
+				id: "sess-1",
+				workspaceId: "ws-1",
+				workspaceName: "app",
+				title: "fix",
+				provider: "codex",
+				status: "terminated",
+				updatedAt: "2026-11-15T10:00:00Z",
+				prs: [{
+					url: prUrl, number: 1361, state: "open", ci: "passing",
+					review: "none", mergeability: "mergeable", reviewComments: false,
+					updatedAt: "2026-08-26T12:00:00Z",
+				}],
+			}],
+		}]);
 		const invalidate = vi.spyOn(queryClient, "invalidateQueries").mockImplementation(async () => undefined);
 		renderHook(() => usePRFactsRefresh("sess-1", staleSummary(), undefined, true), {
 			wrapper: ({ children }: { children: ReactNode }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>,
@@ -326,7 +349,13 @@ describe("usePRFactsRefresh", () => {
 		const cached = queryClient.getQueryData<{ prs: SessionPRSummary[] }>(sessionScmSummaryQueryKey("sess-1", undefined));
 		expect(cached?.prs[0]?.state).toBe("merged");
 		expect(cached?.prs[0]?.observedAt).toBe("2026-11-15T12:00:00Z");
-		expect(invalidate).toHaveBeenCalledWith({ queryKey: workspaceQueryKey });
+		// Both caches carry the peek: the workspace session's facts match the
+		// patched summaries, so convergence has nothing to reconcile and the
+		// patch survives instead of being refetched away.
+		const workspaces = queryClient.getQueryData<WorkspaceSummary[]>(workspaceQueryKey);
+		expect(workspaces?.[0]?.sessions[0]?.prs[0]?.state).toBe("merged");
+		expect(workspaces?.[0]?.sessions[0]?.prs[0]?.updatedAt).toBe("2026-11-15T12:00:00Z");
+		expect(invalidate).not.toHaveBeenCalled();
 		// One-shot: the effect never asks again while the facts stay put.
 		expect(refreshPostMock).toHaveBeenCalledTimes(1);
 	});

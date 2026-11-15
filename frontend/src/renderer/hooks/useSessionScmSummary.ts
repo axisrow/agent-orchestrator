@@ -229,7 +229,43 @@ export function usePRFactsRefresh(
 						}),
 					} : current,
 				);
-				void queryClient.invalidateQueries({ queryKey: workspaceQueryKeyForHost(hostId) });
+				// Patch the workspace session's facts to the same peek, rather than
+				// invalidating the list: a refetch would hand back the frozen store
+				// record and wipe both caches, and the facts-convergence effect
+				// (#336) would then see the patched summaries disagreeing with the
+				// unpatched workspace facts and do exactly that. Matching facts
+				// leave the comparison in agreement, so the patch survives.
+				queryClient.setQueryData<WorkspaceSummary[]>(workspaceQueryKeyForHost(hostId), (current) => {
+					if (!current) return current;
+					let changed = false;
+					const next = current.map((workspace) => {
+						let workspaceChanged = false;
+						const sessions = workspace.sessions.map((session) => {
+							if (session.id !== sessionId) return session;
+							let sessionChanged = false;
+							const prs = session.prs.map((fact) => {
+								const peeked = fresh.get(fact.url);
+								if (!peeked) return fact;
+								sessionChanged = true;
+								return {
+									...fact,
+									state: peeked.state,
+									ci: peeked.ci,
+									review: peeked.review,
+									mergeability: peeked.mergeability,
+									updatedAt: peeked.updatedAt,
+								};
+							});
+							if (!sessionChanged) return session;
+							workspaceChanged = true;
+							return { ...session, prs };
+						});
+						if (!workspaceChanged) return workspace;
+						changed = true;
+						return { ...workspace, sessions };
+					});
+					return changed ? next : current;
+				});
 			} catch {
 				// The provider is unreachable: the card keeps its stale badge.
 			}
