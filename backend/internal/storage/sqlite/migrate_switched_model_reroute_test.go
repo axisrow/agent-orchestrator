@@ -12,7 +12,7 @@ import (
 // the current provider recorded, one in a chat that never switched, and one it
 // cannot place in the timeline.
 func TestMigrationClearsModelReroutesFromBeforeAProviderSwitch(t *testing.T) {
-	db := openMigratedDatabaseCopyNoForeignKeys(t, 20261111145612313)
+	db := openMigratedDatabaseCopyNoForeignKeys(t, migrationVersion(t, "conversation_turns_session_completed_index"))
 	at := time.Date(2026, time.November, 13, 5, 43, 0, 0, time.UTC)
 	reroute := `{"fromModel":"sonnet","toModel":"claude-sonnet-5-5","at":"2026-11-13T05:43:27Z"}`
 	rerouted := `{"event":"model.rerouted","fromModel":"sonnet","toModel":"claude-sonnet-5-5"}`
@@ -45,7 +45,7 @@ VALUES (? || '-' || ?, ?, ?, 'system', 'completed', '', ?, ?, ?);`,
 	// A switch, but no timeline row says when the reroute happened.
 	activity("unplaced", 7, switched)
 
-	upTo(t, db, 20261113111818788)
+	upTo(t, db, migrationVersion(t, "clear_switched_model_reroutes"))
 
 	for conversation, wantCleared := range map[string]bool{
 		"switched":       true,
