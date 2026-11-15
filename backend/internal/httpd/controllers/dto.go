@@ -1449,6 +1449,27 @@ type ListSessionPRsResponse struct {
 	LinkedPRs []SessionPRReference `json:"linkedPrs"`
 }
 
+// PeekedSessionPRFacts is one provider-fresh PR fact set from a read-only
+// peek. Unresolved-comment counts are absent on purpose: the peek's fast
+// fetch does not read review threads, so it cannot speak for them.
+type PeekedSessionPRFacts struct {
+	URL          string                `json:"url"`
+	Number       int                   `json:"number"`
+	State        domain.PRState        `json:"state" enum:"draft,open,merged,closed"`
+	CI           domain.CIState        `json:"ci" enum:"unknown,pending,passing,failing,none"`
+	Review       domain.ReviewDecision `json:"review" enum:"none,approved,changes_requested,review_required"`
+	Mergeability domain.Mergeability   `json:"mergeability" enum:"unknown,mergeable,conflicting,blocked,unstable"`
+	UpdatedAt    time.Time             `json:"updatedAt"`
+}
+
+// RefreshSessionPRsResponse is the body of POST /sessions/{sessionId}/pr/refresh.
+type RefreshSessionPRsResponse struct {
+	OK          bool                   `json:"ok"`
+	SessionID   domain.SessionID       `json:"sessionId"`
+	PRs         []PeekedSessionPRFacts `json:"prs"`
+	RefreshedAt time.Time              `json:"refreshedAt"`
+}
+
 // NewSessionPRSummary maps the service PR summary model to its HTTP DTO.
 func NewSessionPRSummary(in sessionsvc.PRSummary) SessionPRSummary {
 	return SessionPRSummary{

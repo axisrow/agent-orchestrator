@@ -16,18 +16,18 @@ import (
 // pipeline, and the dashboard must not claim a confident "idle".
 const noSignalGrace = 90 * time.Second
 
-func deriveStatus(rec domain.SessionRecord, prs []domain.PRFacts, now time.Time, signalCapable bool) domain.SessionStatus {
+func deriveStatus(rec domain.SessionRecord, prs []domain.PRFacts, runs []domain.CurrentHeadReviewRun, now time.Time, signalCapable bool) domain.SessionStatus {
 	status := contract.DeriveStatus(
 		toContractSessionFacts(rec, signalCapable),
-		toContractPRFacts(prs),
+		toContractPRFacts(prs, runs),
 		now,
 		noSignalGrace,
 	)
 	return domain.SessionStatus(status)
 }
 
-func deriveSCMStatus(prs []domain.PRFacts) domain.SessionStatus {
-	return domain.SessionStatus(contract.DeriveSCMStatus(toContractPRFacts(prs)))
+func deriveSCMStatus(prs []domain.PRFacts, runs []domain.CurrentHeadReviewRun) domain.SessionStatus {
+	return domain.SessionStatus(contract.DeriveSCMStatus(toContractPRFacts(prs, runs)))
 }
 
 func toContractSessionFacts(rec domain.SessionRecord, signalCapable bool) contract.SessionFacts {
@@ -55,7 +55,17 @@ func hasGenerationSignal(rec domain.SessionRecord) bool {
 		rec.Metadata.NativeIdentityObservedAt.After(rec.Activity.LastActivityAt)
 }
 
-func toContractPRFacts(prs []domain.PRFacts) []contract.PRFacts {
+// toContractPRFacts maps stored PR facts onto the status contract, folding in
+// the review runs recorded against each PR's current head. The status and the
+// kanban presentation must see the same review-run facts, so the Ready-to-merge
+// zone never fires while an AO review pass is still running (#335).
+func toContractPRFacts(prs []domain.PRFacts, runs []domain.CurrentHeadReviewRun) []contract.PRFacts {
+	running := make(map[string]bool, len(runs))
+	for _, run := range runs {
+		if run.Status == domain.ReviewRunRunning {
+			running[run.PRURL] = true
+		}
+	}
 	facts := make([]contract.PRFacts, len(prs))
 	for i, pr := range prs {
 		facts[i] = contract.PRFacts{
@@ -70,6 +80,7 @@ func toContractPRFacts(prs []domain.PRFacts) []contract.PRFacts {
 			SourceBranch:              pr.SourceBranch,
 			TargetBranch:              pr.TargetBranch,
 			ChangesRequestedAddressed: pr.ChangesRequestedAddressed,
+			ReviewRunRunning:          running[pr.URL],
 		}
 	}
 	return facts

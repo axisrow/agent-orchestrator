@@ -111,6 +111,10 @@ vi.mock("../lib/host-clients", async (importOriginal) => ({
   clientForHost: () => ({ GET: getMock, POST: postMock, PATCH: patchMock, PUT: putMock }),
 }));
 
+// PR fixtures stand for a live session's facts: their stamps must read as
+// fresh, because stale facts now hold the card's Merge button down (#338).
+const freshIso = new Date().toISOString();
+
 const pr = (
   n: number,
   state: PRState,
@@ -123,7 +127,7 @@ const pr = (
   review: "approved",
   mergeability: "mergeable",
   reviewComments: false,
-  updatedAt: "2026-06-15T00:00:00Z",
+  updatedAt: freshIso,
   ...overrides,
 });
 
@@ -139,7 +143,7 @@ const session = (
   kind: "worker",
   branch: "feat/ns",
   status: "review_pending",
-  updatedAt: "2026-06-15T00:00:00Z",
+  updatedAt: freshIso,
   autoInjectReview: true,
   autoInjectCI: true,
   prs,
@@ -187,7 +191,7 @@ const prSummary = (
       prUrl: url,
       conflictFiles: [],
     },
-    updatedAt: "2026-06-15T12:00:00Z",
+    updatedAt: freshIso,
     ...overrides,
   };
 };
@@ -1240,7 +1244,7 @@ const artifact = (
   kind: "file",
   name: overrides.path,
   size: 128,
-  updatedAt: "2026-06-15T00:00:00Z",
+  updatedAt: freshIso,
   ...overrides,
 });
 
@@ -1911,7 +1915,7 @@ describe("SessionInspector Activity section", () => {
       <SessionInspector
         session={session([], {
           status: "working",
-          updatedAt: "2026-06-15T11:55:00Z",
+          updatedAt: freshIso,
           activity: { state: "active", lastActivityAt: "2026-06-15T10:00:00Z" },
         })}
       />,
@@ -2176,7 +2180,7 @@ describe("SessionInspector Activity section", () => {
           {
             status: "merged",
             createdAt: "2026-06-15T09:00:00Z",
-            updatedAt: "2026-06-15T11:55:00Z",
+            updatedAt: freshIso,
             activity: { state: "idle", lastActivityAt: "2026-06-15T10:00:00Z" },
           },
         )}
@@ -4513,7 +4517,7 @@ describe("SessionInspector Cloud reviews", () => {
           url: "https://github.com/acme/repo/pull/7",
           number: 7,
           state: "open",
-          updatedAt: "2026-06-15T00:00:00Z",
+          updatedAt: freshIso,
         },
       ],
     });
@@ -4581,7 +4585,7 @@ describe("SessionInspector Cloud reviews", () => {
           url: "https://github.com/acme/repo/pull/7",
           number: 7,
           state: "open",
-          updatedAt: "2026-06-15T00:00:00Z",
+          updatedAt: freshIso,
         },
       ],
     });
@@ -4650,7 +4654,7 @@ describe("SessionInspector Cloud reviews", () => {
           url: "https://github.com/acme/repo/pull/7",
           number: 7,
           state: "open",
-          updatedAt: "2026-06-15T00:00:00Z",
+          updatedAt: freshIso,
         },
       ],
     });
@@ -4742,7 +4746,7 @@ describe("SessionInspector Cloud reviews", () => {
           url: "https://github.com/acme/repo/pull/7",
           number: 7,
           state: "open",
-          updatedAt: "2026-06-15T00:00:00Z",
+          updatedAt: freshIso,
         },
       ],
     });
@@ -4788,7 +4792,7 @@ describe("SessionInspector Cloud reviews", () => {
           url: "https://github.com/acme/repo/pull/7",
           number: 7,
           state: "open",
-          updatedAt: "2026-06-15T00:00:00Z",
+          updatedAt: freshIso,
         },
       ],
     });

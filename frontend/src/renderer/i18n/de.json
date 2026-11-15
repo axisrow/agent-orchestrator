@@ -1094,6 +1094,8 @@
 	"pr.ci.passing": "Erfolgreich",
 	"pr.ci.pending": "Ausstehend",
 	"pr.ci.staleData": "Daten sind möglicherweise veraltet",
+	"pr.facts.stale": "Daten {{age}} alt",
+	"pr.facts.staleDetail": "Dieser Stand ist möglicherweise veraltet — Aktualisierung vom Anbieter läuft.",
 	"pr.openedVia": "über AO",
 	"pr.merge.action": "Mergen",
 	"pr.merge.actionFor": "PR #{{number}} mergen",

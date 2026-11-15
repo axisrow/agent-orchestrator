@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { SessionPRSummary } from "../hooks/useSessionScmSummary";
-import type { PullRequestFacts, WorkspaceSession } from "../types/workspace";
+import { attentionZone, type PullRequestFacts, type SessionStatus, type WorkspaceSession } from "../types/workspace";
 import type { PRReviewState, ReviewRunFacts } from "./session-reviews";
 import {
 	ciDataStale,
 	prBrowserUrl,
+	prCanMerge,
 	prCardPresentation,
 	prDiffSummary,
+	prFactsStale,
+	PR_FACTS_STALE_MS,
 	prStatusRows,
 	prSummaryParts,
 	sessionPRDisplaySummaries,
@@ -1203,6 +1206,46 @@ describe("prSummaryParts", () => {
 	});
 });
 
+// A terminated session's PR record never refreshes on its own, so a card
+// opened onto it must not render an ancient snapshot as live: stale facts
+// hide the green merge verdict and hold the Merge button until the one-shot
+// refresh reconciles them (#338).
+describe("prFactsStale", () => {
+	const now = Date.parse("2026-11-15T12:00:00Z");
+
+	it("marks facts past the freshness threshold", () => {
+		const old = new Date(now - PR_FACTS_STALE_MS - 60_000).toISOString();
+		const fresh = new Date(now - 60_000).toISOString();
+		expect(prFactsStale(summary({ lastSeenAt: old }), now)).toBe(true);
+		expect(prFactsStale(summary({ lastSeenAt: fresh }), now)).toBe(false);
+	});
+
+	it("falls back to the observation stamps when the cursor is missing", () => {
+		const old = new Date(now - PR_FACTS_STALE_MS - 60_000).toISOString();
+		expect(prFactsStale(summary({ lastSeenAt: undefined, observedAt: old }), now)).toBe(true);
+		expect(prFactsStale(summary({ lastSeenAt: undefined, observedAt: old, updatedAt: old }), now)).toBe(true);
+	});
+
+	it("reads a zero observation stamp as stale, never as ancient-beyond-epoch", () => {
+		expect(prFactsStale(summary({ lastSeenAt: undefined, observedAt: "0001-01-01T00:00:00Z", updatedAt: "0001-01-01T00:00:00Z" }), now)).toBe(true);
+	});
+
+	it("downgrades a stale green merge verdict to the stale badge", () => {
+		// The presentation reads the real clock, so age the stamp from it.
+		const old = new Date(Date.now() - PR_FACTS_STALE_MS - 60_000).toISOString();
+		const stale = summary({ lastSeenAt: old });
+		const presentation = prCardPresentation(stale);
+		expect(presentation.primary.label).not.toBe("Ready to merge");
+		expect(presentation.primary.tone).toBe("warning");
+		expect(presentation.readiness?.tone).toBe("warning");
+		expect(presentation.readiness?.label).toMatch(/old/);
+		// Fresh facts keep the green verdict.
+		const freshPresentation = prCardPresentation(summary({ lastSeenAt: new Date(now - 60_000).toISOString() }));
+		expect(freshPresentation.primary.label).toBe("Ready to merge");
+		expect(freshPresentation.readiness?.tone).toBe("success");
+	});
+});
+
 describe("ciDataStale", () => {
 	const now = Date.parse("2026-06-15T12:00:00Z");
 
@@ -1251,5 +1294,54 @@ describe("pull request repositories", () => {
 		const { prsSpanRepositories } = await import("./pr-display");
 		expect(prsSpanRepositories([{ url: "https://github.com/acme/a/pull/1" }, { url: "https://github.com/acme/a/pull/2" }])).toBe(false);
 		expect(prsSpanRepositories([{ url: "https://github.com/acme/a/pull/1" }, { url: "https://github.com/acme/b/pull/1" }])).toBe(true);
+	});
+});
+
+// The "Ready to merge" zone comes from the session status the daemon derives
+// from PR facts, and the PR card's Merge button from prCanMerge over the same
+// facts. One PR must never speak with two voices (issue #335): each row pins
+// the status the daemon's pipeline (backend/pkg/contract prPipelineStatus)
+// derives from those facts, and asserts the zone it maps to agrees with the
+// card's gate on those very facts. The contract's own tests pin the daemon
+// half; this table pins the renderer half, so neither side can drift apart.
+describe("merge zone matches the card merge gate", () => {
+	type Facts = {
+		state?: SessionPRSummary["state"];
+		ci: SessionPRSummary["ci"]["state"];
+		review: SessionPRSummary["review"]["decision"];
+		mergeability: SessionPRSummary["mergeability"]["state"];
+		comments?: boolean;
+		/** The AO review pass's live status, as the card receives it. */
+		ao?: PRReviewState["status"];
+	};
+
+	const rows: { name: string; facts: Facts; status: SessionStatus }[] = [
+		{ name: "all gates green", facts: { ci: "passing", review: "none", mergeability: "mergeable" }, status: "mergeable" },
+		{ name: "green with approval", facts: { ci: "passing", review: "approved", mergeability: "mergeable" }, status: "approved" },
+		{ name: "green with nothing checking the head", facts: { ci: "none", review: "none", mergeability: "mergeable" }, status: "mergeable" },
+		{ name: "AO review still running", facts: { ci: "passing", review: "none", mergeability: "mergeable", ao: "running" }, status: "merge_blocked" },
+		{ name: "required review not submitted", facts: { ci: "passing", review: "review_required", mergeability: "mergeable" }, status: "merge_blocked" },
+		{ name: "provider blocks the merge", facts: { ci: "passing", review: "none", mergeability: "blocked" }, status: "merge_blocked" },
+		{ name: "changes requested", facts: { ci: "passing", review: "changes_requested", mergeability: "mergeable" }, status: "changes_requested" },
+		{ name: "unresolved comments", facts: { ci: "passing", review: "none", mergeability: "mergeable", comments: true }, status: "commented" },
+		{ name: "checks still unread", facts: { ci: "unknown", review: "none", mergeability: "mergeable" }, status: "pr_open" },
+		{ name: "checks failing", facts: { ci: "failing", review: "none", mergeability: "mergeable" }, status: "ci_failed" },
+		{ name: "conflicts with the base", facts: { ci: "passing", review: "none", mergeability: "conflicting" }, status: "pr_open" },
+		{ name: "draft", facts: { state: "draft", ci: "passing", review: "none", mergeability: "mergeable" }, status: "draft" },
+	];
+
+	it.each(rows)("$name: status $status speaks with one voice", ({ facts, status }) => {
+		const pr = summary({
+			state: facts.state ?? "open",
+			ci: { ...summary().ci, state: facts.ci },
+			review: { ...summary().review, decision: facts.review, hasUnresolvedHumanComments: facts.comments ?? false },
+			mergeability: { ...summary().mergeability, state: facts.mergeability },
+		});
+		const aoReview: PRReviewState | undefined = facts.ao
+			? { status: facts.ao, prUrl: pr.url, prNumber: pr.number, title: pr.title, targetSha: pr.headSha }
+			: undefined;
+		const zone = attentionZone(status);
+		if (prCanMerge(pr, aoReview)) expect(zone).toBe("merge");
+		else expect(zone).not.toBe("merge");
 	});
 });

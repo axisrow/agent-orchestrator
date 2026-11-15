@@ -4324,6 +4324,8 @@
 	"pr.card.timeUnavailable": "Time unavailable",
 	"pr.ci.noChecks": "No checks",
 	"pr.ci.staleData": "Data may be stale",
+	"pr.facts.stale": "Данные не обновлялись {{age}}",
+	"pr.facts.staleDetail": "Снимок мог устареть — AO запрашивает свежие данные у провайдера.",
 	"pr.review.runFor": "Run review for PR #{{number}}",
 	"remote.addProjectOn": "Add project on {{label}}",
 	"remote.configureOrchestratorFirst": "Choose an orchestrator agent on {{label}} to start one.",

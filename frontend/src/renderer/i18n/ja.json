@@ -1094,6 +1094,8 @@
 	"pr.ci.passing": "成功",
 	"pr.ci.pending": "保留中",
 	"pr.ci.staleData": "データが古い可能性があります",
+	"pr.facts.stale": "情報の経過 {{age}}",
+	"pr.facts.staleDetail": "この情報は古い可能性があります — プロバイダーから更新中です。",
 	"pr.openedVia": "AO 経由",
 	"pr.merge.action": "マージ",
 	"pr.merge.actionFor": "PR #{{number}} をマージ",

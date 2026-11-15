@@ -1098,6 +1098,8 @@
 	"pr.ci.passing": "Réussi",
 	"pr.ci.pending": "En attente",
 	"pr.ci.staleData": "Les données sont peut-être obsolètes",
+	"pr.facts.stale": "Données datant de {{age}}",
+	"pr.facts.staleDetail": "Cet instantané est peut-être obsolète — actualisation depuis le fournisseur.",
 	"pr.openedVia": "via AO",
 	"pr.merge.action": "Fusionner",
 	"pr.merge.actionFor": "Fusionner la PR #{{number}}",

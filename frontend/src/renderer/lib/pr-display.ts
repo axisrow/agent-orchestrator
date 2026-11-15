@@ -1,6 +1,7 @@
 import type { SessionPRSummary } from "../hooks/useSessionScmSummary";
 import { sortedPRs, type PRState, type PullRequestFacts, type WorkspaceSession } from "../types/workspace";
 import type { PRReviewState } from "./session-reviews";
+import { formatTimeTerse } from "./format-time";
 import { appI18n, type PluralMessageKey } from "../i18n";
 import type {
 	PRCardPresentation,
@@ -176,6 +177,7 @@ export function prStatusRows(pr: SessionPRSummary): PRStatusRow[] {
  * but cards should not repeat the same blocker under Merge and Review.
  */
 export function prCardPresentation(pr: SessionPRSummary, aoReview?: PRReviewState): PRCardPresentation {
+	const stale = prFactsStale(pr);
 	let primary: PRCardStatus;
 	if (pr.state === "merged") {
 		primary = cardStatus("lifecycle", "pr.card.merged", "success");
@@ -210,9 +212,15 @@ export function prCardPresentation(pr: SessionPRSummary, aoReview?: PRReviewStat
 	} else if (pr.state === "draft") {
 		primary = cardStatus("lifecycle", "pr.card.draft", "neutral");
 	} else if (pr.mergeability.state === "mergeable") {
-		primary = cardStatus("merge", "pr.card.readyToMerge", "success");
+		// A stale snapshot never paints the merge green (#338): the badge names
+		// the facts' age until the one-shot refresh reconciles them.
+		primary = stale
+			? cardStatus("lifecycle", "pr.facts.stale", "warning", staleFactsDetail(pr))
+			: cardStatus("merge", "pr.card.readyToMerge", "success");
 	} else if (pr.review.decision === "approved") {
-		primary = cardStatus("review", "pr.card.reviewApproved", "success");
+		primary = stale
+			? cardStatus("lifecycle", "pr.facts.stale", "warning", staleFactsDetail(pr))
+			: cardStatus("review", "pr.card.reviewApproved", "success");
 	} else {
 		primary = cardStatus("lifecycle", "pr.card.open", "neutral");
 	}
@@ -260,7 +268,7 @@ export function prCardPresentation(pr: SessionPRSummary, aoReview?: PRReviewStat
 		// AO reviewer verdict are separate facts and never merge into one row.
 		const aoRow = aoReviewCardRow(pr, aoReview);
 		if (aoRow) statusRows.push(aoRow);
-		const mergeable = prCanMerge(pr);
+		const mergeable = prCanMerge(pr, aoReview);
 		if (mergeReasons(pr).includes("github_checks_unavailable")) {
 			return { primary, supporting, statusRows, readiness: {
 				label: appI18n.t("pr.merge.accessLost"),
@@ -294,6 +302,15 @@ export function prCardPresentation(pr: SessionPRSummary, aoReview?: PRReviewStat
 			} };
 		}
 		const checkingReadiness = pr.ci.state === "pending" || pr.ci.state === "unknown" || pr.mergeability.state === "unknown";
+		if (stale) {
+			// Stale facts override the merge verdict below: no readiness is
+			// claimed from a snapshot this old (#338).
+			return { primary, supporting, statusRows, readiness: {
+				label: appI18n.t("pr.facts.stale", { age: formatTimeTerse(pr.lastSeenAt ?? pr.observedAt ?? pr.updatedAt) }),
+				detail: staleFactsDetail(pr),
+				tone: "warning",
+			} };
+		}
 		return { primary, supporting, statusRows, readiness: {
 			label: appI18n.t(checkingReadiness ? "pr.merge.checkingReadiness" : mergeable ? "pr.merge.mergeable" : "pr.merge.notMergeableYet"),
 			detail: checkingReadiness ? appI18n.t("pr.merge.checkingDetail") : mergeReadinessDetail(pr),
@@ -329,7 +346,8 @@ function cardStatus(
 		| "pr.card.aoReviewApproved"
 		| "pr.card.aoReviewChangesRequested"
 		| "pr.card.aoReviewRunning"
-		| "pr.card.aoReviewOutdated",
+		| "pr.card.aoReviewOutdated"
+		| "pr.facts.stale",
 	tone: PRDisplayTone,
 	detail?: string,
 	links: PRSummaryLink[] = [],
@@ -368,7 +386,7 @@ function ciCancelled(pr: SessionPRSummary): boolean {
 	return pr.ci.state === "unknown" && pr.ci.failingChecks.some((check) => check.status === "cancelled");
 }
 
-export function prCanMerge(pr: SessionPRSummary): boolean {
+export function prCanMerge(pr: SessionPRSummary, aoReview?: PRReviewState): boolean {
 	return (
 		pr.state === "open" &&
 		// "none" means the provider confirmed the head commit has no checks:
@@ -376,7 +394,11 @@ export function prCanMerge(pr: SessionPRSummary): boolean {
 		(pr.ci.state === "passing" || pr.ci.state === "none") &&
 		pr.mergeability.state === "mergeable" &&
 		reviewAllowsMerge(pr.review.decision) &&
-		!pr.review.hasUnresolvedHumanComments
+		!pr.review.hasUnresolvedHumanComments &&
+		// An AO review pass still running against this head holds the merge gate
+		// the same way the daemon's status gate does (#335): no Ready to merge
+		// while it works, whatever the provider facts say.
+		aoReview?.status !== "running"
 	);
 }
 
@@ -497,6 +519,27 @@ export function prDiffSummary(pr: SessionPRSummary): string | undefined {
 		parts.push(lineDelta);
 	}
 	return parts.length > 0 ? parts.join(" · ") : undefined;
+}
+
+// PR facts older than this no longer speak for the provider. The SCM observer
+// refreshes open PRs every 30s while a session is observed, so anything this
+// old is a record it stopped updating — a terminated session's frozen row, or
+// an observer that lost the PR. The card marks such facts stale, disables
+// Merge until a refresh lands, and peeks the provider once on open (#338).
+// ponytail: fixed threshold, same shape as ciDataStale; expose a setting if
+// users need to tune it.
+export const PR_FACTS_STALE_MS = 60 * 60 * 1000;
+
+export function prFactsStale(pr: SessionPRSummary, now: number = Date.now()): boolean {
+	const at = Date.parse(pr.lastSeenAt ?? pr.observedAt ?? pr.updatedAt ?? "");
+	// A zero-time stamp ("0001-01-01…", Go's empty time) parses to a huge
+	// negative instant, which lands far past the threshold — exactly the
+	// never-observed staleness it means.
+	return Number.isFinite(at) && now - at > PR_FACTS_STALE_MS;
+}
+
+function staleFactsDetail(pr: SessionPRSummary): string {
+	return appI18n.t("pr.facts.staleDetail", { age: formatTimeTerse(pr.lastSeenAt ?? pr.observedAt ?? pr.updatedAt) });
 }
 
 // CI facts older than this mean the observer's refreshes are failing (it
