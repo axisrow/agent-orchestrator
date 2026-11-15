@@ -1,5 +1,5 @@
 import type { PROpener } from "@aoagents/product-ui";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
 import type { components } from "../../api/schema";
 import { apiClient } from "../lib/api-client";
@@ -9,11 +9,37 @@ import type { CloudCpPullRequestSummary } from "../lib/cloud-cp";
 import { createRendererCloudCpClient } from "../lib/cloud-cp/renderer-client";
 import { subscribeSessionEventsBridged } from "../lib/cloud-cp/stream-bridge";
 import { useSettings } from "./useSettings";
+import { workspaceQueryKeyForHost } from "./useWorkspaceQuery";
+import type { PullRequestFacts, WorkspaceSummary } from "../types/workspace";
 
 // openedBy only comes from AO Cloud, which names the person behind a PR its
 // GitHub App opened for them.
 export type SessionPRSummary = components["schemas"]["SessionPRSummary"] & { openedBy?: PROpener };
 export type SessionPRReference = components["schemas"]["SessionPRReference"];
+
+// The session's zone renders from the workspace query while a PR card renders
+// from this query — two cache entries over the same daemon facts. Whichever
+// refetches first can show a verdict the other still contradicts (issue #336).
+// When their gate facts disagree, one invalidation pulls both back to the same
+// answer, so the divergence never outlives one refetch. The per-cache,
+// per-session stamp bounds it when the workspace list is slow: at most one
+// sync per interval.
+const FACTS_SYNC_INTERVAL_MS = 1000;
+const lastFactsSyncAt = new WeakMap<QueryClient, Map<string, number>>();
+
+function prGateFactsMatch(facts: PullRequestFacts[], summaries: SessionPRSummary[]): boolean {
+	if (facts.length !== summaries.length) return false;
+	const byUrl = new Map(facts.map((fact) => [fact.url, fact]));
+	return summaries.every((summary) => {
+		const fact = byUrl.get(summary.url);
+		return Boolean(fact) &&
+			fact!.state === summary.state &&
+			fact!.ci === summary.ci.state &&
+			fact!.review === summary.review.decision &&
+			fact!.mergeability === summary.mergeability.state &&
+			Boolean(fact!.reviewComments) === Boolean(summary.review.hasUnresolvedHumanComments);
+	});
+}
 
 export const sessionScmSummaryQueryKey = (sessionId?: string, hostId?: string) =>
 	sessionId ? (["session-scm-summary", hostId ?? LOCAL_HOST, sessionId] as const) : (["session-scm-summary"] as const);
@@ -111,7 +137,7 @@ export function useSessionScmSummary(
 		void reconnect();
 		return () => controller.abort();
 	}, [baseUrl, cloudOrgId, enabled, queryClient, queryKey, sessionId]);
-	return useQuery({
+	const query = useQuery({
 		queryKey,
 		enabled: enabled && Boolean(sessionId) && (!cloud || baseUrl !== ""),
 		queryFn: async () => {
@@ -125,4 +151,27 @@ export function useSessionScmSummary(
 		retry: 1,
 		...(hostId ? { refetchInterval: 15_000 } : {}),
 	});
+	// Pull the workspace facts and these summaries back together whenever one
+	// has moved without the other (issue #336): the zone and the card must not
+	// contradict each other longer than one refetch, focus or not.
+	const summaryData = query.data;
+	useEffect(() => {
+		if (cloud || !enabled || !sessionId || !summaryData) return;
+		const workspaces = queryClient.getQueryData<WorkspaceSummary[]>(workspaceQueryKeyForHost(hostId));
+		const session = workspaces?.flatMap((workspace) => workspace.sessions).find((candidate) => candidate.id === sessionId);
+		if (!session) return;
+		if (prGateFactsMatch(session.prs, summaryData.prs)) return;
+		const key = `${hostId ?? LOCAL_HOST}:${sessionId}`;
+		let stamps = lastFactsSyncAt.get(queryClient);
+		if (!stamps) {
+			stamps = new Map();
+			lastFactsSyncAt.set(queryClient, stamps);
+		}
+		const now = Date.now();
+		if (now - (stamps.get(key) ?? 0) < FACTS_SYNC_INTERVAL_MS) return;
+		stamps.set(key, now);
+		void queryClient.invalidateQueries({ queryKey: workspaceQueryKeyForHost(hostId) });
+		void queryClient.invalidateQueries({ queryKey });
+	}, [cloud, enabled, hostId, queryClient, queryKey, sessionId, summaryData]);
+	return query;
 }
