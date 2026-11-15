@@ -1609,8 +1609,8 @@ func (s *Service) toSessionWithFacts(ctx context.Context, rec domain.SessionReco
 		StatusReadiness:  readiness,
 		ChatProviderPreserved: rec.Mode == domain.SessionModeChat && !rec.IsTerminated &&
 			s.chatProviderPreserved != nil && s.chatProviderPreserved(rec.ID),
-		Status:           deriveStatus(rec, prs, now, s.harnessSignals(rec.Harness)),
-		SCMStatus:        deriveSCMStatus(prs),
+		Status:           deriveStatus(rec, prs, runs, now, s.harnessSignals(rec.Harness)),
+		SCMStatus:        deriveSCMStatus(prs, runs),
 		KanbanColumn:     presentation.Column,
 		DisplayStatus:    presentation.DisplayStatus,
 		TerminalHandleID: rec.Metadata.RuntimeHandleID,

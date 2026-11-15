@@ -110,6 +110,11 @@ type PRFacts struct {
 	// until the reviewer re-reviews or dismisses, so the decision alone cannot
 	// tell whether the user still owes this PR anything.
 	ChangesRequestedAddressed bool
+	// ReviewRunRunning reports that an AO review pass against this PR's
+	// current head is still in flight. While it runs the merge gate is closed
+	// (the PR card's prCanMerge never fires under it), so the session status
+	// must not read as ready to merge either -- see issue #335.
+	ReviewRunRunning bool
 }
 
 // StackPosition is the derived position of a pull request in its stack.
@@ -290,16 +295,34 @@ func prPipelineStatus(pr PRFacts) SessionStatus {
 	// Merge gates come before bare mergeability: the provider reports
 	// `mergeable` (no conflicts) even while branch protection still holds the
 	// PR for a required review, so reading `mergeable` first painted gated PRs
-	// ready -- see issue #272.
+	// ready -- see issue #272. An AO review pass still running against the
+	// current head holds the gate the same way: the card refuses to merge
+	// under it, so the status must never read ready either (#335).
+	case pr.ReviewRunRunning:
+		return StatusMergeBlocked
 	case pr.Review == ReviewRequired:
 		return StatusMergeBlocked
-	case pr.Mergeability == MergeMergeable:
-		return StatusMergeable
-	case pr.Mergeability == MergeBlocked:
-		return StatusMergeBlocked
-	case pr.Review == ReviewApproved:
+	case prMergeGateOpen(pr) && pr.Review == ReviewApproved:
 		return StatusApproved
+	case prMergeGateOpen(pr):
+		return StatusMergeable
+	case pr.Mergeability == MergeBlocked || pr.Mergeability == MergeUnstable:
+		return StatusMergeBlocked
 	default:
 		return StatusPROpen
 	}
+}
+
+// prMergeGateOpen reports whether the stored facts pass the same gate the PR
+// card's Merge button uses (the renderer's prCanMerge): the provider reports
+// the PR mergeable with its checks green -- or confirms the head has no
+// checks at all -- and no review decision stands against it. The session
+// status reuses this single rule instead of a parallel classifier, so the
+// Ready-to-merge zone and the card can never disagree about one PR (#335).
+// CI unknown means the checks are still being read, which the card also
+// refuses to merge on; the facts must settle to passing or none first.
+func prMergeGateOpen(pr PRFacts) bool {
+	return pr.Mergeability == MergeMergeable &&
+		(pr.CI == CIPassing || pr.CI == CINone) &&
+		(pr.Review == ReviewNone || pr.Review == ReviewApproved || pr.Review == "")
 }

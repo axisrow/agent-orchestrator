@@ -1000,7 +1000,7 @@ function PRSummaryCard({
 	const workspaceKey = workspaceQueryKeyForHost(hostId);
 	const { client: cloudClient, baseUrl: cloudBaseUrl } = useCloudCp();
 	const presentation = prCardPresentation(pr, aoReview);
-	const canMerge = prCanMerge(pr) && Boolean(pr.url && pr.headSha);
+	const canMerge = prCanMerge(pr, aoReview) && Boolean(pr.url && pr.headSha);
 	// The repository's default branch, what an ordinary merge targets. A failed
 	// read leaves the guard silent rather than blocking merges.
 	const defaultBranch = usePRDefaultBranch(pr, hostId, pr.state === "open" || pr.state === "draft").data;

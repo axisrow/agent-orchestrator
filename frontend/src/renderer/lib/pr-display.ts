@@ -260,7 +260,7 @@ export function prCardPresentation(pr: SessionPRSummary, aoReview?: PRReviewStat
 		// AO reviewer verdict are separate facts and never merge into one row.
 		const aoRow = aoReviewCardRow(pr, aoReview);
 		if (aoRow) statusRows.push(aoRow);
-		const mergeable = prCanMerge(pr);
+		const mergeable = prCanMerge(pr, aoReview);
 		if (mergeReasons(pr).includes("github_checks_unavailable")) {
 			return { primary, supporting, statusRows, readiness: {
 				label: appI18n.t("pr.merge.accessLost"),
@@ -368,7 +368,7 @@ function ciCancelled(pr: SessionPRSummary): boolean {
 	return pr.ci.state === "unknown" && pr.ci.failingChecks.some((check) => check.status === "cancelled");
 }
 
-export function prCanMerge(pr: SessionPRSummary): boolean {
+export function prCanMerge(pr: SessionPRSummary, aoReview?: PRReviewState): boolean {
 	return (
 		pr.state === "open" &&
 		// "none" means the provider confirmed the head commit has no checks:
@@ -376,7 +376,11 @@ export function prCanMerge(pr: SessionPRSummary): boolean {
 		(pr.ci.state === "passing" || pr.ci.state === "none") &&
 		pr.mergeability.state === "mergeable" &&
 		reviewAllowsMerge(pr.review.decision) &&
-		!pr.review.hasUnresolvedHumanComments
+		!pr.review.hasUnresolvedHumanComments &&
+		// An AO review pass still running against this head holds the merge gate
+		// the same way the daemon's status gate does (#335): no Ready to merge
+		// while it works, whatever the provider facts say.
+		aoReview?.status !== "running"
 	);
 }
 

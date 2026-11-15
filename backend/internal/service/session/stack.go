@@ -22,7 +22,7 @@ type stackInfo struct {
 // branch columns alone. A parent counts only while open, matching the rule that
 // a merged or closed parent no longer blocks its children.
 func buildStacks(prs []domain.PRFacts) map[string]stackInfo {
-	positions := contract.BuildStacks(toContractPRFacts(prs))
+	positions := contract.BuildStacks(toContractPRFacts(prs, nil))
 	out := make(map[string]stackInfo, len(prs))
 	for url, position := range positions {
 		out[url] = stackInfo{
