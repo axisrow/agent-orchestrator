@@ -128,6 +128,7 @@ type SessionService interface {
 	PrepareTask(ctx context.Context, projectID domain.ProjectID) (string, error)
 	CancelTaskPreparation(ctx context.Context, token string) error
 	ListPRListing(ctx context.Context, id domain.SessionID) (sessionsvc.PRListing, error)
+	PeekSessionPRs(ctx context.Context, id domain.SessionID) ([]sessionsvc.PeekedPRFacts, error)
 	ClaimPR(ctx context.Context, id domain.SessionID, ref string, opts sessionsvc.ClaimPROptions) (sessionsvc.ClaimPRResult, error)
 	StageAttachments(ctx context.Context, id domain.SessionID, attachments []ports.SpawnAttachment) ([]string, error)
 	WorkspaceWatchPaths(ctx context.Context, id domain.SessionID) ([]string, error)
@@ -288,6 +289,7 @@ func (c *SessionsController) Register(r chi.Router) {
 	r.Get("/sessions/{sessionId}/pr/{prNumber}/file", c.getPRFile)
 	r.Get("/sessions/{sessionId}/pr/{prNumber}/file/revision", c.getPRFileRevision)
 	r.Get("/sessions/{sessionId}/pr", c.listPRs)
+	r.Post("/sessions/{sessionId}/pr/refresh", c.refreshPRs)
 	r.Post("/sessions/{sessionId}/pr/claim", c.claimPR)
 	r.Patch("/sessions/{sessionId}", c.rename)
 	r.Patch("/sessions/{sessionId}/merge-policy", c.setMergePolicy)
@@ -1754,6 +1756,39 @@ func (c *SessionsController) listPRs(w http.ResponseWriter, r *http.Request) {
 		linked[i] = SessionPRReference{URL: ref.URL, Provider: ref.Provider, Host: ref.Host, Repo: ref.Repository, Number: ref.Number}
 	}
 	envelope.WriteJSON(w, http.StatusOK, ListSessionPRsResponse{SessionID: sessionID(r), PRs: sessionPRSummaries(listing.Tracked), LinkedPRs: linked})
+}
+
+// refreshPRs answers a PR card's one-shot freshness request: the session's
+// non-terminal tracked PRs are fetched from the provider read-only and
+// returned without touching the stored rows. A card holding a stale snapshot
+// shows these facts instead (#338).
+func (c *SessionsController) refreshPRs(w http.ResponseWriter, r *http.Request) {
+	if c.Svc == nil {
+		apispec.NotImplemented(w, r, "POST", "/api/v1/sessions/{sessionId}/pr/refresh")
+		return
+	}
+	prs, err := c.Svc.PeekSessionPRs(r.Context(), sessionID(r))
+	if err != nil {
+		writeSessionPRError(w, r, err)
+		return
+	}
+	out := make([]PeekedSessionPRFacts, len(prs))
+	refreshedAt := time.Time{}
+	for i, pr := range prs {
+		out[i] = PeekedSessionPRFacts{
+			URL:          pr.URL,
+			Number:       pr.Number,
+			State:        pr.State,
+			CI:           pr.CI,
+			Review:       pr.Review,
+			Mergeability: pr.Mergeability,
+			UpdatedAt:    pr.UpdatedAt,
+		}
+		if pr.UpdatedAt.After(refreshedAt) {
+			refreshedAt = pr.UpdatedAt
+		}
+	}
+	envelope.WriteJSON(w, http.StatusOK, RefreshSessionPRsResponse{OK: true, SessionID: sessionID(r), PRs: out, RefreshedAt: refreshedAt})
 }
 
 func (c *SessionsController) claimPR(w http.ResponseWriter, r *http.Request) {

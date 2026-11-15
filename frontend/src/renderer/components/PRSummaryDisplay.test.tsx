@@ -24,10 +24,12 @@ const summary = (overrides: Partial<SessionPRSummary> = {}): SessionPRSummary =>
 	ci: { autoInjectCI: true, state: "passing", failingChecks: [] },
 	review: { decision: "approved", hasUnresolvedHumanComments: false, unresolvedBy: [] },
 	mergeability: { state: "mergeable", reasons: [], prUrl: "https://github.com/acme/repo/pull/7" },
-	updatedAt: "2026-06-15T00:00:00Z",
-	observedAt: "2026-06-15T00:00:00Z",
+	// Fresh stamps: these fixtures depict a live PR, and stale facts would
+	// downgrade its green merge verdict to the stale badge (#338).
+	updatedAt: new Date().toISOString(),
+	observedAt: new Date().toISOString(),
 	ciObservedAt: new Date().toISOString(),
-	reviewObservedAt: "2026-06-15T00:00:00Z",
+	reviewObservedAt: new Date().toISOString(),
 	...overrides,
 });
 

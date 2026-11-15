@@ -1066,6 +1066,8 @@
 	"pr.ci.passing": "Passing",
 	"pr.ci.pending": "Pending",
 	"pr.ci.staleData": "Data may be stale",
+	"pr.facts.stale": "Facts {{age}} old",
+	"pr.facts.staleDetail": "This snapshot may be out of date — refreshing from the provider.",
 	"pr.openedVia": "via AO",
 	"pr.merge.action": "Merge",
 	"pr.merge.actionFor": "Merge PR #{{number}}",

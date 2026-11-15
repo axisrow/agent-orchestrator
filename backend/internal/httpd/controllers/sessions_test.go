@@ -83,6 +83,8 @@ type fakeSessionService struct {
 	prFiles                    sessionsvc.PRFiles
 	prFileCommitSHA            string
 	prRevisionCommitSHA        string
+	peekedPRs                  map[domain.SessionID][]sessionsvc.PeekedPRFacts
+	peekErr                    error
 	workspaceSearch            sessionsvc.WorkspaceFileSearch
 	workspaceSearchQuery       string
 	workspaceSearchCursor      string
@@ -670,6 +672,17 @@ func (f *fakeSessionService) ListPRListing(ctx context.Context, id domain.Sessio
 		return sessionsvc.PRListing{}, err
 	}
 	return sessionsvc.PRListing{Tracked: prs, Linked: f.linkedPRs}, nil
+}
+
+func (f *fakeSessionService) PeekSessionPRs(_ context.Context, id domain.SessionID) ([]sessionsvc.PeekedPRFacts, error) {
+	if f.peekErr != nil {
+		return nil, f.peekErr
+	}
+	prs, ok := f.peekedPRs[id]
+	if !ok {
+		return nil, nil
+	}
+	return prs, nil
 }
 
 func (f *fakeSessionService) ClaimPR(_ context.Context, id domain.SessionID, ref string, opts sessionsvc.ClaimPROptions) (sessionsvc.ClaimPRResult, error) {
@@ -5346,6 +5359,62 @@ func TestSessionsAPI_PRRoutes(t *testing.T) {
 	mustJSON(t, body, &claimed)
 	if !claimed.OK || claimed.SessionID != "ao-1" || len(claimed.PRs) != 1 || !claimed.BranchChanged || len(claimed.TakenOverFrom) != 0 {
 		t.Fatalf("claim shape = %#v", claimed)
+	}
+}
+
+// The PR card's one-shot freshness request returns provider-fresh facts
+// read-only; a provider that cannot be reached reads as SCM unavailable
+// (#338).
+func TestSessionsAPI_RefreshPRs(t *testing.T) {
+	svc := newFakeSessionService()
+	svc.peekedPRs = map[domain.SessionID][]sessionsvc.PeekedPRFacts{
+		"ao-1": {{
+			URL:          "https://github.com/acme/app/pull/1361",
+			Number:       1361,
+			State:        domain.PRStateMerged,
+			CI:           domain.CIPassing,
+			Review:       domain.ReviewNone,
+			Mergeability: domain.MergeMergeable,
+			UpdatedAt:    time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC),
+		}},
+	}
+	srv := newSessionTestServer(t, svc)
+
+	body, status, _ := doRequest(t, srv, "POST", "/api/v1/sessions/ao-1/pr/refresh", "")
+	if status != http.StatusOK {
+		t.Fatalf("POST refresh = %d body=%s", status, body)
+	}
+	var refreshed struct {
+		OK          bool   `json:"ok"`
+		SessionID   string `json:"sessionId"`
+		RefreshedAt string `json:"refreshedAt"`
+		PRs         []struct {
+			URL          string `json:"url"`
+			Number       int    `json:"number"`
+			State        string `json:"state"`
+			CI           string `json:"ci"`
+			Review       string `json:"review"`
+			Mergeability string `json:"mergeability"`
+			UpdatedAt    string `json:"updatedAt"`
+		} `json:"prs"`
+	}
+	mustJSON(t, body, &refreshed)
+	if !refreshed.OK || refreshed.SessionID != "ao-1" {
+		t.Fatalf("refresh envelope = %#v", refreshed)
+	}
+	if len(refreshed.PRs) != 1 || refreshed.PRs[0].State != "merged" || refreshed.PRs[0].Number != 1361 {
+		t.Fatalf("refreshed PRs = %#v", refreshed.PRs)
+	}
+	if refreshed.PRs[0].UpdatedAt != "2026-11-15T12:00:00Z" || refreshed.RefreshedAt != "2026-11-15T12:00:00Z" {
+		t.Fatalf("freshness stamps = %#v", refreshed)
+	}
+
+	unavailable := newFakeSessionService()
+	unavailable.peekErr = sessionsvc.ErrSCMUnavailable
+	srv = newSessionTestServer(t, unavailable)
+	body, status, _ = doRequest(t, srv, "POST", "/api/v1/sessions/ao-1/pr/refresh", "")
+	if status != http.StatusServiceUnavailable || !strings.Contains(string(body), "SCM_UNAVAILABLE") {
+		t.Fatalf("unavailable refresh = %d body=%s", status, body)
 	}
 }
 

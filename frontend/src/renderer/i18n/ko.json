@@ -1094,6 +1094,8 @@
 	"pr.ci.passing": "통과",
 	"pr.ci.pending": "대기 중",
 	"pr.ci.staleData": "데이터가 오래되었을 수 있습니다",
+	"pr.facts.stale": "정보 {{age}} 경과",
+	"pr.facts.staleDetail": "이 스냅샷은 오래되었을 수 있습니다 — 공급자에서 새로 가져오는 중입니다.",
 	"pr.openedVia": "AO 경유",
 	"pr.merge.action": "병합",
 	"pr.merge.actionFor": "PR #{{number}} 병합",
