@@ -2,7 +2,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { useSessionScmSummary } from "./useSessionScmSummary";
+import { apiClient } from "../lib/api-client";
+import type { PullRequestFacts, WorkspaceSummary } from "../types/workspace";
+import { sessionScmSummaryQueryKey, useSessionScmSummary } from "./useSessionScmSummary";
+import { workspaceQueryKey } from "./useWorkspaceQuery";
 
 const { listSessionPullRequestsMock, subscribeSessionEventsMock } = vi.hoisted(() => ({
 	listSessionPullRequestsMock: vi.fn(),
@@ -119,5 +122,140 @@ describe("useSessionScmSummary cloud source", () => {
 			repo: "acme/widgets",
 			mergeability: { prUrl: "https://github.com/acme/widgets/pull/7" },
 		});
+	});
+});
+
+describe("useSessionScmSummary facts convergence", () => {
+	const prUrl = "https://github.com/acme/app/pull/7";
+
+	const facts = (overrides: Partial<PullRequestFacts> = {}): PullRequestFacts => ({
+		url: prUrl,
+		number: 7,
+		state: "open",
+		ci: "passing",
+		review: "none",
+		mergeability: "mergeable",
+		reviewComments: false,
+		updatedAt: "2026-11-15T10:00:00Z",
+		...overrides,
+	});
+
+	const summary = (overrides: Record<string, unknown> = {}) => ({
+		url: prUrl,
+		htmlUrl: prUrl,
+		number: 7,
+		title: "Fix it",
+		state: "open",
+		provider: "github",
+		repo: "acme/app",
+		author: "ada",
+		sourceBranch: "fix/it",
+		targetBranch: "main",
+		headSha: "abc123",
+		additions: 1,
+		deletions: 0,
+		changedFiles: 1,
+		ci: { autoInjectCI: true, state: "passing", failingChecks: [], checks: [] },
+		review: { decision: "none", hasUnresolvedHumanComments: false, unresolvedBy: [] },
+		mergeability: { state: "mergeable", reasons: [], prUrl, conflictFiles: [] },
+		updatedAt: "2026-11-15T10:00:00Z",
+		observedAt: "2026-11-15T10:00:00Z",
+		...overrides,
+	});
+
+	function seedWorkspace(queryClient: QueryClient, prs: PullRequestFacts[]) {
+		const workspaces: WorkspaceSummary[] = [{
+			id: "ws-1",
+			name: "app",
+			kind: "single_repo",
+			path: "/tmp/app",
+			sessions: [{
+				id: "sess-1",
+				workspaceId: "ws-1",
+				workspaceName: "app",
+				title: "fix",
+				provider: "codex",
+				status: "idle",
+				updatedAt: "2026-11-15T10:00:00Z",
+				prs,
+			}],
+		}];
+		queryClient.setQueryData<WorkspaceSummary[]>(workspaceQueryKey, workspaces);
+		return workspaces;
+	}
+
+	function serveSummaries(prs: Record<string, unknown>[]) {
+		vi.mocked(apiClient.GET).mockImplementation(async (path) => {
+			if (path === "/api/v1/sessions/{sessionId}/pr") {
+				return { data: { sessionId: "sess-1", prs, linkedPrs: [] } } as never;
+			}
+			throw new Error(`unexpected GET ${String(path)}`);
+		});
+	}
+
+	it("invalidates the workspace and the summaries when their gate facts disagree", async () => {
+		// The card's query has learned about a changes_requested verdict; the
+		// workspace the sidebar zone renders from still says mergeable. One
+		// invalidation pulls both to the same answer, with no window focus.
+		serveSummaries([summary({
+			review: { decision: "changes_requested", hasUnresolvedHumanComments: false, unresolvedBy: [] },
+		})]);
+		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+		seedWorkspace(queryClient, [facts()]);
+		const invalidate = vi.spyOn(queryClient, "invalidateQueries").mockImplementation(async () => undefined);
+		const { result } = renderHook(() => useSessionScmSummary("sess-1", true), { wrapper: ({ children }: { children: ReactNode }) => (
+			<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+		) });
+
+		await waitFor(() => expect(result.current.data?.prs[0]?.review.decision).toBe("changes_requested"));
+		await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: workspaceQueryKey }));
+		expect(invalidate).toHaveBeenCalledWith({ queryKey: sessionScmSummaryQueryKey("sess-1", undefined) });
+	});
+
+	it("invalidates both queries in the other direction when the workspace facts move first", async () => {
+		serveSummaries([summary()]);
+		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+		seedWorkspace(queryClient, [facts({ review: "changes_requested" })]);
+		const invalidate = vi.spyOn(queryClient, "invalidateQueries").mockImplementation(async () => undefined);
+		renderHook(() => useSessionScmSummary("sess-1", true), { wrapper: ({ children }: { children: ReactNode }) => (
+			<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+		) });
+
+		await waitFor(() => {
+			expect(invalidate).toHaveBeenCalledWith({ queryKey: workspaceQueryKey });
+			expect(invalidate).toHaveBeenCalledWith({ queryKey: sessionScmSummaryQueryKey("sess-1", undefined) });
+		});
+	});
+
+	it("leaves matched facts alone", async () => {
+		serveSummaries([summary()]);
+		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+		seedWorkspace(queryClient, [facts()]);
+		const invalidate = vi.spyOn(queryClient, "invalidateQueries").mockImplementation(async () => undefined);
+		const { result } = renderHook(() => useSessionScmSummary("sess-1", true), { wrapper: ({ children }: { children: ReactNode }) => (
+			<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+		) });
+
+		await waitFor(() => expect(result.current.isSuccess).toBe(true));
+		expect(invalidate).not.toHaveBeenCalled();
+	});
+
+	it("bounds the sync while the workspace list stays behind", async () => {
+		serveSummaries([summary({
+			review: { decision: "changes_requested", hasUnresolvedHumanComments: false, unresolvedBy: [] },
+		})]);
+		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+		seedWorkspace(queryClient, [facts()]);
+		const invalidate = vi.spyOn(queryClient, "invalidateQueries").mockImplementation(async () => undefined);
+		const { result } = renderHook(() => useSessionScmSummary("sess-1", true), { wrapper: ({ children }: { children: ReactNode }) => (
+			<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+		) });
+
+		await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: workspaceQueryKey }));
+		// A refetch that still disagrees inside the sync interval waits for the
+		// next one instead of hammering both lists.
+		await result.current.refetch();
+		const syncs = invalidate.mock.calls.filter(([input]) => JSON.stringify((input as { queryKey: unknown[] }).queryKey) === JSON.stringify(workspaceQueryKey)).length;
+		expect(syncs).toBe(1);
 	});
 });

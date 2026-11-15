@@ -496,6 +496,37 @@ describe("createEventTransport", () => {
 		}
 	});
 
+	// A review verdict landing, or a check run finishing, must reach the zone
+	// and the PR card without this window having focus or anyone interacting:
+	// the workspace list (the zone's source) and the per-session SCM summaries
+	// (the card's source) invalidate in the same flush (issue #336).
+	it("invalidates the workspace and PR summaries together for PR and review events without focus", () => {
+		vi.useFakeTimers();
+		try {
+			for (const type of ["pr_updated", "pr_check_recorded", "review_run_updated"]) {
+				const queryClient = fakeQueryClient();
+				const disconnect = createEventTransport(queryClient).connect();
+				cdcSources().at(-1)!.emit(
+					type,
+					JSON.stringify({
+						seq: 9,
+						projectId: "proj-1",
+						sessionId: "worker-1",
+						type,
+						payload: { id: "fact-1", sessionId: "worker-1" },
+						createdAt: "2026-11-15T10:00:00Z",
+					}),
+				);
+				vi.advanceTimersByTime(200);
+				expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["workspaces"] }, { cancelRefetch: false });
+				expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["session-scm-summary"] }, { cancelRefetch: false });
+				disconnect();
+			}
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	// An agent can start a review with `ao review trigger`, and a reviewer can
 	// finish one, without this window asking. The session's reviews must refresh
 	// or the inspector keeps showing the previous verdict.
