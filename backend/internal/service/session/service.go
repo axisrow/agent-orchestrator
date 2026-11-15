@@ -1444,7 +1444,7 @@ func (s *Service) List(ctx context.Context, filter ListFilter) ([]domain.Session
 		facts, found := cleanupBySession[rec.ID]
 		sess := s.toSessionWithFacts(ctx, rec, prsBySession[rec.ID], runsBySession[rec.ID], interrupted[rec.ID], currentWorkspaceCleanup(rec, facts, found))
 		stalled, silentForMs, inflight := deriveTurnStall(rec, conversationLife[rec.ID], s.now(), s.turnStallAfter)
-		applyTurnStall(sess, stalled, silentForMs, inflight)
+		applyTurnStall(&sess, stalled, silentForMs, inflight)
 		if agentSwitch, ok := activeBySession[rec.ID]; ok {
 			sess.ActiveAgentSwitch = &agentSwitch
 		}
@@ -1955,14 +1955,14 @@ func (s *Service) toSession(ctx context.Context, rec domain.SessionRecord) (doma
 	}
 	sess := s.toSessionWithFacts(ctx, rec, prs, runs, interrupted[rec.ID], cleanup)
 	stalled, silentForMs, inflight := deriveTurnStall(rec, conversationLife[rec.ID], s.now(), s.turnStallAfter)
-	applyTurnStall(sess, stalled, silentForMs, inflight)
+	applyTurnStall(&sess, stalled, silentForMs, inflight)
 	return sess, nil
 }
 
 // applyTurnStall lands the derived stall facts on the read model: the silence
 // warning when the turn went quiet, or the in-flight call's name and elapsed
 // time when the turn is blocked on real work instead.
-func applyTurnStall(sess domain.Session, stalled bool, silentForMs int64, inflight *turnToolInflight) {
+func applyTurnStall(sess *domain.Session, stalled bool, silentForMs int64, inflight *turnToolInflight) {
 	sess.TurnStalled = stalled
 	sess.TurnSilentForMs = silentForMs
 	if inflight != nil {
