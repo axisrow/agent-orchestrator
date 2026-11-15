@@ -1458,6 +1458,7 @@ function ReviewsSection({
 		return (
 			<CloudReviewsSection
 				onOpenReviewFile={onOpenReviewFile}
+				onOpenReviewerTerminal={onOpenReviewerTerminal}
 				onWorkerMessageSent={onWorkerMessageSent}
 				session={session}
 			/>
@@ -1746,10 +1747,12 @@ function LocalReviewsSection({
 function CloudReviewsSection({
 	session,
 	onOpenReviewFile,
+	onOpenReviewerTerminal,
 	onWorkerMessageSent,
 }: {
 	session: WorkspaceSession;
 	onOpenReviewFile?: (target: { line?: number; path: string }) => void;
+	onOpenReviewerTerminal?: OpenReviewerTerminal;
 	onWorkerMessageSent?: () => void;
 }) {
 	const { t } = useTranslation();
