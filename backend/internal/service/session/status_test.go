@@ -66,8 +66,11 @@ func TestServiceDerivesStatusFromSessionFactsAndPR(t *testing.T) {
 		{"ci-failed", statusRec(domain.ActivityIdle, false), statusPR(domain.PRFacts{CI: domain.CIFailing}), false, domain.StatusCIFailed},
 		{"draft", statusRec(domain.ActivityIdle, false), statusPR(domain.PRFacts{Draft: true}), false, domain.StatusDraft},
 		{"changes-requested", statusRec(domain.ActivityIdle, false), statusPR(domain.PRFacts{Review: domain.ReviewChangesRequest}), false, domain.StatusChangesRequested},
-		{"mergeable", statusRec(domain.ActivityIdle, false), statusPR(domain.PRFacts{Mergeability: domain.MergeMergeable}), false, domain.StatusMergeable},
-		{"approved", statusRec(domain.ActivityIdle, false), statusPR(domain.PRFacts{Review: domain.ReviewApproved}), false, domain.StatusApproved},
+		{"mergeable", statusRec(domain.ActivityIdle, false), statusPR(domain.PRFacts{CI: domain.CIPassing, Mergeability: domain.MergeMergeable}), false, domain.StatusMergeable},
+		// Approval alone is not readiness: the status gate mirrors the PR card's
+		// prCanMerge, which also wants the provider mergeable with checks green.
+		{"approved", statusRec(domain.ActivityIdle, false), statusPR(domain.PRFacts{Review: domain.ReviewApproved}), false, domain.StatusPROpen},
+		{"approved-and-mergeable", statusRec(domain.ActivityIdle, false), statusPR(domain.PRFacts{CI: domain.CIPassing, Mergeability: domain.MergeMergeable, Review: domain.ReviewApproved}), false, domain.StatusApproved},
 		{"merge-blocked-approved", statusRec(domain.ActivityIdle, false), statusPR(domain.PRFacts{Mergeability: domain.MergeBlocked, Review: domain.ReviewApproved}), false, domain.StatusMergeBlocked},
 		{"merge-blocked-no-review", statusRec(domain.ActivityIdle, false), statusPR(domain.PRFacts{Mergeability: domain.MergeBlocked}), false, domain.StatusMergeBlocked},
 		{"review-pending", statusRec(domain.ActivityIdle, false), statusPR(domain.PRFacts{Review: domain.ReviewRequired}), false, domain.StatusMergeBlocked},
@@ -128,7 +131,7 @@ func TestServiceDerivesStatusFromSessionFactsAndPR(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := deriveStatus(tt.rec, tt.pr, statusNow, !tt.hookless); got != tt.want {
+			if got := deriveStatus(tt.rec, tt.pr, nil, statusNow, !tt.hookless); got != tt.want {
 				t.Fatalf("got %q want %q", got, tt.want)
 			}
 		})
@@ -159,7 +162,7 @@ func TestDeriveStatusActivityPrecedence(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := deriveStatus(statusRec(tt.activity, false), tt.prs, statusNow, true); got != tt.want {
+			if got := deriveStatus(statusRec(tt.activity, false), tt.prs, nil, statusNow, true); got != tt.want {
 				t.Fatalf("got %q want %q", got, tt.want)
 			}
 		})
@@ -178,18 +181,18 @@ func TestDeriveSCMStatusRemainsAvailableWhileAgentIsActive(t *testing.T) {
 		{"ci-failed", statusPR(domain.PRFacts{CI: domain.CIFailing}), domain.StatusCIFailed},
 		{"changes-requested", statusPR(domain.PRFacts{Review: domain.ReviewChangesRequest}), domain.StatusChangesRequested},
 		{"review-pending", statusPR(domain.PRFacts{Review: domain.ReviewRequired}), domain.StatusMergeBlocked},
-		{"approved", statusPR(domain.PRFacts{Review: domain.ReviewApproved}), domain.StatusApproved},
-		{"mergeable", statusPR(domain.PRFacts{Mergeability: domain.MergeMergeable}), domain.StatusMergeable},
+		{"approved", statusPR(domain.PRFacts{Review: domain.ReviewApproved}), domain.StatusPROpen},
+		{"mergeable", statusPR(domain.PRFacts{CI: domain.CIPassing, Mergeability: domain.MergeMergeable}), domain.StatusMergeable},
 		{"merge-blocked", statusPR(domain.PRFacts{Mergeability: domain.MergeBlocked}), domain.StatusMergeBlocked},
 		{"merged", statusPR(domain.PRFacts{Merged: true}), domain.StatusMerged},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := deriveSCMStatus(tt.prs); got != tt.want {
+			if got := deriveSCMStatus(tt.prs, nil); got != tt.want {
 				t.Fatalf("deriveSCMStatus() = %q, want %q", got, tt.want)
 			}
 			if tt.want != "" {
-				if got := deriveStatus(statusRec(domain.ActivityActive, false), tt.prs, statusNow, true); got != domain.StatusWorking {
+				if got := deriveStatus(statusRec(domain.ActivityActive, false), tt.prs, nil, statusNow, true); got != domain.StatusWorking {
 					t.Fatalf("deriveStatus(active) = %q, want working", got)
 				}
 			}
@@ -201,7 +204,7 @@ func TestDeriveSCMStatusRemainsAvailableWhileAgentIsActive(t *testing.T) {
 // signals are suppressed, but its problem signals (failing CI, draft,
 // requested-changes/unresolved-comments) must still surface for the session.
 func TestAggregateStackedChildSignals(t *testing.T) {
-	parent := domain.PRFacts{URL: "parent", SourceBranch: "feat", Mergeability: domain.MergeMergeable}
+	parent := domain.PRFacts{URL: "parent", SourceBranch: "feat", CI: domain.CIPassing, Mergeability: domain.MergeMergeable}
 	child := func(f domain.PRFacts) domain.PRFacts {
 		f.URL = "child"
 		f.SourceBranch = "feat/child"
@@ -226,18 +229,46 @@ func TestAggregateStackedChildSignals(t *testing.T) {
 		{
 			"all-blocked-no-actionable-falls-back",
 			[]domain.PRFacts{
-				{URL: "a", SourceBranch: "feat/a", TargetBranch: "feat/b", Mergeability: domain.MergeMergeable},
-				{URL: "b", SourceBranch: "feat/b", TargetBranch: "feat/a", Mergeability: domain.MergeMergeable},
+				{URL: "a", SourceBranch: "feat/a", TargetBranch: "feat/b", CI: domain.CIPassing, Mergeability: domain.MergeMergeable},
+				{URL: "b", SourceBranch: "feat/b", TargetBranch: "feat/a", CI: domain.CIPassing, Mergeability: domain.MergeMergeable},
 			},
 			domain.StatusMergeable,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := deriveStatus(statusRec(domain.ActivityIdle, false), tt.prs, statusNow, true); got != tt.want {
+			if got := deriveStatus(statusRec(domain.ActivityIdle, false), tt.prs, nil, statusNow, true); got != tt.want {
 				t.Fatalf("got %q want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// While an AO review pass is still running against a PR's current head, the
+// merge gate is closed: neither the status nor the SCM status may ever read
+// ready to merge, whatever the provider facts say (#335).
+func TestDeriveStatusNeverMergeZoneWhileAOReviewRuns(t *testing.T) {
+	prURL := "https://github.com/acme/app/pull/7"
+	prs := statusPR(domain.PRFacts{URL: prURL, CI: domain.CIPassing, Mergeability: domain.MergeMergeable})
+	running := []domain.CurrentHeadReviewRun{{PRURL: prURL, Status: domain.ReviewRunRunning}}
+
+	if got := deriveStatus(statusRec(domain.ActivityIdle, false), prs, running, statusNow, true); got != domain.StatusMergeBlocked {
+		t.Fatalf("deriveStatus(running review) = %q, want %q", got, domain.StatusMergeBlocked)
+	}
+	if got := deriveSCMStatus(prs, running); got != domain.StatusMergeBlocked {
+		t.Fatalf("deriveSCMStatus(running review) = %q, want %q", got, domain.StatusMergeBlocked)
+	}
+
+	// A run on another PR must not gate this one.
+	other := []domain.CurrentHeadReviewRun{{PRURL: "https://github.com/acme/app/pull/9", Status: domain.ReviewRunRunning}}
+	if got := deriveStatus(statusRec(domain.ActivityIdle, false), prs, other, statusNow, true); got != domain.StatusMergeable {
+		t.Fatalf("deriveStatus(other review running) = %q, want %q", got, domain.StatusMergeable)
+	}
+
+	// The completed pass releases the gate: facts unchanged, zone opens.
+	done := []domain.CurrentHeadReviewRun{{PRURL: prURL, Status: domain.ReviewRunComplete}}
+	if got := deriveStatus(statusRec(domain.ActivityIdle, false), prs, done, statusNow, true); got != domain.StatusMergeable {
+		t.Fatalf("deriveStatus(completed review) = %q, want %q", got, domain.StatusMergeable)
 	}
 }
 
@@ -267,10 +298,10 @@ func TestDeriveStatusMapsAddressedChangesRequest(t *testing.T) {
 		ChangesRequestedAddressed: true,
 	})
 
-	if got := deriveStatus(statusRec(domain.ActivityIdle, false), pr, statusNow, true); got != domain.StatusMergeBlocked {
+	if got := deriveStatus(statusRec(domain.ActivityIdle, false), pr, nil, statusNow, true); got != domain.StatusMergeBlocked {
 		t.Fatalf("deriveStatus(addressed changes request) = %q, want %q", got, domain.StatusMergeBlocked)
 	}
-	if got := deriveSCMStatus(pr); got != domain.StatusMergeBlocked {
+	if got := deriveSCMStatus(pr, nil); got != domain.StatusMergeBlocked {
 		t.Fatalf("deriveSCMStatus(addressed changes request) = %q, want %q", got, domain.StatusMergeBlocked)
 	}
 

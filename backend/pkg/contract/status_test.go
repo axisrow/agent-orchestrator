@@ -95,9 +95,19 @@ func TestDeriveSCMStatusPipelineAndWorstWins(t *testing.T) {
 		{"review required alone", []contract.PRFacts{{Review: contract.ReviewRequired}}, contract.StatusMergeBlocked},
 		{"provider merge blocker alone", []contract.PRFacts{{Mergeability: contract.MergeBlocked}}, contract.StatusMergeBlocked},
 		{"provider merge blocker with approved review", []contract.PRFacts{{Mergeability: contract.MergeBlocked, Review: contract.ReviewApproved}}, contract.StatusMergeBlocked},
-		{"approved", []contract.PRFacts{{Review: contract.ReviewApproved}}, contract.StatusApproved},
-		{"mergeable", []contract.PRFacts{{Mergeability: contract.MergeMergeable}}, contract.StatusMergeable},
-		{"mergeable with approved review", []contract.PRFacts{{Review: contract.ReviewApproved, Mergeability: contract.MergeMergeable}}, contract.StatusMergeable},
+		// Approval alone is not readiness: the card's gate also wants the
+		// provider to report mergeable with checks green, so facts that have
+		// not settled read as plain open (issue #335).
+		{"approved", []contract.PRFacts{{Review: contract.ReviewApproved}}, contract.StatusPROpen},
+		{"approved while checks unread", []contract.PRFacts{{CI: contract.CIUnknown, Review: contract.ReviewApproved, Mergeability: contract.MergeMergeable}}, contract.StatusPROpen},
+		{"approved and mergeable", []contract.PRFacts{{CI: contract.CIPassing, Review: contract.ReviewApproved, Mergeability: contract.MergeMergeable}}, contract.StatusApproved},
+		{"approved and mergeable with no checks", []contract.PRFacts{{CI: contract.CINone, Review: contract.ReviewApproved, Mergeability: contract.MergeMergeable}}, contract.StatusApproved},
+		{"approved on a conflicted PR", []contract.PRFacts{{Mergeability: contract.MergeConflicting, Review: contract.ReviewApproved}}, contract.StatusPROpen},
+		{"mergeable with green checks", []contract.PRFacts{{CI: contract.CIPassing, Mergeability: contract.MergeMergeable}}, contract.StatusMergeable},
+		{"mergeable with no checks", []contract.PRFacts{{CI: contract.CINone, Mergeability: contract.MergeMergeable}}, contract.StatusMergeable},
+		{"mergeable while an AO review runs", []contract.PRFacts{{CI: contract.CIPassing, Mergeability: contract.MergeMergeable, ReviewRunRunning: true}}, contract.StatusMergeBlocked},
+		{"mergeable while an AO review runs with approval", []contract.PRFacts{{CI: contract.CIPassing, Review: contract.ReviewApproved, Mergeability: contract.MergeMergeable, ReviewRunRunning: true}}, contract.StatusMergeBlocked},
+		{"mergeable with an unstable provider verdict", []contract.PRFacts{{CI: contract.CIPassing, Mergeability: contract.MergeUnstable}}, contract.StatusMergeBlocked},
 		{"changes requested", []contract.PRFacts{{Review: contract.ReviewChangesRequest}}, contract.StatusChangesRequested},
 		// A changes request the worker already answered (every thread resolved,
 		// or a turn completed after the review) still gates the merge -- the
@@ -110,7 +120,6 @@ func TestDeriveSCMStatusPipelineAndWorstWins(t *testing.T) {
 		{"conflicting with an answered changes request stays gated", []contract.PRFacts{{Review: contract.ReviewChangesRequest, ChangesRequestedAddressed: true, Mergeability: contract.MergeConflicting}}, contract.StatusMergeBlocked},
 		{"conflicting with an unanswered changes request keeps the decision", []contract.PRFacts{{Review: contract.ReviewChangesRequest, Mergeability: contract.MergeConflicting}}, contract.StatusChangesRequested},
 		{"conflicting", []contract.PRFacts{{Mergeability: contract.MergeConflicting}}, contract.StatusPROpen},
-		{"conflicting with approved review", []contract.PRFacts{{Mergeability: contract.MergeConflicting, Review: contract.ReviewApproved}}, contract.StatusApproved},
 		// A COMMENTED review's unresolved thread is not a formal changes-requested
 		// decision, so it must not be reported as one -- see issue #5765.
 		{"review required with unresolved comments", []contract.PRFacts{{Review: contract.ReviewRequired, ReviewComments: true}}, contract.StatusCommented},
@@ -143,6 +152,7 @@ func TestStackRules(t *testing.T) {
 		URL:          "parent",
 		SourceBranch: "feature",
 		TargetBranch: "main",
+		CI:           contract.CIPassing,
 		Mergeability: contract.MergeMergeable,
 	}
 	child := contract.PRFacts{
