@@ -250,7 +250,7 @@ func TestCodexSubagentsAggregateRecursivelyExactlyOnce(t *testing.T) {
 func TestCoordinatorReconcilesLateCodexChildBeforeBindingCompletes(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	store, session, roots := seedCodexRolloutSession(t, domain.ActivityExited)
+	store, session, roots, dataDir := seedCodexRolloutSession(t, domain.ActivityExited)
 	parentPath := activeCodexRolloutPath(roots.CodexSessions, testCodexParentID)
 	childPath := activeCodexRolloutPath(roots.CodexSessions, testCodexChildID)
 	writeCodexRollout(t, parentPath, codexRolloutFixture(t, testCodexParentID, "", 100, 20, testCodexChildID))
@@ -277,7 +277,7 @@ func TestCoordinatorReconcilesLateCodexChildBeforeBindingCompletes(t *testing.T)
 		}
 	})
 
-	waitForTokenAggregate(t, store, session.ID, 120)
+	waitForTokenAggregate(t, dataDir, session.ID, 120)
 	binding := onlyUsageBinding(t, store, session.ID)
 	if binding.State != domain.UsageBindingFinalizing {
 		t.Fatalf("binding completed while discovered child was missing: %+v", binding)
@@ -285,7 +285,7 @@ func TestCoordinatorReconcilesLateCodexChildBeforeBindingCompletes(t *testing.T)
 
 	writeCodexRollout(t, childPath, codexRolloutFixture(t, testCodexChildID, testCodexParentID, 40, 10, ""))
 	waitForWatchableSource(ctx, t, store, childPath)
-	waitForTokenAggregate(t, store, session.ID, 170)
+	waitForTokenAggregate(t, dataDir, session.ID, 170)
 	waitForUsageBindingState(t, store, session.ID, domain.UsageBindingComplete)
 }
 
@@ -465,6 +465,7 @@ type codexSubagentFixture struct {
 	t         *testing.T
 	ctx       context.Context
 	store     *sqlite.Store
+	dataDir   string
 	session   domain.SessionRecord
 	roots     usagesvc.SourceRoots
 	collector *usagesvc.Collector
@@ -474,11 +475,12 @@ type codexSubagentFixture struct {
 
 func newCodexSubagentFixture(t *testing.T, activity domain.ActivityState) *codexSubagentFixture {
 	t.Helper()
-	store, session, roots := seedCodexRolloutSession(t, activity)
+	store, session, roots, dataDir := seedCodexRolloutSession(t, activity)
 	return &codexSubagentFixture{
 		t:         t,
 		ctx:       context.Background(),
 		store:     store,
+		dataDir:   dataDir,
 		session:   session,
 		roots:     roots,
 		collector: usagesvc.NewCollector(store, roots, nil),
@@ -540,7 +542,7 @@ func (fixture *codexSubagentFixture) reconcile() {
 
 func (fixture *codexSubagentFixture) assertTokens(want int64) {
 	fixture.t.Helper()
-	assertTokenAggregate(fixture.t, fixture.store, fixture.session.ID, want)
+	assertTokenAggregate(fixture.t, fixture.dataDir, fixture.session.ID, want)
 }
 
 func (fixture *codexSubagentFixture) replace(path, content string, atomic bool) {
@@ -600,17 +602,18 @@ func codexSessionMetaLine(t *testing.T, id, parentID string) []byte {
 func seedCodexRolloutSession(
 	t *testing.T,
 	activity domain.ActivityState,
-) (*sqlite.Store, domain.SessionRecord, usagesvc.SourceRoots) {
+) (*sqlite.Store, domain.SessionRecord, usagesvc.SourceRoots, string) {
 	t.Helper()
 	now := time.Now().UTC()
+	dataDir := t.TempDir()
 	store, session := seedUsageTestSession(
-		t, t.TempDir(), "codex-subagents", domain.HarnessCodex, activity, testCodexParentID, now,
+		t, dataDir, "codex-subagents", domain.HarnessCodex, activity, testCodexParentID, now,
 	)
 	base := t.TempDir()
 	return store, session, usagesvc.SourceRoots{
 		CodexSessions: filepath.Join(base, "sessions"),
 		CodexArchived: filepath.Join(base, "archived_sessions"),
-	}
+	}, dataDir
 }
 
 func codexRolloutFixture(t *testing.T, id, parentID string, input, output int64, spawnedChildID string) string {

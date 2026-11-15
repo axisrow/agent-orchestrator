@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -20,7 +19,7 @@ import (
 )
 
 func TestUsageBindingAndSourceIdempotency(t *testing.T) {
-	s := newTestStore(t)
+	s, dataDir := newUsageTestStore(t)
 	ctx := context.Background()
 	sess := seedUsageSession(t, s, domain.HarnessCodex)
 	now := time.Unix(1700000000, 0).UTC()
@@ -79,10 +78,9 @@ func TestUsageBindingAndSourceIdempotency(t *testing.T) {
 	mustNoError(t, err, "bindings")
 	sources, err := s.ListUsageSourcesForBinding(ctx, binding.ID)
 	mustNoError(t, err, "sources")
-	aggregates, err := s.ListUsageModelAggregates(ctx, sess.ID)
-	mustNoError(t, err, "aggregates")
-	if len(bindings) != 1 || len(sources) != 1 || len(aggregates) != 0 {
-		t.Fatalf("rows = bindings:%d sources:%d aggregates:%d, want 1/1/0", len(bindings), len(sources), len(aggregates))
+	events, _, _ := usageEventTotals(t, dataDir, sess.ID)
+	if len(bindings) != 1 || len(sources) != 1 || events != 0 {
+		t.Fatalf("rows = bindings:%d sources:%d events:%d, want 1/1/0", len(bindings), len(sources), events)
 	}
 	pending, err := s.HasPendingUsageDiscovery(ctx)
 	mustNoError(t, err, "check healthy discovery state")
@@ -447,7 +445,7 @@ func assertUsageSessionUpdatedEvents(
 }
 
 func TestApplyUsageChunkAtomicReplayAndTokenAggregates(t *testing.T) {
-	s := newTestStore(t)
+	s, dataDir := newUsageTestStore(t)
 	ctx := context.Background()
 	sess := seedUsageSession(t, s, domain.HarnessCodex)
 	now := time.Unix(1700000000, 0).UTC()
@@ -474,14 +472,9 @@ func TestApplyUsageChunkAtomicReplayAndTokenAggregates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply duplicate chunk: %v", err)
 	}
-	aggs, err := s.ListUsageModelAggregates(ctx, sess.ID)
-	mustNoError(t, err, "aggregates")
-	if len(aggs) != 1 {
-		t.Fatalf("aggregates = %+v, want one row", aggs)
-	}
-	got := aggs[0]
-	if usageTokenValue(got.Tokens.InputTokens) != 100 || usageTokenValue(got.Tokens.OutputTokens) != 20 {
-		t.Fatalf("aggregate tokens = %+v", got.Tokens)
+	events, input, output := usageEventTotals(t, dataDir, sess.ID)
+	if events != 1 || input != 100 || output != 20 {
+		t.Fatalf("persisted events = count:%d input:%d output:%d, want one replay-deduplicated 100/20", events, input, output)
 	}
 
 	ctxRow, ok, err := s.GetUsageSourceForIngestion(ctx, source.ID)
@@ -1042,7 +1035,7 @@ func TestApplyUsageChunkRejectsBlankProviderOnNewEvent(t *testing.T) {
 }
 
 func TestApplyUsageChunkRejectsConflictsAndPreservesCursor(t *testing.T) {
-	s := newTestStore(t)
+	s, dataDir := newUsageTestStore(t)
 	ctx := context.Background()
 	sess := seedUsageSession(t, s, domain.HarnessCodex)
 	now := time.Unix(1700000000, 0).UTC()
@@ -1063,10 +1056,9 @@ func TestApplyUsageChunkRejectsConflictsAndPreservesCursor(t *testing.T) {
 		t.Fatalf("conflict err = %v, want ErrUsageSourceEventConflict", err)
 	}
 	assertUsageSourceOffset(t, s, source.ID, 50)
-	aggregates, err := s.ListUsageModelAggregates(ctx, sess.ID)
-	mustNoError(t, err)
-	if len(aggregates) != 1 || usageTokenValue(aggregates[0].Tokens.InputTokens)+usageTokenValue(aggregates[0].Tokens.OutputTokens) != 11 {
-		t.Fatalf("rolled-back chunk persisted events: %+v", aggregates)
+	events, input, output := usageEventTotals(t, dataDir, sess.ID)
+	if events != 1 || input+output != 11 {
+		t.Fatalf("rolled-back chunk persisted events = count:%d tokens:%d, want 1/11", events, input+output)
 	}
 
 	bad := usageEvent("event-2", canonicalUsageTokens(10, 11, 10, 1))
@@ -1116,7 +1108,7 @@ func TestApplyUsageChunkProviderUsageConflictsRollback(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			s := newTestStore(t)
+			s, dataDir := newUsageTestStore(t)
 			ctx := context.Background()
 			sess := seedUsageSession(t, s, test.harness)
 			now := time.Unix(1700000000, 0).UTC()
@@ -1134,11 +1126,10 @@ func TestApplyUsageChunkProviderUsageConflictsRollback(t *testing.T) {
 				t.Fatalf("provider conflict err = %v, want ErrUsageSourceEventConflict", err)
 			}
 			assertUsageSourceOffset(t, s, source.ID, 50)
-			aggregates, err := s.ListUsageModelAggregates(ctx, sess.ID)
-			mustNoError(t, err)
-			if len(aggregates) != 1 || usageTokenValue(aggregates[0].Tokens.InputTokens) != test.wantInput ||
-				usageTokenValue(aggregates[0].Tokens.OutputTokens) != test.wantOutput {
-				t.Fatalf("provider conflict persisted partial chunk: %+v", aggregates)
+			events, input, output := usageEventTotals(t, dataDir, sess.ID)
+			if events != 1 || input != test.wantInput || output != test.wantOutput {
+				t.Fatalf("provider conflict persisted partial chunk = count:%d %d/%d, want 1/%d/%d",
+					events, input, output, test.wantInput, test.wantOutput)
 			}
 		})
 	}
@@ -1196,11 +1187,10 @@ func TestApplyUsageChunkProviderUsageEnrichmentAdvancesCursorWithoutDuplicate(t 
 				t.Fatalf("enrich provider event: %v", err)
 			}
 			assertUsageSourceOffset(t, s, source.ID, 80)
-			aggregates, err := s.ListUsageModelAggregates(ctx, sess.ID)
-			mustNoError(t, err)
-			if len(aggregates) != 1 || usageTokenValue(aggregates[0].Tokens.InputTokens) != test.wantInput ||
-				usageTokenValue(aggregates[0].Tokens.OutputTokens) != test.wantOutput {
-				t.Fatalf("enrichment duplicated provider event: %+v", aggregates)
+			events, input, output := usageEventTotals(t, dataDir, sess.ID)
+			if events != 1 || input != test.wantInput || output != test.wantOutput {
+				t.Fatalf("enrichment duplicated provider event = count:%d %d/%d, want 1/%d/%d",
+					events, input, output, test.wantInput, test.wantOutput)
 			}
 			if stored := readStoredProviderUsage(t, dataDir, "event-1"); stored != test.richer().ProviderUsageJSON {
 				t.Fatalf("stored provider usage = %q, want the replayed object", stored)
@@ -1223,6 +1213,91 @@ func readStoredProviderUsage(t *testing.T, dataDir, sourceEventKey string) strin
 		t.Fatalf("read stored provider usage: %v", err)
 	}
 	return stored.String
+}
+
+// newUsageTestStore pairs the store with its data directory so tests can read
+// persisted rows back through raw SQL.
+func newUsageTestStore(t *testing.T) (*sqlite.Store, string) {
+	t.Helper()
+	dataDir := t.TempDir()
+	return sqlitetest.MustOpenAt(t, dataDir), dataDir
+}
+
+// usageEventRow is one persisted model_usage_events row. The aggregate read
+// API was removed with its consumerless endpoints, so the write-pipeline tests
+// pin what actually landed in the table through raw SQL.
+type usageEventRow struct {
+	key                   string
+	modelID               string
+	billingProviderID     sql.NullString
+	billingProviderSource sql.NullString
+	input, output         sql.NullInt64
+	estimatedCost         sql.NullInt64
+	inputCost             sql.NullInt64
+	cachedInputCost       sql.NullInt64
+	outputCost            sql.NullInt64
+}
+
+func usageEventRows(t *testing.T, dataDir string, sessionID domain.SessionID) []usageEventRow {
+	t.Helper()
+	raw, err := sql.Open("sqlite", "file:"+filepath.Join(dataDir, "ao.db"))
+	if err != nil {
+		t.Fatalf("open raw sqlite: %v", err)
+	}
+	t.Cleanup(func() { _ = raw.Close() })
+	rows, err := raw.Query(`
+SELECT mue.source_event_key, mue.model_id, mue.billing_provider_id, mue.billing_provider_source,
+       mue.input_tokens, mue.output_tokens, mue.estimated_cost_nanos,
+       mue.input_cost_nanos, mue.cached_input_cost_nanos, mue.output_cost_nanos
+FROM model_usage_events mue
+JOIN usage_bindings ub ON ub.id = mue.binding_id
+WHERE ub.session_id = ?`, sessionID)
+	if err != nil {
+		t.Fatalf("read usage events: %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []usageEventRow
+	for rows.Next() {
+		var row usageEventRow
+		if err := rows.Scan(&row.key, &row.modelID, &row.billingProviderID, &row.billingProviderSource,
+			&row.input, &row.output, &row.estimatedCost, &row.inputCost, &row.cachedInputCost, &row.outputCost); err != nil {
+			t.Fatalf("scan usage event: %v", err)
+		}
+		out = append(out, row)
+	}
+	mustNoError(t, rows.Err())
+	return out
+}
+
+func usageEventTotals(t *testing.T, dataDir string, sessionID domain.SessionID) (events, input, output int64) {
+	t.Helper()
+	for _, row := range usageEventRows(t, dataDir, sessionID) {
+		events++
+		input += row.input.Int64
+		output += row.output.Int64
+	}
+	return events, input, output
+}
+
+// usageSessionIncomplete reads the durable integrity flag raw; no rows means
+// the session never recorded an integrity failure.
+func usageSessionIncomplete(t *testing.T, dataDir string, sessionID domain.SessionID) bool {
+	t.Helper()
+	raw, err := sql.Open("sqlite", "file:"+filepath.Join(dataDir, "ao.db"))
+	if err != nil {
+		t.Fatalf("open raw sqlite: %v", err)
+	}
+	t.Cleanup(func() { _ = raw.Close() })
+	var incomplete int64
+	if err := raw.QueryRow(
+		`SELECT incomplete FROM usage_session_integrity WHERE session_id = ?`, sessionID,
+	).Scan(&incomplete); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false
+		}
+		t.Fatalf("read usage integrity: %v", err)
+	}
+	return incomplete != 0
 }
 
 func TestUsageBindingWaitsForPersistedCodexChildren(t *testing.T) {
@@ -1366,7 +1441,7 @@ func TestUsageBindingValidatesCodexDiscoveryStateShapes(t *testing.T) {
 }
 
 func TestUsageRowsCascadeWhenSeedSessionDeleted(t *testing.T) {
-	s := newTestStore(t)
+	s, dataDir := newUsageTestStore(t)
 	ctx := context.Background()
 	seedProject(t, s, "usage")
 	now := time.Unix(1700000000, 0).UTC()
@@ -1394,15 +1469,14 @@ func TestUsageRowsCascadeWhenSeedSessionDeleted(t *testing.T) {
 	}
 	bindings, err := s.ListUsageBindingsForSession(ctx, sess.ID)
 	mustNoError(t, err, "bindings after delete")
-	aggregates, err := s.ListUsageModelAggregates(ctx, sess.ID)
-	mustNoError(t, err, "aggregates after delete")
-	if len(bindings) != 0 || len(aggregates) != 0 {
-		t.Fatalf("rows after delete = bindings:%d aggregates:%d, want zero", len(bindings), len(aggregates))
+	events, _, _ := usageEventTotals(t, dataDir, sess.ID)
+	if len(bindings) != 0 || events != 0 {
+		t.Fatalf("rows after delete = bindings:%d events:%d, want zero", len(bindings), events)
 	}
 }
 
-func TestUsageAggregatesMergeProvidersPerModelAndPreserveCostCoverageFacts(t *testing.T) {
-	s := newTestStore(t)
+func TestApplyUsageChunkPersistsPerEventCostCoverageFacts(t *testing.T) {
+	s, dataDir := newUsageTestStore(t)
 	ctx := context.Background()
 	now := time.Unix(1700000000, 0).UTC()
 	sess := seedUsageSession(t, s, domain.HarnessCodex)
@@ -1438,120 +1512,39 @@ func TestUsageAggregatesMergeProvidersPerModelAndPreserveCostCoverageFacts(t *te
 		t.Fatalf("apply cost events: %v", err)
 	}
 
-	// One model is one row even when two providers served it. Each event was
-	// already costed against its own provider's rates, so the merged coverage
-	// facts stay exact; splitting the row only ever exposed AO's own attribution
-	// state as a duplicate model.
-	models, err := s.ListUsageModelAggregates(ctx, sess.ID)
-	mustNoError(t, err)
-	if len(models) != 1 || models[0].ModelID != "shared-model" {
-		t.Fatalf("model rows = %+v, want one merged row", models)
+	// Every event keeps its own provider and coverage facts on its row; a row
+	// with an observed total leaves its component costs unpriced-but-known.
+	rows := usageEventRows(t, dataDir, sess.ID)
+	if len(rows) != 2 {
+		t.Fatalf("rows = %d, want both events persisted", len(rows))
 	}
-	cost := models[0].Cost
-	if cost.EventCount != 2 || cost.PricedEventCount != 1 || cost.PricedTotalNanos != 100 ||
-		cost.ObservedCostEventCount != 1 || cost.InferredCostEventCount != 1 ||
-		cost.KnownInputCount != 2 || cost.KnownInputNanos != 50 || cost.UnpricedKnownInputNanos != 30 ||
-		cost.KnownCachedInputCount != 1 || cost.KnownCachedInputNanos != 10 ||
-		cost.KnownOutputCount != 2 || cost.KnownOutputNanos != 75 || cost.UnpricedKnownOutputNanos != 5 {
-		t.Fatalf("merged cost facts = %+v", cost)
+	byKey := make(map[string]usageEventRow, len(rows))
+	for _, row := range rows {
+		byKey[row.key] = row
 	}
-
-	compact, err := s.ListCompactSessionUsageAggregates(ctx, sess.ProjectID)
-	mustNoError(t, err)
-	if len(compact) != 1 || usageTokenValue(compact[0].ProcessedTokens) != 18 {
-		t.Fatalf("compact rows = %+v", compact)
+	complete, ok := byKey["complete"]
+	if !ok {
+		t.Fatalf("complete event missing: %+v", rows)
 	}
-	// The dashboard row already summed across providers, so it is unchanged by
-	// the model row merging into one.
-	compactCost := compact[0].Cost
-	if compactCost.EventCount != 2 || compactCost.PricedEventCount != 1 || compactCost.PricedTotalNanos != 100 ||
-		compactCost.ObservedCostEventCount != 1 || compactCost.InferredCostEventCount != 1 ||
-		compactCost.KnownInputCount != 2 || compactCost.KnownInputNanos != 50 || compactCost.UnpricedKnownInputNanos != 30 ||
-		compactCost.KnownCachedInputCount != 1 || compactCost.KnownOutputNanos != 75 || compactCost.UnpricedKnownOutputNanos != 5 {
-		t.Fatalf("compact cost facts = %+v", compactCost)
+	if complete.modelID != "shared-model" || complete.billingProviderID.String != "openai" ||
+		complete.billingProviderSource.String != string(domain.UsageBillingProviderObserved) ||
+		complete.input.Int64 != 10 || complete.output.Int64 != 2 ||
+		!complete.estimatedCost.Valid || complete.estimatedCost.Int64 != 100 ||
+		complete.inputCost.Int64 != 20 || complete.cachedInputCost.Int64 != 10 || complete.outputCost.Int64 != 70 {
+		t.Fatalf("complete row = %+v", complete)
+	}
+	partial := byKey["partial"]
+	if partial.billingProviderID.String != "zai" ||
+		partial.billingProviderSource.String != string(domain.UsageBillingProviderInferred) ||
+		partial.input.Int64 != 5 || partial.output.Int64 != 1 ||
+		partial.estimatedCost.Valid || partial.inputCost.Int64 != 30 ||
+		partial.cachedInputCost.Valid || partial.outputCost.Int64 != 5 {
+		t.Fatalf("partial row = %+v", partial)
 	}
 }
 
-func TestUsageAggregatesReturnSQLiteIntegerOverflow(t *testing.T) {
-	s := newTestStore(t)
-	ctx := context.Background()
-	now := time.Unix(1700000000, 0).UTC()
-	sess := seedUsageSession(t, s, domain.HarnessCodex)
-	source := seedUsageSource(t, s, sess, now)
-	if err := s.ApplyUsageChunk(ctx, source.ID, 0, source.UpdatedAt, domain.SourceCursorState{
-		ByteOffset: 10, State: domain.UsageSourceComplete, UpdatedAt: now,
-	}, []domain.ModelUsageEvent{
-		usageEvent("overflow-1", canonicalUsageTokens(math.MaxInt64, 0, math.MaxInt64, 0)),
-		usageEvent("overflow-2", canonicalUsageTokens(math.MaxInt64, 0, math.MaxInt64, 0)),
-	}); err != nil {
-		t.Fatalf("apply overflow events: %v", err)
-	}
-	if _, err := s.ListUsageModelAggregates(ctx, sess.ID); err == nil || !strings.Contains(err.Error(), "integer overflow") {
-		t.Fatalf("detail overflow error = %v", err)
-	}
-	if _, err := s.ListCompactSessionUsageAggregates(ctx, sess.ProjectID); err == nil || !strings.Contains(err.Error(), "integer overflow") {
-		t.Fatalf("compact overflow error = %v", err)
-	}
-}
-
-func TestListCompactSessionUsageAggregatesAndFiltersByProject(t *testing.T) {
-	s := newTestStore(t)
-	ctx := context.Background()
-	now := time.Unix(1700000000, 0).UTC()
-	seedProject(t, s, "usage")
-	seedProject(t, s, "other")
-
-	usageRec := sampleRecord("usage")
-	usageRec.Harness = domain.HarnessCodex
-	usageSession, err := s.CreateSession(ctx, usageRec)
-	mustNoError(t, err, "create usage session")
-	otherSession, err := s.CreateSession(ctx, sampleRecord("other"))
-	mustNoError(t, err, "create other session")
-	source := seedUsageSource(t, s, usageSession, now)
-	if err := s.ApplyUsageChunk(ctx, source.ID, 0, source.UpdatedAt, domain.SourceCursorState{
-		ByteOffset: 10,
-		State:      domain.UsageSourceComplete,
-		UpdatedAt:  now,
-	}, []domain.ModelUsageEvent{
-		usageEvent("event-1", canonicalUsageTokens(100, 50, 50, 20)),
-		usageEvent("event-2", canonicalUsageTokens(50, 20, 30, 10)),
-	}); err != nil {
-		t.Fatalf("apply usage events: %v", err)
-	}
-	if _, err := s.MarkUsageSourceState(ctx, source.ID, domain.UsageSourceComplete, domain.UsageErrorArtifactReplaced, nil, now); err != nil {
-		t.Fatalf("retire original source: %v", err)
-	}
-	mustInsertUsageSource(t, s, now, domain.UsageSourceRecord{
-		BindingID:       source.BindingID,
-		Kind:            source.Kind,
-		NativeSessionID: source.NativeSessionID,
-		ArtifactPath:    source.ArtifactPath,
-		FileIdentity:    "replacement",
-		Generation:      1,
-		State:           domain.UsageSourceComplete,
-	})
-	if _, err := s.UpdateUsageBindingState(ctx, source.BindingID, domain.UsageBindingComplete, "", now); err != nil {
-		t.Fatalf("complete replacement binding: %v", err)
-	}
-
-	got, err := s.ListCompactSessionUsageAggregates(ctx, "usage")
-	mustNoError(t, err, "list compact usage")
-	if len(got) != 1 || got[0].SessionID != usageSession.ID {
-		t.Fatalf("filtered rows = %+v, want only %s (not %s)", got, usageSession.ID, otherSession.ID)
-	}
-	row := got[0]
-	if usageTokenValue(row.ProcessedTokens) != 180 || row.Incomplete {
-		t.Fatalf("aggregate = %+v", row)
-	}
-	all, err := s.ListCompactSessionUsageAggregates(ctx, "")
-	mustNoError(t, err, "list all compact usage")
-	if len(all) != 1 {
-		t.Fatalf("all rows = %d, want only sessions with usage", len(all))
-	}
-}
-
-func TestListCompactSessionUsageSeparatesRetriesFromIntegrityFailures(t *testing.T) {
-	s := newTestStore(t)
+func TestUsageIntegritySeparatesRetriesFromIntegrityFailures(t *testing.T) {
+	s, dataDir := newUsageTestStore(t)
 	ctx := context.Background()
 	now := time.Unix(1700000000, 0).UTC()
 	transientSession := seedUsageSession(t, s, domain.HarnessCodex)
@@ -1598,22 +1591,16 @@ func TestListCompactSessionUsageSeparatesRetriesFromIntegrityFailures(t *testing
 		t.Fatalf("mark integrity failure: %v", err)
 	}
 
-	rows, err := s.ListCompactSessionUsageAggregates(ctx, transientSession.ProjectID)
-	mustNoError(t, err)
-	bySession := make(map[domain.SessionID]domain.CompactSessionUsageAggregate, len(rows))
-	for _, row := range rows {
-		bySession[row.SessionID] = row
+	if usageSessionIncomplete(t, dataDir, transientSession.ID) {
+		t.Fatal("transient retry marked the session integrity-incomplete")
 	}
-	if got := bySession[transientSession.ID]; got.Incomplete {
-		t.Fatalf("transient aggregate = %+v, want retry without integrity warning", got)
-	}
-	if got := bySession[incompleteSession.ID]; !got.Incomplete {
-		t.Fatalf("incomplete aggregate = %+v, want integrity warning", got)
+	if !usageSessionIncomplete(t, dataDir, incompleteSession.ID) {
+		t.Fatal("integrity failure did not mark the session incomplete")
 	}
 }
 
 func TestUsageSessionAggregatesParentChildAndMultipleBindingsExactlyOnce(t *testing.T) {
-	s := newTestStore(t)
+	s, dataDir := newUsageTestStore(t)
 	ctx := context.Background()
 	now := time.Unix(1700000000, 0).UTC()
 	sess := seedUsageSession(t, s, domain.HarnessCodex)
@@ -1664,21 +1651,10 @@ func TestUsageSessionAggregatesParentChildAndMultipleBindingsExactlyOnce(t *test
 		}
 	}
 
-	models, err := s.ListUsageModelAggregates(ctx, sess.ID)
-	mustNoError(t, err, "list model aggregates")
-	if len(models) != 1 ||
-		usageTokenValue(models[0].Tokens.InputTokens) != 180 || usageTokenValue(models[0].Tokens.OutputTokens) != 35 {
-		t.Fatalf("model aggregates = %+v, want input=180 output=35 events=3", models)
-	}
-
-	compact, err := s.ListCompactSessionUsageAggregates(ctx, sess.ProjectID)
-	mustNoError(t, err, "list compact usage")
-	if len(compact) != 1 {
-		t.Fatalf("compact rows = %+v, want one", compact)
-	}
-	row := compact[0]
-	if usageTokenValue(row.ProcessedTokens) != 215 || row.Incomplete {
-		t.Fatalf("compact aggregate = %+v", row)
+	events, input, output := usageEventTotals(t, dataDir, sess.ID)
+	if events != 3 || input != 180 || output != 35 {
+		t.Fatalf("persisted events = count:%d input:%d output:%d, want parent, child, and resumed counted exactly once as 180/35",
+			events, input, output)
 	}
 }
 
@@ -1815,13 +1791,6 @@ func canonicalUsageTokens(input, cachedInput, uncachedInput, output int64) domai
 		InputTokens: &input, CachedInputTokens: &cachedInput, UncachedInputTokens: &uncachedInput,
 		OutputTokens: &output,
 	}
-}
-
-func usageTokenValue(value *int64) int64 {
-	if value == nil {
-		return -1
-	}
-	return *value
 }
 
 func assertUsageSourceOffset(t *testing.T, s *sqlite.Store, sourceID int64, want int64) {

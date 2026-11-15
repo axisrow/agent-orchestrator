@@ -115,11 +115,7 @@ func TestIngestorCancelsWhileWaitingForPricingFence(t *testing.T) {
 	if !ok || persisted.Source.ByteOffset != 0 {
 		t.Fatalf("canceled source = %+v ok=%v", persisted.Source, ok)
 	}
-	aggregates, err := store.ListUsageModelAggregates(context.Background(), sourceSessionID(t, store, source.ID))
-	mustNoError(t, err)
-	if len(aggregates) != 0 {
-		t.Fatalf("canceled ingestion persisted events: %+v", aggregates)
-	}
+	assertTokenAggregate(t, dataDir, sourceSessionID(t, store, source.ID), 0)
 }
 
 // Break caught: optional price arithmetic failure must not strand valid token
@@ -197,7 +193,7 @@ func TestIngestorPersistsVersionedCodexParserStateAcrossChunks(t *testing.T) {
 	if _, err := ingestor.Ingest(ctx, source.ID); err != nil {
 		t.Fatalf("ingest second chunk: %v", err)
 	}
-	assertTokenAggregate(t, store, sourceSessionID(t, store, source.ID), 195)
+	assertTokenAggregate(t, dataDir, sourceSessionID(t, store, source.ID), 195)
 	assertCodexParserState(t, readParserStateJSON(t, dataDir, source.ID), 160, "gpt-5.6")
 }
 
@@ -244,13 +240,7 @@ func TestIngestorRejectsInvalidPersistedParserStateWithoutAdvancing(t *testing.T
 				got.Source.State != domain.UsageSourceError || got.Source.LastErrorCode != "invalid_parser_state" {
 				t.Fatalf("source after invalid state = %+v", got.Source)
 			}
-			aggregates, aggregateErr := store.ListUsageModelAggregates(ctx, got.SessionID)
-			if aggregateErr != nil {
-				t.Fatal(aggregateErr)
-			}
-			if len(aggregates) != 0 {
-				t.Fatalf("invalid state emitted usage: %+v", aggregates)
-			}
+			assertTokenAggregate(t, dataDir, got.SessionID, 0)
 			if persisted := readParserStateJSON(t, dataDir, source.ID); persisted != test.state {
 				t.Fatalf("parser state reset to %q, want original %q", persisted, test.state)
 			}
@@ -275,7 +265,8 @@ func TestIngestorReplaysReplacementWithoutStableTimestampAcrossClocks(t *testing
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			ctx := context.Background()
-			store, source, path, now := seedCodexIngestionSource(t, t.TempDir())
+			dataDir := t.TempDir()
+			store, source, path, now := seedCodexIngestionSource(t, dataDir)
 			content := string(codexSessionMetaLine(t, "codex-root", "")) + "\n" + test.line + "\n"
 			mustNoError(t, os.WriteFile(path, []byte(content), 0o600))
 			ingestor := NewIngestor(store, IngestorConfig{Clock: func() time.Time { return now }})
@@ -299,18 +290,15 @@ func TestIngestorReplaysReplacementWithoutStableTimestampAcrossClocks(t *testing
 			if got.Source.ByteOffset != int64(len(content)) || got.Source.LastErrorCode != "" {
 				t.Fatalf("replacement source = %+v, want consumed duplicate without conflict", got.Source)
 			}
-			aggregates, err := store.ListUsageModelAggregates(ctx, got.SessionID)
-			mustNoError(t, err)
-			if len(aggregates) != 1 || tokenValue(aggregates[0].Tokens.InputTokens)+tokenValue(aggregates[0].Tokens.OutputTokens) != 120 {
-				t.Fatalf("aggregates = %+v, want one replay-deduplicated event", aggregates)
-			}
+			assertTokenAggregate(t, dataDir, got.SessionID, 120)
 		})
 	}
 }
 
 func TestIngestorReadsIdentityAndContentFromSingleDescriptorAcrossAtomicReplacement(t *testing.T) {
 	ctx := context.Background()
-	store, source, path, now := seedCodexIngestionSource(t, t.TempDir())
+	dataDir := t.TempDir()
+	store, source, path, now := seedCodexIngestionSource(t, dataDir)
 	openedContent := string(codexSessionMetaLine(t, "codex-root", "")) + "\n" +
 		`{"type":"turn_context","payload":{"model":"gpt-opened"}}` + "\n" +
 		string(codexTokenLine("2026-07-28T10:00:00Z", 100, 60, 0, 20, 5)) + "\n"
@@ -340,18 +328,19 @@ func TestIngestorReadsIdentityAndContentFromSingleDescriptorAcrossAtomicReplacem
 	if first.ReplacementSourceID != 0 {
 		t.Fatalf("opened generation was misclassified as replacement: %+v", first)
 	}
-	assertTokenAggregate(t, store, sourceSessionID(t, store, source.ID), 120)
+	assertTokenAggregate(t, dataDir, sourceSessionID(t, store, source.ID), 120)
 
 	replacement := reconcileCodexRootReplacement(ctx, t, store, ingestor, source, path)
 	if _, err := ingestor.Ingest(ctx, replacement.ID); err != nil {
 		t.Fatalf("ingest replacement generation: %v", err)
 	}
-	assertTokenAggregate(t, store, sourceSessionID(t, store, source.ID), 340)
+	assertTokenAggregate(t, dataDir, sourceSessionID(t, store, source.ID), 340)
 }
 
 func TestIngestorDoesNotApplyChunkWhenDescriptorMutatesAfterRead(t *testing.T) {
 	ctx := context.Background()
-	store, source, path, now := seedCodexIngestionSource(t, t.TempDir())
+	dataDir := t.TempDir()
+	store, source, path, now := seedCodexIngestionSource(t, dataDir)
 	beforeContent := string(codexTokenLine("2026-07-28T10:00:00Z", 100, 60, 0, 20, 5)) + "\n"
 	afterContent := string(codexTokenLine("2026-07-28T11:00:00Z", 200, 70, 0, 30, 5)) + "\n"
 	if len(beforeContent) != len(afterContent) {
@@ -377,22 +366,19 @@ func TestIngestorDoesNotApplyChunkWhenDescriptorMutatesAfterRead(t *testing.T) {
 	if got.Source.ByteOffset != 0 || got.Source.ParserStateJSON != "{}" || got.Source.FailureCount != 1 {
 		t.Fatalf("mutated source advanced: %+v", got.Source)
 	}
-	aggregates, err := store.ListUsageModelAggregates(ctx, got.SessionID)
-	mustNoError(t, err)
-	if len(aggregates) != 0 {
-		t.Fatalf("mutated read emitted events: %+v", aggregates)
-	}
+	assertTokenAggregate(t, dataDir, got.SessionID, 0)
 
 	ingestor.afterRead = nil
 	if _, err := ingestor.Ingest(ctx, source.ID); err != nil {
 		t.Fatalf("retry stable descriptor: %v", err)
 	}
-	assertTokenAggregate(t, store, got.SessionID, 230)
+	assertTokenAggregate(t, dataDir, got.SessionID, 230)
 }
 
 func TestIngestorPersistsParsedCheckpointWhenRewriteFollowsFinalVerification(t *testing.T) {
 	ctx := context.Background()
-	store, source, path, now := seedCodexIngestionSource(t, t.TempDir())
+	dataDir := t.TempDir()
+	store, source, path, now := seedCodexIngestionSource(t, dataDir)
 	meta := string(codexSessionMetaLine(t, "codex-root", "")) + "\n"
 	beforeContent := meta + string(codexTokenLine("2026-07-28T10:00:00Z", 100, 60, 0, 20, 5)) + "\n"
 	afterContent := meta + string(codexTokenLine("2026-07-28T11:00:00Z", 200, 70, 0, 30, 5)) + "\n"
@@ -408,18 +394,19 @@ func TestIngestorPersistsParsedCheckpointWhenRewriteFollowsFinalVerification(t *
 	if _, err := ingestor.Ingest(ctx, source.ID); err != nil {
 		t.Fatalf("ingest verified bytes: %v", err)
 	}
-	assertTokenAggregate(t, store, sourceSessionID(t, store, source.ID), 120)
+	assertTokenAggregate(t, dataDir, sourceSessionID(t, store, source.ID), 120)
 
 	replacement := reconcileCodexRootReplacement(ctx, t, store, ingestor, source, path)
 	if _, err := ingestor.Ingest(ctx, replacement.ID); err != nil {
 		t.Fatalf("ingest replacement generation: %v", err)
 	}
-	assertTokenAggregate(t, store, sourceSessionID(t, store, source.ID), 350)
+	assertTokenAggregate(t, dataDir, sourceSessionID(t, store, source.ID), 350)
 }
 
 func TestIngestorRejectsChunkAfterSourceRetirement(t *testing.T) {
 	ctx := context.Background()
-	store, source, path, now := seedCodexIngestionSource(t, t.TempDir())
+	dataDir := t.TempDir()
+	store, source, path, now := seedCodexIngestionSource(t, dataDir)
 	content := string(codexSessionMetaLine(t, "codex-root", "")) + "\n" +
 		string(codexTokenLine("2026-07-28T10:00:00Z", 100, 60, 0, 20, 5)) + "\n"
 	mustNoError(t, os.WriteFile(path, []byte(content), 0o600))
@@ -450,7 +437,7 @@ func TestIngestorRejectsChunkAfterSourceRetirement(t *testing.T) {
 		sources[0].LastErrorCode != domain.UsageErrorArtifactReplaced {
 		t.Fatalf("sources after interleaving = %+v", sources)
 	}
-	assertTokenAggregate(t, store, sourceSessionID(t, store, source.ID), 0)
+	assertTokenAggregate(t, dataDir, sourceSessionID(t, store, source.ID), 0)
 }
 
 func TestIngestorReplacesSameInodeWhenPreCursorCheckpointChanges(t *testing.T) {
@@ -464,7 +451,8 @@ func TestIngestorReplacesSameInodeWhenPreCursorCheckpointChanges(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			ctx := context.Background()
-			store, source, path, now := seedCodexIngestionSource(t, t.TempDir())
+			dataDir := t.TempDir()
+			store, source, path, now := seedCodexIngestionSource(t, dataDir)
 			meta := string(codexSessionMetaLine(t, "codex-root", "")) + "\n"
 			beforeContent := meta + string(codexTokenLine("2026-07-28T10:00:00Z", 100, 60, 0, 20, 5)) + "\n"
 			afterContent := meta + string(codexTokenLine("2026-07-28T11:00:00Z", 200, 70, 0, 30, 5)) + "\n" + test.suffix
@@ -478,7 +466,7 @@ func TestIngestorReplacesSameInodeWhenPreCursorCheckpointChanges(t *testing.T) {
 			if _, err := ingestor.Ingest(ctx, source.ID); err != nil {
 				t.Fatalf("ingest original generation: %v", err)
 			}
-			assertTokenAggregate(t, store, sourceSessionID(t, store, source.ID), 120)
+			assertTokenAggregate(t, dataDir, sourceSessionID(t, store, source.ID), 120)
 
 			mustNoError(t, rewriteUsageFixture(path, afterContent))
 			rewrittenIdentity, err := usagesvc.SourceIdentity(context.Background(), path)
@@ -494,7 +482,7 @@ func TestIngestorReplacesSameInodeWhenPreCursorCheckpointChanges(t *testing.T) {
 			if _, err := ingestor.Ingest(ctx, replacement.ID); err != nil {
 				t.Fatalf("ingest replacement generation: %v", err)
 			}
-			assertTokenAggregate(t, store, sourceSessionID(t, store, replacement.ID), 350)
+			assertTokenAggregate(t, dataDir, sourceSessionID(t, store, replacement.ID), 350)
 		})
 	}
 }
@@ -626,8 +614,9 @@ func reconcileCodexRootReplacement(
 func TestIngestorCollectsCodexSourceDiscoveredAfterStartup(t *testing.T) {
 	ctx := context.Background()
 	now := time.Unix(1700000000, 0).UTC()
+	dataDir := t.TempDir()
 	store, session := seedUsageTestSession(
-		t, t.TempDir(), "usage", domain.HarnessCodex, domain.ActivityIdle, "native-late", now,
+		t, dataDir, "usage", domain.HarnessCodex, domain.ActivityIdle, "native-late", now,
 	)
 	root := filepath.Join(t.TempDir(), "sessions")
 	collector := usagesvc.NewCollector(store, usagesvc.SourceRoots{CodexSessions: root}, nil)
@@ -643,14 +632,15 @@ func TestIngestorCollectsCodexSourceDiscoveredAfterStartup(t *testing.T) {
 	mustNoError(t, collector.ReconcileSources(ctx, -1), "reconcile")
 	ingestor := NewIngestor(store, IngestorConfig{Clock: func() time.Time { return now }})
 	ingestAllWatchable(ctx, t, store, ingestor)
-	assertTokenAggregate(t, store, session.ID, 120)
+	assertTokenAggregate(t, dataDir, session.ID, 120)
 }
 
 func TestIngestorCompletesCodexExitWhoseSourceAppearsLate(t *testing.T) {
 	ctx := context.Background()
 	now := time.Unix(1700000000, 0).UTC()
+	dataDir := t.TempDir()
 	store, session := seedUsageTestSession(
-		t, t.TempDir(), "usage", domain.HarnessCodex, domain.ActivityExited, "native-final", now,
+		t, dataDir, "usage", domain.HarnessCodex, domain.ActivityExited, "native-final", now,
 	)
 	root := filepath.Join(t.TempDir(), "sessions")
 	collector := usagesvc.NewCollector(store, usagesvc.SourceRoots{CodexSessions: root}, nil)
@@ -668,7 +658,7 @@ func TestIngestorCompletesCodexExitWhoseSourceAppearsLate(t *testing.T) {
 	mustNoError(t, collector.ReconcileSources(ctx, -1), "reconcile")
 	ingestor := NewIngestor(store, IngestorConfig{Clock: func() time.Time { return now }})
 	ingestAllWatchable(ctx, t, store, ingestor)
-	assertTokenAggregate(t, store, session.ID, 120)
+	assertTokenAggregate(t, dataDir, session.ID, 120)
 	now = now.Add(defaultFinalizationWait + time.Second)
 	ingestAllWatchable(ctx, t, store, ingestor)
 	bindings, err := store.ListUsageBindingsForSession(ctx, session.ID)
@@ -680,8 +670,9 @@ func TestIngestorCompletesCodexExitWhoseSourceAppearsLate(t *testing.T) {
 func TestIngestorPreservesCursorWhenCodexRolloutMovesToArchive(t *testing.T) {
 	ctx := context.Background()
 	now := time.Unix(1700000000, 0).UTC()
+	dataDir := t.TempDir()
 	store, session := seedUsageTestSession(
-		t, t.TempDir(), "usage", domain.HarnessCodex, domain.ActivityIdle, "native-move", now,
+		t, dataDir, "usage", domain.HarnessCodex, domain.ActivityIdle, "native-move", now,
 	)
 	sessionsRoot := filepath.Join(t.TempDir(), "sessions")
 	archiveRoot := filepath.Join(t.TempDir(), "archived_sessions")
@@ -698,7 +689,7 @@ func TestIngestorPreservesCursorWhenCodexRolloutMovesToArchive(t *testing.T) {
 	mustNoError(t, collector.BackfillActive(ctx), "backfill")
 	ingestor := NewIngestor(store, IngestorConfig{Clock: func() time.Time { return now }})
 	ingestAllWatchable(ctx, t, store, ingestor)
-	assertTokenAggregate(t, store, session.ID, 120)
+	assertTokenAggregate(t, dataDir, session.ID, 120)
 
 	archivedPath := filepath.Join(archiveRoot, filepath.Base(activePath))
 	mustNoError(t, os.MkdirAll(filepath.Dir(archivedPath), 0o700))
@@ -714,7 +705,7 @@ func TestIngestorPreservesCursorWhenCodexRolloutMovesToArchive(t *testing.T) {
 	}
 	mustNoError(t, collector.ReconcileSources(ctx, -1), "relocation reconcile")
 	ingestAllWatchable(ctx, t, store, ingestor)
-	assertTokenAggregate(t, store, session.ID, 120)
+	assertTokenAggregate(t, dataDir, session.ID, 120)
 
 	file, err := os.OpenFile(archivedPath, os.O_APPEND|os.O_WRONLY, 0o600)
 	mustNoError(t, err)
@@ -725,15 +716,16 @@ func TestIngestorPreservesCursorWhenCodexRolloutMovesToArchive(t *testing.T) {
 	_ = file.Close()
 	now = now.Add(30 * time.Second)
 	ingestAllWatchable(ctx, t, store, ingestor)
-	assertTokenAggregate(t, store, session.ID, 180)
+	assertTokenAggregate(t, dataDir, session.ID, 180)
 }
 
 func TestCoordinatorCollectsCodexUsageFromFilesystemEvents(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	now := time.Now().UTC()
+	dataDir := t.TempDir()
 	store, session := seedUsageTestSession(
-		t, t.TempDir(), "usage", domain.HarnessCodex, domain.ActivityIdle, "native-watch", now,
+		t, dataDir, "usage", domain.HarnessCodex, domain.ActivityIdle, "native-watch", now,
 	)
 
 	base := t.TempDir()
@@ -771,17 +763,18 @@ func TestCoordinatorCollectsCodexUsageFromFilesystemEvents(t *testing.T) {
 
 	waitForWatchableSource(ctx, t, store, transcript)
 	appendJSONLRecord(t, transcript, codexTokenLine("2026-07-28T10:00:00Z", 100, 60, 0, 20, 5))
-	waitForTokenAggregate(t, store, session.ID, 120)
+	waitForTokenAggregate(t, dataDir, session.ID, 120)
 
 	appendJSONLRecord(t, transcript, codexTokenLine("2026-07-28T10:01:00Z", 150, 90, 0, 30, 8))
-	waitForTokenAggregate(t, store, session.ID, 180)
+	waitForTokenAggregate(t, dataDir, session.ID, 180)
 }
 
 func TestIngestorPersistsAppendOnlyUsageAcrossRestartAndFinalization(t *testing.T) {
 	ctx := context.Background()
 	now := time.Unix(1700000000, 0).UTC()
+	dataDir := t.TempDir()
 	store, session := seedUsageTestSession(
-		t, t.TempDir(), "usage", domain.HarnessCodex, domain.ActivityActive, "", now,
+		t, dataDir, "usage", domain.HarnessCodex, domain.ActivityActive, "", now,
 	)
 	binding := seedUsageTestBinding(t, store, session, "native-1", domain.UsageBindingActive, now)
 	path := t.TempDir() + "/rollout.jsonl"
@@ -804,7 +797,7 @@ func TestIngestorPersistsAppendOnlyUsageAcrossRestartAndFinalization(t *testing.
 	mustNoError(t, err)
 	ingestor := NewIngestor(store, IngestorConfig{Clock: func() time.Time { return now }})
 	ingestSourceFully(ctx, t, ingestor, source.ID)
-	assertTokenAggregate(t, store, session.ID, 120)
+	assertTokenAggregate(t, dataDir, session.ID, 120)
 
 	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
 	mustNoError(t, err)
@@ -815,11 +808,11 @@ func TestIngestorPersistsAppendOnlyUsageAcrossRestartAndFinalization(t *testing.
 	_ = file.Close()
 	now = now.Add(30 * time.Second)
 	ingestSourceFully(ctx, t, ingestor, source.ID)
-	assertTokenAggregate(t, store, session.ID, 180)
+	assertTokenAggregate(t, dataDir, session.ID, 180)
 
 	restarted := NewIngestor(store, IngestorConfig{Clock: func() time.Time { return now }})
 	ingestSourceFully(ctx, t, restarted, source.ID)
-	assertTokenAggregate(t, store, session.ID, 180)
+	assertTokenAggregate(t, dataDir, session.ID, 180)
 
 	replacement := `{"type":"session_meta","payload":{"id":"native-1","model_provider":"openai-replacement","source":"cli"}}` + "\n" +
 		`{"type":"turn_context","payload":{"model":"gpt-5.6-mini"}}` + "\n" +
@@ -827,7 +820,7 @@ func TestIngestorPersistsAppendOnlyUsageAcrossRestartAndFinalization(t *testing.
 	mustNoError(t, os.WriteFile(path, []byte(replacement), 0o600))
 	_ = reconcileCodexRootReplacement(ctx, t, store, restarted, source, path)
 	ingestAllWatchable(ctx, t, store, restarted)
-	assertTokenAggregate(t, store, session.ID, 192)
+	assertTokenAggregate(t, dataDir, session.ID, 192)
 	sources, err := store.ListUsageSourcesForBinding(ctx, binding.ID)
 	if err != nil || len(sources) != 2 ||
 		sources[0].State != domain.UsageSourceComplete ||
@@ -842,10 +835,10 @@ func TestIngestorPersistsAppendOnlyUsageAcrossRestartAndFinalization(t *testing.
 	mustNoError(t, osAppend(path, string(codexTokenLine("2026-07-01T11:00:01Z", 15, 8, 0, 3, 1))))
 	now = now.Add(time.Second)
 	ingestAllWatchable(ctx, t, store, restarted)
-	assertTokenAggregate(t, store, session.ID, 192)
+	assertTokenAggregate(t, dataDir, session.ID, 192)
 	now = now.Add(defaultFinalizationWait + time.Second)
 	ingestAllWatchable(ctx, t, store, restarted)
-	assertTokenAggregate(t, store, session.ID, 198)
+	assertTokenAggregate(t, dataDir, session.ID, 198)
 	got, ok, err := store.GetUsageSourceForIngestion(ctx, source.ID)
 	if err != nil || !ok {
 		t.Fatalf("source ok=%v err=%v", ok, err)
@@ -861,7 +854,8 @@ func TestIngestorPersistsAppendOnlyUsageAcrossRestartAndFinalization(t *testing.
 
 func TestIngestorRestartsFinalTailQuiescenceWhenTailChanges(t *testing.T) {
 	ctx := context.Background()
-	store, source, path, now := seedCodexIngestionSource(t, t.TempDir())
+	dataDir := t.TempDir()
+	store, source, path, now := seedCodexIngestionSource(t, dataDir)
 	completePrefix := `{"type":"turn_context","payload":{"model":"gpt-tail"}}` + "\n"
 	finalRecord := string(codexTokenLine("2026-07-28T10:00:00Z", 100, 60, 0, 20, 5))
 	split := len(finalRecord) / 2
@@ -896,7 +890,7 @@ func TestIngestorRestartsFinalTailQuiescenceWhenTailChanges(t *testing.T) {
 	if got.Source.ByteOffset != int64(len(completePrefix)) || got.Source.State == domain.UsageSourceComplete {
 		t.Fatalf("changed tail advanced source: %+v", got.Source)
 	}
-	assertTokenAggregate(t, store, got.SessionID, 0)
+	assertTokenAggregate(t, dataDir, got.SessionID, 0)
 
 	now = now.Add(defaultFinalizationWait + time.Second)
 	third, err := ingestor.Ingest(ctx, source.ID)
@@ -911,7 +905,7 @@ func TestIngestorRestartsFinalTailQuiescenceWhenTailChanges(t *testing.T) {
 	if got.Source.State != domain.UsageSourceComplete || got.Source.ByteOffset != int64(len(completePrefix+finalRecord)) {
 		t.Fatalf("completed source = %+v", got.Source)
 	}
-	assertTokenAggregate(t, store, got.SessionID, 120)
+	assertTokenAggregate(t, dataDir, got.SessionID, 120)
 }
 
 func TestIngestorDropsMalformedFinalTailOnlyAfterTwoQuietObservations(t *testing.T) {
@@ -976,8 +970,9 @@ func TestIngestorDropsMalformedFinalTailOnlyAfterTwoQuietObservations(t *testing
 func TestIngestorLateAppendReturnsCompletedBindingToFinalizing(t *testing.T) {
 	ctx := context.Background()
 	now := time.Unix(1700000000, 0).UTC()
+	dataDir := t.TempDir()
 	store, session := seedUsageTestSession(
-		t, t.TempDir(), "usage", domain.HarnessCodex, domain.ActivityIdle, "", now,
+		t, dataDir, "usage", domain.HarnessCodex, domain.ActivityIdle, "", now,
 	)
 	binding := seedUsageTestBinding(t, store, session, "native-late-append", domain.UsageBindingActive, now)
 	path := filepath.Join(t.TempDir(), "rollout.jsonl")
@@ -1026,14 +1021,15 @@ func TestIngestorLateAppendReturnsCompletedBindingToFinalizing(t *testing.T) {
 	if err != nil || len(bindings) != 1 || bindings[0].State != domain.UsageBindingComplete {
 		t.Fatalf("settled bindings=%+v err=%v", bindings, err)
 	}
-	assertTokenAggregate(t, store, session.ID, 180)
+	assertTokenAggregate(t, dataDir, session.ID, 180)
 }
 
 func TestIngestorStopsRetryingConflictingNativeEvent(t *testing.T) {
 	ctx := context.Background()
 	now := time.Unix(1700000000, 0).UTC()
+	dataDir := t.TempDir()
 	store, session := seedUsageTestSession(
-		t, t.TempDir(), "usage", domain.HarnessClaudeCode, domain.ActivityIdle, "", now,
+		t, dataDir, "usage", domain.HarnessClaudeCode, domain.ActivityIdle, "", now,
 	)
 	binding := seedUsageTestBinding(t, store, session, "claude-root", domain.UsageBindingActive, now)
 	path := filepath.Join(t.TempDir(), "claude-root.jsonl")
@@ -1086,8 +1082,9 @@ func TestIngestorStopsRetryingConflictingNativeEvent(t *testing.T) {
 func TestIngestorConflictedSourceLeavesSettledBindingAlone(t *testing.T) {
 	ctx := context.Background()
 	now := time.Unix(1700000000, 0).UTC()
+	dataDir := t.TempDir()
 	store, session := seedUsageTestSession(
-		t, t.TempDir(), "usage", domain.HarnessClaudeCode, domain.ActivityExited, "", now,
+		t, dataDir, "usage", domain.HarnessClaudeCode, domain.ActivityExited, "", now,
 	)
 	binding := seedUsageTestBinding(t, store, session, "claude-root", domain.UsageBindingFinalizing, now)
 	path := filepath.Join(t.TempDir(), "claude-root.jsonl")
@@ -1268,16 +1265,23 @@ func (s *applyInterleavingStore) ApplyUsageChunk(
 	return s.Store.ApplyUsageChunk(ctx, sourceID, expectedOffset, expectedRevision, nextState, events)
 }
 
-func assertTokenAggregate(t *testing.T, store *sqlite.Store, sessionID domain.SessionID, total int64) {
+// assertTokenAggregate reads the session's persisted event tokens through raw
+// SQL; the aggregate read API was removed with its consumerless endpoints.
+func assertTokenAggregate(t *testing.T, dataDir string, sessionID domain.SessionID, total int64) {
 	t.Helper()
-	aggregates, err := store.ListUsageModelAggregates(context.Background(), sessionID)
-	mustNoError(t, err)
-	var got int64
-	for _, aggregate := range aggregates {
-		got += tokenValue(aggregate.Tokens.InputTokens) + tokenValue(aggregate.Tokens.OutputTokens)
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(dataDir, "ao.db"))
+	if err != nil {
+		t.Fatalf("open raw sqlite: %v", err)
 	}
+	t.Cleanup(func() { _ = db.Close() })
+	var got int64
+	mustNoError(t, db.QueryRow(`
+SELECT COALESCE(SUM(mue.input_tokens), 0) + COALESCE(SUM(mue.output_tokens), 0)
+FROM model_usage_events mue
+JOIN usage_bindings ub ON ub.id = mue.binding_id
+WHERE ub.session_id = ?`, sessionID).Scan(&got), "read token total")
 	if got != total {
-		t.Fatalf("total tokens = %d, want %d; aggregates=%+v", got, total, aggregates)
+		t.Fatalf("total tokens = %d, want %d", got, total)
 	}
 }
 
@@ -1321,22 +1325,27 @@ func rewriteUsageFixture(path, content string) error {
 	return file.Close()
 }
 
-func waitForTokenAggregate(t *testing.T, store *sqlite.Store, sessionID domain.SessionID, total int64) {
+func waitForTokenAggregate(t *testing.T, dataDir string, sessionID domain.SessionID, total int64) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		aggregates, err := store.ListUsageModelAggregates(context.Background(), sessionID)
-		mustNoError(t, err)
-		var got int64
-		for _, aggregate := range aggregates {
-			got += tokenValue(aggregate.Tokens.InputTokens) + tokenValue(aggregate.Tokens.OutputTokens)
+		db, err := sql.Open("sqlite", "file:"+filepath.Join(dataDir, "ao.db"))
+		if err != nil {
+			t.Fatalf("open raw sqlite: %v", err)
 		}
-		if got == total {
+		var got int64
+		err = db.QueryRow(`
+SELECT COALESCE(SUM(mue.input_tokens), 0) + COALESCE(SUM(mue.output_tokens), 0)
+FROM model_usage_events mue
+JOIN usage_bindings ub ON ub.id = mue.binding_id
+WHERE ub.session_id = ?`, sessionID).Scan(&got)
+		_ = db.Close()
+		if err == nil && got == total {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	assertTokenAggregate(t, store, sessionID, total)
+	assertTokenAggregate(t, dataDir, sessionID, total)
 }
 
 func TestIngestorCorrectedConflictCanRecover(t *testing.T) {
@@ -1352,7 +1361,8 @@ func TestIngestorCorrectedConflictCanRecover(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			ctx := context.Background()
 			now := time.Unix(1700000000, 0).UTC()
-			store, session := seedUsageTestSession(t, t.TempDir(), "review", domain.HarnessClaudeCode, domain.ActivityExited, "", now)
+			dataDir := t.TempDir()
+			store, session := seedUsageTestSession(t, dataDir, "review", domain.HarnessClaudeCode, domain.ActivityExited, "", now)
 			binding := seedUsageTestBinding(t, store, session, "claude-root", domain.UsageBindingFinalizing, now)
 			path := filepath.Join(t.TempDir(), "claude-root.jsonl")
 			line := func(id string, output int) string {
@@ -1430,7 +1440,7 @@ func TestIngestorCorrectedConflictCanRecover(t *testing.T) {
 			if state.Integrity.ConflictSnapshot != nil {
 				t.Fatal("successful ingestion retained conflict snapshot")
 			}
-			assertTokenAggregate(t, store, session.ID, wantTokens)
+			assertTokenAggregate(t, dataDir, session.ID, wantTokens)
 		})
 	}
 }

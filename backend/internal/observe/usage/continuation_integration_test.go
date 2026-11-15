@@ -20,8 +20,9 @@ import (
 func TestPipelineIngestsDiscoveredClaudeContinuation(t *testing.T) {
 	ctx := context.Background()
 	now := time.Unix(1700000000, 0).UTC()
+	dataDir := t.TempDir()
 	store, session := seedUsageTestSession(
-		t, t.TempDir(), "usage", domain.HarnessClaudeCode, domain.ActivityIdle, "old-root", now,
+		t, dataDir, "usage", domain.HarnessClaudeCode, domain.ActivityIdle, "old-root", now,
 	)
 	session.Metadata.WorkspacePath = filepath.Join(t.TempDir(), "worktree")
 	mustNoError(t, store.UpdateSession(ctx, session))
@@ -58,12 +59,12 @@ func TestPipelineIngestsDiscoveredClaudeContinuation(t *testing.T) {
 	ingestor := NewIngestor(store, IngestorConfig{Clock: func() time.Time { return now }})
 	ingestAllWatchable(ctx, t, store, ingestor)
 	// old-root: 8+2; continuation-root: 30+10.
-	assertTokenAggregate(t, store, session.ID, 50)
+	assertTokenAggregate(t, dataDir, session.ID, 50)
 
 	// A reconcile replay must not double count.
 	mustNoError(t, collector.ReconcileSources(ctx, -1))
 	ingestAllWatchable(ctx, t, store, ingestor)
-	assertTokenAggregate(t, store, session.ID, 50)
+	assertTokenAggregate(t, dataDir, session.ID, 50)
 }
 
 func writeLine(t *testing.T, path, content string) {

@@ -758,56 +758,6 @@ func (s *Store) ApplyLegacyUsageRepairs(
 	return applied, nil
 }
 
-// ListUsageModelAggregates returns model-level aggregate rows for a session.
-func (s *Store) ListUsageModelAggregates(ctx context.Context, sessionID domain.SessionID) ([]domain.UsageModelAggregate, error) {
-	rows, err := s.qr.AggregateUsageBySessionHarnessModel(ctx, sessionID)
-	if err != nil {
-		return nil, fmt.Errorf("aggregate usage for session %s: %w", sessionID, err)
-	}
-	out := make([]domain.UsageModelAggregate, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, usageAggregateFromGen(row))
-	}
-	return out, nil
-}
-
-// GetUsageSessionIncomplete reports whether durable collection facts indicate missing usage.
-func (s *Store) GetUsageSessionIncomplete(ctx context.Context, sessionID domain.SessionID) (bool, error) {
-	incomplete, err := s.qr.GetUsageSessionIncomplete(ctx, string(sessionID))
-	if err != nil {
-		return false, fmt.Errorf("get usage integrity for session %s: %w", sessionID, err)
-	}
-	return incomplete != 0, nil
-}
-
-// ListCompactSessionUsageAggregates returns sessions with observed usage in
-// one grouped read. projectID optionally limits the rows to one dashboard board.
-func (s *Store) ListCompactSessionUsageAggregates(ctx context.Context, projectID domain.ProjectID) ([]domain.CompactSessionUsageAggregate, error) {
-	rows, err := s.qr.ListCompactSessionUsage(ctx, projectID)
-	if err != nil {
-		return nil, fmt.Errorf("list compact session usage for project %s: %w", projectID, err)
-	}
-	out := make([]domain.CompactSessionUsageAggregate, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, domain.CompactSessionUsageAggregate{
-			SessionID:       row.SessionID,
-			ProcessedTokens: int64PtrWhen(row.ProcessedTokens, row.ProcessedTokensKnown != 0),
-			Incomplete:      row.Incomplete != 0,
-			Cost: domain.UsageCostAggregate{
-				EventCount: row.EventCount, PricedEventCount: row.PricedEventCount, PricedTotalNanos: row.PricedTotalNanos,
-				ObservedCostEventCount: row.ObservedCostEventCount, InferredCostEventCount: row.InferredCostEventCount,
-				KnownInputCount: row.KnownInputCount, KnownInputNanos: row.KnownInputNanos,
-				UnpricedKnownInputNanos: row.UnpricedKnownInputNanos,
-				KnownCachedInputCount:   row.KnownCachedInputCount, KnownCachedInputNanos: row.KnownCachedInputNanos,
-				UnpricedKnownCachedInputNanos: row.UnpricedKnownCachedInputNanos,
-				KnownOutputCount:              row.KnownOutputCount, KnownOutputNanos: row.KnownOutputNanos,
-				UnpricedKnownOutputNanos: row.UnpricedKnownOutputNanos,
-			},
-		})
-	}
-	return out, nil
-}
-
 func usageBindingFromGen(row gen.UsageBinding) domain.UsageBindingRecord {
 	return domain.UsageBindingRecord{
 		ID:             row.ID,
@@ -961,31 +911,6 @@ func usageEventReplayDisposition(existing gen.GetModelUsageEventByKeyRow, event 
 	return existing.BillingProviderID.String == event.BillingProviderID, false
 }
 
-func usageAggregateFromGen(row gen.AggregateUsageBySessionHarnessModelRow) domain.UsageModelAggregate {
-	return domain.UsageModelAggregate{
-		Harness: row.Harness,
-		ModelID: row.ModelID,
-		// A summed metric is only meaningful when every event in the group
-		// carried it; one uncollected counter makes the whole sum unknown.
-		Tokens: domain.UsageTokenMetrics{
-			InputTokens:         int64PtrWhen(row.InputTokens, row.KnownInputTokenCount == row.EventCount),
-			CachedInputTokens:   int64PtrWhen(row.CachedInputTokens, row.KnownCachedInputTokenCount == row.EventCount),
-			UncachedInputTokens: int64PtrWhen(row.UncachedInputTokens, row.KnownUncachedInputTokenCount == row.EventCount),
-			OutputTokens:        int64PtrWhen(row.OutputTokens, row.KnownOutputTokenCount == row.EventCount),
-		},
-		Cost: domain.UsageCostAggregate{
-			EventCount: row.EventCount, PricedEventCount: row.PricedEventCount, PricedTotalNanos: row.PricedTotalNanos,
-			ObservedCostEventCount: row.ObservedCostEventCount, InferredCostEventCount: row.InferredCostEventCount,
-			KnownInputCount: row.KnownInputCount, KnownInputNanos: row.KnownInputNanos,
-			UnpricedKnownInputNanos: row.UnpricedKnownInputNanos,
-			KnownCachedInputCount:   row.KnownCachedInputCount, KnownCachedInputNanos: row.KnownCachedInputNanos,
-			UnpricedKnownCachedInputNanos: row.UnpricedKnownCachedInputNanos,
-			KnownOutputCount:              row.KnownOutputCount, KnownOutputNanos: row.KnownOutputNanos,
-			UnpricedKnownOutputNanos: row.UnpricedKnownOutputNanos,
-		},
-	}
-}
-
 func validateUsageEvent(harness domain.AgentHarness, event domain.ModelUsageEvent) error {
 	expectedProvider := domain.UsageProviderAnthropic
 	if harness == domain.HarnessCodex {
@@ -1104,11 +1029,4 @@ func nullInt64Ptr(v sql.NullInt64) *int64 {
 	}
 	value := v.Int64
 	return &value
-}
-
-func int64PtrWhen(v int64, ok bool) *int64 {
-	if !ok {
-		return nil
-	}
-	return &v
 }
