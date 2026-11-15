@@ -2132,6 +2132,8 @@
 	"overview.filterIdle": "Простаивают",
 	"overview.filterBlocked": "Ждут ответа",
 	"overview.filterExited": "Завершены",
+	"overview.filterRunning": "Выполняются",
+	"overview.runningCount": "Выполняются ({{count}})",
 	"overview.empty": "Проектов пока нет.",
 	"overview.projectEmpty": "Нет сессий.",
 	"overview.reclaimable": "{{count}} к очистке",

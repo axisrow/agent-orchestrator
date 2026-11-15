@@ -2902,6 +2902,8 @@
 	"overview.filterIdle": "유휴",
 	"overview.filterBlocked": "응답 대기",
 	"overview.filterExited": "종료됨",
+	"overview.filterRunning": "실행 중",
+	"overview.runningCount": "실행 중 ({{count}})",
 	"overview.empty": "아직 프로젝트가 없습니다.",
 	"overview.projectEmpty": "세션이 없습니다.",
 	"overview.reclaimable": "{{count}}개 회수 가능",

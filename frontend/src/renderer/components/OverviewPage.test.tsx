@@ -142,6 +142,7 @@ function workspaces(): WorkspaceSummary[] {
 			type: "main",
 			sessions: [
 				session({ id: "s-orch", title: "orchestrator", kind: "orchestrator", activity: { state: "active", lastActivityAt: "" } }),
+				session({ id: "s-running", title: "executing worker", activity: { state: "active", lastActivityAt: "" } }),
 				session({
 					id: "s-gate-open",
 					title: "gate open",
@@ -423,6 +424,83 @@ describe("OverviewPage", () => {
 		expect(screen.getByText("beamcraft")).toBeInTheDocument();
 	});
 
+	it("counts running sessions and narrows the list to them under the Running filter", async () => {
+		const user = userEvent.setup();
+		h.workspaces = workspaces();
+		h.worktrees = worktrees();
+		renderPage();
+
+		// Two live agents in the fixture: the executing worker and the project
+		// orchestrator. The counter reads the same before and after the toggle,
+		// so it always answers "how many sessions are executing right now".
+		expect(screen.getByTestId("overview-running-count").textContent).toBe("Running (2)");
+
+		await user.click(screen.getByRole("button", { name: "Running" }));
+
+		expect(screen.getByRole("button", { name: "executing worker" })).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "orchestrator" })).toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "gate open" })).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "needs you" })).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "merged worker" })).not.toBeInTheDocument();
+		expect(screen.getByTestId("overview-running-count").textContent).toBe("Running (2)");
+		expect(screen.getByText("beamcraft")).toBeInTheDocument();
+	});
+
+	it("never counts a terminated session as running, however fresh its stage", async () => {
+		const user = userEvent.setup();
+		h.workspaces = workspaces();
+		h.worktrees = worktrees();
+		renderPage();
+
+		// Show archived first so the terminated rows are visible at all: the
+		// old worker still carries a stale "active" activity fact, but Running
+		// only ever follows a live agent (issue #342 acceptance).
+		await user.click(screen.getByRole("button", { name: "Show archived" }));
+		await user.click(screen.getByRole("button", { name: "Running" }));
+
+		expect(screen.queryByRole("button", { name: "old worker" })).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "stale review" })).not.toBeInTheDocument();
+		// Visible by default through the fresh-PR exception, but not running.
+		expect(screen.queryByRole("button", { name: "archive with pr" })).not.toBeInTheDocument();
+		expect(screen.getByTestId("overview-running-count").textContent).toBe("Running (2)");
+	});
+
+	it("passes an orchestrator through Running only while its agent is live", async () => {
+		const user = userEvent.setup();
+		const spaces = workspaces();
+		for (const project of spaces) {
+			for (const item of project.sessions) {
+				if (item.kind === "orchestrator") item.activity = { state: "idle", lastActivityAt: "" };
+			}
+		}
+		h.workspaces = spaces;
+		h.worktrees = worktrees();
+		renderPage();
+
+		expect(screen.getByTestId("overview-running-count").textContent).toBe("Running (1)");
+
+		await user.click(screen.getByRole("button", { name: "Running" }));
+
+		expect(screen.queryByRole("button", { name: "orchestrator" })).not.toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "executing worker" })).toBeInTheDocument();
+	});
+
+	it("marks executing workers with the working spinner and orchestrators with their own glyph", () => {
+		h.workspaces = workspaces();
+		h.worktrees = worktrees();
+		renderPage();
+
+		// The markers live in the status slot: a spinner for a live worker, the
+		// orchestrator glyph for orchestrator rows, the plain dot otherwise.
+		const runningRow = screen.getByRole("button", { name: "executing worker" }).closest("div")!;
+		expect(runningRow.querySelector('[data-session-marker="running"]')).not.toBeNull();
+		const orchestratorRow = screen.getByRole("button", { name: "orchestrator" }).closest("div")!;
+		expect(orchestratorRow.querySelector('[data-session-marker="orchestrator"]')).not.toBeNull();
+		const idleRow = screen.getByRole("button", { name: "gate open" }).closest("div")!;
+		expect(idleRow.querySelector('[data-session-marker="running"]')).toBeNull();
+		expect(idleRow.querySelector('[data-session-marker="dot"]')).not.toBeNull();
+	});
+
 	it("cleans up a project worktrees after confirmation and reports the freed size", async () => {
 		h.workspaces = workspaces();
 		h.worktrees = worktrees();
@@ -541,7 +619,9 @@ describe("OverviewPage", () => {
 
 		await user.click(screen.getByRole("checkbox", { name: "Select sessions" }));
 
-		expect(screen.getByTestId("overview-bulk-bar").textContent).not.toContain("0 selected");
+		// Word-boundary match: "10 selected" contains the substring
+		// "0 selected" and must not read as a zero selection.
+		expect(screen.getByTestId("overview-bulk-bar").textContent).not.toMatch(/\b0 selected/);
 		const bar = screen.getByTestId("overview-bulk-bar").textContent ?? "";
 		expect(bar).toMatch(/\bselected/);
 		// Terminated rows have no checkbox, so the batch cannot pick them.

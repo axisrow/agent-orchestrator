@@ -2902,6 +2902,8 @@
 	"overview.filterIdle": "Inaktiv",
 	"overview.filterBlocked": "Warten auf Antwort",
 	"overview.filterExited": "Beendet",
+	"overview.filterRunning": "Laufend",
+	"overview.runningCount": "Laufend ({{count}})",
 	"overview.empty": "Noch keine Projekte.",
 	"overview.projectEmpty": "Keine Sitzungen.",
 	"overview.reclaimable": "{{count}} freizugeben",
