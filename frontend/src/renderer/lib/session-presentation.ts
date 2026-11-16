@@ -108,6 +108,43 @@ export function getSessionStatusDotView(
 			title: sessionStatusTooltip(getSessionStatusView("exited", t).label, session.activity, translator(t)),
 		};
 	}
+	// A start still in flight is the one honest "Building" (contract:
+	// provisioning), the same answer the orchestrator dot and the overview
+	// Stage column give.
+	if (lifecycle === "provisioning") {
+		return {
+			className: getSessionStatusView("working", t).dotClassName,
+			breathe: true,
+			title: sessionLifecycleStateView("provisioning", (key) => t(key as MessageKey)).label,
+		};
+	}
+	// No SCM facts: the dot IS the lifecycle state (#355) — the same answer
+	// every other surface gives for this session. One documented exception:
+	// an idle session the daemon explicitly reports as silent (no_signal)
+	// keeps its alarm tone — a liveness concern, not a lifecycle state, and
+	// it must not read as plain idle. An unparseable status (unknown) is a
+	// transient client-side gap, not a fact: it reads as the contract's idle.
+	if (session.scmStatus === undefined && !closedWithoutMerge) {
+		if (lifecycle === "idle" && session.status === "no_signal") {
+			return {
+				className: getAttentionZoneView(session.status, t).dotClassName,
+				breathe: working && session.activity?.turnStalled !== true,
+				title: sessionStatusTooltip(getAttentionZoneView(session.status, t).label, session.activity, translator(t)),
+			};
+		}
+		if (lifecycle === "running") {
+			return {
+				className: getSessionStatusView("working", t).dotClassName,
+				breathe: session.activity?.turnStalled !== true,
+				title: sessionStatusTooltip(getSessionStatusView("working", t).label, session.activity, translator(t)),
+			};
+		}
+		return {
+			className: getSessionStatusView("idle", t).dotClassName,
+			breathe: false,
+			title: sessionStatusTooltip(getSessionStatusView("idle", t).label, session.activity, translator(t)),
+		};
+	}
 	const sectionStatus: SessionStatus =
 		closedWithoutMerge ? "exited" : (session.scmStatus ?? session.status);
 	const toneStatus = sectionStatus === "idle" && working ? "working" : sectionStatus;

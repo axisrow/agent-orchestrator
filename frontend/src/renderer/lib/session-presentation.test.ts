@@ -111,15 +111,40 @@ describe("session presentation", () => {
 		expect(getAttentionZoneView(status)).toMatchObject({ zone, label });
 	});
 
+	// PR-less sessions (no SCM facts): the dot is the lifecycle contract's
+	// state (#355) — the same answer the overview Stage cell and the tray
+	// badge give.
 	it.each([
 		["idle", "bg-status-idle", "Idle"],
-		["working", "bg-status-working", "Working"],
 		["needs_input", "bg-status-needs-you", "Needs you"],
 		["exited", "bg-passive", "Exited"],
+		["terminated", "bg-passive", "Exited"],
+		// An explicitly silent session keeps its alarm tone: a liveness
+		// concern, not a lifecycle state.
 		["no_signal", "bg-status-needs-you", "Needs you"],
+		// An unparseable status is a transient client-side gap, not a fact:
+		// it reads as the contract's idle.
+		["unknown", "bg-status-idle", "Idle"],
+	] as const)("paints a PR-less %s session dot from the lifecycle contract", (status, dotClassName, title) => {
+		expect(getSessionStatusDotView(sessionWith({ status }))).toEqual({
+			className: dotClassName,
+			breathe: false,
+			title,
+		});
+	});
+
+	it("paints a working PR-less session from its live activity", () => {
+		expect(
+			getSessionStatusDotView(sessionWith({ status: "working", activity: { state: "active", lastActivityAt: "" } })),
+		).toEqual({ className: "bg-status-working", breathe: true, title: "Working" });
+	});
+
+	// Sessions with delivery facts keep the board-section tone through the
+	// SCM status — the dot's second channel — whatever the activity-first
+	// aggregate status says.
+	it.each([
 		["ci_failed", "bg-status-needs-you", "Needs you"],
 		["changes_requested", "bg-status-needs-you", "Needs you"],
-		["unknown", "bg-status-needs-you", "Needs you"],
 		["draft", "bg-status-in-review", "In review"],
 		["pr_open", "bg-status-in-review", "In review"],
 		["review_pending", "bg-status-in-review", "In review"],
@@ -129,12 +154,8 @@ describe("session presentation", () => {
 		["approved", "bg-status-ready", "Ready to merge"],
 		["mergeable", "bg-status-ready", "Ready to merge"],
 		["merged", "bg-status-merged", "Merged"],
-		// Terminated is the contract's exited state: the same quiet gray every
-		// dead session gets, not a separate archive tone (#355). The history
-		// surfaces keep the "Terminated" text label beside the dot.
-		["terminated", "bg-passive", "Exited"],
-	] as const)("paints the %s session dot with its board-section tone", (status, dotClassName, title) => {
-		expect(getSessionStatusDotView(sessionWith({ status }))).toEqual({
+	] as const)("paints the %s SCM section dot with its board-section tone", (scmStatus, dotClassName, title) => {
+		expect(getSessionStatusDotView(sessionWith({ status: scmStatus, scmStatus }))).toEqual({
 			className: dotClassName,
 			breathe: false,
 			title,
@@ -153,8 +174,11 @@ describe("session presentation", () => {
 		["pr_open", "active", "In review · Working"],
 		["working", "active", "Working"],
 	] as const)("glues the zone with live activity into the %s dot tooltip", (status, activity, title) => {
+		// The delivery statuses ride with their SCM fact, as the daemon sends
+		// them for every PR session.
+		const scmStatus = status === "changes_requested" || status === "pr_open" ? (status as const) : undefined;
 		expect(
-			getSessionStatusDotView(sessionWith({ status, activity: { state: activity, lastActivityAt: "" } })).title,
+			getSessionStatusDotView(sessionWith({ status, scmStatus, activity: { state: activity, lastActivityAt: "" } })).title,
 		).toBe(title);
 	});
 
@@ -287,6 +311,12 @@ describe("session presentation", () => {
 				sessionWith({ status: "mergeable", scmStatus: "mergeable", activity: { state: "waiting_input", lastActivityAt: "" } }),
 			),
 		).toEqual({ className: "bg-status-needs-you", breathe: false, title: "Needs you · Input Needed" });
+	});
+
+	it("paints a provisioning worker as starting, same as the orchestrator", () => {
+		expect(
+			getSessionStatusDotView(sessionWith({ status: "working", provisionState: "provisioning" })),
+		).toEqual({ className: "bg-status-working", breathe: true, title: "Starting" });
 	});
 
 	// The live case behind #355: an orchestrator whose aggregated status stays

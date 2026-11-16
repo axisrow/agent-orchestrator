@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
+import { sessionLifecycleState } from "@aoagents/product-ui";
 import type { components } from "../../api/schema";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import {
@@ -324,8 +325,7 @@ export function useSessionInterfaceSwitch(sessionId: string, session: WorkspaceS
 		session.activity?.state === "blocked" || chatToTerminalNeedsPolicy
 	));
 	const waitingForInput = Boolean(session && (
-		session.status === "needs_input" || session.activity?.state === "waiting_input" ||
-		session.activity?.state === "blocked"
+		sessionLifecycleState(session) === "waiting_input" || sessionLifecycleState(session) === "blocked"
 	));
 	const chatToTerminal = session?.mode === "chat" && target === "tui";
 	const cloudTerminalToChat = isCloud && session?.mode === "tui" && target === "chat";
