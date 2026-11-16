@@ -1,5 +1,6 @@
 import {
 	ArrowRight,
+	Archive,
 	CheckCircle2,
 	Pencil,
 	TriangleAlert,
@@ -831,6 +832,9 @@ function AgentSwitchTerminalOverlay({
 	const sourceInput = presentation.allowSourceInput;
 	const staticWarning = presentation.outcome === "failure" || presentation.outcome === "recovery";
 	const success = presentation.outcome === "success";
+	// A terminated session's switch is a record, not a transition (issue #350):
+	// muted card, historical marker, no animation, no takeover scrim.
+	const historical = presentation.outcome === "historical";
 	const focusLockedStatus = presentation.lockAgentTerminal && !sourceInput && !success;
 	useEffect(() => {
 		if (focusLockedStatus) overlayRef.current?.focus({ preventScroll: true });
@@ -841,31 +845,37 @@ function AgentSwitchTerminalOverlay({
 			ref={overlayRef}
 			aria-label={title}
 			aria-atomic="true"
-			aria-busy={!sourceInput && !staticWarning && !success && presentation.animate ? true : undefined}
+			aria-busy={!sourceInput && !staticWarning && !success && !historical && presentation.animate ? true : undefined}
 			aria-live="polite"
 			className={cn(
 				"z-20 flex",
-				sourceInput
+				// History rides as a top strip over the visible terminal; it never
+				// scrims the pane the way a live takeover does.
+				sourceInput || historical
 					? "agent-switch-source-input-strip pointer-events-none absolute inset-x-3 top-3 justify-center"
 					: "agent-switch-terminal-scrim absolute inset-0 items-center justify-center animate-overlay-in motion-reduce:animate-none",
 				!presentation.lockAgentTerminal && "pointer-events-none",
-				presentation.animate && !staticWarning && !sourceInput && "cursor-wait",
+				presentation.animate && !staticWarning && !sourceInput && !historical && "cursor-wait",
 			)}
 			data-testid="agent-switch-terminal-overlay"
 			role="status"
 			tabIndex={-1}
 		>
-			{sourceInput || staticWarning || success ? (
+			{sourceInput || staticWarning || success || historical ? (
 				<div className={cn(
 					"agent-switch-attention-card pointer-events-auto relative flex max-w-md items-start gap-3 rounded-lg border bg-surface/95 px-4 py-3 text-left shadow-lg",
 					onDismiss && "pr-11",
-					success
-						? "border-success/40"
-						: presentation.tone === "danger"
-							? "border-danger/40"
-							: "border-warning/40",
+					historical
+						? "border-border"
+						: success
+							? "border-success/40"
+							: presentation.tone === "danger"
+								? "border-danger/40"
+								: "border-warning/40",
 				)}>
-					{success ? (
+					{historical ? (
+						<Archive aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
+					) : success ? (
 						<CheckCircle2 aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-success" />
 					) : (
 						<TriangleAlert
@@ -877,7 +887,12 @@ function AgentSwitchTerminalOverlay({
 						/>
 					)}
 					<div className="min-w-0">
-						<p className="font-mono text-control font-medium text-foreground">{title}</p>
+						{historical && (
+							<p className="flex items-center gap-1 text-2xs text-passive">
+								{t("switchAgent.historical.label")}
+							</p>
+						)}
+						<p className={cn("font-mono text-control font-medium", historical ? "text-muted-foreground" : "text-foreground")}>{title}</p>
 						<p className="mt-1 text-caption leading-4 text-muted-foreground">{description}</p>
 					</div>
 					{onDismiss ? (

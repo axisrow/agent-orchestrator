@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { Archive, ChevronRight, Folder, FolderOpen, GitPullRequest, Loader2, Trash2, X } from "lucide-react";
+import { Archive, ChevronRight, Folder, FolderOpen, GitPullRequest, Loader2, Trash2, TriangleAlert, X } from "lucide-react";
 import { getKanbanColumnView } from "@aoagents/product-ui";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { OverviewOrphans, OverviewResources } from "./OverviewResources";
@@ -19,7 +19,7 @@ import { useStuckDeliveriesBySession } from "../hooks/useStuckDeliveries";
 import { useProcessInventoryQuery } from "../hooks/useProcessInventoryQuery";
 import { useWorkspaceQuery } from "../hooks/useWorkspaceQuery";
 import type { KanbanColumn, WorkspaceSession, WorkspaceSummary } from "../types/workspace";
-import { openPRs, sortedPRs } from "../types/workspace";
+import { sortedPRs } from "../types/workspace";
 import { apiErrorMessage } from "../lib/api-client";
 import { formatBytes } from "../lib/format-bytes";
 import { formatTimeCompact, formatTimeTerse } from "../lib/format-time";
@@ -91,22 +91,19 @@ function overviewMergeGate(session: WorkspaceSession, t: (key: MessageKey, value
 	return { open: false, label: t("overview.gateProvider") };
 }
 
-// How long an open PR keeps counting as work after its last update (issue
-// #333): past this window a still-open "Review required" PR is a zombie
-// state, not a reason to keep a terminated session on the default view.
-const PR_ACTIVITY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+// A terminated session is history, whatever signals it still carries (issue
+// #350, owner directive: the default list holds only current sessions). Its
+// debts — undelivered messages, a kept dirty worktree — surface as project
+// band counters instead of propping up a dead row; the "show archived" toggle
+// reveals the rows themselves.
+function isArchivedRow(session: WorkspaceSession): boolean {
+	return Boolean(session.isTerminated);
+}
 
-// A terminated session hides from the default view (issue #330) unless it
-// still carries a signal: a kept dirty worktree cleanup would discard,
-// undelivered messages, or an open PR that moved within the activity
-// window (issue #333). Everything else about it is history the "show
-// archived" toggle can reveal.
-function hidesCleanlyTerminatedSession(session: WorkspaceSession, undelivered: number): boolean {
-	if (!session.isTerminated) return false;
-	if (session.workspaceCleanup === "preserved_dirty") return false;
-	if (undelivered > 0) return false;
-	const now = Date.now();
-	return !openPRs(session).some((pr) => now - (Date.parse(pr.updatedAt) || 0) < PR_ACTIVITY_WINDOW_MS);
+// Count the dirty-worktree debt a project carries: terminated sessions whose
+// teardown kept a dirty worktree because cleanup would have discarded changes.
+function dirtyWorktreeCount(sessions: WorkspaceSession[]): number {
+	return sessions.filter((session) => session.isTerminated && session.workspaceCleanup === "preserved_dirty").length;
 }
 
 function translator(t: (key: MessageKey, values?: Record<string, unknown>) => string) {
@@ -161,7 +158,7 @@ export function OverviewPage() {
 				// visibility rule hides, and running sessions are never terminated
 				// so the rule below cannot hide one of them.
 				if (runningOnly && !isSessionRunning(session)) return false;
-				if (!archivesVisible && hidesCleanlyTerminatedSession(session, stuckBySession.get(session.id) ?? 0)) {
+				if (!archivesVisible && isArchivedRow(session)) {
 					hiddenArchived += 1;
 					return false;
 				}
@@ -182,7 +179,16 @@ export function OverviewPage() {
 				bytes += ws.bytes;
 				if (ws.terminated) reclaimable += 1;
 			}
-			return { project, sessions: [...orchestrators, ...workers], bytes, reclaimable, undelivered, hiddenArchived, running };
+			return {
+				project,
+				sessions: [...orchestrators, ...workers],
+				bytes,
+				reclaimable,
+				undelivered,
+				dirtyWorktrees: dirtyWorktreeCount(project.sessions),
+				hiddenArchived,
+				running,
+			};
 		});
 	}, [workspaces, projectFilter, statusFilter, stageFilter, runningOnly, archivesVisible, stuckBySession, worktreesBySession]);
 	const hiddenArchivedCount = groups.reduce((total, group) => total + group.hiddenArchived, 0);
@@ -422,7 +428,7 @@ export function OverviewPage() {
 									<OverviewOrphans trees={orphanTrees} onKilled={refreshInventory} />
 								</div>
 							)}
-							{groups.map(({ project, sessions, bytes, reclaimable, undelivered }) => (
+							{groups.map(({ project, sessions, bytes, reclaimable, undelivered, dirtyWorktrees }) => (
 								<ProjectGroup
 									key={project.id}
 									bytes={bytes}
@@ -434,6 +440,7 @@ export function OverviewPage() {
 									reclaimable={reclaimable}
 									sessions={sessions}
 									undelivered={undelivered}
+									dirtyWorktrees={dirtyWorktrees}
 									worktreesBySession={worktreesBySession}
 									onCleanup={() => setCleanupTarget(project)}
 									onOpenPrCard={openPrCard}
@@ -532,6 +539,7 @@ function ProjectGroup({
 	bytes,
 	reclaimable,
 	undelivered,
+	dirtyWorktrees,
 	collapsed,
 	onToggleCollapsed,
 	onOpenOrchestrator,
@@ -550,6 +558,7 @@ function ProjectGroup({
 	bytes: number;
 	reclaimable: number;
 	undelivered: number;
+	dirtyWorktrees: number;
 	collapsed: boolean;
 	onToggleCollapsed: () => void;
 	onOpenOrchestrator: (session: WorkspaceSession) => void;
@@ -609,6 +618,13 @@ function ProjectGroup({
 				</button>
 				{undelivered > 0 && (
 					<BadgeCount count={undelivered} label={t("overview.undeliveredCount", { count: undelivered })} />
+				)}
+				{dirtyWorktrees > 0 && (
+					<BadgeCount
+						count={dirtyWorktrees}
+						label={t("overview.dirtyCount", { count: dirtyWorktrees })}
+						icon={<TriangleAlert aria-hidden="true" className="size-2.5" />}
+					/>
 				)}
 				{bytes > 0 && (
 					<span className="relative z-[1] shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
@@ -824,11 +840,13 @@ function SessionRow({
 	);
 }
 
-// A small warning-tone counter chip for undelivered messages (project bands
-// and session rows share it).
-function BadgeCount({ count, label }: { count: number; label: string }) {
+// A small warning-tone counter chip (project bands and session rows share it).
+// The optional icon keeps same-toned chips distinguishable — color never
+// carries the meaning alone (DESIGN.md).
+function BadgeCount({ count, label, icon }: { count: number; label: string; icon?: ReactNode }) {
 	return (
-		<Badge variant="warning" className="h-4 shrink-0 px-1.5 font-mono text-2xs tabular-nums" title={label}>
+		<Badge variant="warning" className="h-4 shrink-0 gap-0.5 px-1.5 font-mono text-2xs tabular-nums" title={label}>
+			{icon}
 			{count}
 		</Badge>
 	);

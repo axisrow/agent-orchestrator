@@ -430,6 +430,27 @@ describe("CenterPane toolbar session label", () => {
 		expect(screen.getByText("terminal body")).toHaveAttribute("data-input-disabled", "true");
 	});
 
+	it("renders a terminated session's completed switch as a muted historical record", () => {
+		// Issue #350: the dead session's switch reads as history — marker and
+		// completion time — never as an animated takeover still in flight.
+		const completedSwitch = switchRecord({
+			state: "completed",
+			updatedAt: "2026-11-03T12:55:40Z",
+		});
+		const terminated = { ...worker, isTerminated: true, activeAgentSwitch: completedSwitch };
+
+		renderCenterPane({ session: terminated });
+
+		const status = screen.getByRole("status", { name: "Switching from Claude Code to Codex" });
+		expect(within(status).getByText("Historical record")).toBeInTheDocument();
+		// The date must be present; a fixed fixture date only grows staler.
+		expect(within(status).getByText(/Completed \d+d ago/)).toBeInTheDocument();
+		expect(status).not.toHaveAttribute("aria-busy");
+		// No takeover: the progress track of a live transition stays away.
+		expect(within(status).queryByText("Confirming takeover")).not.toBeInTheDocument();
+		expect(screen.getByTestId("terminal-interaction-surface")).not.toHaveAttribute("inert");
+	});
+
 	it.each([
 		["preparing_handoff", "Preparing handoff"],
 		["stopping_source", "Stopping source agent"],

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentSwitchSummary } from "../types/workspace";
 import {
 	agentSwitchVisibilityPresentationKind,
@@ -42,7 +42,7 @@ function expectRelationship(
 	>,
 ) {
 	expect(presentation).toMatchObject(expected);
-	expect(presentation.values).toEqual({ source: "Claude Code", target: "Codex" });
+	expect(presentation.values).toEqual({ source: "Claude Code", target: "Codex", when: "" });
 }
 
 describe("deriveAgentSwitchPresentation", () => {
@@ -174,10 +174,6 @@ describe("deriveAgentSwitchPresentation", () => {
 			{ currentHarness: "codex", terminalHandleId: undefined, isTerminated: false },
 		],
 		[
-			"the projected session is terminated",
-			{ currentHarness: "codex", terminalHandleId: "target-terminal", isTerminated: true },
-		],
-		[
 			"the source harness is still projected",
 			{ currentHarness: "claude-code", terminalHandleId: "target-terminal", isTerminated: false },
 		],
@@ -261,11 +257,73 @@ describe("deriveAgentSwitchPresentation", () => {
 	});
 });
 
+describe("terminated sessions render historical switches", () => {
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it.each([
+		["completed", "switchAgent.success.compact", "switchAgent.historical.completed"],
+		["failed", "switchAgent.failure.compact", "switchAgent.historical.failed"],
+	] as const)("renders a %s switch as a muted historical record on a terminated session", (state, compactLabelKey, descriptionKey) => {
+		// The issue's live case: the session exited 13 days after the switch
+		// completed; the card must read "Completed 13d ago", not a live takeover.
+		vi.useFakeTimers({ now: new Date("2026-11-16T12:00:00Z") });
+		const presentation = deriveAgentSwitchPresentation(
+			input(switchSummary({ state, updatedAt: "2026-11-03T12:00:00Z" }), {
+				currentHarness: "codex",
+				isTerminated: true,
+				terminalHandleId: "target-terminal",
+			}),
+		);
+
+		expect(presentation).toMatchObject({
+			allowSourceInput: false,
+			animate: false,
+			compactLabelKey,
+			descriptionKey,
+			lockAgentTerminal: false,
+			outcome: "historical",
+			stage: null,
+			tone: "muted",
+		});
+		expect(presentation.values.when).toBe("13d ago");
+	});
+
+	it("falls back to the plain state label when the record carries no timestamp", () => {
+		const presentation = deriveAgentSwitchPresentation(
+			input(switchSummary({ state: "completed" }), { isTerminated: true }),
+		);
+
+		expect(presentation).toMatchObject({
+			descriptionKey: "switchAgent.state.completed",
+			outcome: "historical",
+			tone: "muted",
+		});
+		expect(presentation.values.when).toBe("");
+	});
+
+	it("renders an interrupted in-flight state as history, never as an active transition", () => {
+		const presentation = deriveAgentSwitchPresentation(
+			input(switchSummary({ state: "delivering_context" }), { isTerminated: true }),
+		);
+
+		expect(presentation).toMatchObject({
+			animate: false,
+			lockAgentTerminal: false,
+			outcome: "historical",
+			stage: null,
+			tone: "muted",
+		});
+	});
+});
+
 describe("agent switch visibility presentation classification", () => {
 	it("classifies only required failure and recovery UI", () => {
 		expect(agentSwitchVisibilityPresentationKind({ outcome: "failure" } as AgentSwitchPresentation)).toBe("terminal_failure");
 		expect(agentSwitchVisibilityPresentationKind({ outcome: "recovery" } as AgentSwitchPresentation)).toBe("recovery_required");
 		expect(agentSwitchVisibilityPresentationKind({ outcome: "in_progress" } as AgentSwitchPresentation)).toBeUndefined();
 		expect(agentSwitchVisibilityPresentationKind({ outcome: "success" } as AgentSwitchPresentation)).toBeUndefined();
+		expect(agentSwitchVisibilityPresentationKind({ outcome: "historical" } as AgentSwitchPresentation)).toBeUndefined();
 	});
 });

@@ -2,6 +2,7 @@ import { agentSwitchErrorLabelKeys, type AgentSwitchErrorCode } from "../i18n/ke
 import type { MessageKey } from "../i18n/messages";
 import type { AgentSwitchSummary, WorkspaceSession } from "../types/workspace";
 import { agentLabel } from "./agent-options";
+import { formatTimeCompact } from "./format-time";
 
 export type AgentSwitchPresentation = {
 	stage:
@@ -11,15 +12,17 @@ export type AgentSwitchPresentation = {
 		| "confirming_takeover"
 		| "needs_attention"
 		| null;
-	outcome: "in_progress" | "success" | "failure" | "recovery";
+	outcome: "in_progress" | "success" | "failure" | "recovery" | "historical";
 	compactLabelKey: MessageKey;
 	titleKey: MessageKey;
 	descriptionKey: MessageKey;
 	values: {
 		source: string;
 		target: string;
+		/** Relative completion time ("13d ago"); empty when the switch carries no timestamp. */
+		when: string;
 	};
-	tone: "working" | "success" | "warning" | "danger";
+	tone: "working" | "success" | "warning" | "danger" | "muted";
 	animate: boolean;
 	lockAgentTerminal: boolean;
 	allowSourceInput: boolean;
@@ -62,6 +65,32 @@ function failureDescriptionKey(errorCode?: string): MessageKey {
 	return agentSwitchErrorLabelKeys[errorCode as AgentSwitchErrorCode] ?? "switchAgent.state.failed";
 }
 
+// A terminated session can never advance a switch, so every state it carries is
+// history, not a live transition (issue #350). The card renders muted with its
+// completion time; without a timestamp the plain state label stands alone.
+function historicalPresentation(agentSwitch: AgentSwitchSummary): AgentSwitchPresentation {
+	const values = {
+		source: agentLabel(agentSwitch.fromHarness),
+		target: agentLabel(agentSwitch.targetHarness),
+		when: agentSwitch.updatedAt ? formatTimeCompact(agentSwitch.updatedAt) : "",
+	};
+	const failed = agentSwitch.state === "failed";
+	return {
+		stage: null,
+		outcome: "historical",
+		compactLabelKey: failed ? "switchAgent.failure.compact" : "switchAgent.success.compact",
+		titleKey: "switchAgent.progressTitle",
+		descriptionKey: failed
+			? values.when ? "switchAgent.historical.failed" : "switchAgent.state.failed"
+			: values.when ? "switchAgent.historical.completed" : "switchAgent.state.completed",
+		values,
+		tone: "muted",
+		animate: false,
+		lockAgentTerminal: false,
+		allowSourceInput: false,
+	};
+}
+
 export function deriveAgentSwitchPresentation({
 	agentSwitch,
 	currentHarness,
@@ -72,7 +101,10 @@ export function deriveAgentSwitchPresentation({
 	const values = {
 		source: agentLabel(agentSwitch.fromHarness),
 		target: agentLabel(agentSwitch.targetHarness),
+		when: "",
 	};
+
+	if (isTerminated) return historicalPresentation(agentSwitch);
 
 	if (agentSwitch.state === "stopping_source" && agentSwitch.errorCode === "source_stop_unconfirmed") {
 		return {
@@ -138,10 +170,11 @@ export function deriveAgentSwitchPresentation({
 	}
 
 	if (agentSwitch.state === "completed") {
+		// Terminated sessions short-circuited to history above, so settling
+		// here only needs a live target harness with a live terminal.
 		const settled =
 			currentHarness === agentSwitch.targetHarness &&
-			Boolean(terminalHandleId?.trim()) &&
-			!isTerminated;
+			Boolean(terminalHandleId?.trim());
 		return {
 			stage: settled ? null : "confirming_takeover",
 			outcome: settled ? "success" : "in_progress",
@@ -255,6 +288,15 @@ export function agentSwitchStatusVisual(presentation: AgentSwitchPresentation): 
 				className: "text-status-exited",
 				indicatorClassName: "bg-status-exited",
 				tone: "var(--color-status-exited)",
+				breathe: false,
+			};
+		case "muted":
+			// History is not an operational state: the neutral text tone reads as
+			// a record, never as an actionable success or failure (DESIGN.md).
+			return {
+				className: "text-muted-foreground",
+				indicatorClassName: "bg-muted-foreground",
+				tone: "var(--color-text-muted)",
 				breathe: false,
 			};
 		default:
