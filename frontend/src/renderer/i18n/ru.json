@@ -263,6 +263,7 @@
 	"activity.idle": "Бездействует",
 	"activity.unknown": "Неизвестно",
 	"activity.waiting_input": "Требуется ввод",
+	"lifecycle.provisioning": "Запускается",
 	"common.maximize": "Развернуть",
 	"common.returnToPanel": "Вернуть на панель",
 	"common.breadcrumb": "Навигационная цепочка",

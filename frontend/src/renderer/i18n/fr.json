@@ -193,6 +193,7 @@
 	"activity.noSignsOfLife": "Aucun signe de vie depuis {{duration}}",
 	"activity.workingOnTool": "Travaille sur {{tool}} depuis {{duration}}",
 	"activity.waiting_input": "Saisie requise",
+	"lifecycle.provisioning": "Démarrage",
 	"home.never": "Jamais",
 	"cloudCredential.anthropicLoginDescription": "Connectez-vous avec votre compte Claude dans le navigateur. Si Claude Code n'est pas connecté sur cette machine, les sessions locales utiliseront aussi cette connexion.",
 	"cloudCredential.apiKeyHelp": "Créez une clé sur <link/>, puis collez-la ici.",
