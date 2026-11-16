@@ -1239,8 +1239,10 @@ describe("prFactsStale", () => {
 		expect(presentation.primary.tone).toBe("warning");
 		expect(presentation.readiness?.tone).toBe("warning");
 		expect(presentation.readiness?.label).toMatch(/old/);
-		// Fresh facts keep the green verdict.
-		const freshPresentation = prCardPresentation(summary({ lastSeenAt: new Date(now - 60_000).toISOString() }));
+		// Fresh facts keep the green verdict. The presentation reads the real
+		// clock here too, so the fresh stamp moves with it — a fixed date rots
+		// past the one-hour threshold and fails the suite from then on.
+		const freshPresentation = prCardPresentation(summary({ lastSeenAt: new Date(Date.now() - 60_000).toISOString() }));
 		expect(freshPresentation.primary.label).toBe("Ready to merge");
 		expect(freshPresentation.readiness?.tone).toBe("success");
 	});

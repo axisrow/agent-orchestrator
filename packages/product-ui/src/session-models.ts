@@ -40,6 +40,11 @@ export type SessionActivity = {
 	turnStalled?: boolean;
 	/** How long the turn has been silent, in milliseconds. */
 	turnSilentForMs?: number;
+	// The tool call currently in flight (a pre-tool-use hook with no matching
+	// post). While one runs, the turn is working, never stalled (#344).
+	turnToolInflightName?: string;
+	/** How long that call has been executing, in milliseconds. */
+	turnToolInflightForMs?: number;
 };
 
 export const KANBAN_COLUMNS = [
@@ -116,6 +121,8 @@ export function toSessionActivity(
 		lastActivityAt?: string;
 		turnStalled?: boolean;
 		turnSilentForMs?: number;
+		turnToolInflightName?: string;
+		turnToolInflightForMs?: number;
 	} | null,
 ): SessionActivity | undefined {
 	if (!activity) {
@@ -128,6 +135,14 @@ export function toSessionActivity(
 		turnSilentForMs:
 			typeof activity.turnSilentForMs === "number" && activity.turnSilentForMs > 0
 				? activity.turnSilentForMs
+				: undefined,
+		turnToolInflightName:
+			typeof activity.turnToolInflightName === "string" && activity.turnToolInflightName
+				? activity.turnToolInflightName
+				: undefined,
+		turnToolInflightForMs:
+			typeof activity.turnToolInflightForMs === "number" && activity.turnToolInflightForMs > 0
+				? activity.turnToolInflightForMs
 				: undefined,
 	};
 }

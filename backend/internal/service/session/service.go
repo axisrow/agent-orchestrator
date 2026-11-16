@@ -1443,7 +1443,8 @@ func (s *Service) List(ctx context.Context, filter ListFilter) ([]domain.Session
 	for _, rec := range filtered {
 		facts, found := cleanupBySession[rec.ID]
 		sess := s.toSessionWithFacts(ctx, rec, prsBySession[rec.ID], runsBySession[rec.ID], interrupted[rec.ID], currentWorkspaceCleanup(rec, facts, found))
-		sess.TurnStalled, sess.TurnSilentForMs = deriveTurnStall(rec, conversationLife[rec.ID], s.now(), s.turnStallAfter)
+		stalled, silentForMs, inflight := deriveTurnStall(rec, conversationLife[rec.ID], s.now(), s.turnStallAfter)
+		applyTurnStall(&sess, stalled, silentForMs, inflight)
 		if agentSwitch, ok := activeBySession[rec.ID]; ok {
 			sess.ActiveAgentSwitch = &agentSwitch
 		}
@@ -1953,8 +1954,21 @@ func (s *Service) toSession(ctx context.Context, rec domain.SessionRecord) (doma
 		return domain.Session{}, fmt.Errorf("conversation liveness %s: %w", rec.ID, err)
 	}
 	sess := s.toSessionWithFacts(ctx, rec, prs, runs, interrupted[rec.ID], cleanup)
-	sess.TurnStalled, sess.TurnSilentForMs = deriveTurnStall(rec, conversationLife[rec.ID], s.now(), s.turnStallAfter)
+	stalled, silentForMs, inflight := deriveTurnStall(rec, conversationLife[rec.ID], s.now(), s.turnStallAfter)
+	applyTurnStall(&sess, stalled, silentForMs, inflight)
 	return sess, nil
+}
+
+// applyTurnStall lands the derived stall facts on the read model: the silence
+// warning when the turn went quiet, or the in-flight call's name and elapsed
+// time when the turn is blocked on real work instead.
+func applyTurnStall(sess *domain.Session, stalled bool, silentForMs int64, inflight *turnToolInflight) {
+	sess.TurnStalled = stalled
+	sess.TurnSilentForMs = silentForMs
+	if inflight != nil {
+		sess.TurnToolInflightName = inflight.Name
+		sess.TurnToolInflightForMs = inflight.Running.Milliseconds()
+	}
 }
 
 // currentWorkspaceCleanup is the teardown disposition recorded for an archived

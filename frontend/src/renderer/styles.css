@@ -2896,6 +2896,18 @@ html[data-window-translucent="true"] :is(.queue-dock, .queue-dock-toggle, .queue
 	background-color: var(--solid-bg-secondary);
 }
 
+/* Same translucent-window problem as the queue dock, one screen over: the
+   overview's pinned filter bar and the sticky project band headers scroll over
+   live rows, and the canvas/surface tokens are tints there. Solid fills keep
+   the pinned chrome opaque (#347). */
+html[data-window-translucent="true"] .overview-sticky-titlebar {
+	background-color: var(--solid-bg-primary);
+}
+
+html[data-window-translucent="true"] [data-project-row] {
+	background-color: var(--solid-bg-secondary);
+}
+
 /* Clip-height collapse: one row stays visible when folded; up to five when open. */
 .queue-dock-body {
 	--queue-dock-row-height: 2.5rem;

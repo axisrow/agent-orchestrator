@@ -1,8 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { ScrollArea } from "radix-ui";
 import { useTranslation } from "react-i18next";
-import { Archive, ChevronRight, Folder, FolderOpen, GitPullRequest, Trash2, X } from "lucide-react";
+import { Archive, ChevronRight, Folder, FolderOpen, GitPullRequest, Loader2, Trash2, X } from "lucide-react";
 import { getKanbanColumnView } from "@aoagents/product-ui";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { OverviewOrphans, OverviewResources } from "./OverviewResources";
@@ -58,6 +57,15 @@ function overviewStatus(session: WorkspaceSession): Exclude<StatusFilter, "all">
 	if (state === "waiting_input" || state === "blocked") return "blocked";
 	if (state === "active") return "working";
 	return "idle";
+}
+
+// A session is running when its agent is executing a turn right now: the
+// daemon's hook-reported activity fact — not the stage/SCM chrome a row
+// otherwise carries, and never a terminated session however fresh its last
+// stage looks (issue #342). One predicate for the filter, the counter, and
+// the row marker so all three answer the same question.
+function isSessionRunning(session: WorkspaceSession): boolean {
+	return !session.isTerminated && session.activity?.state === "active";
 }
 
 // Whether the session's merge gate is open, and the one fact holding it shut
@@ -117,6 +125,7 @@ export function OverviewPage() {
 	const [projectFilter, setProjectFilter] = useState("all");
 	const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 	const [stageFilter, setStageFilter] = useState<KanbanColumn | "all">("all");
+	const [runningOnly, setRunningOnly] = useState(false);
 	const [showArchived, setShowArchived] = useState(false);
 	const [collapsedProjects, setCollapsedProjects] = useState<ReadonlySet<string>>(new Set());
 	const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
@@ -144,15 +153,23 @@ export function OverviewPage() {
 		const visible = workspaces.filter((project) => projectFilter === "all" || project.id === projectFilter);
 		return visible.map((project) => {
 			let hiddenArchived = 0;
+			let running = 0;
 			const matches = project.sessions.filter((session) => {
 				if (statusFilter !== "all" && overviewStatus(session) !== statusFilter) return false;
 				if (stageFilter !== "all" && (session.kanbanColumn ?? "building") !== stageFilter) return false;
+				// Running only narrows (issue #342): it never re-reveals a row the
+				// visibility rule hides, and running sessions are never terminated
+				// so the rule below cannot hide one of them.
+				if (runningOnly && !isSessionRunning(session)) return false;
 				if (!archivesVisible && hidesCleanlyTerminatedSession(session, stuckBySession.get(session.id) ?? 0)) {
 					hiddenArchived += 1;
 					return false;
 				}
 				return true;
 			});
+			for (const session of matches) {
+				if (isSessionRunning(session)) running += 1;
+			}
 			const orchestrators = matches.filter((session) => session.kind === "orchestrator");
 			const workers = matches.filter((session) => session.kind !== "orchestrator");
 			let bytes = 0;
@@ -165,10 +182,11 @@ export function OverviewPage() {
 				bytes += ws.bytes;
 				if (ws.terminated) reclaimable += 1;
 			}
-			return { project, sessions: [...orchestrators, ...workers], bytes, reclaimable, undelivered, hiddenArchived };
+			return { project, sessions: [...orchestrators, ...workers], bytes, reclaimable, undelivered, hiddenArchived, running };
 		});
-	}, [workspaces, projectFilter, statusFilter, stageFilter, archivesVisible, stuckBySession, worktreesBySession]);
+	}, [workspaces, projectFilter, statusFilter, stageFilter, runningOnly, archivesVisible, stuckBySession, worktreesBySession]);
 	const hiddenArchivedCount = groups.reduce((total, group) => total + group.hiddenArchived, 0);
+	const runningCount = groups.reduce((total, group) => total + group.running, 0);
 
 	// Only rows the screen currently shows may join a batch: the selection is
 	// intersected with the visible (filtered, non-terminated) session ids, so a
@@ -292,124 +310,144 @@ export function OverviewPage() {
 
 	return (
 		<div className="flex min-h-0 flex-1 flex-col bg-background">
-			<header className="workspace-topbar-container center-panel-titlebar flex h-toolbar shrink-0 items-center justify-between gap-3 border-b border-border-strong pr-2">
-				<h1 className={showPageTitle ? "text-base font-semibold" : "sr-only"}>{t("overview.title")}</h1>
-				<div className="flex shrink-0 items-center gap-2">
-					{selectedSessions.length > 0 && (
-						<div className="flex items-center gap-1" data-testid="overview-bulk-bar">
-							<span className="text-xs text-muted-foreground">{t("overview.selectedCount", { count: selectedSessions.length })}</span>
-							<Button
-								variant="ghost"
-								size="sm"
-								className="h-7 px-2 text-xs text-error hover:bg-error/10 hover:text-error"
-								onClick={() => setTerminateTargets(selectedSessions)}
-							>
-								{t("overview.terminate")}
-							</Button>
-							<Button
-								variant="ghost"
-								size="sm"
-								className="size-7 p-0 text-muted-foreground"
-								aria-label={t("overview.clearSelection")}
-								title={t("overview.clearSelection")}
-								onClick={() => setSelectedIds(new Set())}
-							>
-								<X className="size-3.5" aria-hidden="true" />
-							</Button>
-						</div>
-					)}
-					<Checkbox
-						checked={allSelected ? true : someSelected ? "indeterminate" : false}
-						onCheckedChange={toggleSelectAll}
-						aria-label={t("overview.selectAll")}
-						className="ml-1"
-					/>
-					<Button
-						variant="ghost"
-						size="sm"
-						className="h-7 px-2 text-xs"
-						aria-pressed={showArchived}
-						onClick={() => setShowArchived((current) => !current)}
-					>
-						{showArchived ? t("overview.hideArchived") : t("overview.showArchived")}
-					</Button>
-					{hiddenArchivedCount > 0 && (
-						<span
-							data-testid="overview-archived-count"
-							className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground"
-							title={t("overview.archivedCount", { count: hiddenArchivedCount })}
+			{/* The screen's one scroll container, on the sidebar's own list pattern.
+				The v2 rework (#330/#332) mounted a Radix ScrollArea without its
+				Scrollbar part, which leaves the viewport overflow-y: hidden — the
+				screen rendered fully but nothing could scroll (issue #347). The
+				filter titlebar and each project band header stick inside it; the
+				resource strip is an ordinary scrolling row. */}
+			<main className="scrollbar-none min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
+				<header className="overview-sticky-titlebar workspace-topbar-container center-panel-titlebar sticky top-0 z-20 flex h-toolbar items-center justify-between gap-3 border-b border-border-strong bg-background pr-2">
+					<h1 className={showPageTitle ? "text-base font-semibold" : "sr-only"}>{t("overview.title")}</h1>
+					<div className="flex shrink-0 items-center gap-2">
+						{selectedSessions.length > 0 && (
+							<div className="flex items-center gap-1" data-testid="overview-bulk-bar">
+								<span className="text-xs text-muted-foreground">{t("overview.selectedCount", { count: selectedSessions.length })}</span>
+								<Button
+									variant="ghost"
+									size="sm"
+									className="h-7 px-2 text-xs text-error hover:bg-error/10 hover:text-error"
+									onClick={() => setTerminateTargets(selectedSessions)}
+								>
+									{t("overview.terminate")}
+								</Button>
+								<Button
+									variant="ghost"
+									size="sm"
+									className="size-7 p-0 text-muted-foreground"
+									aria-label={t("overview.clearSelection")}
+									title={t("overview.clearSelection")}
+									onClick={() => setSelectedIds(new Set())}
+								>
+									<X className="size-3.5" aria-hidden="true" />
+								</Button>
+							</div>
+						)}
+						<Checkbox
+							checked={allSelected ? true : someSelected ? "indeterminate" : false}
+							onCheckedChange={toggleSelectAll}
+							aria-label={t("overview.selectAll")}
+							className="ml-1"
+						/>
+						<Button
+							variant="ghost"
+							size="sm"
+							className="h-7 px-2 text-xs"
+							aria-pressed={showArchived}
+							onClick={() => setShowArchived((current) => !current)}
 						>
-							{t("overview.archivedCount", { count: hiddenArchivedCount })}
-						</span>
-					)}
-					{filterSelect(projectFilter, setProjectFilter, t("overview.filterProject"), [
-						{ value: "all", label: t("overview.filterAll") },
-						...workspaces.map((project) => ({ value: project.id, label: project.name })),
-					])}
-					{filterSelect(statusFilter, (next) => setStatusFilter(next as StatusFilter), t("overview.columnStatus"), [
-						{ value: "all", label: t("overview.filterAll") },
-						{ value: "working", label: t("overview.filterWorking") },
-						{ value: "idle", label: t("overview.filterIdle") },
-						{ value: "blocked", label: t("overview.filterBlocked") },
-						{ value: "exited", label: t("overview.filterExited") },
-					])}
-					{filterSelect(stageFilter, (next) => setStageFilter(next as KanbanColumn | "all"), t("overview.columnStage"), [
-						{ value: "all", label: t("overview.filterAll") },
-						...STAGE_FILTERS.map((column) => ({ value: column, label: stageLabel(column) })),
-					])}
-				</div>
-			</header>
-			<OverviewResources />
-			<ScrollArea.Root asChild type="hover" scrollHideDelay={500}>
-				<main className="relative min-h-0 flex-1 overflow-hidden">
-					<ScrollArea.Viewport className="h-full w-full">
-						<div className="px-4 py-3">
-							{workspacesQuery.isError ? (
-								<p role="alert" className="p-4 text-sm text-error">{t("shell.couldNotLoadProjects")}</p>
-							) : workspacesQuery.isLoading ? (
-								<div className="flex flex-col gap-2 p-4">
-									<Skeleton className="h-8 w-1/3" />
-									<Skeleton className="h-9 w-full" />
-									<Skeleton className="h-9 w-full" />
-									<Skeleton className="h-9 w-2/3" />
-								</div>
-							) : workspaces.length === 0 ? (
-								<p className="p-4 text-heading-sm text-muted-foreground">{t("overview.empty")}</p>
-							) : (
-								<div>
-									{orphanTrees.length > 0 && (
-										<div className="mb-2">
-											<OverviewOrphans trees={orphanTrees} onKilled={refreshInventory} />
-										</div>
-									)}
-									{groups.map(({ project, sessions, bytes, reclaimable, undelivered }) => (
-										<ProjectGroup
-											key={project.id}
-											bytes={bytes}
-											cleanupBusy={cleanup.isPending}
-											collapsed={collapsedProjects.has(project.id)}
-											onToggleCollapsed={() => toggleCollapsed(project.id)}
-											onOpenOrchestrator={openSession}
-											project={project}
-											reclaimable={reclaimable}
-											sessions={sessions}
-											undelivered={undelivered}
-											worktreesBySession={worktreesBySession}
-											onCleanup={() => setCleanupTarget(project)}
-											onOpenPrCard={openPrCard}
-											onOpenSession={openSession}
-											onSelect={toggleSelect}
-											selectedIds={selectedIds}
-											stuckBySession={stuckBySession}
-											onTerminate={(session) => setTerminateTargets([session])}
-										/>
-									))}
+							{showArchived ? t("overview.hideArchived") : t("overview.showArchived")}
+						</Button>
+						{hiddenArchivedCount > 0 && (
+							<span
+								data-testid="overview-archived-count"
+								className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground"
+								title={t("overview.archivedCount", { count: hiddenArchivedCount })}
+							>
+								{t("overview.archivedCount", { count: hiddenArchivedCount })}
+							</span>
+						)}
+						<Button
+							variant="ghost"
+							size="sm"
+							className="h-7 px-2 text-xs"
+							aria-pressed={runningOnly}
+							onClick={() => setRunningOnly((current) => !current)}
+						>
+							{t("overview.filterRunning")}
+						</Button>
+						{(runningCount > 0 || runningOnly) && (
+							<span
+								data-testid="overview-running-count"
+								className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground"
+								title={t("overview.runningCount", { count: runningCount })}
+							>
+								{t("overview.runningCount", { count: runningCount })}
+							</span>
+						)}
+						{filterSelect(projectFilter, setProjectFilter, t("overview.filterProject"), [
+							{ value: "all", label: t("overview.filterAll") },
+							...workspaces.map((project) => ({ value: project.id, label: project.name })),
+						])}
+						{filterSelect(statusFilter, (next) => setStatusFilter(next as StatusFilter), t("overview.columnStatus"), [
+							{ value: "all", label: t("overview.filterAll") },
+							{ value: "working", label: t("overview.filterWorking") },
+							{ value: "idle", label: t("overview.filterIdle") },
+							{ value: "blocked", label: t("overview.filterBlocked") },
+							{ value: "exited", label: t("overview.filterExited") },
+						])}
+						{filterSelect(stageFilter, (next) => setStageFilter(next as KanbanColumn | "all"), t("overview.columnStage"), [
+							{ value: "all", label: t("overview.filterAll") },
+							...STAGE_FILTERS.map((column) => ({ value: column, label: stageLabel(column) })),
+						])}
+					</div>
+				</header>
+				<OverviewResources />
+				<div className="px-4 py-3">
+					{workspacesQuery.isError ? (
+						<p role="alert" className="p-4 text-sm text-error">{t("shell.couldNotLoadProjects")}</p>
+					) : workspacesQuery.isLoading ? (
+						<div className="flex flex-col gap-2 p-4">
+							<Skeleton className="h-8 w-1/3" />
+							<Skeleton className="h-9 w-full" />
+							<Skeleton className="h-9 w-full" />
+							<Skeleton className="h-9 w-2/3" />
+						</div>
+					) : workspaces.length === 0 ? (
+						<p className="p-4 text-heading-sm text-muted-foreground">{t("overview.empty")}</p>
+					) : (
+						<div>
+							{orphanTrees.length > 0 && (
+								<div className="mb-2">
+									<OverviewOrphans trees={orphanTrees} onKilled={refreshInventory} />
 								</div>
 							)}
+							{groups.map(({ project, sessions, bytes, reclaimable, undelivered }) => (
+								<ProjectGroup
+									key={project.id}
+									bytes={bytes}
+									cleanupBusy={cleanup.isPending}
+									collapsed={collapsedProjects.has(project.id)}
+									onToggleCollapsed={() => toggleCollapsed(project.id)}
+									onOpenOrchestrator={openSession}
+									project={project}
+									reclaimable={reclaimable}
+									sessions={sessions}
+									undelivered={undelivered}
+									worktreesBySession={worktreesBySession}
+									onCleanup={() => setCleanupTarget(project)}
+									onOpenPrCard={openPrCard}
+									onOpenSession={openSession}
+									onSelect={toggleSelect}
+									selectedIds={selectedIds}
+									stuckBySession={stuckBySession}
+									onTerminate={(session) => setTerminateTargets([session])}
+								/>
+							))}
 						</div>
-					</ScrollArea.Viewport>
-				</main>
-			</ScrollArea.Root>
+					)}
+				</div>
+			</main>
 			<ConfirmDialog
 				open={cleanupTarget !== null}
 				destructive
@@ -533,7 +571,10 @@ function ProjectGroup({
 		<section data-project-id={project.id} className="mb-1">
 			<div
 				className={cn(
-					"group/nav-row relative flex h-8 w-full items-center gap-2 rounded-lg bg-surface px-2.5 text-sm font-medium",
+					// Sticks under the filter titlebar while its band scrolls (issue
+					// #347). On translucent windows styles.css swaps this pill to a
+					// solid fill so the rows sliding underneath stay covered.
+					"group/nav-row sticky top-toolbar z-10 flex h-8 w-full items-center gap-2 rounded-lg bg-surface px-2.5 text-sm font-medium",
 				)}
 				data-project-row=""
 			>
@@ -652,6 +693,7 @@ function SessionRow({
 	const { t } = useTranslation();
 	const activityView = getAgentActivityView(session.isTerminated ? EXITED_ACTIVITY : session.activity);
 	const dot = getSessionStatusDotView(session);
+	const running = isSessionRunning(session);
 	const stage = getKanbanColumnView(session.kanbanColumn ?? "building", translator(t));
 	const gate = overviewMergeGate(session, t);
 	const pr = sortedPRs(session)[0];
@@ -672,13 +714,33 @@ function SessionRow({
 					className="relative z-[1] mr-0.5 shrink-0"
 				/>
 			)}
-			<span className="relative z-[1] inline-flex shrink-0 items-center justify-center px-1">
-				<span
-					aria-hidden="true"
-					className={cn("size-2 rounded-full", dot.className, dot.breathe && "animate-status-pulse")}
-					title={dot.title}
-					data-session-status={session.status}
-				/>
+			<span className="relative z-[1] inline-flex shrink-0 items-center justify-center px-1" title={dot.title}>
+				{session.kind === "orchestrator" ? (
+					// The orchestrator carries its own glyph in the status slot so an
+					// orchestrator row never reads as a worker at a glance (issue
+					// #342); the working tint keeps the live/quiet difference.
+					<OrchestratorIcon
+						aria-hidden="true"
+						data-session-marker="orchestrator"
+						className={cn("size-3.5 shrink-0", running ? "text-status-working" : "text-muted-foreground")}
+					/>
+				) : running ? (
+					// The design system's working spinner is the liveness marker
+					// (DESIGN.md status glyph rule 1): a row executing right now is
+					// countable by its spinner alone, without reading any chip.
+					<Loader2
+						aria-hidden="true"
+						data-session-marker="running"
+						className="size-3.5 shrink-0 animate-spin text-status-working motion-reduce:animate-none"
+					/>
+				) : (
+					<span
+						aria-hidden="true"
+						className={cn("size-2 rounded-full", dot.className, dot.breathe && "animate-status-pulse")}
+						data-session-status={session.status}
+						data-session-marker="dot"
+					/>
+				)}
 			</span>
 			<span className="sr-only">{activityView.label}</span>
 			<button
@@ -690,7 +752,6 @@ function SessionRow({
 				onClick={() => onOpen(session)}
 			>
 				<span className="truncate">{session.title}</span>
-				{session.kind === "orchestrator" && <OrchestratorIcon className="ml-1.5 inline size-3.5 align-[-2px] text-muted-foreground" aria-hidden="true" />}
 			</button>
 			{undelivered > 0 && (
 				<span className="relative z-[1] shrink-0">
