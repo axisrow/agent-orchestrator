@@ -3037,8 +3037,15 @@ func TestPRObservation_PRAuthorRepliesAreNotInjected(t *testing.T) {
 			t.Fatalf("missing %q from nudges:\n%s", want, all)
 		}
 	}
-	if len(msg.msgs) != 5 {
-		t.Fatalf("want 5 per-comment nudges, got %d:\n%s", len(msg.msgs), all)
+	// The fork ships one digest per PR (#60, built in PR #91), not one nudge
+	// per comment like upstream: the five injectable comments ride in a single
+	// message, and the author's own reply (#8462) is filtered before the
+	// digest is built.
+	if len(msg.msgs) != 1 {
+		t.Fatalf("want 1 digest nudge for the PR, got %d:\n%s", len(msg.msgs), all)
+	}
+	if !strings.Contains(msg.msgs[0], "The following 5 unresolved review comment(s)") {
+		t.Fatalf("digest must list all 5 injectable comments:\n%s", msg.msgs[0])
 	}
 }
 
