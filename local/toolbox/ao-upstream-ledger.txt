@@ -812,3 +812,19 @@ e20463abfaac74b7324887213c379e830f9367aa skipped fix(cursor): explain rejected-l
 8d75dfbe2395960393b5384672884320c775465d skipped fix(palette): use the Cloud project delete wording the sidebar uses (#8425) — workspace.shared/CLOUD_PROJECT_KIND/deleteCloudProjectTitle cloud-CP механики палитры в форке нет
 e4ded08c6f150a632909e84bcc65d8cf772b4c2f taken fix(browser): read page text with a selector so --expect-text works (#8428)
 acfed6c192b76fb4b8417e98a30695a6fb00ef83 skipped chore(sentry): rotate desktop and daemon DSNs (#8492)
+c4dbe646ab6f9b02427929184691014ff1f0d4cb taken fix(shell): show the full dev branch name in the build-info tooltip (#8436)
+b5f4911e4c00f57fa79ea4b51f35da9926825bbb skipped feat(artifacts): list and publish remote-host artifacts on the desktop (#8465)
+312be8dfb196edbe000f6283c65f570ad42c9d12 skipped feat(mobile): float Android's bars over the page (#8358)
+ad93b428c41cf3d4574de59192b934601796c207 skipped fix(mobile): make Android page pushes slide in cleanly (#8351)
+08dd1a8e94c5648141b14706962c945a923aab58 skipped fix(chat): refuse a send while another Claude Code process has an imported chat open (#8096) — DU: session_manager/session_import в форке нет (import-chat поверхность не берётся)
+e85c782019dbfdb4e0ebc2b97372df0cd8183f91 skipped fix(chat): disable branch arrows during active turn and clear busy error (#7846/#8505) — поверх их TimelineRun/messageEdit-стека (editing выпилен); branch-навигация форка своя
+cb4e9bf16694ec3f530793961728761be6bafe92 skipped fix: session delete, Cue PATH pin and settle scroll regressions (#7622) — сквош 3 фиксов; session-delete юзает их новые agent_accounts queries (разбиение queries у форка другое); Cue PATH pin портировать отдельно при боли
+811f6fea70b5da711507b49287baf783b4984ed9 skipped revert(chat): back out #8505 to unblock main CI (#8514)
+5aa1388275e95113316cec208c876b5d222240bc skipped feat(chat): show the Side chat tab only while a side chat exists (#8405)
+1027d8b1e45ac657eac6609eb88994421580990a skipped fix(inspector): improve PR card hierarchy and merge action priority (#8406) — DU: PRActions/PRTabPane/SessionBranchSummary в форке нет (PR-панель выпилена)
+77aeb04582274107271b90fcf41273f4cec8fe9a skipped feat(review): make review runs an explicit state machine with a run supervisor (#8353)
+1bdc805ace9ddbb17ce0cdb9379aa713c1ec2392 skipped fix(chat): show what changed while a chat was closed as soon as it opens (#8518) — переписывает чтение-страницы useConversation (111 строк) поверх их структуры; форк-версия хука переписана иначе
+54a40e909cdfe020e6b4ac8f185ead7900c3e19e skipped fix(chat): reland branch arrows disabled during a turn without the streaming stall (#8517) — реланд #7846-семейства (скип: их TimelineRun/messageEdit-стек)
+58338910ea1d09e39c9e862b4ee3c774dc18606f skipped fix(chat): time PR review events by when the reviewer wrote them (#8526) — DU: AutomationMessage в форке нет (PR-панель выпилена)
+aa6e65dcef438238b1cfc6b9866827e07dcf5f8a taken fix(browser): open chat links in the Browser without starting agent-browser (#8521)
+77311f0b9f61c8210de23c826fa4f0b84f4934f3 skipped feat(telemetry): artifact creation and publish funnel events (#8483)
