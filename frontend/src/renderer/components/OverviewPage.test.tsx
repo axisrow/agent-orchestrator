@@ -299,38 +299,41 @@ describe("OverviewPage", () => {
 		h.worktrees = worktrees();
 		renderPage();
 
-		// A plain terminated session with no PR, no undelivered messages, and no
-		// kept-dirty worktree is history: hidden until the toggle turns.
+		// A terminated session is history even when it carries no signal at
+		// all: hidden until the toggle turns (issue #350).
 		expect(screen.queryByRole("button", { name: "old worker" })).not.toBeInTheDocument();
 		await user.click(screen.getByRole("button", { name: "Show archived" }));
 		expect(screen.getByRole("button", { name: "old worker" })).toBeInTheDocument();
 		expect(screen.getByRole("button", { name: "Hide archived" })).toBeInTheDocument();
 	});
 
-	it("keeps signal-bearing terminated sessions visible without the toggle", () => {
+	it("keeps every terminated session out of the default view regardless of signals", () => {
 		h.workspaces = workspaces();
 		h.worktrees = worktrees();
 		renderPage();
 
-		// Kept-dirty worktree (cleanup would discard it), an open PR, and
-		// undelivered messages are the GC and merge signals the screen exists for.
-		expect(screen.getByRole("button", { name: "dirty archive" })).toBeInTheDocument();
-		expect(screen.getByRole("button", { name: "archive with pr" })).toBeInTheDocument();
+		// Issue #350, owner directive: undelivered messages, a kept-dirty
+		// worktree, and open PRs (fresh or stale) no longer keep a dead row in
+		// the default list. The rows return only behind the toggle.
+		expect(screen.queryByRole("button", { name: "old worker" })).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "dirty archive" })).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "archive with pr" })).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "stale review" })).not.toBeInTheDocument();
 	});
 
-	it("hides a terminated review session whose open PR went stale past the activity window", async () => {
-		const user = userEvent.setup();
+	it("surfaces terminated debts on the project band without expanding the archive", () => {
 		h.workspaces = workspaces();
 		h.worktrees = worktrees();
+		// Undelivered messages sitting on a terminated session still count —
+		// on the band, not as a dead row (issue #350 acceptance).
+		h.stuckBySession = new Map([["s-archived-stale-pr", 3]]);
 		renderPage();
 
-		// The issue's flood case: the PR is still open, but it has not moved
-		// in weeks, so a fresh PR keeps its session visible while the stale
-		// one hides with the toggle off and returns once the toggle asks.
-		expect(screen.getByRole("button", { name: "archive with pr" })).toBeInTheDocument();
-		expect(screen.queryByRole("button", { name: "stale review" })).not.toBeInTheDocument();
-		await user.click(screen.getByRole("button", { name: "Show archived" }));
-		expect(screen.getByRole("button", { name: "stale review" })).toBeInTheDocument();
+		const band = document.querySelector("[data-project-row]") as HTMLElement;
+		expect(within(band).getByTitle("3 undelivered")).toBeInTheDocument();
+		// s-archived-dirty keeps a worktree cleanup would discard.
+		expect(within(band).getByTitle("1 dirty worktree")).toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "dirty archive" })).not.toBeInTheDocument();
 	});
 
 	it("shows the hidden archive scale next to the toggle until the toggle reveals it", async () => {
@@ -339,9 +342,9 @@ describe("OverviewPage", () => {
 		h.worktrees = worktrees();
 		renderPage();
 
-		// The plain terminated row and the stale-review row are what the
-		// default view currently hides.
-		expect(screen.getByTestId("overview-archived-count").textContent).toBe("Archived (2)");
+		// Every terminated session of the project hides by default now, so the
+		// counter reflects the full archive, not a signal-filtered subset.
+		expect(screen.getByTestId("overview-archived-count").textContent).toBe("Archived (4)");
 		await user.click(screen.getByRole("button", { name: "Show archived" }));
 		expect(screen.queryByTestId("overview-archived-count")).not.toBeInTheDocument();
 	});
@@ -460,7 +463,6 @@ describe("OverviewPage", () => {
 
 		expect(screen.queryByRole("button", { name: "old worker" })).not.toBeInTheDocument();
 		expect(screen.queryByRole("button", { name: "stale review" })).not.toBeInTheDocument();
-		// Visible by default through the fresh-PR exception, but not running.
 		expect(screen.queryByRole("button", { name: "archive with pr" })).not.toBeInTheDocument();
 		expect(screen.getByTestId("overview-running-count").textContent).toBe("Running (2)");
 	});

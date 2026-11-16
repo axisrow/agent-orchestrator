@@ -8,7 +8,7 @@
  */
 
 import { useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, CheckCircle2, Loader2, X } from "lucide-react";
+import { AlertTriangle, Archive, CheckCircle2, Loader2, X } from "lucide-react";
 import { memo, useEffect, useRef, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -649,6 +649,8 @@ function ChatAgentSwitchStatus({
 	const warning = presentation.outcome === "failure" || presentation.outcome === "recovery";
 	const success = presentation.outcome === "success";
 	const inProgress = presentation.outcome === "in_progress";
+	// A terminated session's switch is a record, not a transition (issue #350).
+	const historical = presentation.outcome === "historical";
 	return (
 		<div
 			aria-busy={inProgress && presentation.animate ? true : undefined}
@@ -667,16 +669,20 @@ function ChatAgentSwitchStatus({
 				className={cn(
 					"pointer-events-auto relative flex w-full max-w-lg items-start gap-3 rounded-lg border bg-surface/95 px-4 py-3 text-left shadow-lg",
 					onDismiss && "pr-11",
-					success
-						? "border-success/40"
-						: warning
-							? presentation.tone === "danger"
-								? "border-danger/40"
-								: "border-warning/40"
-							: "border-border",
+					historical
+						? "border-border"
+						: success
+							? "border-success/40"
+							: warning
+								? presentation.tone === "danger"
+									? "border-danger/40"
+									: "border-warning/40"
+								: "border-border",
 				)}
 			>
-				{success ? (
+				{historical ? (
+					<Archive aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+				) : success ? (
 					<CheckCircle2 aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-success" />
 				) : warning ? (
 					<AlertTriangle
@@ -690,7 +696,12 @@ function ChatAgentSwitchStatus({
 					<Loader2 aria-hidden="true" className="mt-0.5 size-4 shrink-0 animate-spin text-status-working" />
 				)}
 				<div className="min-w-0 flex-1">
-					<strong className="block text-sm text-foreground">
+					{historical && (
+						<p className="flex items-center gap-1 text-2xs text-passive">
+							{t("switchAgent.historical.label")}
+						</p>
+					)}
+					<strong className={cn("block text-sm", historical ? "text-muted-foreground" : "text-foreground")}>
 						{t(presentation.titleKey, presentation.values)}
 					</strong>
 					<p className="mt-0.5 text-pretty text-xs leading-relaxed text-muted-foreground">
