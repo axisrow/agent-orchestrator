@@ -27,7 +27,6 @@ import {
 	toSessionActivity,
 	toSessionStatus,
 	newestActiveOrchestrator,
-	attentionZone,
 	workerSessions,
 	type WorkspaceSession,
 	type WorkspaceSummary,
@@ -806,27 +805,22 @@ function selectTraySessions(workspaces: WorkspaceSummary[]): TraySessionEntry[] 
 	const entries: TraySessionEntry[] = [];
 	for (const workspace of workspaces) {
 		for (const session of workerSessions(workspace.sessions)) {
-			// The tray is a human-input queue: an item stays while its underlying
-			// condition is unresolved (issue #328). `status` folds the session
-			// row's liveness into the classification — the daemon lets
-			// IsTerminated dominate the SCM facts, so a review-runner row that
-			// finished and was terminated while its PR is still open and unmerged
-			// read "terminated" and silently left the tray. That unresolved
-			// condition lives on `scmStatus`, which the daemon derives from pure
-			// PR facts (state/CI/review decision), so classify a terminated row
-			// from it. Nothing else mutates this set: menu selection, menu close,
+			// The badge is a human-input queue and nothing else (#353): a session
+			// counts while its agent is waiting on the user, and merge, review and
+			// CI zones never reach it — they stay in the sidebar and board.
+			// Nothing else mutates this set: menu selection, menu close,
 			// navigation and window-focus refetches carry the same facts and
 			// re-derive the same items.
-			const status =
-				session.status === "terminated" ? (session.scmStatus ?? session.status) : session.status;
-			const zone = attentionZone(status);
-			if ((zone === "merge" && status === "merged") || (zone !== "action" && zone !== "merge")) continue;
+			const waitingInput =
+				session.status === "needs_input" ||
+				session.activity?.state === "waiting_input" ||
+				session.activity?.state === "blocked";
+			if (!waitingInput) continue;
 			entries.push({
 				projectId: session.workspaceId,
 				projectName: workspace.name,
 				sessionId: session.id,
 				title: session.title,
-				zone,
 			});
 		}
 	}

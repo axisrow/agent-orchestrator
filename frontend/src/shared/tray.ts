@@ -1,11 +1,11 @@
-export type TrayAttentionZone = "action" | "merge";
-
+// The tray surfaces only sessions whose agent is waiting on the user. Merge
+// and action zones stay in the sidebar and board; they never reach the badge
+// or the menu, so the count means "someone is blocked on you" and nothing else.
 export type TraySessionEntry = {
 	projectId: string;
 	projectName: string;
 	sessionId: string;
 	title: string;
-	zone: TrayAttentionZone;
 };
 
 export type TrayAttentionState = {

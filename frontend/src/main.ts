@@ -34,6 +34,7 @@ import { registerCliLinkIpc } from "./main/cli-link-ipc";
 import { launchCommand } from "./main/launch-command";
 import { closeDaemonLog, openDaemonLog, writeDaemonLog } from "./main/daemon-log";
 import { createRendererCrashLog, parseRendererCrashReport } from "./main/renderer-crash-log";
+import { createTrayNotificationLog } from "./main/tray-notifications-log";
 import { RENDERER_CRASH_REPORT_CHANNEL } from "./shared/renderer-crash";
 import { bootDaemonAndWindow } from "./main/daemon-boot-gate";
 import { blocksRenderFrameNavigation } from "./main/render-frame-guard";
@@ -320,6 +321,9 @@ const trayLifecycle = createTrayLifecycle({
 	getContents: () => getShellWebContents(),
 	getTrayController: () => trayController,
 	focusWindow: () => focusMainWindow(),
+	// trayNotificationLog is declared further down; every call lands after
+	// module load, so the binding is initialized by then (#353).
+	logNotification: (event, fields) => trayNotificationLog(event, fields),
 });
 // Icon/taskbar-shortcut folder drop, mirroring VS Code: relayed to the
 // renderer's global drop handling so it opens the same create-project flow.
@@ -2823,6 +2827,12 @@ ipcMain.on(RENDERER_CRASH_REPORT_CHANNEL, (event, input: unknown) => {
 	const report = parseRendererCrashReport(input);
 	if (report) rendererCrashLog(report);
 });
+// Tray badge transitions, same convention as renderer-crashes.jsonl (#353):
+// ~/.ao, dev keeps its own copy under ~/.ao/dev/.
+const trayNotificationLog = createTrayNotificationLog(
+	path.join(os.homedir(), ".ao", ...(isDev ? [DEV_STATE_SUBDIR] : []), "tray-notifications.jsonl"),
+	app.getVersion(),
+);
 
 function failClosedTelemetryPolicyView(): TelemetryPolicyView {
 	return { eventsEnabled: false, consentGeneration: "unavailable", updatedAt: new Date(0).toISOString(), acknowledged: false, consentRenewalRequired: false, state: "cleanup_failed", environmentVeto: true, durabilitySupported: false, reason: "invalid_authority" };
