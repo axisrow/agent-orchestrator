@@ -10,7 +10,7 @@ import {
 	isAgentActivityWorking,
 	isSessionIdle,
 } from "./session-presentation";
-import type { WorkspaceSession } from "../types/workspace";
+import type { SessionStatus, WorkspaceSession } from "../types/workspace";
 
 function sessionWith(overrides: Partial<WorkspaceSession>): WorkspaceSession {
 	return {
@@ -176,7 +176,8 @@ describe("session presentation", () => {
 	] as const)("glues the zone with live activity into the %s dot tooltip", (status, activity, title) => {
 		// The delivery statuses ride with their SCM fact, as the daemon sends
 		// them for every PR session.
-		const scmStatus = status === "changes_requested" || status === "pr_open" ? (status as const) : undefined;
+		const scmStatus: SessionStatus | undefined =
+			status === "changes_requested" || status === "pr_open" ? status : undefined;
 		expect(
 			getSessionStatusDotView(sessionWith({ status, scmStatus, activity: { state: activity, lastActivityAt: "" } })).title,
 		).toBe(title);

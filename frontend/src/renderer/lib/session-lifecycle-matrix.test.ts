@@ -65,7 +65,10 @@ function session(facts: SessionLifecycleFacts, kind: "worker" | "orchestrator"):
 		status: facts.status ?? "unknown",
 		activity: facts.activity ?? undefined,
 		isTerminated: facts.isTerminated,
-		provisionState: facts.provisionState,
+		// The contract reads provisionState as a loose string (the daemon's
+		// wire), the session view as its closed union; the matrix only ever
+		// feeds the union.
+		provisionState: facts.provisionState as WorkspaceSession["provisionState"],
 		updatedAt: "2026-11-16T00:00:00Z",
 		prs: [],
 	};
