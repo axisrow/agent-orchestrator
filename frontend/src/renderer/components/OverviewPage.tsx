@@ -317,7 +317,7 @@ export function OverviewPage() {
 				filter titlebar and each project band header stick inside it; the
 				resource strip is an ordinary scrolling row. */}
 			<main className="scrollbar-none min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
-				<header className="workspace-topbar-container center-panel-titlebar sticky top-0 z-20 flex h-toolbar items-center justify-between gap-3 border-b border-border-strong bg-background pr-2">
+				<header className="overview-sticky-titlebar workspace-topbar-container center-panel-titlebar sticky top-0 z-20 flex h-toolbar items-center justify-between gap-3 border-b border-border-strong bg-background pr-2">
 					<h1 className={showPageTitle ? "text-base font-semibold" : "sr-only"}>{t("overview.title")}</h1>
 					<div className="flex shrink-0 items-center gap-2">
 						{selectedSessions.length > 0 && (
@@ -572,7 +572,8 @@ function ProjectGroup({
 			<div
 				className={cn(
 					// Sticks under the filter titlebar while its band scrolls (issue
-					// #347); the opaque band fill covers the rows sliding underneath.
+					// #347). On translucent windows styles.css swaps this pill to a
+					// solid fill so the rows sliding underneath stay covered.
 					"group/nav-row sticky top-toolbar z-10 flex h-8 w-full items-center gap-2 rounded-lg bg-surface px-2.5 text-sm font-medium",
 				)}
 				data-project-row=""
