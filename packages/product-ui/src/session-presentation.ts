@@ -220,7 +220,11 @@ export function getAgentActivityView(
 	translate: ProductUITranslator = defaultProductUITranslator,
 ): AgentActivityView {
 	const state = activity?.state ?? "unknown";
-	const base = agentActivityBases[state] ?? agentActivityBases.unknown;
+	// A stalled active fact is the stale tail of a finished or hung agent, not
+	// a live turn (#361): the pill reads the lifecycle's answer — idle, gray,
+	// no pulse — instead of repeating a claim nothing has confirmed.
+	const base =
+		state === "active" && activity?.turnStalled === true ? agentActivityBases.idle : agentActivityBases[state] ?? agentActivityBases.unknown;
 	const { labelKey, ...view } = base;
 	return {
 		...view,
@@ -230,7 +234,7 @@ export function getAgentActivityView(
 }
 
 export function isAgentActivityWorking(activity?: SessionActivity | null): boolean {
-	return activity?.state === "active";
+	return activity?.state === "active" && activity?.turnStalled !== true;
 }
 
 export type SessionStatusView = {
@@ -521,9 +525,12 @@ export function sessionStatusTooltip(
 	const activityLabel = getAgentActivityView(activity, translate).label;
 	const suffix = activityLabel === toneLabel ? toneLabel : `${toneLabel} · ${activityLabel}`;
 	if (activity.turnStalled === true) {
+		// The silence is the news, and the hook claim of "active" is exactly
+		// what it puts in doubt (#361): the hover keeps the tone label alone
+		// and never appends a "Working" nothing has confirmed.
 		return `${translate("activity.noSignsOfLife", {
 			duration: formatElapsed(activity.turnSilentForMs ?? 0),
-		})} · ${suffix}`;
+		})} · ${toneLabel}`;
 	}
 	if (activity.turnToolInflightName) {
 		const workingOn = translate("activity.workingOnTool", {

@@ -222,17 +222,19 @@ describe("session presentation", () => {
 	});
 
 	// Issue #281: a turn hung on an API call must not look like honest work.
-	// The tone stays with the board section; the dot freezes and the tooltip
-	// carries the silence and its duration.
+	// Issue #361 sharpens it: an active fact with no signs of life past the
+	// daemon's threshold is not liveness, so the lifecycle answers idle — the
+	// dot goes quiet gray and the tooltip carries the silence and its duration
+	// instead of a Working claim.
 	it("freezes the dot and names the silence for a stalled turn", () => {
 		const stalled = sessionWith({
 			status: "working",
 			activity: { state: "active", lastActivityAt: "", turnStalled: true, turnSilentForMs: 60 * 60 * 1000 },
 		});
 		expect(getSessionStatusDotView(stalled)).toEqual({
-			className: "bg-status-working",
+			className: "bg-status-idle",
 			breathe: false,
-			title: "No signs of life 1h · Working",
+			title: "No signs of life 1h · Idle",
 		});
 
 		// An honest streaming turn (no stall fact) keeps breathing plain Working.
@@ -332,7 +334,7 @@ describe("session presentation", () => {
 		).toEqual({ className: "bg-status-working", breathe: true, title: "Working" });
 	});
 
-	it("paints a provisioning orchestrator as starting, and freezes a stalled one", () => {
+	it("paints a provisioning orchestrator as starting, and a stalled one as idle (#361)", () => {
 		expect(
 			getOrchestratorStatusDotView(sessionWith({ status: "working", provisionState: "provisioning" })),
 		).toEqual({ className: "bg-status-working", breathe: true, title: "Starting" });
@@ -343,7 +345,7 @@ describe("session presentation", () => {
 					activity: { state: "active", lastActivityAt: "", turnStalled: true, turnSilentForMs: 60 * 60 * 1000 },
 				}),
 			),
-		).toEqual({ className: "bg-status-working", breathe: false, title: "No signs of life 1h · Working" });
+		).toEqual({ className: "bg-status-idle", breathe: false, title: "No signs of life 1h · Idle" });
 	});
 
 	it("keeps activity indicator color independent from PR and CI presentation", () => {
@@ -352,6 +354,10 @@ describe("session presentation", () => {
 
 		expect(active.indicatorClassName).toBe("bg-status-working animate-status-pulse");
 		expect(idle.indicatorClassName).toBe("bg-status-idle");
+		// A stalled active fact presents as idle — gray, no pulse (#361).
+		const stale = getAgentActivityView({ state: "active", lastActivityAt: "", turnStalled: true });
+		expect(stale.indicatorClassName).toBe("bg-status-idle");
+		expect(stale.label).toBe("Idle");
 	});
 
 	it("uses a muted accent treatment for In Review instead of idle gray", () => {
