@@ -193,6 +193,7 @@
 	"activity.noSignsOfLife": "{{duration}} 동안 응답 없음",
 	"activity.workingOnTool": "{{tool}} 실행 중 {{duration}}",
 	"activity.waiting_input": "입력 필요",
+	"lifecycle.provisioning": "시작 중",
 	"home.never": "없음",
 	"cloudCredential.anthropicLoginDescription": "브라우저에서 Claude 계정으로 로그인합니다. 이 기기에서 Claude Code에 로그인하지 않았다면 로컬 세션도 이 로그인을 사용합니다.",
 	"cloudCredential.apiKeyHelp": "<link/>에서 키를 만든 다음 여기에 붙여 넣으세요.",

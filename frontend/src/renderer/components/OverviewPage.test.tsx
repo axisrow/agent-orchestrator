@@ -293,6 +293,77 @@ describe("OverviewPage", () => {
 		expect(unknownCiRow.textContent).not.toContain("Blocked by provider");
 	});
 
+	it("shows an idle orchestrator as Idle, not Building, in the Stage column (#355)", () => {
+		// The live case behind the issue: an orchestrator's aggregated status
+		// stays "working" for its whole life, and the old cell fell back to the
+		// building lane, so idle orchestrators read as Building for weeks while
+		// the sidebar called them idle.
+		const spaces = workspaces();
+		for (const project of spaces) {
+			for (const item of project.sessions) {
+				if (item.kind === "orchestrator") item.activity = { state: "idle", lastActivityAt: "" };
+			}
+		}
+		h.workspaces = spaces;
+		h.worktrees = worktrees();
+		renderPage();
+
+		const row = screen.getByRole("button", { name: "orchestrator" }).closest("div")!;
+		expect(row.textContent).toContain("Idle");
+		expect(row.textContent).not.toContain("Building");
+	});
+
+	it("keeps Building for sessions with real delivery facts and Spawning for provisioning", () => {
+		h.workspaces = workspaces();
+		h.worktrees = worktrees();
+		renderPage();
+
+		// A worker with a PR still shows its lane; the running check row stays
+		// in its delivery lane; only a real in-flight start says Spawning.
+		const checksRow = screen.getByRole("button", { name: "cancelled checks" }).closest("div")!;
+		expect(checksRow.textContent).toContain("Building");
+		expect(screen.getByText("Spawning")).toBeInTheDocument();
+		// A PR-less worker executing a turn says Working, not Building.
+		const idleRow = screen.getByRole("button", { name: "executing worker" }).closest("div")!;
+		expect(idleRow.textContent).toContain("Working");
+		expect(idleRow.textContent).not.toContain("Building");
+	});
+
+	it("matches the Blocked status filter for waiting-input and blocked states alike", async () => {
+		const user = userEvent.setup();
+		const spaces = workspaces();
+		// One session blocked by activity state, one waiting on input: the two
+		// facts are one "waiting on the user" bucket in the filter.
+		for (const project of spaces) {
+			for (const item of project.sessions) {
+				if (item.id === "s-blocked") item.activity = { state: "blocked", lastActivityAt: "" };
+				if (item.id === "s-running") item.activity = { state: "waiting_input", lastActivityAt: "" };
+			}
+		}
+		h.workspaces = spaces;
+		h.worktrees = worktrees();
+		renderPage();
+
+		await user.click(screen.getByRole("combobox", { name: "Status" }));
+		await user.click(screen.getByRole("option", { name: "Blocked" }));
+
+		expect(screen.getByRole("button", { name: "needs you" })).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "executing worker" })).toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "gate open" })).not.toBeInTheDocument();
+	});
+
+	it("keeps a provisioning session out of the idle status filter", async () => {
+		const user = userEvent.setup();
+		h.workspaces = workspaces();
+		h.worktrees = worktrees();
+		renderPage();
+
+		await user.click(screen.getByRole("combobox", { name: "Status" }));
+		await user.click(screen.getByRole("option", { name: "Idle" }));
+
+		expect(screen.queryByRole("button", { name: "just spawned" })).not.toBeInTheDocument();
+	});
+
 	it("hides cleanly terminated sessions behind the archived toggle", async () => {
 		const user = userEvent.setup();
 		h.workspaces = workspaces();

@@ -193,6 +193,7 @@
 	"activity.noSignsOfLife": "Sem sinais de vida há {{duration}}",
 	"activity.workingOnTool": "Trabalhando em {{tool}} há {{duration}}",
 	"activity.waiting_input": "Entrada necessária",
+	"lifecycle.provisioning": "Iniciando",
 	"home.never": "Nunca",
 	"cloudCredential.anthropicLoginDescription": "Entre com sua conta do Claude no navegador. Se o Claude Code não estiver conectado nesta máquina, as sessões locais também usarão este login.",
 	"cloudCredential.apiKeyHelp": "Crie uma chave em <link/> e cole aqui.",

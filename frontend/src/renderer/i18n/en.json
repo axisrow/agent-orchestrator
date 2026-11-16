@@ -193,6 +193,7 @@
 	"activity.noSignsOfLife": "No signs of life {{duration}}",
 	"activity.workingOnTool": "Working on {{tool}} {{duration}}",
 	"activity.waiting_input": "Input Needed",
+	"lifecycle.provisioning": "Starting",
 	"common.breadcrumb": "Breadcrumb",
 	"common.close": "Close",
 	"common.loading": "Loading…",

@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { Archive, ChevronRight, Folder, FolderOpen, GitPullRequest, Loader2, Trash2, TriangleAlert, X } from "lucide-react";
-import { getKanbanColumnView } from "@aoagents/product-ui";
+import { getKanbanColumnView, sessionLifecycleRunning, sessionLifecycleState, sessionLifecycleStateView } from "@aoagents/product-ui";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { OverviewOrphans, OverviewResources } from "./OverviewResources";
 import { OrchestratorIcon } from "./icons";
@@ -25,15 +25,11 @@ import { formatBytes } from "../lib/format-bytes";
 import { formatTimeCompact, formatTimeTerse } from "../lib/format-time";
 import { projectNavigateTarget, sessionNavigateTarget } from "../lib/navigate-to-session";
 import { prCanMerge, sessionPRDisplaySummaries } from "../lib/pr-display";
-import { getAgentActivityView, getOrchestratorStatusDotView, getSessionStatusDotView } from "../lib/session-presentation";
+import { getOrchestratorStatusDotView, getSessionStatusDotView } from "../lib/session-presentation";
 import { hidesShellTopbar } from "../lib/platform";
 import { useUiStore } from "../stores/ui-store";
 import type { MessageKey } from "../i18n";
 import { cn } from "../lib/utils";
-
-// The exited view for a terminated session whose last recorded activity may
-// still say "active": the session is over, so the status column must not.
-const EXITED_ACTIVITY = { state: "exited", lastActivityAt: "" } as const;
 
 type StatusFilter = "all" | "working" | "idle" | "blocked" | "exited";
 
@@ -48,24 +44,32 @@ const STAGE_FILTERS: KanbanColumn[] = ["building", "validating", "needs_review",
 const ROW_ACTION_BUTTON_CLASS =
 	"sidebar-icon-action grid size-6 shrink-0 place-items-center rounded-md !bg-transparent text-passive hover:!bg-interactive-hover focus:!bg-transparent focus-visible:!bg-interactive-hover active:!bg-interactive-hover data-[state=open]:!bg-interactive-hover hover:text-foreground focus-visible:text-foreground disabled:pointer-events-none disabled:opacity-50 data-[state=open]:text-foreground [&_svg]:size-icon-md";
 
-// The activity-level status the table scans by: working / idle / blocked /
-// exited. Deliberately coarser than the delivery facts, which live in the
-// stage and merge-gate columns.
-function overviewStatus(session: WorkspaceSession): Exclude<StatusFilter, "all"> {
-	if (session.isTerminated || session.activity?.state === "exited") return "exited";
-	const state = session.activity?.state;
-	if (state === "waiting_input" || state === "blocked") return "blocked";
-	if (state === "active") return "working";
-	return "idle";
+// The activity-level status the table scans by. Read through the session
+// lifecycle contract (#355) — the same derivation the sidebar dot, the tray
+// badge and the Running filter answer to — so the filters cannot disagree
+// with what the rows show. "Blocked" deliberately keeps matching both
+// waiting_input and blocked: both are the agent waiting on the user, which is
+// the one bucket the old status filter already lumped together. A session
+// still provisioning matches no status bucket: it is not idle yet.
+function overviewLifecycle(session: WorkspaceSession) {
+	return sessionLifecycleState(session);
+}
+
+function matchesStatusFilter(session: WorkspaceSession, filter: StatusFilter): boolean {
+	if (filter === "all") return true;
+	const state = overviewLifecycle(session);
+	if (filter === "blocked") return state === "blocked" || state === "waiting_input";
+	return filter === "working" ? state === "running" : filter === "idle" ? state === "idle" : state === "exited";
 }
 
 // A session is running when its agent is executing a turn right now: the
-// daemon's hook-reported activity fact — not the stage/SCM chrome a row
-// otherwise carries, and never a terminated session however fresh its last
-// stage looks (issue #342). One predicate for the filter, the counter, and
-// the row marker so all three answer the same question.
+// contract's running state — the daemon's hook-reported activity fact, never
+// the stage/SCM chrome a row otherwise carries, and never a terminated or
+// still-provisioning session however fresh its last stage looks (issue #342).
+// One predicate for the filter, the counter, and the row marker so all three
+// answer the same question.
 function isSessionRunning(session: WorkspaceSession): boolean {
-	return !session.isTerminated && session.activity?.state === "active";
+	return sessionLifecycleRunning(session);
 }
 
 // Whether the session's merge gate is open, and the one fact holding it shut
@@ -152,7 +156,7 @@ export function OverviewPage() {
 			let hiddenArchived = 0;
 			let running = 0;
 			const matches = project.sessions.filter((session) => {
-				if (statusFilter !== "all" && overviewStatus(session) !== statusFilter) return false;
+				if (!matchesStatusFilter(session, statusFilter)) return false;
 				if (stageFilter !== "all" && (session.kanbanColumn ?? "building") !== stageFilter) return false;
 				// Running only narrows (issue #342): it never re-reveals a row the
 				// visibility rule hides, and running sessions are never terminated
@@ -311,7 +315,10 @@ export function OverviewPage() {
 
 	const stageLabel = (column: KanbanColumn) => getKanbanColumnView(column, translator(t)).label;
 
-	const terminateBlockedCount = terminateTargets.filter((session) => overviewStatus(session) === "blocked").length;
+	const terminateBlockedCount = terminateTargets.filter((session) => {
+		const state = overviewLifecycle(session);
+		return state === "blocked" || state === "waiting_input";
+	}).length;
 	const terminateSingle = terminateTargets.length === 1;
 
 	return (
@@ -505,7 +512,7 @@ export function OverviewPage() {
 						{terminateTargets.map((session) => (
 							<li key={session.id} className="truncate">
 								{t("overview.terminateListRow", { title: session.title, project: session.workspaceName })}
-								{overviewStatus(session) === "blocked" && (
+								{(overviewLifecycle(session) === "blocked" || overviewLifecycle(session) === "waiting_input") && (
 									<span className="text-warning"> · {t("overview.terminateWaitingLabel")}</span>
 								)}
 							</li>
@@ -707,7 +714,12 @@ function SessionRow({
 	onTerminate: (session: WorkspaceSession) => void;
 }) {
 	const { t } = useTranslation();
-	const activityView = getAgentActivityView(session.isTerminated ? EXITED_ACTIVITY : session.activity);
+	// The lifecycle label comes from the contract (#355): the same state the
+	// sidebar dot and the tray badge read. It only reaches the Stage column
+	// when the session has no delivery facts to show instead — Building is a
+	// real lane (the daemon's "no PR yet"), never a lifecycle fallback, and
+	// provisioning already says Spawning below.
+	const lifecycle = sessionLifecycleStateView(sessionLifecycleState(session), (key) => t(key as MessageKey));
 	const dot = getSessionStatusDotView(session);
 	const running = isSessionRunning(session);
 	const stage = getKanbanColumnView(session.kanbanColumn ?? "building", translator(t));
@@ -758,7 +770,7 @@ function SessionRow({
 					/>
 				)}
 			</span>
-			<span className="sr-only">{activityView.label}</span>
+			<span className="sr-only">{lifecycle.label}</span>
 			<button
 				type="button"
 				className={cn(
@@ -775,7 +787,13 @@ function SessionRow({
 				</span>
 			)}
 			<span className="relative z-[1] w-24 shrink-0 truncate text-xs text-muted-foreground" title={session.displayStatus}>
-				{session.provisionState === "provisioning" ? t("overview.stageSpawning") : mergedStage ? t("displayStatus.merged") : stage.label}
+				{session.provisionState === "provisioning"
+					? t("overview.stageSpawning")
+					: mergedStage
+						? t("displayStatus.merged")
+						: pr
+							? stage.label
+							: lifecycle.label}
 			</span>
 			<span className="relative z-[1] w-12 shrink-0 text-right">
 				{pr ? (
