@@ -1,4 +1,5 @@
 import { type QueryClient, useQueries, useQuery, useQueryClient, type Query } from "@tanstack/react-query";
+import { sessionLifecycleState } from "@aoagents/product-ui";
 import type { TraySessionEntry } from "../../shared/tray";
 import { useEffect, useMemo } from "react";
 import type { components } from "../../api/schema";
@@ -806,16 +807,15 @@ function selectTraySessions(workspaces: WorkspaceSummary[]): TraySessionEntry[] 
 	for (const workspace of workspaces) {
 		for (const session of workerSessions(workspace.sessions)) {
 			// The badge is a human-input queue and nothing else (#353): a session
-			// counts while its agent is waiting on the user, and merge, review and
-			// CI zones never reach it — they stay in the sidebar and board.
-			// Nothing else mutates this set: menu selection, menu close,
-			// navigation and window-focus refetches carry the same facts and
-			// re-derive the same items.
-			const waitingInput =
-				session.status === "needs_input" ||
-				session.activity?.state === "waiting_input" ||
-				session.activity?.state === "blocked";
-			if (!waitingInput) continue;
+			// counts while the lifecycle contract has it waiting on the user —
+			// waiting_input or blocked, reached from the hook fact or the status,
+			// and never a terminated row with stale facts (#350). Merge, review
+			// and CI zones stay in the sidebar and board and never reach the
+			// badge or the menu. Nothing else mutates this set: menu selection,
+			// menu close, navigation and window-focus refetches carry the same
+			// facts and re-derive the same items.
+			const lifecycle = sessionLifecycleState(session);
+			if (lifecycle !== "waiting_input" && lifecycle !== "blocked") continue;
 			entries.push({
 				projectId: session.workspaceId,
 				projectName: workspace.name,

@@ -9,6 +9,8 @@ import {
 	getSessionTimelinePillView as getPortableSessionTimelinePillView,
 	isAgentActivityWorking,
 	isSessionIdle,
+	sessionLifecycleState,
+	sessionLifecycleStateView,
 	sessionStatusTooltip,
 	type AgentActivityView,
 	type AttentionZone,
@@ -67,12 +69,18 @@ export type SessionStatusDotView = {
 // wakes and would otherwise take every pull request tone with it. Merged keeps
 // its split-section tone instead of sharing Ready to merge's tone.
 //
-// Motion stays on raw agent activity. A no-PR idle session is the exception to
-// the preserved section colour: when its agent starts working it blinks blue.
+// The lifecycle overrides read through the session state contract (#355), so
+// the dot answers waiting/exited the moment the hook facts say so instead of
+// lagging behind the aggregated status recompute (#336 class), and every
+// surface reads the same answer. Motion stays on raw agent activity. A no-PR
+// idle session is the exception to the preserved section colour: when its
+// agent starts working it blinks blue.
 export function getSessionStatusDotView(
 	session: {
 		activity?: SessionActivity | null;
 		displayStatus?: string;
+		isTerminated?: boolean;
+		provisionState?: string;
 		scmStatus?: SessionStatus;
 		status: SessionStatus;
 	},
@@ -80,6 +88,26 @@ export function getSessionStatusDotView(
 ): SessionStatusDotView {
 	const working = isAgentActivityWorking(session.activity);
 	const closedWithoutMerge = session.displayStatus === "Closed without merge";
+	// Waiting on the user overrides the lane: the red tone is the contract's
+	// answer, reached from either the hook fact or the status (#335's rule
+	// applied to the lifecycle rather than the merge gate).
+	const lifecycle = sessionLifecycleState(session);
+	if (lifecycle === "waiting_input" || lifecycle === "blocked") {
+		const label = getAttentionZoneView("needs_input", t).label;
+		return {
+			className: getAttentionZoneView("needs_input", t).dotClassName,
+			breathe: false,
+			title: sessionStatusTooltip(label, session.activity, translator(t)),
+		};
+	}
+	// The agent is gone and the row is not: quiet gray, whatever lane it was in.
+	if (lifecycle === "exited") {
+		return {
+			className: "bg-passive",
+			breathe: false,
+			title: sessionStatusTooltip(getSessionStatusView("exited", t).label, session.activity, translator(t)),
+		};
+	}
 	const sectionStatus: SessionStatus =
 		closedWithoutMerge ? "exited" : (session.scmStatus ?? session.status);
 	const toneStatus = sectionStatus === "idle" && working ? "working" : sectionStatus;
@@ -117,26 +145,28 @@ export function getSessionStatusDotView(
 // does — it stays "working" for the session's whole life, so running that
 // status through getSessionStatusDotView would silently absorb waiting_input
 // and blocked into the working tone, and an exited orchestrator would read as
-// "needs you" instead of gray. Read the tone off activity/isTerminated first,
-// falling back to getSessionStatusDotView once neither applies.
+// "needs you" instead of gray. Read the tone off the lifecycle contract
+// (#355): the same state the overview Stage column and the Running filter
+// answer to, so an idle orchestrator is idle everywhere at once.
 export function getOrchestratorStatusDotView(
 	session: {
 		activity?: SessionActivity | null;
+		isTerminated?: boolean;
+		provisionState?: string;
 		scmStatus?: SessionStatus;
 		status: SessionStatus;
-		isTerminated?: boolean;
 	},
 	t: TFunction = appI18n.t,
 ): SessionStatusDotView {
-	const state = session.activity?.state;
-	if (state === "waiting_input" || state === "blocked") {
+	const lifecycle = sessionLifecycleState(session);
+	if (lifecycle === "waiting_input" || lifecycle === "blocked") {
 		return {
 			className: getAttentionZoneView("needs_input", t).dotClassName,
 			breathe: false,
 			title: sessionStatusTooltip(getAttentionZoneView("needs_input", t).label, session.activity, translator(t)),
 		};
 	}
-	if (session.isTerminated || state === "exited") {
+	if (lifecycle === "exited") {
 		// Bare label: the session is over, so any stale "active" activity must
 		// not glue a "· Working" onto a dead session's tooltip.
 		return {
@@ -145,7 +175,26 @@ export function getOrchestratorStatusDotView(
 			title: getSessionStatusView("exited", t).label,
 		};
 	}
-	return getSessionStatusDotView(session, t);
+	if (lifecycle === "provisioning") {
+		return {
+			className: getSessionStatusView("working", t).dotClassName,
+			breathe: true,
+			title: sessionLifecycleStateView("provisioning", (key) => t(key as MessageKey)).label,
+		};
+	}
+	if (lifecycle === "running") {
+		return {
+			className: getSessionStatusView("working", t).dotClassName,
+			// Motion is the liveness signal, so a stalled turn freezes the dot.
+			breathe: session.activity?.turnStalled !== true,
+			title: sessionStatusTooltip(getSessionStatusView("working", t).label, session.activity, translator(t)),
+		};
+	}
+	return {
+		className: getSessionStatusView("idle", t).dotClassName,
+		breathe: false,
+		title: sessionStatusTooltip(getSessionStatusView("idle", t).label, session.activity, translator(t)),
+	};
 }
 
 export function getSessionTimelinePillView(
