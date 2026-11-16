@@ -4707,6 +4707,8 @@
 	"switchAgent.historical.completed": "Completed {{when}}",
 	"switchAgent.historical.failed": "Failed {{when}}",
 	"switchAgent.historical.label": "Historical record",
+	"switchAgent.historical.interrupted": "Interrupted {{when}}",
+	"switchAgent.interrupted.compact": "Interrupted",
 	"switchAgent.state.preparingHandoff": "Preparing handoff",
 	"switchAgent.state.sourceStopped": "Source stopped",
 	"switchAgent.state.startingTarget": "Starting target agent",

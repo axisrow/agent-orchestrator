@@ -1640,6 +1640,8 @@
 	"switchAgent.historical.completed": "Abgeschlossen {{when}}",
 	"switchAgent.historical.failed": "Fehlgeschlagen {{when}}",
 	"switchAgent.historical.label": "Historischer Eintrag",
+	"switchAgent.historical.interrupted": "Abgebrochen {{when}}",
+	"switchAgent.interrupted.compact": "Abgebrochen",
 	"switchAgent.state.preparingHandoff": "Übergabe wird vorbereitet",
 	"switchAgent.state.sourceStopped": "Quell-Agent gestoppt",
 	"switchAgent.state.startingTarget": "Ziel-Agent wird gestartet",

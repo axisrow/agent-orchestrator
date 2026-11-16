@@ -265,9 +265,11 @@ describe("terminated sessions render historical switches", () => {
 	it.each([
 		["completed", "switchAgent.success.compact", "switchAgent.historical.completed"],
 		["failed", "switchAgent.failure.compact", "switchAgent.historical.failed"],
+		["delivering_context", "switchAgent.interrupted.compact", "switchAgent.historical.interrupted"],
 	] as const)("renders a %s switch as a muted historical record on a terminated session", (state, compactLabelKey, descriptionKey) => {
 		// The issue's live case: the session exited 13 days after the switch
 		// completed; the card must read "Completed 13d ago", not a live takeover.
+		// A record the session never finished says interrupted, never success.
 		vi.useFakeTimers({ now: new Date("2026-11-16T12:00:00Z") });
 		const presentation = deriveAgentSwitchPresentation(
 			input(switchSummary({ state, updatedAt: "2026-11-03T12:00:00Z" }), {
@@ -310,11 +312,14 @@ describe("terminated sessions render historical switches", () => {
 
 		expect(presentation).toMatchObject({
 			animate: false,
+			compactLabelKey: "switchAgent.interrupted.compact",
+			descriptionKey: "switchAgent.interrupted.compact",
 			lockAgentTerminal: false,
 			outcome: "historical",
 			stage: null,
 			tone: "muted",
 		});
+		expect(presentation.values.when).toBe("");
 	});
 });
 

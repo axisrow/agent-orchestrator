@@ -66,23 +66,38 @@ function failureDescriptionKey(errorCode?: string): MessageKey {
 }
 
 // A terminated session can never advance a switch, so every state it carries is
-// history, not a live transition (issue #350). The card renders muted with its
-// completion time; without a timestamp the plain state label stands alone.
+// history, not a live transition (issue #350). The label follows the record —
+// completed and failed say so; an unfinished switch says interrupted, never a
+// success the session never reached and never a present-progressive state that
+// would read as still running. The card carries the completion time; without a
+// timestamp the plain label stands alone.
 function historicalPresentation(agentSwitch: AgentSwitchSummary): AgentSwitchPresentation {
+	const when = agentSwitch.updatedAt ? formatTimeCompact(agentSwitch.updatedAt) : "";
 	const values = {
 		source: agentLabel(agentSwitch.fromHarness),
 		target: agentLabel(agentSwitch.targetHarness),
-		when: agentSwitch.updatedAt ? formatTimeCompact(agentSwitch.updatedAt) : "",
+		when,
 	};
-	const failed = agentSwitch.state === "failed";
+	const labels =
+		agentSwitch.state === "completed"
+			? {
+					compactLabelKey: "switchAgent.success.compact" as MessageKey,
+					descriptionKey: when ? ("switchAgent.historical.completed" as MessageKey) : ("switchAgent.state.completed" as MessageKey),
+				}
+			: agentSwitch.state === "failed"
+				? {
+						compactLabelKey: "switchAgent.failure.compact" as MessageKey,
+						descriptionKey: when ? ("switchAgent.historical.failed" as MessageKey) : ("switchAgent.state.failed" as MessageKey),
+					}
+				: {
+						compactLabelKey: "switchAgent.interrupted.compact" as MessageKey,
+						descriptionKey: when ? ("switchAgent.historical.interrupted" as MessageKey) : ("switchAgent.interrupted.compact" as MessageKey),
+					};
 	return {
 		stage: null,
 		outcome: "historical",
-		compactLabelKey: failed ? "switchAgent.failure.compact" : "switchAgent.success.compact",
 		titleKey: "switchAgent.progressTitle",
-		descriptionKey: failed
-			? values.when ? "switchAgent.historical.failed" : "switchAgent.state.failed"
-			: values.when ? "switchAgent.historical.completed" : "switchAgent.state.completed",
+		...labels,
 		values,
 		tone: "muted",
 		animate: false,
