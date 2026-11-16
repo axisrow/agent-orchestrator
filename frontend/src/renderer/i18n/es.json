@@ -2940,6 +2940,8 @@
 	"overview.filterIdle": "Inactivo",
 	"overview.filterBlocked": "Esperando respuesta",
 	"overview.filterExited": "Finalizado",
+	"overview.filterRunning": "En ejecución",
+	"overview.runningCount": "En ejecución ({{count}})",
 	"overview.empty": "Aún no hay proyectos.",
 	"overview.projectEmpty": "Sin sesiones.",
 	"overview.reclaimable": "{{count}} para liberar",

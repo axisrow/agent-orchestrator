@@ -2884,6 +2884,8 @@
 	"overview.filterIdle": "空闲",
 	"overview.filterBlocked": "等待回复",
 	"overview.filterExited": "已结束",
+	"overview.filterRunning": "运行中",
+	"overview.runningCount": "运行中 ({{count}})",
 	"overview.empty": "还没有项目。",
 	"overview.projectEmpty": "没有会话。",
 	"overview.reclaimable": "{{count}} 个可回收",

@@ -1949,6 +1949,8 @@
 	"overview.filterIdle": "Idle",
 	"overview.filterBlocked": "Blocked",
 	"overview.filterExited": "Exited",
+	"overview.filterRunning": "Running",
+	"overview.runningCount": "Running ({{count}})",
 	"overview.empty": "No projects yet.",
 	"overview.projectEmpty": "No sessions.",
 	"overview.reclaimable": "{{count}} to reclaim",

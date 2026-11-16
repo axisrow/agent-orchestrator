@@ -416,10 +416,14 @@ describe("usePRFactsRefresh", () => {
 	it("leaves fresh facts and a failed peek alone", async () => {
 		refreshPostMock.mockReset().mockRejectedValue(new Error("provider down"));
 		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+		// Freshness is judged against the real clock, so the fresh stamp moves
+		// with it: a fixed date aged past the one-hour threshold and the card
+		// started asking, flaking the call count.
+		const freshStamp = new Date(Date.now() - 60_000).toISOString();
 		const fresh = staleSummary({
-			updatedAt: "2026-11-15T11:59:00Z",
-			observedAt: "2026-11-15T11:59:00Z",
-			lastSeenAt: "2026-11-15T11:59:00Z",
+			updatedAt: freshStamp,
+			observedAt: freshStamp,
+			lastSeenAt: freshStamp,
 		});
 		seedCard(queryClient, [fresh]);
 		const invalidate = vi.spyOn(queryClient, "invalidateQueries").mockImplementation(async () => undefined);

@@ -2902,6 +2902,8 @@
 	"overview.filterIdle": "アイドル",
 	"overview.filterBlocked": "回答待ち",
 	"overview.filterExited": "終了",
+	"overview.filterRunning": "実行中",
+	"overview.runningCount": "実行中 ({{count}})",
 	"overview.empty": "プロジェクトはまだありません。",
 	"overview.projectEmpty": "セッションはありません。",
 	"overview.reclaimable": "{{count}} 件を解放可能",
