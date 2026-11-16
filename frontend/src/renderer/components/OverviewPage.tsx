@@ -35,7 +35,9 @@ type StatusFilter = "all" | "working" | "idle" | "blocked" | "exited";
 
 // One column of the issue's lifecycle: what the daemon's kanbanColumn already
 // answers. Spawning is the pre-worktree provisioning slice of "building".
-const STAGE_FILTERS: KanbanColumn[] = ["building", "validating", "needs_review", "ready", "archive"];// Row chrome mirrors the left Projects panel (issue #330): the same 32px rows
+const STAGE_FILTERS: KanbanColumn[] = ["building", "validating", "needs_review", "ready", "archive"];
+
+// Row chrome mirrors the left Projects panel (issue #330): the same 32px rows
 // and hover-reveal action buttons. A copy of the sidebar's action-button class
 // so the overview carries the identical visual language without importing the
 // sidebar's module graph.
