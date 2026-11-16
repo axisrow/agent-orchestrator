@@ -16,13 +16,9 @@ type PluralMessageKey = TrayMessageKey extends infer Key extends string
 function catalogFor(locale: AppLocale): Record<TrayMessageKey, string> & Partial<Record<string, string>> {
 	return trayCatalogs[locale] ?? trayCatalogs.en;
 }
-import type { TrayAttentionState, TrayAttentionZone, TrayOpenSessionTarget, TraySessionEntry } from "../shared/tray";
+import type { TrayAttentionState, TrayOpenSessionTarget, TraySessionEntry } from "../shared/tray";
 
 const MAX_MENU_SESSIONS = 8;
-
-const zoneRank: Record<TrayAttentionZone, number> = { merge: 0, action: 1 };
-
-const zoneLabelKey: Record<TrayAttentionZone, MessageKey> = { merge: "zone.merge", action: "zone.action" };
 
 function format(template: string, vars: Record<string, string | number>): string {
 	return template.replace(/\{\{(\w+)\}\}/g, (match, key: string) => String(vars[key] ?? match));
@@ -101,19 +97,11 @@ export function createTrayController(options: TrayControllerOptions): TrayContro
 		if (count === 0) {
 			items.push({ label: t("tray.empty"), enabled: false });
 		} else {
-			const ordered = [...sessions].sort(
-				(a, b) => zoneRank[a.zone] - zoneRank[b.zone] || a.title.localeCompare(b.title),
-			);
+			const ordered = [...sessions].sort((a, b) => a.title.localeCompare(b.title));
 			const visible = ordered.slice(0, MAX_MENU_SESSIONS);
 			const overflow = ordered.slice(MAX_MENU_SESSIONS);
 
-			let lastZone: TrayAttentionZone | null = null;
 			for (const entry of visible) {
-				if (entry.zone !== lastZone) {
-					if (lastZone !== null) items.push({ type: "separator" });
-					items.push({ label: t(zoneLabelKey[entry.zone]), enabled: false });
-					lastZone = entry.zone;
-				}
 				items.push(sessionItem(entry));
 			}
 			if (overflow.length > 0) {

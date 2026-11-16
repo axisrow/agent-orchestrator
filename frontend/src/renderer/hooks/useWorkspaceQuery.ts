@@ -1,4 +1,5 @@
 import { markApiError } from "../lib/reported-errors";
+import { sessionNeedsInput } from "../lib/session-presentation";
 import { type QueryClient, useQueries, useQuery, useQueryClient, type Query } from "@tanstack/react-query";
 import { useRemoteUnpinStore, withRemoteUnpins } from "../stores/remote-unpin-store";
 import { cleanUpLegacyPreparedCloudSessions } from "../lib/cloud-session-prestart";
@@ -36,7 +37,6 @@ import {
 	toSessionActivity,
 	toSessionStatus,
 	newestActiveOrchestrator,
-	attentionZone,
 	workerSessions,
 	type WorkspaceSession,
 	type WorkspaceShare,
@@ -1280,18 +1280,19 @@ export function useWorkspaceScope(projectId?: string, sessionId?: string, hostId
 	return hostId ? remote : { ...local, data };
 }
 
+// The tray badge and menu count only sessions whose agent is waiting on the
+// user (#353). Merge/review/action zones stay in the sidebar and board; a
+// mergeable PR never lights the badge, so the number means "blocked on you".
 function selectTraySessions(workspaces: WorkspaceSummary[]): TraySessionEntry[] {
 	const entries: TraySessionEntry[] = [];
 	for (const workspace of workspaces) {
 		for (const session of workerSessions(workspace.sessions)) {
-			const zone = attentionZone(session);
-			if ((zone === "merge" && session.status === "merged") || (zone !== "action" && zone !== "merge")) continue;
+			if (!sessionNeedsInput(session)) continue;
 			entries.push({
 				projectId: session.workspaceId,
 				projectName: workspace.name,
 				sessionId: session.id,
 				title: session.title,
-				zone,
 			});
 		}
 	}

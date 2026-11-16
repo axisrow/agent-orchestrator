@@ -881,7 +881,7 @@ describe("useWorkspaceQuery", () => {
 		expect(listProjectsMock).not.toHaveBeenCalled();
 	});
 
-	it("selects only attention-worthy worker sessions for the always-mounted tray", async () => {
+	it("selects only waiting-input worker sessions for the always-mounted tray", async () => {
 		respondWith({
 			projects: { data: { projects: [{ id: "proj-1", name: "my-app", path: "/p" }] }, error: undefined },
 			sessions: {
@@ -889,8 +889,10 @@ describe("useWorkspaceQuery", () => {
 					sessions: [
 						{ id: "needs-input", projectId: "proj-1", displayName: "Needs input", harness: "codex", status: "needs_input", updatedAt: "2026-08-01T00:00:00Z" },
 						{ id: "mergeable", projectId: "proj-1", displayName: "Mergeable", harness: "codex", status: "mergeable", updatedAt: "2026-08-01T00:00:00Z" },
+						{ id: "ci-failed", projectId: "proj-1", displayName: "CI failed", harness: "codex", status: "ci_failed", updatedAt: "2026-08-01T00:00:00Z" },
 						{ id: "working", projectId: "proj-1", displayName: "Working", harness: "codex", status: "working", updatedAt: "2026-08-01T00:00:00Z" },
 						{ id: "merged", projectId: "proj-1", displayName: "Merged", harness: "codex", status: "merged", updatedAt: "2026-08-01T00:00:00Z" },
+						{ id: "blocked", projectId: "proj-1", displayName: "Blocked", harness: "codex", status: "working", activity: { state: "waiting_input", lastActivityAt: "2026-08-01T00:00:00Z" }, updatedAt: "2026-08-01T00:00:00Z" },
 						{ id: "orchestrator", projectId: "proj-1", displayName: "Orchestrator", harness: "codex", kind: "orchestrator", status: "needs_input", updatedAt: "2026-08-01T00:00:00Z" },
 					],
 				},
@@ -901,8 +903,8 @@ describe("useWorkspaceQuery", () => {
 		const { result } = renderHook(() => useWorkspaceTraySessions(), { wrapper });
 		await waitFor(() => expect(result.current.isSuccess).toBe(true));
 		expect(result.current.data).toEqual([
-			{ projectId: "proj-1", projectName: "my-app", sessionId: "needs-input", title: "Needs input", zone: "action" },
-			{ projectId: "proj-1", projectName: "my-app", sessionId: "mergeable", title: "Mergeable", zone: "merge" },
+			{ projectId: "proj-1", projectName: "my-app", sessionId: "needs-input", title: "Needs input" },
+			{ projectId: "proj-1", projectName: "my-app", sessionId: "blocked", title: "Blocked" },
 		]);
 	});
 });

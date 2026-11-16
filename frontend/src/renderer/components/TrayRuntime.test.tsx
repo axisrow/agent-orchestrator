@@ -1,6 +1,7 @@
 import { act, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { attentionZone, workerSessions, type WorkspaceSession, type WorkspaceSummary } from "../types/workspace";
+import { sessionNeedsInput } from "../lib/session-presentation";
+import { workerSessions, type WorkspaceSession, type WorkspaceSummary } from "../types/workspace";
 
 const h = vi.hoisted(() => ({
 	setAttentionState: vi.fn(),
@@ -13,9 +14,8 @@ vi.mock("../hooks/useWorkspaceQuery", () => ({
 	useWorkspaceTraySessions: () => ({
 		data: h.workspaces.flatMap((workspace) =>
 			workerSessions(workspace.sessions).flatMap((session) => {
-				const zone = attentionZone(session);
-				if ((zone === "merge" && session.status === "merged") || (zone !== "action" && zone !== "merge")) return [];
-				return [{ projectId: workspace.id, projectName: workspace.name, sessionId: session.id, title: session.title, zone }];
+				if (!sessionNeedsInput(session)) return [];
+				return [{ projectId: workspace.id, projectName: workspace.name, sessionId: session.id, title: session.title }];
 			}),
 		),
 	}),
@@ -82,13 +82,12 @@ afterEach(() => {
 });
 
 describe("TrayRuntime", () => {
-	it("pushes only attention-worthy worker sessions to the tray", () => {
+	it("pushes only waiting-input worker sessions to the tray", () => {
 		h.workspaces = workspaces();
 		render(<TrayRuntime />);
 		expect(h.setAttentionState).toHaveBeenLastCalledWith({
 			sessions: [
-				{ projectId: "proj-1", projectName: "note-tauri", sessionId: "s-need", title: "needs it", zone: "action" },
-				{ projectId: "proj-1", projectName: "note-tauri", sessionId: "s-merge", title: "merge me", zone: "merge" },
+				{ projectId: "proj-1", projectName: "note-tauri", sessionId: "s-need", title: "needs it" },
 			],
 		});
 	});
@@ -100,10 +99,11 @@ describe("TrayRuntime", () => {
 		expect(h.navigateToSession).toHaveBeenCalledWith("proj-1", "s-need");
 	});
 
-	it("excludes an already-merged session even though it shares the merge zone", () => {
+	it("never pushes merge, action, or merged sessions even when they need attention", () => {
 		h.workspaces = workspaces();
 		render(<TrayRuntime />);
 		const pushed = h.setAttentionState.mock.calls.at(-1)?.[0]?.sessions ?? [];
-		expect(pushed.some((entry: { sessionId: string }) => entry.sessionId === "s-merged")).toBe(false);
+		const ids = pushed.map((entry: { sessionId: string }) => entry.sessionId);
+		expect(ids).toEqual(["s-need"]);
 	});
 });

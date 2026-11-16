@@ -65,13 +65,15 @@ export type LifecycleLogOptions = {
 	directory: string;
 	version: string;
 	homeDir: string;
+	/** Defaults to LIFECYCLE_LOG_FILE; other callers pick their own name. */
+	fileName?: string;
 	now?: () => Date;
 	pid?: number;
 	maxBytes?: number;
 };
 
 export function createLifecycleLog(options: LifecycleLogOptions): LifecycleRecord {
-	const file = path.join(options.directory, LIFECYCLE_LOG_FILE);
+	const file = path.join(options.directory, options.fileName ?? LIFECYCLE_LOG_FILE);
 	const maxBytes = options.maxBytes ?? LIFECYCLE_LOG_MAX_BYTES;
 	const now = options.now ?? (() => new Date());
 	const pid = options.pid ?? process.pid;

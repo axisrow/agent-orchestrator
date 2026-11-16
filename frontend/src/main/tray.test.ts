@@ -57,7 +57,7 @@ vi.mock("node:fs", async (importOriginal) => {
 import { createTrayController } from "./tray";
 
 function entry(overrides: Partial<TraySessionEntry> & { sessionId: string }): TraySessionEntry {
-	return { projectId: "proj-1", projectName: "note-tauri", title: overrides.sessionId, zone: "action", ...overrides };
+	return { projectId: "proj-1", projectName: "note-tauri", title: overrides.sessionId, ...overrides };
 }
 
 function setup() {
@@ -130,25 +130,21 @@ describe("createTrayController", () => {
 
 	it("uses grammatically correct singular for exactly one attention session", () => {
 		const { controller, tray } = setup();
-		controller.setState({ sessions: [entry({ sessionId: "s1", zone: "action" })] });
+		controller.setState({ sessions: [entry({ sessionId: "s1" })] });
 		expect(tray.tooltip).toBe("1 session needs attention");
 	});
 
-	it("shows the count and orders merge-ready sessions above needs-you", () => {
+	it("lists every waiting-input session flat, alphabetically, with no zone headers", () => {
 		const { controller, tray } = setup();
 		controller.setState({
-			sessions: [
-				entry({ sessionId: "needs", title: "needs you", zone: "action" }),
-				entry({ sessionId: "ready", title: "ready", zone: "merge" }),
-			],
+			sessions: [entry({ sessionId: "b", title: "blocked" }), entry({ sessionId: "a", title: "asked" })],
 		});
 		expect(tray.title).toBe("2");
 		expect(tray.tooltip).toBe("2 sessions need attention");
 		const labels = tray.template.map((i) => i.label);
-		expect(labels).toContain("Ready to merge");
-		expect(labels).toContain("Needs you");
-		expect(labels.indexOf("Ready to merge")).toBeLessThan(labels.indexOf("Needs you"));
-		expect(sessionItems(tray).map((i) => i.label)).toEqual(["ready  ·  note-tauri", "needs you  ·  note-tauri"]);
+		expect(labels).not.toContain("Ready to merge");
+		expect(labels).not.toContain("Needs you");
+		expect(sessionItems(tray).map((i) => i.label)).toEqual(["asked  ·  note-tauri", "blocked  ·  note-tauri"]);
 	});
 
 	it("hands a session click to the openSession delegate", () => {
@@ -189,12 +185,10 @@ describe("createTrayController", () => {
 
 	it("relocalizes menu labels when setLocale is called", () => {
 		const { controller, tray } = setup();
-		controller.setState({ sessions: [entry({ sessionId: "s1", zone: "action" })] });
-		expect(tray.template.some((i) => i.label === "Needs you")).toBe(true);
+		controller.setState({ sessions: [entry({ sessionId: "s1" })] });
 
 		controller.setLocale("zh-CN");
 		expect(tray.tooltip).toBe("1 个会话需要关注");
-		expect(tray.template.some((i) => i.label === "需要你处理")).toBe(true);
 		expect(tray.template.some((i) => i.label === "显示 Orchestrator")).toBe(true);
 		expect(tray.template.some((i) => i.label === "完全退出 Orchestrator")).toBe(true);
 	});

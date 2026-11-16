@@ -418,11 +418,16 @@ async function clearRendererTelemetryQueues(): Promise<void> {
 
 let mainWindow: BaseWindow | null = null;
 let trayController: TrayController | null = null;
+// Structured record of tray badge transitions (add/remove with session and
+// reason), beside desktop-lifecycle.jsonl (#353). Null until the lifecycle log
+// is installed by the single instance holding the app lock.
+let trayNotificationLog: LifecycleRecord | null = null;
 const trayLifecycle = createTrayLifecycle({
 	getWindow: () => null,
 	getContents: () => getShellWebContents(),
 	getTrayController: () => trayController,
 	focusWindow: () => focusMainWindow(),
+	logNotification: (event, fields) => trayNotificationLog?.(event, fields),
 });
 // Icon/taskbar-shortcut folder drop, mirroring VS Code: relayed to the
 // renderer's global drop handling so it opens the same create-project flow.
@@ -679,6 +684,12 @@ function installLifecycleLog(): void {
 	const runFile = runFilePath();
 	const directory = path.join(runFile ? path.dirname(runFile) : desktopDataDir, "logs");
 	const record = createLifecycleLog({ directory, version: app.getVersion(), homeDir: os.homedir() });
+	trayNotificationLog = createLifecycleLog({
+		directory,
+		version: app.getVersion(),
+		homeDir: os.homedir(),
+		fileName: "tray-notifications.jsonl",
+	});
 	lifecycleLog = record;
 	const clearRunMarker = markRunStarted({ directory, record, version: app.getVersion(), processAlive });
 	record("app_start", {

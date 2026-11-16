@@ -696,6 +696,10 @@ export function useConversationCommands(sessionId: string | undefined, hostId?: 
 	const trackedDispatch = stateSessionId ? trackedDispatches[stateSessionId] : undefined;
 	const invalidateSession = useCallback(
 		async (targetSessionId: string) => {
+			// User input resolves a waiting-input session, which changes the tray
+			// badge. The workspace query is otherwise refreshed only by CDC events
+			// or the poll, so the badge would keep the session for seconds (#353).
+			void queryClient.invalidateQueries({ queryKey: workspaceQueryKeyForHost(hostId) }).catch(() => {});
 			if (hostId) await refreshRemoteConversation(queryClient, targetSessionId, hostId);
 			else await queryClient.invalidateQueries({ queryKey: conversationQueryKey(targetSessionId) });
 		},
@@ -947,14 +951,8 @@ export function useConversationCommands(sessionId: string | undefined, hostId?: 
 				throw resumeAgentError(error, response.status);
 			return data;
 		},
-		onSuccess: () => {
-			invalidate();
-			void queryClient.invalidateQueries({ queryKey: workspaceQueryKeyForHost(hostId) });
-		},
-		onError: () => {
-			invalidate();
-			void queryClient.invalidateQueries({ queryKey: workspaceQueryKeyForHost(hostId) });
-		},
+		onSuccess: () => invalidate(),
+		onError: () => invalidate(),
 	});
 
 	/**
