@@ -1458,7 +1458,6 @@ function ReviewsSection({
 		return (
 			<CloudReviewsSection
 				onOpenReviewFile={onOpenReviewFile}
-				onOpenReviewerTerminal={onOpenReviewerTerminal}
 				onWorkerMessageSent={onWorkerMessageSent}
 				session={session}
 			/>
@@ -1747,12 +1746,10 @@ function LocalReviewsSection({
 function CloudReviewsSection({
 	session,
 	onOpenReviewFile,
-	onOpenReviewerTerminal,
 	onWorkerMessageSent,
 }: {
 	session: WorkspaceSession;
 	onOpenReviewFile?: (target: { line?: number; path: string }) => void;
-	onOpenReviewerTerminal?: OpenReviewerTerminal;
 	onWorkerMessageSent?: () => void;
 }) {
 	const { t } = useTranslation();
@@ -1793,13 +1790,11 @@ function CloudReviewsSection({
 		onMutate: () => setReviewNotice(null),
 		onSuccess: (data) => {
 			queryClient.setQueryData(["cloud-session-reviews", baseUrl, orgId, session.id], data);
-			const running = data.reviews.find((review) => review.status === "running");
-			if (running && data.reviewerHandleId) {
-				onOpenReviewerTerminal?.({
-					handleId: data.reviewerHandleId,
-					harness: data.reviewerHarness || session.provider,
-				});
-			} else if (!running) {
+			// Stay put when a review starts (#8347): the reviewer just booted and
+			// has nothing to show, so do not yank the user to its terminal. The
+			// reviewer tab appears in the strip from the reviews query.
+			const running = data.reviews.some((review) => review.status === "running");
+			if (!running) {
 				setReviewNotice(t("inspector.reviewAlreadyRanForCommit"));
 			}
 		},
