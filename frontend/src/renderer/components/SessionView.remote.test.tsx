@@ -480,7 +480,10 @@ it("opens a TUI host file in a shared center tab and renames on that host", asyn
 	}));
 	await connectHost("http://box-a:3001");
 	renderRemoteSession(new QueryClient({ defaultOptions: { queries: { retry: false } } }));
-	expect(await screen.findByTestId("remote-terminal-base")).toHaveTextContent("http://127.0.0.1:4000");
+	// The remote base lands with the workspace query's passive flush, which no
+	// longer rides the topbar host's per-render ref dispatches (#346): wait for
+	// the content transition instead of whichever render appears first.
+	await waitFor(() => expect(screen.getByTestId("remote-terminal-base")).toHaveTextContent("http://127.0.0.1:4000"));
 	await userEvent.click(screen.getByRole("button", { name: "Open inspector panel" }));
 	await userEvent.click(screen.getByRole("tab", { name: "Files" }));
 	await userEvent.click(await screen.findByRole("button", { name: "Open full file" }));
@@ -582,7 +585,7 @@ it("reattaches a terminal when the same host gets a new proxy connection", async
 	await connectHost("http://box-a:3001");
 	const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 	renderRemoteSession(queryClient);
-	expect(await screen.findByTestId("remote-terminal-base")).toHaveTextContent("http://127.0.0.1:4000/old");
+	await waitFor(() => expect(screen.getByTestId("remote-terminal-base")).toHaveTextContent("http://127.0.0.1:4000/old"));
 	await act(async () => { await connectHost("http://box-a:3001"); });
 	await waitFor(() => expect(screen.getByTestId("remote-terminal-base")).toHaveTextContent("http://127.0.0.1:4001/new"));
 });

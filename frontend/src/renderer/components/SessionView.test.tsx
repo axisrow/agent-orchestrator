@@ -6058,6 +6058,9 @@ describe("SessionView queued reviewer dismissal", () => {
 			runs: [{ id: "run-2", status: "running", prUrl: "https://github.com/o/r/pull/1", targetSha: "sha2" }],
 			activeReviewers: [{ mode: "tui", reviewId: "review-2", harness: "claude-code", handleId: "" }],
 		}));
-		expect(await screen.findByTestId("reviewer-starting-tab")).toHaveTextContent("reviewer starting selected");
+		// The re-follow lands in the queued-card effect's passive flush, which no
+		// longer rides the topbar host's per-render ref dispatches (#346): wait
+		// for the selection to settle instead of whichever render appears first.
+		await waitFor(() => expect(screen.getByTestId("reviewer-starting-tab")).toHaveTextContent("reviewer starting selected"));
 	});
 });
