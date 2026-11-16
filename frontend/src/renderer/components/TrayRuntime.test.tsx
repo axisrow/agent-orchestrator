@@ -1,6 +1,6 @@
 import { act, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { workerSessions, type WorkspaceSession, type WorkspaceSummary } from "../types/workspace";
+import type { WorkspaceSession, WorkspaceSummary } from "../types/workspace";
 
 const h = vi.hoisted(() => ({
 	setAttentionState: vi.fn(),
@@ -9,25 +9,17 @@ const h = vi.hoisted(() => ({
 	listener: null as null | ((target: { projectId: string; sessionId: string }) => void),
 }));
 
-/** Mirrors selectTraySessions (useWorkspaceQuery.ts) — keep in step with it. */
-const traySessions = (workspaces: WorkspaceSummary[]) =>
-	workspaces.flatMap((workspace) =>
-		workerSessions(workspace.sessions).flatMap((session) => {
-			const waitingInput =
-				session.status === "needs_input" ||
-				session.activity?.state === "waiting_input" ||
-				session.activity?.state === "blocked";
-			if (!waitingInput) return [];
-			return [{ projectId: workspace.id, projectName: workspace.name, sessionId: session.id, title: session.title }];
+vi.mock("../hooks/useWorkspaceQuery", async (importOriginal) => {
+	// The real selection: the runtime renders whatever the workspace facts
+	// select, so the test cannot drift from the badge's actual predicate.
+	const actual = await importOriginal<typeof import("../hooks/useWorkspaceQuery")>();
+	return {
+		...actual,
+		useWorkspaceTraySessions: () => ({
+			data: actual.selectTraySessions(h.workspaces),
 		}),
-	);
-
-vi.mock("../hooks/useWorkspaceQuery", () => ({
-	useWorkspaceTraySessions: () => ({
-		data: traySessions(h.workspaces),
-	}),
-	workspaceQueryKey: ["workspaces"],
-}));
+	};
+});
 
 vi.mock("../lib/navigate-to-session", () => ({
 	useNavigateToSession: () => h.navigateToSession,

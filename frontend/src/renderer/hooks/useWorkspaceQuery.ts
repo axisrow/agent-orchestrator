@@ -802,7 +802,7 @@ export function useWorkspaceScope(projectId?: string, sessionId?: string, hostId
 	return hostId ? remote : { ...local, data };
 }
 
-function selectTraySessions(workspaces: WorkspaceSummary[]): TraySessionEntry[] {
+export function selectTraySessions(workspaces: WorkspaceSummary[]): TraySessionEntry[] {
 	const entries: TraySessionEntry[] = [];
 	for (const workspace of workspaces) {
 		for (const session of workerSessions(workspace.sessions)) {
