@@ -19,8 +19,6 @@ const KEYS = [
 	"tray.more",
 	"tray.show",
 	"tray.quit",
-	"zone.merge",
-	"zone.action",
 ];
 
 const catalogs = {};

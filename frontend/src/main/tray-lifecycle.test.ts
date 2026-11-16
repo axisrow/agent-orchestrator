@@ -20,14 +20,16 @@ function setup(overrides: Partial<TrayLifecycleDeps> = {}) {
 	const window = fakeWindow();
 	const tray = fakeTrayController();
 	const focusWindow = vi.fn();
+	const logNotification = vi.fn();
 	const deps: TrayLifecycleDeps = {
 		getWindow: () => window as never,
 		getTrayController: () => tray as unknown as TrayController,
 		focusWindow,
+		logNotification,
 		...overrides,
 	};
 	const lifecycle = createTrayLifecycle(deps);
-	return { lifecycle, window, tray, focusWindow };
+	return { lifecycle, window, tray, focusWindow, logNotification };
 }
 
 function eventFrom(sender: unknown) {
@@ -155,6 +157,64 @@ describe("createTrayLifecycle pending-target flush", () => {
 		const { lifecycle, window } = setup();
 		lifecycle.handleRendererReady(eventFrom(window.webContents));
 		expect(window.webContents.send).not.toHaveBeenCalled();
+	});
+});
+
+describe("createTrayLifecycle notification log", () => {
+	const entry = (sessionId: string) => ({ projectId: "p1", projectName: "app", sessionId, title: sessionId });
+
+	it("logs every added session with its reason and resulting count", () => {
+		const { lifecycle, window, logNotification } = setup();
+		lifecycle.handleSetAttentionState(eventFrom(window.webContents), { sessions: [entry("s1"), entry("s2")] });
+		expect(logNotification).toHaveBeenCalledTimes(2);
+		expect(logNotification).toHaveBeenCalledWith("tray_notification_added", {
+			sessionId: "s1", projectId: "p1", title: "s1", count: 2, reason: "waiting_input",
+		});
+	});
+
+	it("does not re-log an unchanged set", () => {
+		const { lifecycle, window, logNotification } = setup();
+		lifecycle.handleSetAttentionState(eventFrom(window.webContents), { sessions: [entry("s1")] });
+		logNotification.mockClear();
+		lifecycle.handleSetAttentionState(eventFrom(window.webContents), { sessions: [entry("s1")] });
+		expect(logNotification).not.toHaveBeenCalled();
+	});
+
+	it("logs a dropped session as no longer waiting for input", () => {
+		const { lifecycle, window, logNotification } = setup();
+		lifecycle.handleSetAttentionState(eventFrom(window.webContents), { sessions: [entry("s1"), entry("s2")] });
+		logNotification.mockClear();
+		lifecycle.handleSetAttentionState(eventFrom(window.webContents), { sessions: [entry("s1")] });
+		expect(logNotification).toHaveBeenCalledTimes(1);
+		expect(logNotification).toHaveBeenCalledWith("tray_notification_removed", {
+			sessionId: "s2", projectId: "p1", title: "s2", count: 1, reason: "no_longer_waiting_input",
+		});
+	});
+
+	it("logs renderer resets from clear with their own reason", () => {
+		const { lifecycle, window, logNotification } = setup();
+		lifecycle.handleSetAttentionState(eventFrom(window.webContents), { sessions: [entry("s1")] });
+		logNotification.mockClear();
+		lifecycle.clear();
+		expect(logNotification).toHaveBeenCalledWith("tray_notification_removed", {
+			sessionId: "s1", projectId: "p1", title: "s1", count: 0, reason: "renderer_reload",
+		});
+	});
+
+	it("logs quit-time teardown", () => {
+		const { lifecycle, window, logNotification } = setup();
+		lifecycle.handleSetAttentionState(eventFrom(window.webContents), { sessions: [entry("s1")] });
+		logNotification.mockClear();
+		lifecycle.dispose();
+		expect(logNotification).toHaveBeenCalledWith("tray_notification_removed", {
+			sessionId: "s1", projectId: "p1", title: "s1", count: 0, reason: "app_quit",
+		});
+	});
+
+	it("does not log state from a sender that is not the tracked window", () => {
+		const { lifecycle, logNotification } = setup();
+		lifecycle.handleSetAttentionState(eventFrom({ other: true }), { sessions: [entry("s1")] });
+		expect(logNotification).not.toHaveBeenCalled();
 	});
 });
 
