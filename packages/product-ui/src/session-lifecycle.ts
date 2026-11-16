@@ -33,9 +33,9 @@ export type SessionLifecycleState = (typeof SESSION_LIFECYCLE_STATES)[number];
  *   `status` stays "working" for its whole life, so it must never decide
  *   liveness — the hook facts do.
  * - `status` is the daemon's aggregated session status. Only its
- *   `terminated` and `needs_input` values move the lifecycle; the SCM
- *   delivery values (ci_failed, review_pending, mergeable, …) refine what a
- *   session is *delivering*, not what its agent is *doing*, and stay in the
+ *   `terminated`/`exited` and `needs_input` values move the lifecycle; the
+ *   SCM delivery values (ci_failed, review_pending, mergeable, …) refine what
+ *   a session is *delivering*, not what its agent is *doing*, and stay in the
  *   surfaces that present delivery (lanes, markers, the merge gate).
  * - `isTerminated` ends the session: a terminated row is history, whatever
  *   stale facts it still carries (#350).
@@ -54,7 +54,7 @@ export type SessionLifecycleFacts = {
  *
  * | # | isTerminated / status   | activity.state | provisionState | state          |
  * |---|-------------------------|----------------|----------------|----------------|
- * | 1 | terminated              | *              | *              | exited         |
+ * | 1 | terminated / exited     | *              | *              | exited         |
  * | 2 | *                       | exited         | *              | exited         |
  * | 3 | *                       | *              | provisioning   | provisioning   |
  * | 4 | *                       | *              | failed         | blocked        |
@@ -72,7 +72,7 @@ export type SessionLifecycleFacts = {
  * its delivery lane says.
  */
 export function sessionLifecycleState(facts: SessionLifecycleFacts): SessionLifecycleState {
-	if (facts.isTerminated === true || facts.status === "terminated") return "exited";
+	if (facts.isTerminated === true || facts.status === "terminated" || facts.status === "exited") return "exited";
 	if (facts.activity?.state === "exited") return "exited";
 	if (facts.provisionState === "provisioning") return "provisioning";
 	if (facts.provisionState === "failed") return "blocked";

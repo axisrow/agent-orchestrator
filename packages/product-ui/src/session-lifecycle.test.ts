@@ -20,12 +20,13 @@ const ACTIVITY_STATES = ["active", "idle", "waiting_input", "blocked", "exited",
 const PROVISION_STATES = [undefined, "provisioning", "ready", "failed"] as const;
 const TERMINATED = [false, true] as const;
 
-// The lifecycle only reads two status values; one SCM value proves the rest
+// The lifecycle only reads three status values; one SCM value proves the rest
 // cannot move it.
 const STATUSES = [
 	undefined,
 	"needs_input",
 	"terminated",
+	"exited",
 	"idle",
 	"working",
 	"mergeable",
@@ -38,7 +39,7 @@ function expected(
 	provision: (typeof PROVISION_STATES)[number],
 	status: (typeof STATUSES)[number],
 ): SessionLifecycleState {
-	if (terminated || status === "terminated") return "exited";
+	if (terminated || status === "terminated" || status === "exited") return "exited";
 	if (act === "exited") return "exited";
 	if (provision === "provisioning") return "provisioning";
 	if (provision === "failed") return "blocked";
