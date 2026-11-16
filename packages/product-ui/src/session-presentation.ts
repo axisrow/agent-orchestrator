@@ -14,6 +14,7 @@ export type SessionPresentationMessageKey =
 	| "session.statusUnavailable"
 	| `activity.${SessionActivityState}`
 	| "activity.noSignsOfLife"
+	| "activity.workingOnTool"
 	| `status.${SessionStatus}`
 	| `zone.${AttentionZone}`
 	| `column.${KanbanColumn}`
@@ -35,6 +36,7 @@ const englishLabels: Record<SessionPresentationMessageKey, string> = {
 	"activity.exited": "Exited",
 	"activity.unknown": "Unknown",
 	"activity.noSignsOfLife": "No signs of life {{duration}}",
+	"activity.workingOnTool": "Working on {{tool}} {{duration}}",
 	"status.working": "Working",
 	"status.idle": "Idle",
 	"status.needs_input": "Input needed",
@@ -506,7 +508,9 @@ export function getAttentionZoneViewForZone(
  *
  * A stalled turn (active with no signs of life past the daemon's threshold)
  * leads with the silence and its duration: that is the news a reader needs,
- * and the tone underneath stays explained.
+ * and the tone underneath stays explained. A tool call still in flight is the
+ * opposite of silence (#344): the hover names the call and its elapsed time
+ * instead, and no "no signs of life" is ever shown while it runs.
  */
 export function sessionStatusTooltip(
 	toneLabel: string,
@@ -520,6 +524,15 @@ export function sessionStatusTooltip(
 		return `${translate("activity.noSignsOfLife", {
 			duration: formatElapsed(activity.turnSilentForMs ?? 0),
 		})} · ${suffix}`;
+	}
+	if (activity.turnToolInflightName) {
+		const workingOn = translate("activity.workingOnTool", {
+			tool: activity.turnToolInflightName,
+			duration: formatElapsed(activity.turnToolInflightForMs ?? 0),
+		});
+		// The working-on phrase already says what the agent is doing; the tone
+		// label rides along only when it carries separate news.
+		return activityLabel === toneLabel ? workingOn : `${workingOn} · ${toneLabel}`;
 	}
 	return suffix;
 }

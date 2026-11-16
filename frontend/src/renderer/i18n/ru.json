@@ -4225,6 +4225,7 @@
 	"teams.sharedToastWithYou": "{{name}} открывает вам доступ к «{{thing}}»",
 	"teams.open": "Открыть",
 	"activity.noSignsOfLife": "No signs of life {{duration}}",
+	"activity.workingOnTool": "Работает над {{tool}} {{duration}}",
 	"automations.empty.description": "Create a daily, weekly, or custom recurring session.",
 	"chat.reauth.accountSignedOut": "{{account}} is signed out",
 	"chat.reauth.continueOn": "Continue on {{account}}",

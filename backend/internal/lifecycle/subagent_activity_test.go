@@ -613,3 +613,61 @@ func TestClaudeStopWithoutSnapshotDoesNotProveChildFinished(t *testing.T) {
 		t.Fatalf("missing task registry falsely ended child: %q", got)
 	}
 }
+
+// Issue #344: the blob tracks tool calls whose pre has fired and whose post
+// has not, so the stall detector can tell a live long-running call from real
+// silence. The map is durable (it rides the facts blob) and a turn boundary
+// sweeps it, so a lost post cannot wedge a stale entry past its turn.
+func TestClaudeActivityFactsTrackInFlightToolCalls(t *testing.T) {
+	store := newFakeStore()
+	start := time.Date(2026, 11, 16, 9, 0, 0, 0, time.UTC)
+	store.sessions["ao-1"] = domain.SessionRecord{
+		ID: "ao-1", Harness: domain.HarnessClaudeCode, Mode: domain.SessionModeTUI,
+		Activity: domain.Activity{State: domain.ActivityIdle, LastActivityAt: start},
+		Metadata: domain.SessionMetadata{RuntimeLaunchID: "launch-1"},
+	}
+	m := New(store, nil)
+	signal := func(second int, event, toolUseID, toolName string) {
+		t.Helper()
+		err := m.ApplyActivitySignal(context.Background(), "ao-1", ports.ActivitySignal{
+			Valid: true, State: domain.ActivityActive, Event: event,
+			ToolUseID: toolUseID, ToolName: toolName,
+			LaunchID: "launch-1", AgentSessionID: "native-1",
+			Timestamp: start.Add(time.Duration(second) * time.Second),
+		})
+		if err != nil {
+			t.Fatalf("%s: %v", event, err)
+		}
+	}
+	inflight := func(t *testing.T) map[string]subagentToolFlight {
+		t.Helper()
+		blob := store.sessions["ao-1"].Metadata.ClaudeActivityFacts
+		if blob == "" {
+			return nil
+		}
+		var facts subagentActivityFacts
+		if err := json.Unmarshal([]byte(blob), &facts); err != nil {
+			t.Fatalf("decode facts: %v", err)
+		}
+		return facts.InflightTools
+	}
+
+	signal(1, "user-prompt-submit", "", "")
+	// The very first tool call of the session starts the blob with its entry.
+	signal(2, "pre-tool-use", "toolu_1", "Bash")
+	if calls := inflight(t); len(calls) != 1 || calls["toolu_1"].Name != "Bash" {
+		t.Fatalf("inflight after pre = %+v, want toolu_1 Bash", calls)
+	}
+	signal(3, "pre-tool-use", "toolu_2", "Read")
+	if calls := inflight(t); len(calls) != 2 {
+		t.Fatalf("inflight after second pre = %+v, want two calls", calls)
+	}
+	signal(4, "post-tool-use", "toolu_2", "Read")
+	if calls := inflight(t); len(calls) != 1 || calls["toolu_1"].Name != "Bash" {
+		t.Fatalf("inflight after post = %+v, want only toolu_1 left", calls)
+	}
+	signal(5, "stop", "", "")
+	if calls := inflight(t); len(calls) != 0 {
+		t.Fatalf("inflight after stop = %+v, want swept", calls)
+	}
+}

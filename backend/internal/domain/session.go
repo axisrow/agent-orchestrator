@@ -569,10 +569,19 @@ type Session struct {
 	TurnStalled bool `json:"turnStalled"`
 	// TurnSilentForMs is how long the current turn has shown no signs of life,
 	// in milliseconds. Zero when the turn is live, not active, or unknown.
-	TurnSilentForMs   int64                 `json:"turnSilentForMs,omitempty"`
-	TerminalHandleID  string                `json:"terminalHandleId,omitempty"`
-	ArtifactFiles     []SessionArtifactFile `json:"-"`
-	ActiveAgentSwitch *AgentSwitch          `json:"-"`
+	TurnSilentForMs int64 `json:"turnSilentForMs,omitempty"`
+	// TurnToolInflightName names the tool call currently in flight: a
+	// pre-tool-use hook whose matching post has not arrived. A turn blocked on
+	// that call is working, not silent, so TurnStalled stays false while it
+	// runs and the UI shows this call's elapsed time instead of the "no signs
+	// of life" warning (#344). Read-time derived, never persisted.
+	TurnToolInflightName string `json:"turnToolInflightName,omitempty"`
+	// TurnToolInflightForMs is how long that call has been executing, in
+	// milliseconds. Zero when no call is in flight.
+	TurnToolInflightForMs int64                 `json:"turnToolInflightForMs,omitempty"`
+	TerminalHandleID      string                `json:"terminalHandleId,omitempty"`
+	ArtifactFiles         []SessionArtifactFile `json:"-"`
+	ActiveAgentSwitch     *AgentSwitch          `json:"-"`
 	// PRs are the session's attributed pull requests (one session can own many).
 	// They feed status derivation and are surfaced on the API read model. Not
 	// serialized here: the HTTP boundary maps them to the curated wire shape.

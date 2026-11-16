@@ -14368,6 +14368,11 @@ components:
           type: integer
         turnStalled:
           type: boolean
+        turnToolInflightForMs:
+          format: int64
+          type: integer
+        turnToolInflightName:
+          type: string
         updatedAt:
           format: date-time
           type: string

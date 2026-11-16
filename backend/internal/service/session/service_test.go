@@ -174,6 +174,60 @@ func TestInterruptedChatSessionShowsInterruptedOnTheBoard(t *testing.T) {
 	}
 }
 
+// Issue #344 regression: the derived stall facts must reach the read model.
+// A genuinely silent active turn reports stalled; a turn blocked on an
+// in-flight tool call reports no warning and lands the call's name and
+// elapsed time on the session.
+func TestListAndGetCarryTurnStallFacts(t *testing.T) {
+	st := newFakeStore()
+	started := time.Now().Add(-time.Hour).UTC()
+	st.sessions["mer-1"] = domain.SessionRecord{
+		ID: "mer-1", ProjectID: "mer", Harness: domain.HarnessClaudeCode, Mode: domain.SessionModeTUI,
+		Activity: domain.Activity{State: domain.ActivityActive, LastActivityAt: started},
+		Metadata: domain.SessionMetadata{ClaudeActivityFacts: mustJSON(t, turnActivityFacts{ParentAt: started.UnixNano()})},
+	}
+	st.sessions["mer-2"] = domain.SessionRecord{
+		ID: "mer-2", ProjectID: "mer", Harness: domain.HarnessClaudeCode, Mode: domain.SessionModeTUI,
+		Activity: domain.Activity{State: domain.ActivityActive, LastActivityAt: started},
+		Metadata: domain.SessionMetadata{ClaudeActivityFacts: mustJSON(t, turnActivityFacts{
+			ParentAt:      started.UnixNano(),
+			InflightTools: map[string]turnToolFlight{"toolu_1": {Name: "Bash", At: started.Add(43 * time.Minute).UnixNano()}},
+		})},
+	}
+	svc := &Service{store: st}
+
+	list, err := svc.List(context.Background(), ListFilter{ProjectID: "mer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := map[domain.SessionID]domain.Session{}
+	for _, sess := range list {
+		byID[sess.ID] = sess
+	}
+	silent := byID["mer-1"]
+	if !silent.TurnStalled || silent.TurnSilentForMs <= 50*60*1000 {
+		t.Fatalf("silent turn: stalled=%v silentForMs=%d, want stalled past the threshold", silent.TurnStalled, silent.TurnSilentForMs)
+	}
+	if silent.TurnToolInflightName != "" || silent.TurnToolInflightForMs != 0 {
+		t.Fatalf("silent turn: inflight=%q/%d, want empty", silent.TurnToolInflightName, silent.TurnToolInflightForMs)
+	}
+	working := byID["mer-2"]
+	if working.TurnStalled || working.TurnSilentForMs != 0 {
+		t.Fatalf("in-flight turn: stalled=%v silentForMs=%d, want a live turn", working.TurnStalled, working.TurnSilentForMs)
+	}
+	if working.TurnToolInflightName != "Bash" || working.TurnToolInflightForMs < 15*60*1000 {
+		t.Fatalf("in-flight turn: name=%q forMs=%d, want Bash running ~17m", working.TurnToolInflightName, working.TurnToolInflightForMs)
+	}
+
+	got, err := svc.Get(context.Background(), "mer-2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.TurnStalled || got.TurnToolInflightName != "Bash" || got.TurnToolInflightForMs < 15*60*1000 {
+		t.Fatalf("get: stalled=%v name=%q forMs=%d, want the same facts on the single read", got.TurnStalled, got.TurnToolInflightName, got.TurnToolInflightForMs)
+	}
+}
+
 func TestTaskPreparationsStayOutOfSessionReads(t *testing.T) {
 	st := newFakeStore()
 	st.sessions["mer-1"] = domain.SessionRecord{ID: "mer-1", ProjectID: "mer", IsTaskPreparation: true}

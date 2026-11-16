@@ -88,6 +88,8 @@ export function toWorkspaceSession(
 					...session.activity,
 					turnStalled: session.turnStalled,
 					turnSilentForMs: session.turnSilentForMs,
+					turnToolInflightName: session.turnToolInflightName,
+					turnToolInflightForMs: session.turnToolInflightForMs,
 				})
 			: undefined;
 	if (statusReadiness === "ready" && status === "unknown") reportUnknownSessionField("status", session.status);

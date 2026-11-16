@@ -21,7 +21,7 @@ func stallRecord(state domain.ActivityState, turnStartedAt time.Time) domain.Ses
 func TestDeriveTurnStallFlagsSilentActiveTurnPastThreshold(t *testing.T) {
 	started := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
 	now := started.Add(10 * time.Minute)
-	stalled, silentMs := deriveTurnStall(stallRecord(domain.ActivityActive, started), time.Time{}, now, 10*time.Minute)
+	stalled, silentMs, _ := deriveTurnStall(stallRecord(domain.ActivityActive, started), time.Time{}, now, 10*time.Minute)
 	if !stalled || silentMs != int64(10*time.Minute/time.Millisecond) {
 		t.Fatalf("stalled=%v silentMs=%d, want true at exactly the threshold", stalled, silentMs)
 	}
@@ -31,7 +31,7 @@ func TestDeriveTurnStallFlagsSilentActiveTurnPastThreshold(t *testing.T) {
 func TestDeriveTurnStallKeepsShortStreamingPauseLive(t *testing.T) {
 	started := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
 	now := started.Add(9 * time.Minute)
-	stalled, silentMs := deriveTurnStall(stallRecord(domain.ActivityActive, started), time.Time{}, now, 10*time.Minute)
+	stalled, silentMs, _ := deriveTurnStall(stallRecord(domain.ActivityActive, started), time.Time{}, now, 10*time.Minute)
 	if stalled || silentMs != 0 {
 		t.Fatalf("stalled=%v silentMs=%d, want false below the threshold", stalled, silentMs)
 	}
@@ -43,10 +43,10 @@ func TestDeriveTurnStallResetsOnConversationWrite(t *testing.T) {
 	started := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
 	lastWrite := started.Add(9 * time.Minute)
 	now := started.Add(15 * time.Minute)
-	if stalled, _ := deriveTurnStall(stallRecord(domain.ActivityActive, started), lastWrite, now, 10*time.Minute); stalled {
+	if stalled, _, _ := deriveTurnStall(stallRecord(domain.ActivityActive, started), lastWrite, now, 10*time.Minute); stalled {
 		t.Fatal("a turn with a fresh conversation write must not stall")
 	}
-	stalled, silentMs := deriveTurnStall(stallRecord(domain.ActivityActive, started), lastWrite, lastWrite.Add(11*time.Minute), 10*time.Minute)
+	stalled, silentMs, _ := deriveTurnStall(stallRecord(domain.ActivityActive, started), lastWrite, lastWrite.Add(11*time.Minute), 10*time.Minute)
 	if !stalled {
 		t.Fatal("silence measured from the last write must eventually stall")
 	}
@@ -61,7 +61,7 @@ func TestDeriveTurnStallIgnoresNonActiveTurns(t *testing.T) {
 	started := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
 	now := started.Add(time.Hour)
 	for _, state := range []domain.ActivityState{domain.ActivityIdle, domain.ActivityWaitingInput, domain.ActivityBlocked, domain.ActivityExited, ""} {
-		if stalled, silentMs := deriveTurnStall(stallRecord(state, started), time.Time{}, now, 10*time.Minute); stalled || silentMs != 0 {
+		if stalled, silentMs, _ := deriveTurnStall(stallRecord(state, started), time.Time{}, now, 10*time.Minute); stalled || silentMs != 0 {
 			t.Fatalf("state %s: stalled=%v silentMs=%d, want false", state, stalled, silentMs)
 		}
 	}
@@ -71,7 +71,7 @@ func TestDeriveTurnStallIgnoresNonActiveTurns(t *testing.T) {
 func TestDeriveTurnStallIgnoresZeroTurnStart(t *testing.T) {
 	rec := stallRecord(domain.ActivityActive, time.Time{})
 	rec.Activity.LastActivityAt = time.Time{}
-	if stalled, _ := deriveTurnStall(rec, time.Time{}, time.Now(), 10*time.Minute); stalled {
+	if stalled, _, _ := deriveTurnStall(rec, time.Time{}, time.Now(), 10*time.Minute); stalled {
 		t.Fatal("a turn with no observed start must not stall")
 	}
 }
@@ -85,23 +85,23 @@ func TestDeriveTurnStallUsesHookFactsForTUI(t *testing.T) {
 	rec.Mode = domain.SessionModeTUI
 
 	// No hook blob at all: the turn-start timestamp alone clocks the silence.
-	if stalled, _ := deriveTurnStall(rec, time.Time{}, started.Add(11*time.Minute), 10*time.Minute); !stalled {
+	if stalled, _, _ := deriveTurnStall(rec, time.Time{}, started.Add(11*time.Minute), 10*time.Minute); !stalled {
 		t.Fatal("a TUI turn with no hook traffic must stall past the threshold")
 	}
 
 	// A tool boundary 9 minutes in keeps the turn live 11 minutes after start.
 	rec.Metadata.ClaudeActivityFacts = mustJSON(t, turnActivityFacts{ParentAt: started.Add(9 * time.Minute).UnixNano()})
-	if stalled, _ := deriveTurnStall(rec, time.Time{}, started.Add(11*time.Minute), 10*time.Minute); stalled {
+	if stalled, _, _ := deriveTurnStall(rec, time.Time{}, started.Add(11*time.Minute), 10*time.Minute); stalled {
 		t.Fatal("a recent hook fact must keep the turn live")
 	}
-	stalled, _ := deriveTurnStall(rec, time.Time{}, started.Add(20*time.Minute), 10*time.Minute)
+	stalled, _, _ := deriveTurnStall(rec, time.Time{}, started.Add(20*time.Minute), 10*time.Minute)
 	if !stalled {
 		t.Fatal("silence measured from the last hook fact must eventually stall")
 	}
 
 	// A damaged blob degrades to no hook liveness instead of failing the read.
 	rec.Metadata.ClaudeActivityFacts = "{not json"
-	if stalled, _ := deriveTurnStall(rec, time.Time{}, started.Add(11*time.Minute), 10*time.Minute); !stalled {
+	if stalled, _, _ := deriveTurnStall(rec, time.Time{}, started.Add(11*time.Minute), 10*time.Minute); !stalled {
 		t.Fatal("a damaged hook blob must not keep the turn alive")
 	}
 }
@@ -113,8 +113,66 @@ func TestDeriveTurnStallUsesCodexHookFacts(t *testing.T) {
 	rec.Mode = domain.SessionModeTUI
 	rec.Harness = domain.HarnessCodex
 	rec.Metadata.CodexActivityFacts = mustJSON(t, turnActivityFacts{ParentAt: started.Add(9 * time.Minute).UnixNano()})
-	if stalled, _ := deriveTurnStall(rec, time.Time{}, started.Add(11*time.Minute), 10*time.Minute); stalled {
+	if stalled, _, _ := deriveTurnStall(rec, time.Time{}, started.Add(11*time.Minute), 10*time.Minute); stalled {
 		t.Fatal("a recent Codex hook fact must keep the turn live")
+	}
+}
+
+// Issue #344: a tool call whose pre-tool-use hook fired but whose post has not
+// arrived is a live turn blocked on real work, however long it runs — no
+// "no signs of life", and the read names the call with its elapsed time. The
+// same silence with no in-flight call stays a real stall.
+func TestDeriveTurnStallKeepsInFlightToolCallLive(t *testing.T) {
+	started := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
+	now := started.Add(43 * time.Minute)
+	rec := stallRecord(domain.ActivityActive, started)
+	rec.Mode = domain.SessionModeTUI
+	rec.Metadata.ClaudeActivityFacts = mustJSON(t, turnActivityFacts{
+		ParentAt: started.Add(time.Minute).UnixNano(),
+		InflightTools: map[string]turnToolFlight{
+			"toolu_01": {Name: "Bash", At: started.Add(time.Minute).UnixNano()},
+		},
+	})
+
+	stalled, silentMs, inflight := deriveTurnStall(rec, time.Time{}, now, 10*time.Minute)
+	if stalled || silentMs != 0 {
+		t.Fatalf("stalled=%v silentMs=%d, want a live turn while the call runs", stalled, silentMs)
+	}
+	if inflight == nil || inflight.Name != "Bash" || inflight.Running != 42*time.Minute {
+		t.Fatalf("inflight=%+v, want Bash running 42m", inflight)
+	}
+
+	// The same silence with no in-flight call is genuine idleness.
+	rec.Metadata.ClaudeActivityFacts = mustJSON(t, turnActivityFacts{ParentAt: started.Add(time.Minute).UnixNano()})
+	stalled, silentMs, inflight = deriveTurnStall(rec, time.Time{}, now, 10*time.Minute)
+	if !stalled || inflight != nil || silentMs != int64(42*time.Minute/time.Millisecond) {
+		t.Fatalf("stalled=%v silentMs=%d inflight=%v, want a stall once the call is gone", stalled, silentMs, inflight)
+	}
+}
+
+// Codex sessions read their in-flight map from the Codex column the same way.
+func TestDeriveTurnStallKeepsCodexInFlightToolCallLive(t *testing.T) {
+	started := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
+	rec := stallRecord(domain.ActivityActive, started)
+	rec.Mode = domain.SessionModeTUI
+	rec.Harness = domain.HarnessCodex
+	rec.Metadata.CodexActivityFacts = mustJSON(t, turnActivityFacts{
+		InflightTools: map[string]turnToolFlight{
+			"call_1": {Name: "shell", At: started.UnixNano()},
+		},
+	})
+	stalled, _, inflight := deriveTurnStall(rec, time.Time{}, started.Add(time.Hour), 10*time.Minute)
+	if stalled || inflight == nil || inflight.Name != "shell" {
+		t.Fatalf("stalled=%v inflight=%+v, want a live Codex turn naming the call", stalled, inflight)
+	}
+}
+
+// A damaged blob must not fabricate an in-flight call.
+func TestInflightToolCallDegradesOnDamagedBlob(t *testing.T) {
+	rec := stallRecord(domain.ActivityActive, time.Now())
+	rec.Metadata.ClaudeActivityFacts = "{not json"
+	if _, _, live := inflightToolCall(rec, time.Now()); live {
+		t.Fatal("a damaged hook blob must not report an in-flight call")
 	}
 }
 

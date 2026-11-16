@@ -191,6 +191,7 @@
 	"activity.idle": "Inactivo",
 	"activity.unknown": "Desconocido",
 	"activity.noSignsOfLife": "Sin señales de vida desde {{duration}}",
+	"activity.workingOnTool": "Trabajando en {{tool}} desde {{duration}}",
 	"activity.waiting_input": "Se necesita entrada",
 	"home.never": "Nunca",
 	"cloudCredential.anthropicLoginDescription": "Inicia sesión con tu cuenta de Claude en el navegador. Si Claude Code no tiene sesión iniciada en este equipo, las sesiones locales también usarán este inicio de sesión.",

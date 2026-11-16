@@ -11489,9 +11489,11 @@ func TestActivitySignal_CASRetryPreservesCorrelatedPermissionPost(t *testing.T) 
 	})
 	st := &activityProjectionBarrierStore{
 		Store: baseStore, updateEntered: make(chan struct{}), releaseUpdate: make(chan struct{}),
-		// The permission request is the first projection. Let it establish the
-		// blocked row, then interleave the correlated post at the next CAS.
-		skipUpdates: 1,
+		// The in-flight pre-tool-use now lands its hook-fact entry and the
+		// permission request establishes the blocked row; both write before the
+		// correlated post. Let them through, then interleave the post at the
+		// next CAS.
+		skipUpdates: 2,
 	}
 	t.Cleanup(func() {
 		select {
