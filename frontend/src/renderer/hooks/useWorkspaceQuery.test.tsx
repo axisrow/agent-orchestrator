@@ -686,6 +686,36 @@ describe("useWorkspaceQuery", () => {
 		expect(result.current.data).toEqual([]);
 	});
 
+	// The contract ends a session before its facts can speak (#355): a
+	// terminated row's stale waiting_input activity must not re-enter the
+	// human-input queue, however fresh the badge window.
+	it("never counts a terminated session with a stale waiting-input fact", async () => {
+		respondWith({
+			projects: { data: { projects: [{ id: "proj-1", name: "my-app", path: "/p" }] }, error: undefined },
+			sessions: {
+				data: {
+					sessions: [
+						terminatedReviewSession({ status: "needs_input" }),
+						terminatedReviewSession({
+							id: "review-stale-activity",
+							displayName: "stale activity",
+							status: "working",
+							activity: { state: "waiting_input", lastActivityAt: "2026-11-12T19:43:00Z" },
+						}),
+						{ id: "alive", projectId: "proj-1", displayName: "Alive", harness: "codex", kind: "worker", status: "working", activity: { state: "waiting_input", lastActivityAt: "2026-11-12T19:43:00Z" }, updatedAt: "2026-11-12T19:43:00Z" },
+					],
+				},
+				error: undefined,
+			},
+		});
+
+		const { result } = renderHook(() => useWorkspaceTraySessions(), { wrapper });
+		await waitFor(() => expect(result.current.isSuccess).toBe(true));
+		expect(result.current.data).toEqual([
+			{ projectId: "proj-1", projectName: "my-app", sessionId: "alive", title: "Alive" },
+		]);
+	});
+
 	it("keeps a waiting-input session across a refetch carrying the same facts", async () => {
 		respondWith({
 			projects: { data: { projects: [{ id: "proj-1", name: "my-app", path: "/p" }] }, error: undefined },

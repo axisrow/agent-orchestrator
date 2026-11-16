@@ -129,7 +129,10 @@ describe("session presentation", () => {
 		["approved", "bg-status-ready", "Ready to merge"],
 		["mergeable", "bg-status-ready", "Ready to merge"],
 		["merged", "bg-status-merged", "Merged"],
-		["terminated", "bg-status-terminated", "Terminated"],
+		// Terminated is the contract's exited state: the same quiet gray every
+		// dead session gets, not a separate archive tone (#355). The history
+		// surfaces keep the "Terminated" text label beside the dot.
+		["terminated", "bg-passive", "Exited"],
 	] as const)("paints the %s session dot with its board-section tone", (status, dotClassName, title) => {
 		expect(getSessionStatusDotView(sessionWith({ status }))).toEqual({
 			className: dotClassName,
@@ -265,6 +268,51 @@ describe("session presentation", () => {
 				sessionWith({ status: "idle", displayStatus: "Closed without merge" }),
 			),
 		).toEqual({ className: "bg-status-exited", breathe: false, title: "Exited" });
+	});
+
+	// The lifecycle overrides read the hook facts first (#355): an agent that
+	// stopped or started waiting on the user recolors the dot immediately,
+	// instead of lagging behind the aggregated status recompute (#336 class).
+	it("grays the dot the moment the agent exits, whatever the stale lane says", () => {
+		expect(
+			getSessionStatusDotView(
+				sessionWith({ status: "pr_open", scmStatus: "pr_open", activity: { state: "exited", lastActivityAt: "" } }),
+			),
+		).toEqual({ className: "bg-passive", breathe: false, title: "Exited" });
+	});
+
+	it("paints needs-you the moment the agent waits, whatever the stale lane says", () => {
+		expect(
+			getSessionStatusDotView(
+				sessionWith({ status: "mergeable", scmStatus: "mergeable", activity: { state: "waiting_input", lastActivityAt: "" } }),
+			),
+		).toEqual({ className: "bg-status-needs-you", breathe: false, title: "Needs you · Input Needed" });
+	});
+
+	// The live case behind #355: an orchestrator whose aggregated status stays
+	// "working" for its whole life must read as idle on the dot, exactly as the
+	// overview Stage column and the Running filter now read it.
+	it("paints an idle orchestrator gray and a live one blue", () => {
+		expect(
+			getOrchestratorStatusDotView(sessionWith({ status: "working", activity: { state: "idle", lastActivityAt: "" } })),
+		).toEqual({ className: "bg-status-idle", breathe: false, title: "Idle" });
+		expect(
+			getOrchestratorStatusDotView(sessionWith({ status: "working", activity: { state: "active", lastActivityAt: "" } })),
+		).toEqual({ className: "bg-status-working", breathe: true, title: "Working" });
+	});
+
+	it("paints a provisioning orchestrator as starting, and freezes a stalled one", () => {
+		expect(
+			getOrchestratorStatusDotView(sessionWith({ status: "working", provisionState: "provisioning" })),
+		).toEqual({ className: "bg-status-working", breathe: true, title: "Starting" });
+		expect(
+			getOrchestratorStatusDotView(
+				sessionWith({
+					status: "working",
+					activity: { state: "active", lastActivityAt: "", turnStalled: true, turnSilentForMs: 60 * 60 * 1000 },
+				}),
+			),
+		).toEqual({ className: "bg-status-working", breathe: false, title: "No signs of life 1h · Working" });
 	});
 
 	it("keeps activity indicator color independent from PR and CI presentation", () => {
