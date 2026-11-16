@@ -486,6 +486,9 @@ describe("session-scoped conversation commands", () => {
 		});
 		expect(invalidate).toHaveBeenCalledWith({ queryKey: ["conversation", "ao-send-a"] });
 		expect(invalidate).not.toHaveBeenCalledWith({ queryKey: ["conversation", "ao-send-b"] });
+		// Delivered input resolves a waiting-input session, so the tray badge's
+		// workspace query refetches immediately too (#353).
+		expect(invalidate).toHaveBeenCalledWith({ queryKey: workspaceQueryKey });
 		expect(result.current.pendingAcceptedTurnId).toBeUndefined();
 	});
 

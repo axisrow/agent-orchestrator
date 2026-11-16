@@ -8,9 +8,7 @@ export const TRAY_MESSAGE_KEYS = [
 	"tray.empty",
 	"tray.more",
 	"tray.show",
-	"tray.quit",
-	"zone.merge",
-	"zone.action"
+	"tray.quit"
 ] as const;
 
 export type TrayMessageKey = (typeof TRAY_MESSAGE_KEYS)[number];
@@ -23,9 +21,7 @@ export const trayCatalogs: Record<AppLocale, Record<TrayMessageKey, string>> = {
 		"tray.empty": "No sessions need attention",
 		"tray.more": "More",
 		"tray.show": "Show Orchestrator",
-		"tray.quit": "Quit AO Completely",
-		"zone.merge": "Ready to merge",
-		"zone.action": "Needs you"
+		"tray.quit": "Quit AO Completely"
 	},
 	"zh-CN": {
 		"tray.untitledSession": "未命名会话",
@@ -34,9 +30,7 @@ export const trayCatalogs: Record<AppLocale, Record<TrayMessageKey, string>> = {
 		"tray.empty": "没有会话需要关注",
 		"tray.more": "更多",
 		"tray.show": "显示 Orchestrator",
-		"tray.quit": "完全退出 AO",
-		"zone.merge": "可合并",
-		"zone.action": "需要你处理"
+		"tray.quit": "完全退出 AO"
 	},
 	"ja": {
 		"tray.untitledSession": "無題のセッション",
@@ -45,9 +39,7 @@ export const trayCatalogs: Record<AppLocale, Record<TrayMessageKey, string>> = {
 		"tray.empty": "対応が必要なセッションはありません",
 		"tray.more": "その他",
 		"tray.show": "Orchestrator を表示",
-		"tray.quit": "AO を完全に終了",
-		"zone.merge": "マージ準備完了",
-		"zone.action": "対応が必要"
+		"tray.quit": "AO を完全に終了"
 	},
 	"ko": {
 		"tray.untitledSession": "제목 없는 세션",
@@ -56,9 +48,7 @@ export const trayCatalogs: Record<AppLocale, Record<TrayMessageKey, string>> = {
 		"tray.empty": "확인이 필요한 세션이 없습니다",
 		"tray.more": "더 보기",
 		"tray.show": "Orchestrator 표시",
-		"tray.quit": "AO 완전히 종료",
-		"zone.merge": "병합 준비 완료",
-		"zone.action": "조치 필요"
+		"tray.quit": "AO 완전히 종료"
 	},
 	"es": {
 		"tray.untitledSession": "Sesión sin título",
@@ -67,9 +57,7 @@ export const trayCatalogs: Record<AppLocale, Record<TrayMessageKey, string>> = {
 		"tray.empty": "No hay sesiones que requieran atención",
 		"tray.more": "Más",
 		"tray.show": "Mostrar Orchestrator",
-		"tray.quit": "Salir completamente de AO",
-		"zone.merge": "Listo para fusionar",
-		"zone.action": "Te necesita"
+		"tray.quit": "Salir completamente de AO"
 	},
 	"fr": {
 		"tray.untitledSession": "Session sans titre",
@@ -78,9 +66,7 @@ export const trayCatalogs: Record<AppLocale, Record<TrayMessageKey, string>> = {
 		"tray.empty": "Aucune session ne nécessite votre attention",
 		"tray.more": "Plus",
 		"tray.show": "Afficher Orchestrator",
-		"tray.quit": "Quitter complètement AO",
-		"zone.merge": "Prêt à fusionner",
-		"zone.action": "Action requise"
+		"tray.quit": "Quitter complètement AO"
 	},
 	"de": {
 		"tray.untitledSession": "Unbenannte Sitzung",
@@ -89,9 +75,7 @@ export const trayCatalogs: Record<AppLocale, Record<TrayMessageKey, string>> = {
 		"tray.empty": "Keine Sitzungen benötigen Aufmerksamkeit",
 		"tray.more": "Mehr",
 		"tray.show": "Orchestrator anzeigen",
-		"tray.quit": "AO vollständig beenden",
-		"zone.merge": "Bereit zum Mergen",
-		"zone.action": "Ihre Aktion nötig"
+		"tray.quit": "AO vollständig beenden"
 	},
 	"pt-BR": {
 		"tray.untitledSession": "Sessão sem título",
@@ -100,9 +84,7 @@ export const trayCatalogs: Record<AppLocale, Record<TrayMessageKey, string>> = {
 		"tray.empty": "Nenhuma sessão precisa de atenção",
 		"tray.more": "Mais",
 		"tray.show": "Mostrar Orchestrator",
-		"tray.quit": "Sair completamente do AO",
-		"zone.merge": "Pronto para merge",
-		"zone.action": "Precisa de você"
+		"tray.quit": "Sair completamente do AO"
 	},
 	"ru": {
 		"tray.untitledSession": "Сессия без названия",
@@ -111,8 +93,6 @@ export const trayCatalogs: Record<AppLocale, Record<TrayMessageKey, string>> = {
 		"tray.empty": "Нет сессий, требующих внимания",
 		"tray.more": "Ещё",
 		"tray.show": "Показать Orchestrator",
-		"tray.quit": "Полностью выйти из AO",
-		"zone.merge": "Готово к слиянию",
-		"zone.action": "Требуется ваше действие"
+		"tray.quit": "Полностью выйти из AO"
 	}
 };
