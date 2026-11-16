@@ -36,6 +36,7 @@ const childView = (overrides: Partial<OrchestratorChildView>): OrchestratorChild
 	title: "Fix CI",
 	provider: "claude-code",
 	status: "working",
+	scmStatus: "working",
 	activity: { state: "active", lastActivityAt: "2026-08-30T12:00:00Z" },
 	isTerminated: false,
 	updatedAt: "2026-08-30T12:00:00Z",
@@ -131,6 +132,7 @@ describe("OrchestratorChildrenSection", () => {
 	test("hovering a worker's status dot explains the tone and the live activity", async () => {
 		childrenQuery.data = [childView({
 			status: "pr_open",
+			scmStatus: "pr_open",
 			activity: { state: "active", lastActivityAt: "2026-08-30T12:00:00Z" },
 		})];
 		render(section());

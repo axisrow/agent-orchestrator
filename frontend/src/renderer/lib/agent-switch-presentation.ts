@@ -1,6 +1,8 @@
 import { agentSwitchErrorLabelKeys, type AgentSwitchErrorCode } from "../i18n/key-maps";
 import type { MessageKey } from "../i18n/messages";
+import { sessionLifecycleState } from "@aoagents/product-ui";
 import type { AgentSwitchSummary, WorkspaceSession } from "../types/workspace";
+import { toSessionActivity } from "../types/workspace";
 import { agentLabel } from "./agent-options";
 import { formatTimeCompact } from "./format-time";
 
@@ -205,7 +207,14 @@ export function deriveAgentSwitchPresentation({
 	}
 
 	if (agentSwitch.state === "preparing_handoff" && agentSwitch.agentHandoffStatus === "requested") {
-		const allowSourceInput = activityState === "blocked" || activityState === "waiting_input";
+		// The source may take the person's input only while the lifecycle
+		// contract has it waiting on the user (#355) — the same answer the
+		// tray badge and the sidebar dot read.
+		const lifecycle = sessionLifecycleState({
+			activity: toSessionActivity({ state: activityState }),
+			isTerminated,
+		});
+		const allowSourceInput = lifecycle === "waiting_input" || lifecycle === "blocked";
 		return {
 			stage: "preparing",
 			outcome: "in_progress",

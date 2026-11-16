@@ -28,6 +28,10 @@ export type OrchestratorChildView = {
 	title: string;
 	provider: AgentProvider;
 	status: SessionStatus;
+	/** The delivery tone the child's dot keeps: the wire sends no separate SCM
+	 * status, so the aggregated status is that signal here (#355 keeps the
+	 * lifecycle overrides on top of it). */
+	scmStatus: SessionStatus;
 	activity: SessionActivity | null;
 	isTerminated: boolean;
 	updatedAt: string;
@@ -54,6 +58,7 @@ export function toOrchestratorChildView(child: CloudCpSessionChild): Orchestrato
 		title: child.displayName || child.id,
 		provider: toAgentProvider(child.harness),
 		status: toSessionStatus(child.status, child.isTerminated),
+		scmStatus: toSessionStatus(child.status, child.isTerminated),
 		activity: toSessionActivity({ state: child.activityState }) ?? null,
 		isTerminated: child.isTerminated,
 		updatedAt: child.updatedAt,
