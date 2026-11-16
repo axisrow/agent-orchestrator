@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { ScrollArea } from "radix-ui";
 import { useTranslation } from "react-i18next";
 import { Archive, ChevronRight, Folder, FolderOpen, GitPullRequest, Loader2, Trash2, X } from "lucide-react";
 import { getKanbanColumnView } from "@aoagents/product-ui";
@@ -311,142 +310,144 @@ export function OverviewPage() {
 
 	return (
 		<div className="flex min-h-0 flex-1 flex-col bg-background">
-			<header className="workspace-topbar-container center-panel-titlebar flex h-toolbar shrink-0 items-center justify-between gap-3 border-b border-border-strong pr-2">
-				<h1 className={showPageTitle ? "text-base font-semibold" : "sr-only"}>{t("overview.title")}</h1>
-				<div className="flex shrink-0 items-center gap-2">
-					{selectedSessions.length > 0 && (
-						<div className="flex items-center gap-1" data-testid="overview-bulk-bar">
-							<span className="text-xs text-muted-foreground">{t("overview.selectedCount", { count: selectedSessions.length })}</span>
-							<Button
-								variant="ghost"
-								size="sm"
-								className="h-7 px-2 text-xs text-error hover:bg-error/10 hover:text-error"
-								onClick={() => setTerminateTargets(selectedSessions)}
+			{/* The screen's one scroll container, on the sidebar's own list pattern.
+				The v2 rework (#330/#332) mounted a Radix ScrollArea without its
+				Scrollbar part, which leaves the viewport overflow-y: hidden — the
+				screen rendered fully but nothing could scroll (issue #347). The
+				filter titlebar and each project band header stick inside it; the
+				resource strip is an ordinary scrolling row. */}
+			<main className="scrollbar-none min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
+				<header className="workspace-topbar-container center-panel-titlebar sticky top-0 z-20 flex h-toolbar items-center justify-between gap-3 border-b border-border-strong bg-background pr-2">
+					<h1 className={showPageTitle ? "text-base font-semibold" : "sr-only"}>{t("overview.title")}</h1>
+					<div className="flex shrink-0 items-center gap-2">
+						{selectedSessions.length > 0 && (
+							<div className="flex items-center gap-1" data-testid="overview-bulk-bar">
+								<span className="text-xs text-muted-foreground">{t("overview.selectedCount", { count: selectedSessions.length })}</span>
+								<Button
+									variant="ghost"
+									size="sm"
+									className="h-7 px-2 text-xs text-error hover:bg-error/10 hover:text-error"
+									onClick={() => setTerminateTargets(selectedSessions)}
+								>
+									{t("overview.terminate")}
+								</Button>
+								<Button
+									variant="ghost"
+									size="sm"
+									className="size-7 p-0 text-muted-foreground"
+									aria-label={t("overview.clearSelection")}
+									title={t("overview.clearSelection")}
+									onClick={() => setSelectedIds(new Set())}
+								>
+									<X className="size-3.5" aria-hidden="true" />
+								</Button>
+							</div>
+						)}
+						<Checkbox
+							checked={allSelected ? true : someSelected ? "indeterminate" : false}
+							onCheckedChange={toggleSelectAll}
+							aria-label={t("overview.selectAll")}
+							className="ml-1"
+						/>
+						<Button
+							variant="ghost"
+							size="sm"
+							className="h-7 px-2 text-xs"
+							aria-pressed={showArchived}
+							onClick={() => setShowArchived((current) => !current)}
+						>
+							{showArchived ? t("overview.hideArchived") : t("overview.showArchived")}
+						</Button>
+						{hiddenArchivedCount > 0 && (
+							<span
+								data-testid="overview-archived-count"
+								className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground"
+								title={t("overview.archivedCount", { count: hiddenArchivedCount })}
 							>
-								{t("overview.terminate")}
-							</Button>
-							<Button
-								variant="ghost"
-								size="sm"
-								className="size-7 p-0 text-muted-foreground"
-								aria-label={t("overview.clearSelection")}
-								title={t("overview.clearSelection")}
-								onClick={() => setSelectedIds(new Set())}
+								{t("overview.archivedCount", { count: hiddenArchivedCount })}
+							</span>
+						)}
+						<Button
+							variant="ghost"
+							size="sm"
+							className="h-7 px-2 text-xs"
+							aria-pressed={runningOnly}
+							onClick={() => setRunningOnly((current) => !current)}
+						>
+							{t("overview.filterRunning")}
+						</Button>
+						{(runningCount > 0 || runningOnly) && (
+							<span
+								data-testid="overview-running-count"
+								className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground"
+								title={t("overview.runningCount", { count: runningCount })}
 							>
-								<X className="size-3.5" aria-hidden="true" />
-							</Button>
+								{t("overview.runningCount", { count: runningCount })}
+							</span>
+						)}
+						{filterSelect(projectFilter, setProjectFilter, t("overview.filterProject"), [
+							{ value: "all", label: t("overview.filterAll") },
+							...workspaces.map((project) => ({ value: project.id, label: project.name })),
+						])}
+						{filterSelect(statusFilter, (next) => setStatusFilter(next as StatusFilter), t("overview.columnStatus"), [
+							{ value: "all", label: t("overview.filterAll") },
+							{ value: "working", label: t("overview.filterWorking") },
+							{ value: "idle", label: t("overview.filterIdle") },
+							{ value: "blocked", label: t("overview.filterBlocked") },
+							{ value: "exited", label: t("overview.filterExited") },
+						])}
+						{filterSelect(stageFilter, (next) => setStageFilter(next as KanbanColumn | "all"), t("overview.columnStage"), [
+							{ value: "all", label: t("overview.filterAll") },
+							...STAGE_FILTERS.map((column) => ({ value: column, label: stageLabel(column) })),
+						])}
+					</div>
+				</header>
+				<OverviewResources />
+				<div className="px-4 py-3">
+					{workspacesQuery.isError ? (
+						<p role="alert" className="p-4 text-sm text-error">{t("shell.couldNotLoadProjects")}</p>
+					) : workspacesQuery.isLoading ? (
+						<div className="flex flex-col gap-2 p-4">
+							<Skeleton className="h-8 w-1/3" />
+							<Skeleton className="h-9 w-full" />
+							<Skeleton className="h-9 w-full" />
+							<Skeleton className="h-9 w-2/3" />
 						</div>
-					)}
-					<Checkbox
-						checked={allSelected ? true : someSelected ? "indeterminate" : false}
-						onCheckedChange={toggleSelectAll}
-						aria-label={t("overview.selectAll")}
-						className="ml-1"
-					/>
-					<Button
-						variant="ghost"
-						size="sm"
-						className="h-7 px-2 text-xs"
-						aria-pressed={showArchived}
-						onClick={() => setShowArchived((current) => !current)}
-					>
-						{showArchived ? t("overview.hideArchived") : t("overview.showArchived")}
-					</Button>
-					{hiddenArchivedCount > 0 && (
-						<span
-							data-testid="overview-archived-count"
-							className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground"
-							title={t("overview.archivedCount", { count: hiddenArchivedCount })}
-						>
-							{t("overview.archivedCount", { count: hiddenArchivedCount })}
-						</span>
-					)}
-					<Button
-						variant="ghost"
-						size="sm"
-						className="h-7 px-2 text-xs"
-						aria-pressed={runningOnly}
-						onClick={() => setRunningOnly((current) => !current)}
-					>
-						{t("overview.filterRunning")}
-					</Button>
-					{(runningCount > 0 || runningOnly) && (
-						<span
-							data-testid="overview-running-count"
-							className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground"
-							title={t("overview.runningCount", { count: runningCount })}
-						>
-							{t("overview.runningCount", { count: runningCount })}
-						</span>
-					)}
-					{filterSelect(projectFilter, setProjectFilter, t("overview.filterProject"), [
-						{ value: "all", label: t("overview.filterAll") },
-						...workspaces.map((project) => ({ value: project.id, label: project.name })),
-					])}
-					{filterSelect(statusFilter, (next) => setStatusFilter(next as StatusFilter), t("overview.columnStatus"), [
-						{ value: "all", label: t("overview.filterAll") },
-						{ value: "working", label: t("overview.filterWorking") },
-						{ value: "idle", label: t("overview.filterIdle") },
-						{ value: "blocked", label: t("overview.filterBlocked") },
-						{ value: "exited", label: t("overview.filterExited") },
-					])}
-					{filterSelect(stageFilter, (next) => setStageFilter(next as KanbanColumn | "all"), t("overview.columnStage"), [
-						{ value: "all", label: t("overview.filterAll") },
-						...STAGE_FILTERS.map((column) => ({ value: column, label: stageLabel(column) })),
-					])}
-				</div>
-			</header>
-			<OverviewResources />
-			<ScrollArea.Root asChild type="hover" scrollHideDelay={500}>
-				<main className="relative min-h-0 flex-1 overflow-hidden">
-					<ScrollArea.Viewport className="h-full w-full">
-						<div className="px-4 py-3">
-							{workspacesQuery.isError ? (
-								<p role="alert" className="p-4 text-sm text-error">{t("shell.couldNotLoadProjects")}</p>
-							) : workspacesQuery.isLoading ? (
-								<div className="flex flex-col gap-2 p-4">
-									<Skeleton className="h-8 w-1/3" />
-									<Skeleton className="h-9 w-full" />
-									<Skeleton className="h-9 w-full" />
-									<Skeleton className="h-9 w-2/3" />
-								</div>
-							) : workspaces.length === 0 ? (
-								<p className="p-4 text-heading-sm text-muted-foreground">{t("overview.empty")}</p>
-							) : (
-								<div>
-									{orphanTrees.length > 0 && (
-										<div className="mb-2">
-											<OverviewOrphans trees={orphanTrees} onKilled={refreshInventory} />
-										</div>
-									)}
-									{groups.map(({ project, sessions, bytes, reclaimable, undelivered }) => (
-										<ProjectGroup
-											key={project.id}
-											bytes={bytes}
-											cleanupBusy={cleanup.isPending}
-											collapsed={collapsedProjects.has(project.id)}
-											onToggleCollapsed={() => toggleCollapsed(project.id)}
-											onOpenOrchestrator={openSession}
-											project={project}
-											reclaimable={reclaimable}
-											sessions={sessions}
-											undelivered={undelivered}
-											worktreesBySession={worktreesBySession}
-											onCleanup={() => setCleanupTarget(project)}
-											onOpenPrCard={openPrCard}
-											onOpenSession={openSession}
-											onSelect={toggleSelect}
-											selectedIds={selectedIds}
-											stuckBySession={stuckBySession}
-											onTerminate={(session) => setTerminateTargets([session])}
-										/>
-									))}
+					) : workspaces.length === 0 ? (
+						<p className="p-4 text-heading-sm text-muted-foreground">{t("overview.empty")}</p>
+					) : (
+						<div>
+							{orphanTrees.length > 0 && (
+								<div className="mb-2">
+									<OverviewOrphans trees={orphanTrees} onKilled={refreshInventory} />
 								</div>
 							)}
+							{groups.map(({ project, sessions, bytes, reclaimable, undelivered }) => (
+								<ProjectGroup
+									key={project.id}
+									bytes={bytes}
+									cleanupBusy={cleanup.isPending}
+									collapsed={collapsedProjects.has(project.id)}
+									onToggleCollapsed={() => toggleCollapsed(project.id)}
+									onOpenOrchestrator={openSession}
+									project={project}
+									reclaimable={reclaimable}
+									sessions={sessions}
+									undelivered={undelivered}
+									worktreesBySession={worktreesBySession}
+									onCleanup={() => setCleanupTarget(project)}
+									onOpenPrCard={openPrCard}
+									onOpenSession={openSession}
+									onSelect={toggleSelect}
+									selectedIds={selectedIds}
+									stuckBySession={stuckBySession}
+									onTerminate={(session) => setTerminateTargets([session])}
+								/>
+							))}
 						</div>
-					</ScrollArea.Viewport>
-				</main>
-			</ScrollArea.Root>
+					)}
+				</div>
+			</main>
 			<ConfirmDialog
 				open={cleanupTarget !== null}
 				destructive
@@ -570,7 +571,9 @@ function ProjectGroup({
 		<section data-project-id={project.id} className="mb-1">
 			<div
 				className={cn(
-					"group/nav-row relative flex h-8 w-full items-center gap-2 rounded-lg bg-surface px-2.5 text-sm font-medium",
+					// Sticks under the filter titlebar while its band scrolls (issue
+					// #347); the opaque band fill covers the rows sliding underneath.
+					"group/nav-row sticky top-toolbar z-10 flex h-8 w-full items-center gap-2 rounded-lg bg-surface px-2.5 text-sm font-medium",
 				)}
 				data-project-row=""
 			>

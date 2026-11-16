@@ -628,6 +628,41 @@ describe("OverviewPage", () => {
 		expect(screen.queryByRole("checkbox", { name: "Select dirty archive" })).not.toBeInTheDocument();
 	});
 
+	it("scrolls one container when the list overflows, with sticky chrome inside it", () => {
+		h.workspaces = workspaces();
+		h.worktrees = worktrees();
+		const { container } = renderPage();
+
+		// The v2 rework's Radix ScrollArea had no Scrollbar part, which leaves
+		// the viewport overflow-y: hidden — the screen rendered fully but
+		// nothing could scroll (issue #347). Pin the structural regression:
+		// exactly one plain scroll container, no Radix viewport on the screen.
+		const scroller = container.querySelector("main")!;
+		expect(container.querySelectorAll("[data-radix-scroll-area-viewport]")).toHaveLength(0);
+		expect(scroller.className).toContain("overflow-y-auto");
+		expect(container.querySelectorAll("main")).toHaveLength(1);
+
+		// jsdom has no layout engine, so simulate the overflow on the box the
+		// screen scrolls and check the container accepts a programmatic scroll;
+		// the real wheel behavior is verified live in the browser (issue #347
+		// acceptance).
+		Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 1200 });
+		Object.defineProperty(scroller, "clientHeight", { configurable: true, value: 300 });
+		Object.defineProperty(scroller, "scrollTop", { configurable: true, value: 0, writable: true });
+		expect(scroller.scrollHeight).toBeGreaterThan(scroller.clientHeight);
+		scroller.scrollTop = 400;
+		expect(scroller.scrollTop).toBe(400);
+
+		// The filter titlebar and each project band header stick inside that
+		// same container instead of scrolling away with the rows.
+		const header = screen.getByRole("heading", { name: "Overview" }).closest("header")!;
+		expect(header.className).toContain("sticky");
+		expect(header.className).toContain("top-0");
+		const band = screen.getByText("beamcraft").closest("div")!;
+		expect(band.className).toContain("sticky");
+		expect(band.className).toContain("top-toolbar");
+	});
+
 	it("renders the orphan section with warning-marked rows and a kill action", async () => {
 		const user = userEvent.setup();
 		h.workspaces = workspaces();
