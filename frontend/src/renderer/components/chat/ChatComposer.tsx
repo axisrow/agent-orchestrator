@@ -778,7 +778,10 @@ export const ChatComposer = memo(function ChatComposer({
 			focusEditor();
 		};
 		const onVisibilityChange = () => {
-			if (document.visibilityState === "visible") focusEditor();
+			// Same rule as onWindowFocus: the tab can come back visible while the
+			// user is typing into another field; taking focus would steal it.
+			if (document.visibilityState !== "visible" || isTextEntryFocused()) return;
+			focusEditor();
 		};
 
 		window.addEventListener("focus", onWindowFocus);
