@@ -1,7 +1,7 @@
 import {
-	ArrowRight,
 	Archive,
 	CheckCircle2,
+	Loader2,
 	Pencil,
 	TriangleAlert,
 	X,
@@ -790,7 +790,6 @@ export function CenterPane({
 				)}
 				{handoffDialogOpen ? null : shownPresentation && shownAgentSwitch && target.kind === "worker" ? (
 					<AgentSwitchTerminalOverlay
-						agentSwitch={shownAgentSwitch}
 						onDismiss={
 							shownPresentation.outcome === "failure"
 								? () => dismissAgentSwitchFailure(shownAgentSwitch.id)
@@ -815,13 +814,11 @@ export function CenterPane({
 }
 
 type AgentSwitchTerminalOverlayProps = {
-	agentSwitch: AgentSwitchSummary;
 	onDismiss?: () => void;
 	presentation: AgentSwitchPresentation;
 };
 
 function AgentSwitchTerminalOverlay({
-	agentSwitch,
 	onDismiss,
 	presentation,
 }: AgentSwitchTerminalOverlayProps) {
@@ -847,98 +844,68 @@ function AgentSwitchTerminalOverlay({
 			aria-atomic="true"
 			aria-busy={!sourceInput && !staticWarning && !success && !historical && presentation.animate ? true : undefined}
 			aria-live="polite"
-			className={cn(
-				"z-20 flex",
-				// History rides as a top strip over the visible terminal; it never
-				// scrims the pane the way a live takeover does.
-				sourceInput || historical
-					? "agent-switch-source-input-strip pointer-events-none absolute inset-x-3 top-3 justify-center"
-					: "agent-switch-terminal-scrim absolute inset-0 items-center justify-center animate-overlay-in motion-reduce:animate-none",
-				!presentation.lockAgentTerminal && "pointer-events-none",
-				presentation.animate && !staticWarning && !sourceInput && !historical && "cursor-wait",
-			)}
+			// Every switch state rides as a top strip over the live terminal
+			// (issue #367): the running agent's output stays visible the whole
+			// time; input stays locked separately through the inert surface.
+			className="agent-switch-source-input-strip pointer-events-none absolute inset-x-3 top-3 z-20 flex justify-center"
 			data-testid="agent-switch-terminal-overlay"
 			role="status"
 			tabIndex={-1}
 		>
-			{sourceInput || staticWarning || success || historical ? (
-				<div className={cn(
-					"agent-switch-attention-card pointer-events-auto relative flex max-w-md items-start gap-3 rounded-lg border bg-surface/95 px-4 py-3 text-left shadow-lg",
-					onDismiss && "pr-11",
-					historical
-						? "border-border"
-						: success
-							? "border-success/40"
-							: presentation.tone === "danger"
+			<div className={cn(
+				"agent-switch-attention-card pointer-events-auto relative flex max-w-md items-start gap-3 rounded-lg border bg-surface/95 px-4 py-3 text-left shadow-lg",
+				onDismiss && "pr-11",
+				historical
+					? "border-border"
+					: success
+						? "border-success/40"
+						: staticWarning
+							? presentation.tone === "danger"
 								? "border-danger/40"
-								: "border-warning/40",
-				)}>
-					{historical ? (
-						<Archive aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
-					) : success ? (
-						<CheckCircle2 aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-success" />
-					) : (
-						<TriangleAlert
-							aria-hidden="true"
-							className={cn(
-								"mt-0.5 size-5 shrink-0",
-								presentation.tone === "danger" ? "text-danger" : "text-warning",
-							)}
-						/>
-					)}
-					<div className="min-w-0">
-						{historical && (
-							<p className="flex items-center gap-1 text-2xs text-passive">
-								{t("switchAgent.historical.label")}
-							</p>
+								: "border-warning/40"
+							: "border-border",
+			)}>
+				{historical ? (
+					<Archive aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
+				) : success ? (
+					<CheckCircle2 aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-success" />
+				) : staticWarning ? (
+					<TriangleAlert
+						aria-hidden="true"
+						className={cn(
+							"mt-0.5 size-5 shrink-0",
+							presentation.tone === "danger" ? "text-danger" : "text-warning",
 						)}
-						<p className={cn("font-mono text-control font-medium", historical ? "text-muted-foreground" : "text-foreground")}>{title}</p>
-						<p className="mt-1 text-caption leading-4 text-muted-foreground">{description}</p>
-					</div>
-					{onDismiss ? (
-						<button
-							aria-label={t("common.close")}
-							className="absolute right-2 top-2 grid size-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-interactive-hover hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent/50"
-							onClick={onDismiss}
-							type="button"
-						>
-							<X aria-hidden="true" className="size-icon-sm" />
-						</button>
+					/>
+				) : (
+					<Loader2
+						aria-hidden="true"
+						className="mt-0.5 size-5 shrink-0 animate-spin text-status-working motion-reduce:animate-none"
+					/>
+				)}
+				<div className="min-w-0 flex-1">
+					{historical && (
+						<p className="flex items-center gap-1 text-2xs text-passive">
+							{t("switchAgent.historical.label")}
+						</p>
+					)}
+					<p className={cn("font-mono text-control font-medium", historical ? "text-muted-foreground" : "text-foreground")}>{title}</p>
+					<p className="mt-1 text-caption leading-4 text-muted-foreground">{description}</p>
+					{!sourceInput && !staticWarning && !success && !historical ? (
+						<AgentSwitchProgressTrack stage={presentation.stage} />
 					) : null}
 				</div>
-			) : (
-				<div
-					className="flex max-w-lg animate-modal-in flex-col items-center gap-5 rounded-xl border border-border-strong bg-surface/95 px-8 py-6 text-center shadow-xl shadow-black/20 motion-reduce:animate-none"
-					data-testid="agent-switch-transition-card"
-				>
-					<div className="flex items-center gap-5 sm:gap-7">
-						<SwitchingAgentMark harness={agentSwitch.fromHarness} />
-						<div
-							aria-hidden="true"
-							className="relative h-4 w-20 shrink-0 text-accent-strong sm:w-28"
-							data-testid="agent-switch-transfer-arrow"
-						>
-							<ArrowRight
-								className="absolute inset-0 size-full text-foreground/55"
-								data-testid="agent-switch-transfer-arrow-icon"
-								strokeWidth={1.5}
-							/>
-							<span
-								className="absolute inset-y-[7px] left-0 right-3 overflow-hidden"
-								data-testid="agent-switch-transfer-shaft"
-							>
-								<span className="agent-switch-transfer-pulse absolute inset-y-0 w-10 bg-gradient-to-r from-transparent via-accent to-transparent" />
-							</span>
-						</div>
-						<SwitchingAgentMark harness={agentSwitch.targetHarness} />
-					</div>
-					<div className="flex w-full flex-col items-center" data-testid="agent-switch-status-group">
-						<p className="font-mono text-control font-medium text-foreground">{title}</p>
-						<p className="mt-2 text-caption leading-4 text-muted-foreground">{description}</p>
-						<AgentSwitchProgressTrack stage={presentation.stage} />
-					</div>
-				</div>
-			)}
+				{onDismiss ? (
+					<button
+						aria-label={t("common.close")}
+						className="absolute right-2 top-2 grid size-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-interactive-hover hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent/50"
+						onClick={onDismiss}
+						type="button"
+					>
+						<X aria-hidden="true" className="size-icon-sm" />
+					</button>
+				) : null}
+			</div>
 		</div>
 	);
 }
@@ -969,17 +936,6 @@ function AgentSwitchTerminalStrip({
 			>
 				{t("terminal.backToAgent")}
 			</button>
-		</div>
-	);
-}
-
-function SwitchingAgentMark({ harness }: { harness: string }) {
-	return (
-		<div className="flex min-w-20 flex-col items-center gap-2">
-			<span className="grid size-14 place-items-center rounded-xl border border-border-strong bg-surface/90 shadow-lg shadow-black/20">
-				<AgentAvatar className="size-8" decorative provider={harness} />
-			</span>
-			<span className="text-caption font-medium text-muted-foreground">{agentLabel(harness)}</span>
 		</div>
 	);
 }

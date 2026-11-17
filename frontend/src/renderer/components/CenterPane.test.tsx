@@ -330,17 +330,17 @@ describe("CenterPane toolbar session label", () => {
 		const overlay = screen.getByRole("status", { name: "Switching from Claude Code to Codex" });
 		const terminalPanel = screen.getByRole("tabpanel", { name: "do the thing terminal" });
 		expect(terminalPanel).toContainElement(overlay);
-		expect(overlay).toHaveClass("agent-switch-terminal-scrim");
-		expect(within(overlay).getByTestId("agent-switch-transition-card")).toHaveClass(
-			"animate-modal-in",
-		);
+		// Issue #367: the switch status rides as a top strip; the terminal output
+		// underneath stays visible while only its input is locked.
+		expect(overlay).toHaveClass("agent-switch-source-input-strip");
+		expect(overlay).not.toHaveClass("agent-switch-terminal-scrim");
+		expect(screen.queryByTestId("agent-switch-transition-card")).not.toBeInTheDocument();
 		expect(screen.getByTestId("terminal-interaction-surface")).toHaveAttribute("inert");
-		expect(within(overlay).getByText("Claude Code")).toBeInTheDocument();
-		expect(within(overlay).getByText("Codex")).toBeInTheDocument();
+		expect(within(overlay).getByRole("list", { name: "Switching…" })).toBeInTheDocument();
 		expect(screen.getByText("terminal body")).toHaveAttribute("data-input-disabled", "true");
 	});
 
-	it("renders a connected transfer arrow and a coupled, wrapping lifecycle", () => {
+	it("keeps the compact switch strip out of the terminal flow and labels its stages", () => {
 		agentSwitchMocks.mutation.input = {
 			idempotencyKey: "switch-request-visuals",
 			model: "",
@@ -351,18 +351,10 @@ describe("CenterPane toolbar session label", () => {
 
 		renderCenterPane({ session: worker });
 
-		const card = screen.getByTestId("agent-switch-transition-card");
-		const arrow = within(card).getByTestId("agent-switch-transfer-arrow");
-		const shaft = within(arrow).getByTestId("agent-switch-transfer-shaft");
-		const arrowIcon = within(arrow).getByTestId("agent-switch-transfer-arrow-icon");
-		expect(arrowIcon).toHaveClass("lucide-arrow-right", "text-foreground/55");
-		expect(arrowIcon.querySelector(".agent-switch-transfer-pulse")).toBeNull();
-		expect(shaft.querySelector(".agent-switch-transfer-pulse")).not.toBeNull();
-
-		const statusGroup = within(card).getByTestId("agent-switch-status-group");
-		const progress = within(statusGroup).getByRole("list", { name: "Switching…" });
-		expect(within(statusGroup).getAllByText("Preparing handoff")).toHaveLength(2);
-		expect(statusGroup).toContainElement(progress);
+		const overlay = screen.getByTestId("agent-switch-terminal-overlay");
+		expect(overlay).toHaveClass("pointer-events-none", "absolute", "inset-x-3", "top-3");
+		const progress = within(overlay).getByRole("list", { name: "Switching…" });
+		expect(progress.querySelector('[aria-current="step"]')).not.toBeNull();
 		for (const label of [
 			"Preparing handoff",
 			"Stopping source agent",
@@ -379,7 +371,7 @@ describe("CenterPane toolbar session label", () => {
 		}
 	});
 
-	it("shows one terminal scrim while the selector is open during admission", () => {
+	it("shows one terminal switch strip while the selector is open during admission", () => {
 		agentSwitchMocks.mutation.input = {
 			idempotencyKey: "switch-request-1",
 			model: "",

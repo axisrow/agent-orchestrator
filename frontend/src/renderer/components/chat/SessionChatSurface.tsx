@@ -398,17 +398,21 @@ export const SessionChatSurface = memo(function SessionChatSurface({
 		!workspaceFileActive && !workspaceActiveTabKey && !reviewerTarget && !reviewerChatSelected && !shellTarget,
 	), hostId);
 	const renderShellFallback = Boolean(shellTarget && session);
-	// A switch from the terminal shows the chat before the daemon has a
-	// conversation to read. The starting snapshot stands in for the whole
-	// arrival, even over a cached transcript, so history appears once and fades
-	// in instead of flashing, hiding, and reappearing as the controller restarts.
+	// An interface switch into Chat sets `arriving` until the controller answers.
+	// It suppresses error/unavailable screens for the window; the transcript
+	// itself is governed by the arrival snapshot below (issue #367).
 	const optimisticArrival = Boolean(arriving) && !renderShellFallback;
 	const optimisticChat = (session.kind === "orchestrator" && isLoading && !renderShellFallback) || optimisticArrival;
 	const continueIntent = useRef<{ turnId: string; clientMessageId: string; sequence: number } | null>(null);
+	// Issue #367: an arrival must not blank the last known transcript. A cached
+	// snapshot renders immediately; the starting stand-in covers only the truly
+	// empty case. Error/unavailable screens stay suppressed for the whole
+	// arrival window either way.
+	const arrivalSnapshot = optimisticArrival
+		? (snapshot ?? { ...startingConversationSnapshot(session.id, session.provider), controller: { state: "stopped" as const } })
+		: undefined;
 	const renderSnapshot =
-		(optimisticArrival
-			? { ...startingConversationSnapshot(session.id, session.provider), controller: { state: "stopped" as const } }
-			: snapshot) ??
+		(arrivalSnapshot ?? snapshot) ??
 		(optimisticChat ? startingConversationSnapshot(session.id, session.provider) : undefined) ??
 		(renderShellFallback
 			? unavailableConversationSnapshot(session)
@@ -622,7 +626,6 @@ export const SessionChatSurface = memo(function SessionChatSurface({
 			/>
 			{shownSwitchPresentation ? (
 				<ChatAgentSwitchStatus
-					auxiliaryActive={Boolean(reviewerTarget || shellTarget)}
 					onDismiss={
 						shownSwitchPresentation.outcome === "failure" && agentSwitch
 							? () => dismissAgentSwitchFailure(agentSwitch.id)
@@ -636,16 +639,15 @@ export const SessionChatSurface = memo(function SessionChatSurface({
 });
 
 function ChatAgentSwitchStatus({
-	auxiliaryActive,
 	onDismiss,
 	presentation,
 }: {
-	auxiliaryActive: boolean;
 	onDismiss?: () => void;
 	presentation: AgentSwitchPresentation;
 }) {
+	// Issue #367: the conversation stays visible during a switch. The status
+	// card rides as a top strip; only the chat input stays locked.
 	const { t } = useTranslation();
-	const fullOverlay = presentation.lockAgentTerminal && !presentation.allowSourceInput && !auxiliaryActive;
 	const warning = presentation.outcome === "failure" || presentation.outcome === "recovery";
 	const success = presentation.outcome === "success";
 	const inProgress = presentation.outcome === "in_progress";
@@ -656,10 +658,7 @@ function ChatAgentSwitchStatus({
 			aria-busy={inProgress && presentation.animate ? true : undefined}
 			aria-live="polite"
 			className={cn(
-				"pointer-events-none z-20 flex",
-				fullOverlay
-					? "absolute inset-0 items-center justify-center bg-background/75 backdrop-blur-[1px]"
-					: "absolute inset-x-3 top-3 justify-center",
+				"pointer-events-none absolute inset-x-3 top-3 z-20 flex justify-center",
 			)}
 			data-outcome={presentation.outcome}
 			data-testid="chat-agent-switch-status"
