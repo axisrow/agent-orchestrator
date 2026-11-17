@@ -161,7 +161,7 @@ vi.mock("./ChatWorkspace", async () => {
 			configOptions?: ChatConfigOption[];
 			models: ChatModel[];
 			promptSuggestion?: { id: string; text: string };
-			snapshot: Pick<ConversationSnapshot, "sessionId" | "harness" | "settings">;
+			snapshot: Pick<ConversationSnapshot, "sessionId" | "harness" | "settings" | "items">;
 			shellTarget?: { handleId: string };
 		}) => {
 			workspaceSendSlot.workspaceSend = onSend;
@@ -178,6 +178,7 @@ vi.mock("./ChatWorkspace", async () => {
 					/>
 					{snapshot.sessionId ? <div>Mounted {mountedSessionId}</div> : null}
 					{snapshot.sessionId ? <div>Rendered {snapshot.sessionId}</div> : null}
+					<div data-testid="chat-item-count">{snapshot.items?.length ?? 0}</div>
 					<div data-testid="remember-available">{String(Boolean(onRememberPermissions))}</div>
 					<div data-testid="turn-settings-available">{String(Boolean(onChooseSettings))}</div>
 					<div data-testid="config-option-error">{configOptionError}</div>
@@ -1311,5 +1312,38 @@ describe("SessionChatSurface startup recovery", () => {
 		const view = render(<Wrapper client={queryClient}><SessionChatSurface session={{ ...session, statusReadiness: "ready" }} /></Wrapper>);
 		view.rerender(<Wrapper client={queryClient}><SessionChatSurface session={{ ...session, statusReadiness: "ready" }} /></Wrapper>);
 		expect(conversationRefreshes(invalidate)).toBe(0);
+	});
+});
+
+describe("SessionChatSurface arrival transcript (issue 367)", () => {
+	it("renders the cached transcript during an arrival instead of the empty startup stand-in", () => {
+		conversationState.snapshot = {
+			capabilities: [],
+			items: [{
+				kind: "message", id: "user-1", sequence: 1, revision: 1, role: "user", origin: "human",
+				text: "Cached work so far", streaming: false, createdAt: "2026-08-08T00:00:01Z",
+			} satisfies ConversationMessage],
+			latestSequence: 1,
+			controller: { state: "connecting" as const },
+		};
+		render(
+			<Wrapper client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+				<SessionChatSurface session={session} arriving />
+			</Wrapper>,
+		);
+
+		expect(screen.getByTestId("chat-item-count")).toHaveTextContent("1");
+	});
+
+	it("falls back to the empty startup stand-in only when nothing is cached", () => {
+		conversationState.snapshot = undefined;
+		conversationState.isLoading = true;
+		render(
+			<Wrapper client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+				<SessionChatSurface session={session} arriving />
+			</Wrapper>,
+		);
+
+		expect(screen.getByTestId("chat-item-count")).toHaveTextContent("0");
 	});
 });
