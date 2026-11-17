@@ -98,6 +98,43 @@ func TestClassify_OrphansAndForeign(t *testing.T) {
 	}
 }
 
+func TestClassify_ReviewerTreeUnderDaemonIsNotOrphan(t *testing.T) {
+	// Fork issue #364 live case: a reviewer pty-host has no sessions row, so
+	// the live-set check misses it; while its spawning daemon lives (PPID is
+	// the daemon — Setsid does not re-parent), its tree is daemon-owned.
+	live := map[domain.SessionID]domain.SessionRecord{
+		"tg_content_factory-284": {Kind: domain.KindWorker},
+	}
+	entries := []Entry{
+		{PID: testDaemonPID, PPID: 1, PGID: testDaemonPID, RSSKB: 90000, Command: "/usr/local/bin/ao daemon"},
+		ptyRoot(690, testDaemonPID, "tg_content_factory-284"), // the live worker's own tree
+		// The reviewer tree, exactly as ps renders it in the field.
+		{PID: 700, PPID: testDaemonPID, PGID: 700, RSSKB: 20000, Command: "/Applications/Agent Orchestrator.app/Contents/Resources/daemon/ao pty-host review-tg_content_factory-284 " +
+			"/Users/x/.ao/data/worktrees/tcf/tg_content_factory-284 " +
+			"/Applications/Agent Orchestrator.app/Contents/Resources/daemon/ao agent-process supervise " +
+			"--session review-tg_content_factory-284 --launch f9b0df1e --activity-review rev-1 -- /Users/x/.local/bin/claude --resume abc"},
+		ptyRoot(710, 1, "review-adopted-1"), // daemon died, tree adopted: still an orphan
+	}
+	inv := classifyEntries(t, entries, live)
+
+	states := map[string]string{}
+	for _, tree := range inv.Trees {
+		states[tree.SessionID] = tree.State
+	}
+	if states["review-tg_content_factory-284"] != StateDaemon {
+		t.Fatalf("reviewer tree state = %q, want %q; trees = %+v", states["review-tg_content_factory-284"], StateDaemon, inv.Trees)
+	}
+	if states["review-adopted-1"] != StateOrphan {
+		t.Fatalf("adopted reviewer tree state = %q, want %q", states["review-adopted-1"], StateOrphan)
+	}
+	if inv.Totals.OrphansCount != 1 {
+		t.Fatalf("orphans = %d, want 1 — the attached reviewer tree must never count as orphaned", inv.Totals.OrphansCount)
+	}
+	if inv.Totals.SessionsCount != 1 {
+		t.Fatalf("sessions = %d, want 1 — reviewer trees have no session row", inv.Totals.SessionsCount)
+	}
+}
+
 func TestClassify_TmuxGroupSocketFilter(t *testing.T) {
 	base := []Entry{
 		{PID: testDaemonPID, PPID: 1, PGID: testDaemonPID, RSSKB: 90000, Command: "/usr/local/bin/ao daemon"},

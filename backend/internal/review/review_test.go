@@ -1384,6 +1384,116 @@ func TestRestoreReviewerClaimsNewLaunchBeforeRestoreHooksWithFencedStore(t *test
 	}
 }
 
+// reapReviewRow is a terminal TUI reviewer with a live pane handle, exactly the
+// state fork issue #364 found: the pass is over, the pane keeps running, and
+// the process inventory cannot own it because reviewers have no sessions row.
+func reapReviewRow() *domain.Review {
+	return &domain.Review{ID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerClaudeCode,
+		InterfaceMode: domain.ReviewerInterfaceTUI, ReviewerHandleID: "review-mer-1",
+		ReviewerLaunchID: "launch-1", ReviewerActivityState: domain.ActivityIdle}
+}
+
+func TestReapCompletedReviewersDestroysIdlePane(t *testing.T) {
+	review := reapReviewRow()
+	wantHandle := review.ReviewerHandleID
+	store := &fakeStore{review: review, runs: []domain.ReviewRun{
+		{ID: "run-1", ReviewID: review.ID, SessionID: review.SessionID, Harness: review.Harness,
+			Status: domain.ReviewRunComplete, Verdict: domain.VerdictApproved},
+	}}
+	launcher := &fakeLauncher{handle: wantHandle}
+	eng := newEngineForTest(store, fakeSessions{}, fakePRs{}, fakeProjects{}, launcher)
+
+	eng.ReapCompletedReviewers(context.Background(), review.SessionID, []domain.ReviewRun{store.runs[0]})
+
+	if !launcher.destroyed || launcher.destroyedHandle != wantHandle {
+		t.Fatalf("completed review pane not reaped: destroyed=%v handle=%q", launcher.destroyed, launcher.destroyedHandle)
+	}
+	if review.ReviewerHandleID != "" {
+		t.Fatalf("stored handle not cleared after reap: %+v", review)
+	}
+	if launcher.cancelled {
+		t.Fatalf("reap must stop the pane, not interrupt it: %+v", launcher)
+	}
+}
+
+func TestReapCompletedReviewersKeepsPaneWhileRunsRunning(t *testing.T) {
+	review := reapReviewRow()
+	store := &fakeStore{review: review, runs: []domain.ReviewRun{
+		{ID: "run-1", ReviewID: review.ID, SessionID: review.SessionID, Harness: review.Harness,
+			Status: domain.ReviewRunComplete, Verdict: domain.VerdictApproved},
+		// A second pass of the same review is still in flight: the pane serves it.
+		{ID: "run-2", ReviewID: review.ID, SessionID: review.SessionID, Harness: review.Harness,
+			Status: domain.ReviewRunRunning, PRURL: "https://github.com/o/r/pull/2", TargetSHA: "sha2"},
+	}}
+	launcher := &fakeLauncher{handle: review.ReviewerHandleID}
+	eng := newEngineForTest(store, fakeSessions{}, fakePRs{}, fakeProjects{}, launcher)
+
+	eng.ReapCompletedReviewers(context.Background(), review.SessionID, []domain.ReviewRun{store.runs[0]})
+
+	if launcher.destroyed {
+		t.Fatalf("pane with a running pass was reaped: %+v", launcher)
+	}
+	if review.ReviewerHandleID == "" {
+		t.Fatal("stored handle cleared while a pass is still running")
+	}
+}
+
+func TestReapCompletedReviewersSkipsChatAndLegacyBlockingRuns(t *testing.T) {
+	t.Run("chat reviewer has no pane", func(t *testing.T) {
+		review := reapReviewRow()
+		review.InterfaceMode = domain.ReviewerInterfaceChat
+		review.ReviewerHandleID = "review-chat:rev-1"
+		store := &fakeStore{review: review}
+		launcher := &fakeLauncher{}
+		eng := newEngineForTest(store, fakeSessions{}, fakePRs{}, fakeProjects{}, launcher)
+
+		eng.ReapCompletedReviewers(context.Background(), review.SessionID, []domain.ReviewRun{
+			{ID: "run-1", ReviewID: review.ID, SessionID: review.SessionID, Harness: review.Harness, Status: domain.ReviewRunComplete},
+		})
+		if launcher.destroyed {
+			t.Fatalf("chat reviewer pane destroyed: %+v", launcher)
+		}
+	})
+	t.Run("legacy run without ids blocks the reap", func(t *testing.T) {
+		review := reapReviewRow()
+		store := &fakeStore{review: review, runs: []domain.ReviewRun{
+			// A pre-per-harness row: no review id, no harness — it belongs to
+			// whichever reviewer is current, so it blocks.
+			{ID: "legacy", SessionID: review.SessionID, Status: domain.ReviewRunRunning},
+		}}
+		launcher := &fakeLauncher{handle: review.ReviewerHandleID}
+		eng := newEngineForTest(store, fakeSessions{}, fakePRs{}, fakeProjects{}, launcher)
+
+		eng.ReapCompletedReviewers(context.Background(), review.SessionID, []domain.ReviewRun{
+			{ID: "run-1", ReviewID: review.ID, SessionID: review.SessionID, Harness: review.Harness, Status: domain.ReviewRunComplete},
+		})
+		if launcher.destroyed {
+			t.Fatalf("pane reaped while a legacy run is still running: %+v", launcher)
+		}
+	})
+	t.Run("archived and handle-less rows stay untouched", func(t *testing.T) {
+		archived := reapReviewRow()
+		archived.IsArchived = true
+		handleless := reapReviewRow()
+		handleless.ID = "rev-2"
+		handleless.Harness = domain.ReviewerCodex
+		handleless.ReviewerHandleID = ""
+		store := &fakeStore{reviews: map[domain.ReviewerHarness]domain.Review{
+			archived.Harness: *archived, handleless.Harness: *handleless,
+		}}
+		launcher := &fakeLauncher{}
+		eng := newEngineForTest(store, fakeSessions{}, fakePRs{}, fakeProjects{}, launcher)
+
+		eng.ReapCompletedReviewers(context.Background(), "mer-1", []domain.ReviewRun{
+			{ID: "run-1", ReviewID: archived.ID, SessionID: "mer-1", Harness: archived.Harness, Status: domain.ReviewRunComplete},
+			{ID: "run-2", ReviewID: handleless.ID, SessionID: "mer-1", Harness: handleless.Harness, Status: domain.ReviewRunComplete},
+		})
+		if launcher.destroyed {
+			t.Fatalf("archived or handle-less reviewer destroyed: %+v", launcher)
+		}
+	})
+}
+
 func TestCancelInterruptsReviewerAndCancelsRunningRuns(t *testing.T) {
 	store := &fakeStore{
 		review: &domain.Review{ID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerCodex, ReviewerHandleID: "review-mer-1"},

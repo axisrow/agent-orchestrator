@@ -941,6 +941,13 @@ func (s *Service) SubmitMany(ctx context.Context, workerID domain.SessionID, rev
 	for _, submitted := range runs {
 		delivered = append(delivered, submitted.run)
 	}
+	// Publication has settled by here, so any reviewer pane whose last pass
+	// ended with this submission can be reaped now (fork issue #364): an idle
+	// TUI pane has no sessions row and would otherwise linger — and read as an
+	// orphaned process tree — long after its work was published.
+	if s.engine != nil {
+		s.engine.ReapCompletedReviewers(ctx, workerID, delivered)
+	}
 	if s.lifecycle == nil {
 		return delivered, nil
 	}
