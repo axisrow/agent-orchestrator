@@ -31,7 +31,11 @@ export type SessionLifecycleState = (typeof SESSION_LIFECYCLE_STATES)[number];
  * - `activity` is the hook-reported agent fact (`SessionActivity.state`) and
  *   the only source of "executing right now". An orchestrator's aggregated
  *   `status` stays "working" for its whole life, so it must never decide
- *   liveness — the hook facts do.
+ *   liveness — the hook facts do. An `active` fact is liveness only while the
+ *   turn shows signs of life: hooks can fail to downgrade the fact when the
+ *   agent finishes, so an `active` the daemon has flagged `turnStalled` (no
+ *   conversation write, hook fact, or activity transition past its threshold)
+ *   is a stale claim, not a running turn (#361).
  * - `status` is the daemon's aggregated session status. Only its
  *   `terminated`/`exited` and `needs_input` values move the lifecycle; the
  *   SCM delivery values (ci_failed, review_pending, mergeable, …) refine what
@@ -61,15 +65,19 @@ export type SessionLifecycleFacts = {
  * | 5 | *                       | waiting_input  | *              | waiting_input  |
  * | 6 | status needs_input      | *              | *              | waiting_input  |
  * | 7 | *                       | blocked        | *              | blocked        |
- * | 8 | *                       | active         | *              | running        |
- * | 9 | *                       | idle/unknown/– | ready/–        | idle           |
+ * | 8 | *                       | active, live   | *              | running        |
+ * | 9 | *                       | active, stalled / idle / unknown / – | ready/– | idle  |
  *
  * Rows 5+6 are one state reached from either fact: the daemon may report the
  * status first, the hook first, or both. Row 4: a start that failed is stuck
  * on the user — the surfaces show its `provisionError` — so it reads as
- * blocked rather than as a lying idle. Row 9 is the deliberate default: an
- * agent that is not executing, waiting, blocked, or gone is idle, whatever
- * its delivery lane says.
+ * blocked rather than as a lying idle. Row 8 vs 9: "active" means running
+ * only while the daemon's stall derivation does not flag it — a stalled
+ * active fact has no live in-flight tool call (the daemon keeps stall false
+ * while one runs) and no sign of life past the threshold, so it is the
+ * stale tail of a finished agent (#361) and reads as idle. Row 9 is the
+ * deliberate default: an agent that is not executing, waiting, blocked, or
+ * gone is idle, whatever its delivery lane says.
  */
 export function sessionLifecycleState(facts: SessionLifecycleFacts): SessionLifecycleState {
 	if (facts.isTerminated === true || facts.status === "terminated" || facts.status === "exited") return "exited";
@@ -78,7 +86,7 @@ export function sessionLifecycleState(facts: SessionLifecycleFacts): SessionLife
 	if (facts.provisionState === "failed") return "blocked";
 	if (facts.activity?.state === "waiting_input" || facts.status === "needs_input") return "waiting_input";
 	if (facts.activity?.state === "blocked") return "blocked";
-	if (facts.activity?.state === "active") return "running";
+	if (facts.activity?.state === "active" && facts.activity?.turnStalled !== true) return "running";
 	return "idle";
 }
 

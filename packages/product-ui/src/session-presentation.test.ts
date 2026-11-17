@@ -146,6 +146,7 @@ describe("session presentation", () => {
 
 	it("keeps lifecycle predicates independent of presentation labels", () => {
 		expect(isAgentActivityWorking({ state: "active", lastActivityAt: "" })).toBe(true);
+		expect(isAgentActivityWorking({ state: "active", lastActivityAt: "", turnStalled: true })).toBe(false);
 		expect(isAgentActivityWorking(undefined)).toBe(false);
 		expect(isSessionIdle({ status: "idle" })).toBe(true);
 		expect(isSessionIdle({ status: "working" })).toBe(false);
@@ -170,6 +171,9 @@ describe("session presentation", () => {
 		).toBe("translated:zone.pending · t:activity.active");
 	});
 
+	// Issue #281: the silence leads. Issue #361: the stalled hook claim of
+	// "active" is exactly what the silence puts in doubt, so the hover keeps
+	// the tone label alone and never appends a "Working" nothing confirms.
 	it("leads a stalled turn's hover text with the silence and its duration", () => {
 		expect(
 			sessionStatusTooltip("Working", {
@@ -181,7 +185,33 @@ describe("session presentation", () => {
 		).toBe("No signs of life 12m · Working");
 		expect(
 			sessionStatusTooltip("In review", { state: "active", lastActivityAt: "", turnStalled: true }),
-		).toBe("No signs of life 0s · In review · Working");
+		).toBe("No signs of life 0s · In review");
+		expect(
+			sessionStatusTooltip("Merged", {
+				state: "active",
+				lastActivityAt: "",
+				turnStalled: true,
+				turnSilentForMs: 15 * 60 * 1000,
+			}),
+		).toBe("No signs of life 15m · Merged");
+	});
+
+	// Issue #361: a stale active fact — the agent finished, the hooks never
+	// downgraded — presents as idle, gray, unbreathing, on every pill surface.
+	it("presents a stalled active fact as idle, not Working", () => {
+		const stale = { state: "active", lastActivityAt: "", turnStalled: true, turnSilentForMs: 15 * 60 * 1000 } as const;
+		expect(getAgentActivityView(stale)).toMatchObject({
+			state: "idle",
+			label: "Idle",
+			dotClassName: "bg-status-idle",
+			indicatorClassName: "bg-status-idle",
+		});
+		// A live active fact — no stall flag — still reads Working with its pulse.
+		expect(getAgentActivityView({ state: "active", lastActivityAt: "" })).toMatchObject({
+			state: "active",
+			label: "Working",
+			indicatorClassName: "bg-status-working animate-status-pulse",
+		});
 	});
 
 	// Issue #344: a tool call still in flight is the opposite of silence. The

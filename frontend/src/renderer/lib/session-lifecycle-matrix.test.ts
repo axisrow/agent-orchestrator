@@ -7,7 +7,7 @@ import {
 	type SessionLifecycleFacts,
 	type SessionLifecycleState,
 } from "@aoagents/product-ui";
-import { getOrchestratorStatusDotView, getSessionStatusDotView } from "./session-presentation";
+import { getAgentActivityView, getOrchestratorStatusDotView, getSessionStatusDotView } from "./session-presentation";
 import type { WorkspaceSession } from "../types/workspace";
 
 // Cross-surface matrix (#355): for every fact combination the daemon can
@@ -122,5 +122,37 @@ describe("cross-surface session state agreement", () => {
 		expect(sessionLifecycleRunning(facts)).toBe(false);
 		expect(getSessionStatusDotView(session(facts, "worker")).className).toBe("bg-status-idle");
 		expect(getOrchestratorStatusDotView(session(facts, "orchestrator")).className).toBe("bg-status-idle");
+	});
+
+	it("a merged session with stale hook facts is never Working on any surface (#361)", () => {
+		// The reported case: the PR merged and the agent finished, but its
+		// hooks never downgraded the activity fact — the chip read
+		// "Merged · Working" and the activity panel kept saying Working. The
+		// daemon flags the silent turn as stalled; every surface must read the
+		// contract's idle, not the stale claim.
+		const facts: SessionLifecycleFacts = {
+			status: "merged",
+			activity: { state: "active", lastActivityAt: "2026-11-17T04:56:00Z", turnStalled: true, turnSilentForMs: 15 * 60 * 1000 },
+		};
+		const state = sessionLifecycleState(facts);
+		expect(state).toBe("idle");
+		expect(sessionLifecycleRunning(facts)).toBe(false);
+
+		// Sidebar and overview dots: idle gray, no breathing, and the hover
+		// carries the silence instead of a "· Working" suffix.
+		const workerDot = getSessionStatusDotView(session(facts, "worker"));
+		expect(workerDot.className).toBe("bg-status-idle");
+		expect(workerDot.breathe).toBe(false);
+		expect(workerDot.title).toBe("No signs of life 15m · Idle");
+		expect(getOrchestratorStatusDotView(session(facts, "orchestrator")).className).toBe("bg-status-idle");
+
+		// Overview: the Running filter and the Stage cell follow the contract.
+		expect(sessionLifecycleStateView(state).label).toBe("Idle");
+
+		// The activity pill (topbar, inspector timeline) reads the same
+		// demotion: no Working label, no pulse.
+		const pill = getAgentActivityView(facts.activity);
+		expect(pill.label).toBe("Idle");
+		expect(pill.breathe).toBe(false);
 	});
 });

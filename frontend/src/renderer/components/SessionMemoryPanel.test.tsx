@@ -637,4 +637,30 @@ describe("AppMemoryIndicator", () => {
 		expect(within(rows[0]).getByTestId("session-memory-status")).toHaveTextContent("idle · 2h");
 		expect(screen.queryByText("Recent")).not.toBeInTheDocument();
 	});
+
+	// Issue #361: a stale active fact — the agent finished, the hooks never
+	// downgraded — must not print Working in the memory row or the copy report
+	// while the pill in the same inspector already reads Idle.
+	it("renders the idle line for a session whose active fact is stalled", async () => {
+		const workspace: WorkspaceSummary = {
+			id: "p1",
+			name: "radic",
+			sessions: [
+				{
+					...session("s-small", "small worker", "active"),
+					activity: { state: "active", lastActivityAt: LONG_AGO, turnStalled: true, turnSilentForMs: 15 * 60 * 1000 },
+				},
+				session("s-none", "unsampled worker"),
+			],
+		} as WorkspaceSummary;
+		workspaceQueryMock.mockReturnValue({ data: [workspace], isError: false, isSuccess: true });
+		renderButton();
+		await userEvent.click(screen.getByTestId("app-memory-indicator"));
+		const rows = within(await screen.findByTestId("session-memory-table")).getAllByTestId("session-memory-row");
+		expect(within(rows[0]).getByTestId("session-memory-status")).toHaveTextContent("idle · 2h");
+		expect(within(rows[0]).getByTestId("session-memory-status")).not.toHaveTextContent("working");
+		await userEvent.click(screen.getByRole("button", { name: "Copy report" }));
+		const report = clipboardMock.mock.calls[0][0] as string;
+		expect(report).toContain("Status   idle · 2h");
+	});
 });

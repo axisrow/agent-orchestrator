@@ -4,6 +4,7 @@ import type { TFunction } from "i18next";
 import { Check, ChevronDown, ChevronRight, ChevronUp, Copy, Loader2, X } from "lucide-react";
 import {
 	chipTone,
+	isAgentActivityWorking,
 	largestSession,
 	processCategories,
 	processKind,
@@ -68,7 +69,10 @@ export function toSessionFacts(session: WorkspaceSession, reading: SessionMemory
 		id: session.id,
 		title: session.title,
 		rssBytes: reading?.rssBytes ?? 0,
-		working: session.activity?.state === "active",
+		// Liveness reads the contract's predicate (#361): a stalled active fact
+		// — the stale tail of a finished agent — is not working here any more
+		// than it is on the pill in the same inspector.
+		working: isAgentActivityWorking(session.activity),
 		idleSeconds: Number.isNaN(lastActivity) ? undefined : Math.max(0, (now - lastActivity) / 1000),
 	};
 }
@@ -590,7 +594,7 @@ function SessionRow({
 	session: WorkspaceSession;
 }) {
 	const { t } = useTranslation();
-	const working = session.activity?.state === "active";
+	const working = isAgentActivityWorking(session.activity);
 	const recent = reading.activity?.recent ?? [];
 	const canExpand = reading.processes.length > 0 || recent.length > 0;
 	return (
@@ -677,7 +681,7 @@ export function sessionReport(
 	reading: SessionMemoryReading,
 	t: TFunction,
 ): string {
-	const working = session.activity?.state === "active";
+	const working = isAgentActivityWorking(session.activity);
 	const identity = [session.workspaceName, session.kind ?? "worker", session.provider, session.mode].filter(Boolean).join(" · ");
 	const lines = [session.title, identity];
 	// The daemon's lane ("Needs review") and what the agent is doing right now

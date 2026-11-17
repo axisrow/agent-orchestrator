@@ -88,6 +88,23 @@ describe("sessionLifecycleState", () => {
 		expect(sessionLifecycleState({ status: "terminated", activity: activity("waiting_input") })).toBe("exited");
 	});
 
+	it("never reads running from a stale active fact: merged PR, finished agent (#361)", () => {
+		// The reported case: the PR merged, the agent delivered its final
+		// message, and the hooks never downgraded the activity fact. Past the
+		// daemon's stall threshold the active claim has no signs of life behind
+		// it, so the contract answers idle — a merged session with a dead agent
+		// is never Working.
+		const stale: SessionActivity = { ...activity("active"), turnStalled: true, turnSilentForMs: 15 * 60 * 1000 };
+		expect(sessionLifecycleState({ status: "merged", activity: stale })).toBe("idle");
+		expect(sessionLifecycleRunning({ status: "merged", activity: stale })).toBe(false);
+		// A live active fact — no stall flag, older daemon or a fresh turn — still runs.
+		expect(sessionLifecycleState({ status: "merged", activity: activity("active") })).toBe("running");
+		// The daemon keeps the stall flag false while a tool call is in flight,
+		// so a long call never demotes an honest turn.
+		const inflight: SessionActivity = { ...stale, turnStalled: undefined, turnToolInflightName: "Bash" };
+		expect(sessionLifecycleState({ status: "merged", activity: inflight })).toBe("running");
+	});
+
 	it("reserves provisioning for a real in-flight start", () => {
 		expect(sessionLifecycleState({ provisionState: "provisioning" })).toBe("provisioning");
 		expect(sessionLifecycleState({ provisionState: "ready", activity: activity("idle") })).toBe("idle");
