@@ -4642,6 +4642,7 @@
 	"statusBar.orphans": "orphans",
 	"statusBar.ramLabel": "RAM",
 	"statusBar.stateAdopted": "adopted",
+	"statusBar.stateDaemon": "демон",
 	"statusBar.stateForeign": "foreign",
 	"statusBar.stateOrphan": "orphan",
 	"statusBar.stateOwned": "owned",

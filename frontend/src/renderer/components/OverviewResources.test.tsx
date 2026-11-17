@@ -194,6 +194,32 @@ describe("OverviewResources", () => {
 		expect(stopped).toBe(false);
 	});
 
+	it("labels a daemon-owned reviewer tree as daemon, never foreign", async () => {
+		const user = userEvent.setup();
+		// Fork issue #364: a reviewer pty-host owned by the live daemon has no
+		// session row and is not killable; it must not fall into the foreign
+		// catch-all badge.
+		const reviewer: ProcessTreeRow = {
+			sessionId: "review-web-api-3",
+			rootPid: 70001,
+			rootLstart: "Mon Sep 14 04:57:00 2026",
+			pidCount: 3,
+			rssBytes: 851443,
+			kind: "",
+			state: "daemon",
+			attached: true,
+			activityState: undefined,
+			lastActivityAt: "0001-01-01T00:00:00Z",
+		};
+		renderResources(inventory({ trees: [reviewer] }));
+
+		await user.click(screen.getByTestId("status-bar-memory"));
+		expect(screen.getByText("review-web-api-3 · pid 70001 · 831 KB")).toBeInTheDocument();
+		expect(screen.getByText("daemon")).toBeInTheDocument();
+		expect(screen.queryByText("foreign")).toBeNull();
+		expect(screen.queryByRole("button", { name: /review-web-api-3/ })).toBeNull();
+	});
+
 	it("opens the popover and kills a single orphan tree with one exact target", async () => {
 		const user = userEvent.setup();
 		postMock.mockResolvedValue({
