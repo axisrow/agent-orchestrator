@@ -273,6 +273,13 @@ export function MemoryPopover({
 															`${t("statusBar.stateOwned")} · ${t("statusBar.stateAdopted")}`
 														)}
 													</Badge>
+												) : tree.state === "daemon" ? (
+													// A reviewer pane owned by the live daemon (fork issue #364):
+													// neither a session row nor killable, so it gets its own
+													// badge instead of falling into the foreign catch-all.
+													<Badge variant="neutral" className="shrink-0">
+														{t("statusBar.stateDaemon")}
+													</Badge>
 												) : (
 													<Badge variant="outline" className="shrink-0">
 														{t("statusBar.stateForeign")}

@@ -12,6 +12,7 @@ import (
 	stdctx "context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"reflect"
 	"strings"
 	"sync"
@@ -1527,6 +1528,89 @@ func (e *Engine) TeardownReviewerTerminal(ctx stdctx.Context, workerID domain.Se
 		}
 	}
 	return nil
+}
+
+// ReapCompletedReviewers stops the reviewer panes whose last pass ended with
+// the given runs (fork issue #364). A terminal reviewer pane has no sessions
+// row, so one left running after its work completed is invisible to the
+// session registry and the process inventory mis-files its tree as orphaned;
+// the submission that completed the runs therefore destroys the pane through
+// the normal PTY shutdown path once nothing is running for it any more. Chat
+// reviewers have no pane and keep their conversation; archived rows are
+// already retired. Best effort: a failed reap is logged and left to the next
+// submission — it must never fail the submission that already published.
+func (e *Engine) ReapCompletedReviewers(ctx stdctx.Context, workerID domain.SessionID, runs []domain.ReviewRun) {
+	if workerID == "" || len(runs) == 0 {
+		return
+	}
+	// The worker lock keeps the running-run check truthful against a
+	// concurrent trigger: one that is mid-launch holds this lock and its runs
+	// are already inserted before the lock frees.
+	unlock := e.lockWorker(workerID)
+	defer unlock()
+	reviews, err := e.store.ListReviewsBySession(ctx, workerID)
+	if err != nil {
+		slog.Default().WarnContext(ctx, "reviewer reap: list reviews failed", "session", workerID, "err", err)
+		return
+	}
+	byID := make(map[string]domain.Review, len(reviews))
+	byHarness := make(map[domain.ReviewerHarness]domain.Review, len(reviews))
+	for _, review := range reviews {
+		byID[review.ID] = review
+		byHarness[review.Harness] = review
+	}
+	running, err := e.store.ListRunningReviewRunsBySession(ctx, workerID)
+	if err != nil {
+		slog.Default().WarnContext(ctx, "reviewer reap: list running runs failed", "session", workerID, "err", err)
+		return
+	}
+	reaped := map[string]bool{}
+	for _, run := range runs {
+		review, ok := byID[run.ReviewID]
+		if !ok && run.ReviewID == "" {
+			// Legacy runs predate per-harness review ids; they belong to the
+			// worker's reviewer for the run's harness.
+			review, ok = byHarness[run.Harness]
+		}
+		if !ok || reaped[review.ID] {
+			continue
+		}
+		reaped[review.ID] = true
+		e.reapCompletedReviewer(ctx, workerID, review, running)
+	}
+}
+
+// reapCompletedReviewer destroys one reviewer's pane when no run of its review
+// is running any more, and clears the stored handle so the next trigger spawns
+// a fresh pane instead of probing a dead one. The native agent session id is
+// deliberately kept: restore recreates the pane and resumes that conversation.
+func (e *Engine) reapCompletedReviewer(ctx stdctx.Context, workerID domain.SessionID, review domain.Review, running []domain.ReviewRun) {
+	if review.ID == "" || review.IsArchived || review.InterfaceMode == domain.ReviewerInterfaceChat || review.ReviewerHandleID == "" {
+		return
+	}
+	for _, run := range running {
+		if runBelongsToReview(run, review) {
+			return
+		}
+	}
+	slog.Default().InfoContext(ctx, "reaping completed reviewer pane", "review", review.ID, "session", workerID, "handle", review.ReviewerHandleID)
+	if err := e.launcher.Destroy(ctx, review.ReviewerHandleID); err != nil {
+		slog.Default().WarnContext(ctx, "reviewer reap: destroy failed", "review", review.ID, "handle", review.ReviewerHandleID, "err", err)
+		return
+	}
+	if err := e.store.ClearReviewerHandleByHarness(ctx, workerID, review.Harness); err != nil {
+		slog.Default().WarnContext(ctx, "reviewer reap: clear handle failed", "review", review.ID, "harness", review.Harness, "err", err)
+	}
+}
+
+// runBelongsToReview matches a run to the reviewer serving it, including the
+// legacy rows that predate per-harness runs and belong to whichever reviewer
+// is current — the same matching cancelStaleRunningRuns applies.
+func runBelongsToReview(run domain.ReviewRun, review domain.Review) bool {
+	if run.ReviewID != "" {
+		return run.ReviewID == review.ID
+	}
+	return run.Harness == "" || run.Harness == review.Harness
 }
 
 func autoReviewHeadBlocked(runs []domain.ReviewRun, prURL, targetSHA string, harness domain.ReviewerHarness) bool {

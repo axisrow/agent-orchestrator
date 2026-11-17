@@ -18,6 +18,11 @@ const (
 	StateOwned   = "owned"   // session is live in the daemon's DB — never killable
 	StateOrphan  = "orphan"  // no live session and no plausible owner — killable
 	StateForeign = "foreign" // another live process (e.g. a second AO daemon) owns the tree
+	// StateDaemon marks a reviewer pty-host tree owned by this live daemon.
+	// Reviewer panes never register in sessions (their handle is not a session
+	// id), so the live-set check misses them; one hanging off this daemon is
+	// its owner's own process, never an orphan (fork issue #364).
+	StateDaemon = "daemon"
 )
 
 // Tree is one `ao pty-host` process tree: the detached PTY host, its PTY
@@ -84,6 +89,11 @@ type Inventory struct {
 	// section on nil.
 	Host *HostStats
 }
+
+// reviewerHandlePrefix is the stable reviewer pane handle prefix
+// (review/launcher.go reviewerHandleID); the reviewer pty-host carries it as
+// its positional session argument.
+const reviewerHandlePrefix = "review-"
 
 // isPtyHostRoot reports whether the command line is a detached pty-host spawn
 // (`<path-to-ao> pty-host <sessionID> <cwd> ...`, built in
@@ -192,8 +202,20 @@ func BuildInventory(entries []Entry, live map[domain.SessionID]domain.SessionRec
 			tree.ActivityState = string(row.Activity.State)
 			tree.LastActivityAt = row.Activity.LastActivityAt
 		} else {
+			// A reviewer pty-host's session argument is the reviewer handle
+			// ("review-<worker>", review/launcher.go reviewerHandleID), never a
+			// sessions row. While its spawning daemon lives, the tree hangs
+			// directly off it (spawn_unix keeps PPID despite Setsid), so such a
+			// tree is daemon-owned, not an orphan. Only attached trees count:
+			// an adopted (PPID 1) review- tree predates this daemon and stays an
+			// orphan. The prefix can also name a dead worker of a "review-*"
+			// project, which would then be mis-filed here — in the safe
+			// direction: unkillable by the orphan kill path, and the reviewer
+			// reap (review.ReapCompletedReviewers) keeps such panes short-lived.
 			_, parentInSnapshot := byPID[entry.PPID]
 			switch {
+			case entry.PPID == daemonPID && strings.HasPrefix(string(sessionID), reviewerHandlePrefix):
+				tree.State = StateDaemon
 			case entry.PPID == daemonPID || entry.PPID == 1 || !parentInSnapshot:
 				tree.State = StateOrphan
 			default:

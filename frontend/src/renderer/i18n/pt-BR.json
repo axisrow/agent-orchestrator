@@ -3504,6 +3504,7 @@
 	"statusBar.stateOwned": "própria",
 	"statusBar.stateAdopted": "adotada",
 	"statusBar.stateOrphan": "órfã",
+	"statusBar.stateDaemon": "daemon",
 	"statusBar.stateForeign": "alheia",
 	"settings.agentAccounts.cliLogin": "Login da CLI"
 }

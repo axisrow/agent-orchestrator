@@ -3436,6 +3436,7 @@
 	"statusBar.stateOwned": "owned",
 	"statusBar.stateAdopted": "adopted",
 	"statusBar.stateOrphan": "orphan",
+	"statusBar.stateDaemon": "daemon",
 	"statusBar.stateForeign": "foreign",
 	"settings.agentAccounts.cliLogin": "CLI login"
 }
