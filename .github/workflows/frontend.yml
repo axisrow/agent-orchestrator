@@ -2,7 +2,8 @@ name: Frontend
 
 # Runs the renderer vitest suite and typechecks the codebase.
 #
-# This job ensures both compiler/type checking passes and vitest tests succeed.
+# Typechecking and the vitest suite are the slowest pieces and need only the
+# npm installs, so they run as parallel jobs instead of one serial job.
 
 on:
   push:
@@ -51,8 +52,13 @@ jobs:
       - name: Test repair installer packaging and guards
         run: node --test scripts/build-mac-repair-installer.node-test.mjs
 
-  test:
+  typecheck:
+    # Typechecking and the fast package verifications used to run serially
+    # ahead of the vitest suite inside one job, making this workflow's wall
+    # time their sum. They need only the npm installs, so they run beside the
+    # test job instead.
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: frontend
@@ -112,9 +118,6 @@ jobs:
           npm pack --dry-run
         working-directory: packages/product-ui
 
-      - name: Prepare pinned agent-browser runtime
-        run: npm run browser-runtime:prepare -- --quiet
-
       - name: Install docs dependencies
         run: npm ci --prefix src/docs
 
@@ -126,6 +129,42 @@ jobs:
 
       - name: Typecheck E2E suite
         run: npm run typecheck:e2e
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            packages/product-ui/package-lock.json
+
+      - name: Install frontend dependencies
+        run: |
+          for attempt in 1 2 3; do
+            if npm ci; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            echo "npm ci failed; retrying Electron dependency download ($attempt/3)"
+          done
+
+      - name: Install product UI dependencies
+        run: npm ci
+        working-directory: packages/product-ui
+
+      - name: Prepare pinned agent-browser runtime
+        run: npm run browser-runtime:prepare -- --quiet
 
       - name: Run vitest suite
         env:

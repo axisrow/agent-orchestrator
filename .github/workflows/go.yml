@@ -15,6 +15,15 @@ on:
 permissions:
   contents: read
 
+env:
+  # -race stays on for our code, but not for modernc.org's machine-translated
+  # SQLite and libc. Instrumenting every memory access in them made every
+  # SQLite-backed test job several times slower: the sqlite-race shards spent
+  # most of their step compiling instrumented SQLite rather than running
+  # tests, and the slowest migration test took 128s with it, 9s without.
+  # Catching races in our own Go code doesn't depend on it.
+  GOFLAGS: -gcflags=modernc.org/...=-race=false
+
 concurrency:
   group: go-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
