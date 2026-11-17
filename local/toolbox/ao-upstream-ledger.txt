@@ -828,3 +828,66 @@ cb4e9bf16694ec3f530793961728761be6bafe92 skipped fix: session delete, Cue PATH p
 58338910ea1d09e39c9e862b4ee3c774dc18606f skipped fix(chat): time PR review events by when the reviewer wrote them (#8526) — DU: AutomationMessage в форке нет (PR-панель выпилена)
 aa6e65dcef438238b1cfc6b9866827e07dcf5f8a taken fix(browser): open chat links in the Browser without starting agent-browser (#8521)
 77311f0b9f61c8210de23c826fa4f0b84f4934f3 skipped feat(telemetry): artifact creation and publish funnel events (#8483)
+c709ef2a736d77964bdd83b64dab1b6bcd853ce4 skipped fix(hover-card): close hover cards when their link is followed or hidden (#8613) — фикс к скипнутой фиче hover-card (#8542); SessionLinkPreviewCard/ui-hover-card в форке нет
+0f058c1298698d6cb93f3051b37155eee51d1230 skipped fix(topbar): drag and double-click-zoom from every empty pixel of the macOS top bar (#8611) — топбар форка свой (решено навсегда), пик поверх апстримного PageTopbar/drag-regions
+be2b1fb743a9cb54c7e4db14e18d994afe5b0f74 skipped fix(diagnostics): stop window jumps and backdrop flicker (#8554) — визуальная полировка SessionMemoryPanel поверх апстримного стека
+3a53e605c6d395e86bf05f67e625d834ff88a9c5 skipped fix(side-chat): start on first Send and share main-chat loading UI (#8489) — side chats выпилены; смешанный пик (useConversation/i18n существуют) — вечный конфликт
+9b99c47565d312c5c2bbc9b24b1f132611163ee2 skipped fix(terminal): restore session side terminals after quit or restart (#8131) — фиче-размерный (60+ файлов, 2 новые миграции, новый UI EndedShellTerminal, переработка conpty); брать отдельным заходом при боли
+3d396a0ef85b871529440c6382d928604aaa236a skipped fix(chat): open the model menu from /model and hide built-ins that duplicate AO controls (#8549) — A-commands для вырезанных харнесов (cursor/hermes/grok/kimchi/qwen), M по их вырезанным driver.go — modify/delete; модельное меню форка своё
+4b75c79cd1d16929cd3cd941cabbf62abac73443 skipped fix(topbar): keep hidden kept-alive chats' tabs out of the top bar (#8582) — топбар форка свой (SessionTopbarPortal поверх апстримного)
+fc7b2d3ce2321990d27e58d849d5924ec0a9ff41 skipped fix(spawn): allow effort selection for Pi and Prime Agent harnesses (#8155) — пол-пика про Prime Agent (харнес вне keep-листа форка); Pi-часть мала
+78f6e0e70ae1a8731123d5356f12b8273f540e1d skipped fix: stop active TUI turns without killing sessions (#6378) — фиче-размерный stop-turn контракт (новый API/specgen/controllers/i18n ×11); не багфикс
+4754103735c556c4893fa1f3239ba384f607e06c skipped fix(cloud): explain in chat when an orchestrator's worker spawn hits the plan limit (#7450) — cloud-CP сообщение (скип-политика cloud→self-hosted)
+a6d0b105fcfa895dcb105e634e602135b1040814 skipped fix(board): stop calling a multi-PR session mergeable while its other PRs need review (#8509) — фиче-размерный (2 миграции PR-stack facts, ~45 файлов, product-ui board); PR-поверхности форка свои
+b7d164057c3f524a9cd9e9e48bfa39df0fc75279 skipped fix(chat): open the "/" menu at once instead of waiting on the agent (#8536) — правит useConversation.ts (форкский хук переписан) — гарантированный UU
+c6343bc4cd583f24fb3290919bf83f8b8df34ccb skipped fix(topbar): even spacing above and below the floating top bar's controls (#8532) — топбар форка свой
+d4dd6792787aa5f61aa91708e5345819227f7afd skipped fix(storage): store times in UTC and repair unreadable ones (#7037) — фиче-размерная переработка timestamp-слоя (40 файлов, новая миграция, repair-фреймворк); store-файлы в форкской дельте
+e230dcd36aab9175067b04136256ba6a69a0776d skipped fix(chat): show agent renders in a remote host's chat (#8545) — правит main.ts (форк-пин userData) и remote-proxy — конфликт с дельтой
+e54eb2f57c28dd4409b7d5d7000d2f78d0c927db skipped fix(tabs): put the close button at the tab's right edge (#8544) — UI-перекройка табов (19 файлов), PRTabPane в форке нет
+e6ccb0d307fd7dacefffffba32eb97695e225a8c skipped fix(chat): handle shift+enter to insert newline in composer (#8257) — форкский ComposerEditor уже пропускает shiftKey (дефолтный newline)
+edf34e81706d1109c5bb5910df0b737defec6d59 skipped fix(chat): keep exactly one minimap tick current at every scroll position (#8531) — продолжение minimap-семейства (0011f1a5 скипнут: поверх их стека)
+ca3f3646c52ff4abe9bdc4036f5c17164f783874 skipped feat(artifacts): unpublish links on delete and keep archived artifacts (#8481)
+ed93bee0495e80c01585d4645820adf86b0ce80f skipped feat(desktop): Starter card says "Start 7-day trial" when the control plane offers one (#8535)
+22c122068793098d74e7cbc5517630fd23a80c97 skipped fix(accounts): list a login once in the session and new-task account pickers (#8520) — account-picker поверхность форка другая: NewChatPage/useAgentAccounts удалены/переписаны, agent_accounts queries разбиты иначе (см. cb4e9bf1)
+a700c132fa058d54e8dc980b056828d6a2783011 skipped refactor(desktop): rebuild the render-check SOCKS proxy on ipaddr.js
+8a07eb618e978840adcab4340667054f5154bb75 skipped refactor(cli): sniff inlined render images by content
+7d44d004a06ed7ec585349d108d191bf344243f7 skipped refactor(render): simplify frame height, file name and viewport helpers
+6c0aaf3e378f47e8e985572102743d593baf95a9 skipped refactor(mobilebridge): classify edge token refusals by their reason
+fadf3d9b34afbd3751c1fe0083eda5fc3c9479ab skipped docs(render): reword the html tools and render guidance
+fd1452f5864b02f49a162fc65b2aa00c4647ab6c skipped chore: tidy comments
+c78c852956cb5cbb1271edf6ae332ffd604ed7c2 skipped fix(cli): inline SVGs that use DTD entities or a Latin-1 declaration — пик-rewrite (+176 -176) поверх скипнутой refactor-серии (8a07eb61 sniff, 7d44d004 render), контекст не накладывается; ручной порт при боли
+88902dcf9288e95adb51deed6128d440c5b07a2a skipped fix(cli): decode an SVG's declared charset before reading its root — то же render_images-семейство, rewrite поверх скипнутой refactor-серии (8a07eb61); с c78c8529 одним заходом при боли
+4460fb08b42eaeac966172876c977265cc01d4d4 skipped refactor(render): rebuild page bootstrap and image diagnostics
+7a7a70466fe8dc9114f9e3634b6ec75d83a5a1bf skipped fix(cli): format render image diagnostics as Go errors — третий из render_images-семейства, тот же конфликт с refactor-серией (8a07eb61); всё семейство при боли одним ручным заходом
+ee3c2859f110d7a5b867669c4fc22fb8a3b80646 skipped refactor(render): express page typography with a font reset
+2d1c4c3a51fb91a71b06180817ec9ddb58903d38 skipped fix(ci): restore green main after the render bootstrap refactor (#8550) — компаньон скипнутой render-refactor-серии; UU в package-lock (форк-prune дельта) — четвёртый из семейства
+88bd080dc51ff1d8b3631b8b6a1cd3be2f4eb5f8 skipped fix(chat): keep attachment text previews opaque in a translucent window (#8562) — DU: AttachmentFilePreview.tsx в форке нет (attachment-превью поверхность другая)
+2a047ee3b1218375ff534ac5dc60bb4bc04bffe6 skipped feat(i18n): add Turkish (tr) locale (#5869) (#8557)
+ceadd159a357f25eb5cbfff70284fd16ffe604e0 skipped perf(telemetry): stop PostHog measuring scroll depth on every scroll (#8538)
+c8c047cfe633fcbb40123d5b6d99fea3bb0fab8b skipped perf(chat): stop plan step arcs spinning while invisible (#8539)
+9d9b3d5b72303a69368d5d7b1d5bf631bb221ecf skipped perf(workspaces): stop redrawing every list reader on each refetch (#8540)
+c0d9e2a350936807170b345c02c869d5b6729650 skipped feat(attachments): attach files of any size by streaming large ones to the daemon (#8563)
+e73e0679b1caee5ac19c8cddcc0d73c9ce0bb096 skipped fix(i18n): add the Turkish strings main is missing (#8568)
+ed2073579b49b9381e3e192d75292b9f344cc9db skipped feat(sidebar): instant row hover and hover cards (#8542)
+b55c04c2a2cf86ac7f61bb5c73a86da2a508df44 skipped perf(css): stop every DOM change restyling the whole app (#8548)
+107934b54a676657de57e9c1d657b02b9d62c196 skipped perf(chat): keep the last four chats mounted so switching back shows them as left (#8566)
+bc7e1a02a292b842660e52a04014b7c8f5cff2a0 skipped perf(chat): reduce host and rendering overhead without UI changes (#8357)
+109a12adaebb0ef482a3c50d0e8b78491286f454 skipped perf(chat): reduce chat overhead with behavior tradeoffs (#8442)
+1e2e114e2944e82bed9ea4108085b7d02c7bccb7 skipped feat: add Open Interpreter Rust TUI integration (#8208)
+c4b5bcfcebe6597f74ce4acca8a823df041e1e29 skipped feat(share): upload the images a shared HTML page uses with it, with the cloud contract (#8486)
+a2295179a04af1954aa0e400ccde255b67cbd26c skipped fix(chat): resume a remote chat's stopped agent when it opens (#8438) — SessionView/spawn-orchestrator: форк-дельта против апстрим +1732 -410 с момента merge-base; remote-resume механику при боли вручную
+6248e7ad4aa17b7f762501e508367bff7822d47c skipped fix(review): fail reviewer preflight when its read-only sandbox cannot start (#7948) — UU: форк переписал service/chat/service.go (+97 -183 против апстрим +614 -64); preflight-механику при боли вручную
+7a24d94c3ce1c04359ebb126e2af18fd76251b04 skipped fix(review): skip automatic reviews for draft pull requests (#8515) — UU: review.go форк-конвейер (+530) против апстрим +291 -220; draft-skip при боли вручную
+4a409cc6d56643a51a496d9ece4067c14c2418ab skipped fix(cli): keep artifacts by default on ao session delete (#8583) — UU: cli/session.go форк-дельта (+83 -45 против апстрим +373 -38), DU session_delete_test.go; артефакт-политику delete при боли вручную
+7ec6fde59b551ab78d4512c263c4dc8f678cd7c3 skipped perf(preview): poll live workers' preview columns only (#8573)
+67575dc0cbb0de632590d3091e68c86bddec1518 skipped perf(search): skip the AO-id transcript search for chat sessions (#8574)
+a60ebdf9fdd148bf315e947440f20bed69f18068 skipped perf(usage): check the workspace's Claude transcript before globbing (#8575)
+971a4f8c612d84590dfd8139bb197468e75e38be skipped perf(hooks): stop agent hooks waiting on usage scans (#8570)
+5ea20f64255b9dc842663df2b9eda4f015f1ac49 skipped perf(cdc): poll change_log when a write commits (#8576)
+faec4ae03ad964e05cc2da008db3f2e380f053c2 skipped fix(usage): record queued hook signals before finalizing a terminated session (#8594) — DU: usage/hook_queue.go в форке удалён (коллектор переписан)
+59bdb07e9e22e8d4e75c84993eda6372586959c5 skipped perf(chat): keep fade spans only for characters still fading (#8577)
+dbd2efc638146aacf6756282ef49af6aa191a956 skipped perf(chat): serve chat tools from a slim ao-mcp executable (#8579)
+d05e90fd426936045a5c1878eae2465064ddca39 skipped fix(mobile): smooth chat keyboard open/close, one action row per reply (#8348)
+041dfe36da0406b72697e47d387e12f8170d318d skipped feat(cloud): expose artifact viewer title and creation metadata (#8595)
+a9398bd27d370fd54d53fa3e8c4ec6fb91c3a923 skipped feat: add Tau terminal harness (#8210)
+7337d3fb369a50d50e0391695e189a888f2332f3 skipped feat(mobile): list skills and files inline above the composer (#8423)
