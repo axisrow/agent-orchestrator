@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { aoBridge } from "../lib/bridge";
 import type { CloudCpNotification } from "../lib/cloud-cp/types";
 import {
@@ -202,6 +202,14 @@ async function clickOpen() {
 	return trigger;
 }
 
+// Loud mode (AO_NO_QUIET_NOTIFICATIONS) for one test: the quiet feed keeps
+// outcomes and review findings out (fork issue #370), so tests exercising
+// those rows run in loud mode, where every backend type renders. afterEach
+// restores the setup's quiet default.
+function useLoudMode() {
+	return vi.spyOn(aoBridge.notifications, "mode").mockResolvedValue(true);
+}
+
 function notificationQueryResult(
 	status: NotificationListStatus,
 	overrides: Partial<{
@@ -278,6 +286,12 @@ beforeEach(() => {
 		status === "unread" ? stableUnreadQuery : status === "all" ? stableAllQuery : notificationQueryResult(status),
 	);
 	vi.spyOn(window, "open").mockImplementation(() => null);
+});
+
+// Restore per-test spies (loud-mode overrides, window.open) so the next test
+// starts from the setup's quiet default.
+afterEach(() => {
+	vi.restoreAllMocks();
 });
 
 // The runtime tells the transport which session the user is actually watching.
@@ -390,8 +404,9 @@ describe("NotificationCenter", () => {
 		expect(panel.queryByText("Unresolved")).not.toBeInTheDocument();
 
 		const rows = panel.getAllByRole("listitem");
+		// The ready_to_merge row (ntf_2) stays out of the quiet feed (fork
+		// issue #370); the decision rows render newest first.
 		expect(rows.map((row) => row.textContent)).toEqual([
-			expect.stringContaining("Fix checkout totals · PR #67"),
 			expect.stringContaining("Checkout flow needs input"),
 			expect.stringContaining("Docs sweep needs input"),
 			expect.stringContaining("PR #9 merged"),
@@ -408,14 +423,12 @@ describe("NotificationCenter", () => {
 	});
 
 	it("keeps the row's Open session tooltip off its action buttons", async () => {
-		cloudNotificationsMock.mockReturnValue(cloudNotificationsResult(cloudNotifications));
 		renderNotificationCenter();
 		await clickOpen();
 
 		const localClear = screen.getByRole("button", { name: "Clear notification: Checkout flow needs input" });
 		expect(localClear.closest("[title='Open session']")).not.toBeNull();
 		expect(localClear).toHaveAttribute("title", "");
-		expect(screen.getByRole("button", { name: "Clear notification: Pull request ready to merge" })).toHaveAttribute("title", "");
 		expect(screen.getByRole("button", { name: "Restore session" })).toHaveAttribute("title", "");
 	});
 
@@ -495,7 +508,9 @@ describe("NotificationCenter", () => {
 		expect(screen.queryByRole("button", { name: "Mark notification read" })).not.toBeInTheDocument();
 		expect(screen.getByText("Checkout flow needs input")).toBeInTheDocument();
 		expect(screen.getByText("Checkout flow needs input").className).toContain("font-medium");
-		expect(screen.getByLabelText("Fix checkout totals · PR #67").className).toContain("font-medium");
+		// The ready_to_merge row is acknowledged on open but stays out of the
+		// quiet feed (fork issue #370).
+		expect(screen.queryByLabelText("Fix checkout totals · PR #67")).not.toBeInTheDocument();
 		expect(screen.getByText("Docs sweep needs input").className).not.toContain("font-medium");
 	});
 
@@ -701,7 +716,10 @@ describe("NotificationCenter", () => {
 		});
 	});
 
+	// The PR-row mechanics below exercise a ready_to_merge row, which the quiet
+	// feed keeps out (fork issue #370), so they run in loud mode.
 	it("opens the session from the non-link portion of a PR row title", async () => {
+		useLoudMode();
 		renderNotificationCenter();
 		await clickOpen();
 
@@ -714,6 +732,7 @@ describe("NotificationCenter", () => {
 	});
 
 	it("opens the linked PR number in the system browser without opening the session", async () => {
+		useLoudMode();
 		const openExternal = vi.spyOn(aoBridge.app, "openExternal").mockResolvedValue(undefined);
 		renderNotificationCenter();
 		await clickOpen();
@@ -726,6 +745,7 @@ describe("NotificationCenter", () => {
 	});
 
 	it("lets Enter on the nested PR link act on the link without opening the session", async () => {
+		useLoudMode();
 		const openExternal = vi.spyOn(aoBridge.app, "openExternal").mockResolvedValue(undefined);
 		renderNotificationCenter();
 		await clickOpen();
@@ -739,6 +759,7 @@ describe("NotificationCenter", () => {
 	});
 
 	it("shows the PR title prominently and does not repeat the session name in metadata", async () => {
+		useLoudMode();
 		renderNotificationCenter();
 		await clickOpen();
 
@@ -750,6 +771,7 @@ describe("NotificationCenter", () => {
 	});
 
 	it("normalizes legacy ready notifications without rewriting stored history", async () => {
+		useLoudMode(); // The quiet feed keeps ready_to_merge out (fork issue #370).
 		const legacyReady = {
 			...allNotifications[0],
 			title: "Checkout flow is ready to merge",
@@ -768,8 +790,8 @@ describe("NotificationCenter", () => {
 				],
 			},
 		}));
-		// A legacy ready_to_merge row is routine: the bell stays quiet (no unread
-		// count), but the row still renders in the feed, normalized.
+		// A legacy ready_to_merge row renders normalized in loud mode, without
+		// rewriting the stored record.
 		renderNotificationCenter();
 		await userEvent.click(screen.getByRole("button", { name: "Notifications" }));
 		await screen.findByRole("dialog", { name: "Notifications" });
@@ -816,10 +838,10 @@ describe("NotificationCenter", () => {
 
 	// A PR outcome describes work that already finished — there's no paused
 	// agent to resume, so a terminated session behind one should stay directly
-	// viewable instead of gated behind restore.
+	// viewable instead of gated behind restore. The quiet feed keeps
+	// ready_to_merge out (fork issue #370), so this runs in loud mode.
 	it("opens a terminated session directly for a PR-outcome notification, with no restore option", async () => {
-		// ready_to_merge: a PR-outcome type that stays listed in the quiet feed
-		// (pr_merged rows are hidden there since fork issue #283).
+		useLoudMode();
 		notificationQueryMock.mockImplementation((status: NotificationListStatus) =>
 			status === "all"
 				? {
@@ -946,9 +968,10 @@ describe("NotificationCenter", () => {
 	});
 });
 
-// Fork issue #283: the quiet bell panel is an inbox for the user's attention,
-// so the informational PR/review outcomes stay out of the feed while the
-// attention and error types stay listed. Loud mode restores the full feed.
+// Fork issues #283 and #370: the quiet bell panel is an inbox for the user's
+// decisions and failures, so PR/review outcomes and review findings stay out
+// of the feed while the decision classes stay listed. Loud mode restores the
+// full feed.
 describe("NotificationCenter quiet feed", () => {
 	const informationalRows: NotificationDTO[] = [
 		{
@@ -999,6 +1022,32 @@ describe("NotificationCenter quiet feed", () => {
 			createdAt: "2026-07-21T12:15:00Z",
 			target: { kind: "session", sessionId: "sess-8" },
 		},
+		// PR outcomes and review findings need no owner decision (fork issue
+		// #370): the workers address review findings on their own.
+		{
+			id: "ntf_rtm",
+			sessionId: "sess-9",
+			projectId: "proj-1",
+			prUrl: "https://github.com/acme/app/pull/74",
+			type: "ready_to_merge",
+			title: "PR #74 is ready to merge",
+			body: "CI passed with no blocking review feedback.",
+			status: "unread",
+			createdAt: "2026-07-21T12:20:00Z",
+			target: { kind: "pr", sessionId: "sess-9", prUrl: "https://github.com/acme/app/pull/74" },
+		},
+		{
+			id: "ntf_rcr",
+			sessionId: "sess-10",
+			projectId: "proj-1",
+			prUrl: "https://github.com/acme/app/pull/75",
+			type: "review_changes_requested",
+			title: "Review found changes for PR #75",
+			body: "The AO reviewer requested changes.",
+			status: "unread",
+			createdAt: "2026-07-21T12:25:00Z",
+			target: { kind: "pr", sessionId: "sess-10", prUrl: "https://github.com/acme/app/pull/75" },
+		},
 	];
 
 	function queryWith(rows: NotificationDTO[]) {
@@ -1026,24 +1075,28 @@ describe("NotificationCenter quiet feed", () => {
 				: notificationQueryResult(status);
 	}
 
-	it("keeps informational outcomes out of the quiet feed and the bell count steady", async () => {
+	it("keeps informational outcomes and review findings out of the quiet feed and the bell count steady", async () => {
 		notificationQueryMock.mockImplementation(queryWith([...allNotifications, ...informationalRows]));
 		renderNotificationCenter();
 		await clickOpen();
 
 		expect(screen.getByText("Checkout flow needs input")).toBeInTheDocument();
-		expect(screen.getByLabelText("Fix checkout totals · PR #67")).toBeInTheDocument();
 		expect(screen.getByText("Report delivery died")).toBeInTheDocument();
+		// Outcomes and review findings stay out of the feed (fork issue #370),
+		// including the ready_to_merge row of the default fixture (ntf_2).
+		expect(screen.queryByLabelText("Fix checkout totals · PR #67")).not.toBeInTheDocument();
 		expect(screen.queryByLabelText("PR #71 merged")).not.toBeInTheDocument();
 		expect(screen.queryByLabelText("Review complete for PR #72 — approved")).not.toBeInTheDocument();
 		expect(screen.queryByLabelText("PR #73 closed without merging")).not.toBeInTheDocument();
+		expect(screen.queryByLabelText("PR #74 is ready to merge")).not.toBeInTheDocument();
+		expect(screen.queryByLabelText("Review found changes for PR #75")).not.toBeInTheDocument();
 		// The informational unread rows never reach the counter: the badge still
 		// counts only the needs_input row.
 		expect(screen.getByRole("button", { name: "1 unread notifications" })).toBeInTheDocument();
 	});
 
 	it("lists every type again in loud mode", async () => {
-		vi.spyOn(aoBridge.notifications, "mode").mockResolvedValue(true);
+		useLoudMode();
 		notificationQueryMock.mockImplementation(queryWith([...allNotifications, ...informationalRows]));
 		renderNotificationCenter();
 		await clickOpen();
@@ -1051,6 +1104,8 @@ describe("NotificationCenter quiet feed", () => {
 		expect(screen.getByLabelText("PR #71 merged")).toBeInTheDocument();
 		expect(screen.getByLabelText("Review complete for PR #72 — approved")).toBeInTheDocument();
 		expect(screen.getByLabelText("PR #73 closed without merging")).toBeInTheDocument();
+		expect(screen.getByLabelText("PR #74 is ready to merge")).toBeInTheDocument();
+		expect(screen.getByLabelText("Review found changes for PR #75")).toBeInTheDocument();
 		expect(screen.getByText("Report delivery died")).toBeInTheDocument();
 	});
 });
@@ -1086,7 +1141,11 @@ describe("NotificationCenter cloud rows", () => {
 		});
 	});
 
+	// The cloud fixtures are ready_to_merge and review_feedback rows, which the
+	// quiet feed keeps out (fork issue #370), so the row-mechanics tests run in
+	// loud mode, where every type renders.
 	it("interleaves cloud rows by time with a Cloud tag, meta line, and clear action", async () => {
+		useLoudMode();
 		renderNotificationCenter();
 		await clickOpen();
 
@@ -1107,6 +1166,7 @@ describe("NotificationCenter cloud rows", () => {
 	});
 
 	it("opens the cloud session through its project route", async () => {
+		useLoudMode();
 		renderNotificationCenter();
 		await clickOpen();
 
@@ -1118,6 +1178,7 @@ describe("NotificationCenter cloud rows", () => {
 	});
 
 	it("does not open a cloud row whose session is not in the workspace", async () => {
+		useLoudMode();
 		renderNotificationCenter();
 		await clickOpen();
 
@@ -1126,6 +1187,7 @@ describe("NotificationCenter cloud rows", () => {
 	});
 
 	it("clears one cloud row without opening its session", async () => {
+		useLoudMode();
 		renderNotificationCenter();
 		await clickOpen();
 
@@ -1153,16 +1215,27 @@ describe("NotificationCenter cloud rows", () => {
 		expect(cloudMarkAllReadMock).not.toHaveBeenCalled();
 	});
 
+	// Quiet feed keeps cloud outcomes and review findings out (fork issue
+	// #370): neither ready row renders, and the badge counts only needs_input.
+	it("keeps cloud outcomes and review findings out of the quiet feed", async () => {
+		renderNotificationCenter();
+		await clickOpen();
+
+		expect(screen.queryByText("acme/cloud#8 is ready to merge.")).not.toBeInTheDocument();
+		expect(screen.queryByText("acme/cloud#2 has unresolved review feedback.")).not.toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "1 unread notifications" })).toBeInTheDocument();
+	});
+
 	it("rings the bell only for signal-class unread rows", () => {
 		renderNotificationCenter();
 
-		// ntf_2 (ready_to_merge) and the cloud ready row are routine: they stay in
-		// the feed without ringing. Only the needs_input row counts.
+		// ntf_2 (ready_to_merge) and the cloud ready row never reach the badge:
+		// only the needs_input row counts (fork issue #370).
 		expect(screen.getByRole("button", { name: "1 unread notifications" })).toBeInTheDocument();
 	});
 
 	it("rings the bell for every unread row in loud mode", async () => {
-		vi.spyOn(aoBridge.notifications, "mode").mockResolvedValue(true);
+		useLoudMode();
 		renderNotificationCenter();
 
 		// AO_NO_QUIET_NOTIFICATIONS restores the upstream behavior: the routine
@@ -1171,6 +1244,7 @@ describe("NotificationCenter cloud rows", () => {
 	});
 
 	it("still clears local history when it failed to load", async () => {
+		useLoudMode(); // The cloud fixture rows stay out of the quiet feed (#370).
 		notificationQueryMock.mockImplementation((status: NotificationListStatus) =>
 			status === "all"
 				? { ...notificationQueryResult(status, { isError: true }), data: undefined, isSuccess: false, refetch: vi.fn() }
@@ -1196,6 +1270,7 @@ describe("NotificationCenter cloud rows", () => {
 		const withOlder = cloudNotificationsResult([...cloudNotifications, olderCloud]);
 
 		it("holds it back while older local pages remain", async () => {
+			useLoudMode();
 			cloudNotificationsMock.mockReturnValue(withOlder);
 			notificationQueryMock.mockImplementation((status: NotificationListStatus) =>
 				status === "all" ? notificationQueryResult(status, { hasNextPage: true }) : notificationQueryResult(status),
@@ -1208,6 +1283,7 @@ describe("NotificationCenter cloud rows", () => {
 		});
 
 		it("shows it once local history is exhausted", async () => {
+			useLoudMode();
 			cloudNotificationsMock.mockReturnValue(withOlder);
 			renderNotificationCenter();
 			await clickOpen();
@@ -1232,6 +1308,7 @@ describe("NotificationCenter cloud rows", () => {
 	});
 
 	it("keeps a local load failure visible next to cloud rows", async () => {
+		useLoudMode();
 		const refetch = vi.fn();
 		notificationQueryMock.mockImplementation((status: NotificationListStatus) =>
 			status === "all"

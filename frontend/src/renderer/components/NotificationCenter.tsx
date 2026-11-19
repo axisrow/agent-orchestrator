@@ -379,9 +379,10 @@ export function NotificationCenter({ style }: NotificationCenterProps) {
 		}))),
 	].sort((a, b) => b.notification.createdAt.localeCompare(a.notification.createdAt)), [notifications, remoteItems]);
 	// Quiet by default: only human-feedback events ring the bell and badge the
-	// launcher, and the feed below keeps out the informational PR/review
-	// outcomes. Loud mode (AO_NO_QUIET_NOTIFICATIONS) restores the upstream
-	// feed and counts every unread row.
+	// launcher, and the feed below keeps out everything that is not a decision
+	// or a failure (owner policy decision, fork issues #283 and #370). Loud
+	// mode (AO_NO_QUIET_NOTIFICATIONS) restores the upstream feed and counts
+	// every unread row.
 	const loud = useLoudNotifications();
 	const unreadCount = bellUnreadCount(getCachedNotifications(unreadQuery.data), loud) +
 		remoteUnread.hosts.reduce((count, host) => count + bellUnreadCount(host.data?.notifications ?? [], loud), 0) +
@@ -711,9 +712,10 @@ export function NotificationCenter({ style }: NotificationCenterProps) {
 	const remoteLoadFailed = remoteAll.hosts.some((host) => host.isError);
 	const remoteLoading = remoteAll.hosts.some((host) => host.isLoading);
 	// Local, remote, and Cloud rows interleave by creation time. Quiet mode
-	// drops the informational outcomes (fork issue #283) from every surface at
-	// this one merge point, and the bell count above counts only the signal
-	// classes, so the counter can never point at a hidden row.
+	// drops the non-decision outcomes and review findings (fork issues #283
+	// and #370) from every surface at this one merge point, and the bell count
+	// above counts only the signal classes, so the counter can never point at
+	// a hidden row.
 	const rows = useMemo(() => {
 		const merged = [
 			...entries.map((entry) => ({ kind: "host" as const, ...entry })),
