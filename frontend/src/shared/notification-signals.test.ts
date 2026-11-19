@@ -15,12 +15,11 @@ import {
 	type NotificationType,
 } from "./notification-signals";
 
-// The signal set spans two vocabularies: AO backend types and the cloud
-// control plane's names for the same event classes.
+// The decision classes only (fork issue #370, owner policy decision
+// 2026-11-20): an agent blocked on the user, a failed cloud agent, and the
+// edge-triggered stuck-delivery incident (fork issue #211).
 const SIGNAL_TYPES: string[] = [
 	"needs_input",
-	"review_changes_requested",
-	"review_feedback",
 	"agent_failed",
 	// Edge-triggered once per (project, cause-class) incident (fork issue #211).
 	"stuck_delivery",
@@ -30,9 +29,15 @@ const SILENT_TYPES: NotificationType[] = [
 	"pr_merged",
 	"pr_closed_unmerged",
 	"review_completed",
+	// Review findings: the fork's workers address them automatically, so they
+	// need no owner decision (fork issue #370).
+	"review_changes_requested",
 	// The terminal delivery record is a fact, not a call for feedback.
 	"delivery_died",
 ];
+// The cloud control plane's name for the review_changes_requested verdict
+// (fork issue #370): quiet like its local counterpart.
+const CLOUD_REVIEW_FEEDBACK = "review_feedback";
 
 describe("needsHumanFeedback", () => {
 	it("classifies the human-feedback types as signals", () => {
@@ -80,14 +85,15 @@ describe("shouldToast", () => {
 		}
 	});
 
-	it("does not toast routine types, even with a title", () => {
+	it("does not toast routine types or review findings, even with a title", () => {
 		for (const type of SILENT_TYPES) {
 			expect(shouldToast({ title: `${type} title`, type }, true)).toBe(false);
 		}
+		expect(shouldToast({ title: `${CLOUD_REVIEW_FEEDBACK} title`, type: CLOUD_REVIEW_FEEDBACK }, true)).toBe(false);
 	});
 
 	it("in loud mode toasts every backend type, like upstream", () => {
-		for (const type of [...SIGNAL_TYPES, ...SILENT_TYPES]) {
+		for (const type of [...SIGNAL_TYPES, ...SILENT_TYPES, CLOUD_REVIEW_FEEDBACK]) {
 			expect(shouldToast({ title: `${type} title`, type }, true, true)).toBe(true);
 		}
 	});
@@ -100,10 +106,12 @@ describe("shouldToast", () => {
 });
 
 describe("shouldSignalAttention", () => {
-	it("in quiet mode signals for every human-feedback type", () => {
-		for (const type of ["needs_input", "review_changes_requested"] as const) {
+	it("in quiet mode signals for every decision class, never for review findings", () => {
+		for (const type of SIGNAL_TYPES) {
 			expect(shouldSignalAttention(type, false)).toBe(true);
 		}
+		expect(shouldSignalAttention("review_changes_requested", false)).toBe(false);
+		expect(shouldSignalAttention(CLOUD_REVIEW_FEEDBACK, false)).toBe(false);
 		expect(shouldSignalAttention("ready_to_merge", false)).toBe(false);
 	});
 
@@ -139,26 +147,34 @@ describe("bellUnreadCount", () => {
 });
 
 describe("panelShowsNotification", () => {
-	// The quiet panel's keep-set (fork issue #283): the attention types and the
-	// error classes, mirroring backend/internal/domain/notification.go.
+	// The quiet panel's keep-set (fork issues #283 and #370): the decision
+	// classes, the error classes, and future types, mirroring
+	// backend/internal/domain/notification.go.
 	const LISTED_TYPES: string[] = [
 		"needs_input",
-		"ready_to_merge",
-		"review_changes_requested",
+		"agent_failed",
 		"orphan_workers",
 		"stuck_delivery",
 		"delivery_died",
 	];
-	const INFORMATIONAL_TYPES = ["pr_merged", "review_completed", "pr_closed_unmerged"] as const;
+	const HIDDEN_TYPES: string[] = [
+		"pr_merged",
+		"review_completed",
+		"pr_closed_unmerged",
+		// Outcomes and review findings need no owner decision (fork issue #370).
+		"ready_to_merge",
+		"review_changes_requested",
+		CLOUD_REVIEW_FEEDBACK,
+	];
 
-	it("lists the attention and error types in quiet mode", () => {
+	it("lists the decision and error types in quiet mode", () => {
 		for (const type of LISTED_TYPES) {
 			expect(panelShowsNotification({ type }, false)).toBe(true);
 		}
 	});
 
-	it("keeps the informational PR/review outcomes out of the quiet feed", () => {
-		for (const type of INFORMATIONAL_TYPES) {
+	it("keeps outcomes and review findings out of the quiet feed (fork issue #370)", () => {
+		for (const type of HIDDEN_TYPES) {
 			expect(panelShowsNotification({ type }, false)).toBe(false);
 		}
 	});
@@ -171,8 +187,35 @@ describe("panelShowsNotification", () => {
 	});
 
 	it("lists every type in loud mode, like upstream", () => {
-		for (const type of [...LISTED_TYPES, ...INFORMATIONAL_TYPES]) {
+		for (const type of [...LISTED_TYPES, ...HIDDEN_TYPES]) {
 			expect(panelShowsNotification({ type }, true)).toBe(true);
+		}
+	});
+});
+
+// The owner's policy matrix, pinned per fork issue #370 (2026-11-20): for
+// every backend and cloud type, what each quiet-mode surface does — the bell
+// badge count, the OS toast, the dock bounce style, and the bell panel.
+describe("quiet-mode policy matrix (fork issue #370)", () => {
+	const MATRIX: Record<string, { badge: boolean; toast: boolean; dock: "critical" | "informational"; panel: boolean }> = {
+		needs_input: { badge: true, toast: true, dock: "critical", panel: true },
+		stuck_delivery: { badge: true, toast: true, dock: "informational", panel: true },
+		agent_failed: { badge: true, toast: true, dock: "informational", panel: true },
+		review_changes_requested: { badge: false, toast: false, dock: "informational", panel: false },
+		ready_to_merge: { badge: false, toast: false, dock: "informational", panel: false },
+		pr_merged: { badge: false, toast: false, dock: "informational", panel: false },
+		pr_closed_unmerged: { badge: false, toast: false, dock: "informational", panel: false },
+		review_completed: { badge: false, toast: false, dock: "informational", panel: false },
+		delivery_died: { badge: false, toast: false, dock: "informational", panel: true },
+		[CLOUD_REVIEW_FEEDBACK]: { badge: false, toast: false, dock: "informational", panel: false },
+	};
+
+	it("pins badge, toast, dock, and panel per notification type", () => {
+		for (const [type, expected] of Object.entries(MATRIX)) {
+			expect(bellUnreadCount([{ type, status: "unread" }], false), `badge: ${type}`).toBe(expected.badge ? 1 : 0);
+			expect(shouldToast({ title: `${type} title`, type }, true), `toast: ${type}`).toBe(expected.toast);
+			expect(dockBounceType(type), `dock: ${type}`).toBe(expected.dock);
+			expect(panelShowsNotification({ type }, false), `panel: ${type}`).toBe(expected.panel);
 		}
 	});
 });
