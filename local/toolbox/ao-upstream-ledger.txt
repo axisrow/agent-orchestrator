@@ -891,3 +891,37 @@ d05e90fd426936045a5c1878eae2465064ddca39 skipped fix(mobile): smooth chat keyboa
 041dfe36da0406b72697e47d387e12f8170d318d skipped feat(cloud): expose artifact viewer title and creation metadata (#8595)
 a9398bd27d370fd54d53fa3e8c4ec6fb91c3a923 skipped feat: add Tau terminal harness (#8210)
 7337d3fb369a50d50e0391695e189a888f2332f3 skipped feat(mobile): list skills and files inline above the composer (#8423)
+da36142a5bbc36c3e1558d1863fd0adbe127a3fc skipped fix(review): retire a pass-only --agent override reviewer when its pass ends (#6891) — review.go форк-конвейер (+530 дельта), UU гарантирован (класс 7a24d94c/6248e7ad 2026-11-18)
+cc9ba9bebb1ee4fd34f8a9ebaabb53728013c122 skipped fix: preserve timestamp repair progress and unblock schema migrations (#8565) — компаньон скипнутого d4dd6792 (storage UTC): зависит от его timestamp repair-фреймворка
+1afe1be61a7da7bbdd6be5dcc90adde8384292c9 skipped fix(chat): stop replayed provider notices from spinning on finished turns (#8610) — useConversation.ts (форкский хук переписан) + chat/service.go (форк-дельта) — гарантированный UU
+e7eb3df82e4b36394d0a41620c3924784a23065f skipped fix(chat): load older history when a chat is too short to scroll (#8619) — ChatWorkspace/useConversation поверх их стека, форкский хук переписан
+6908ee8e376958ef3e5e3fc120e2547883ce5bf0 skipped fix(browser): import Chromium profiles while the browser is running (#8616) — UU: форк-дельта в browser-profile-import (+212 тесты) против апстрим +320 -14; живой-импорт при боли вручную
+1fc31db84474062b50597c0cde3ccbe484a45b46 skipped perf(chat): stop re-downloading chat history on every update (#8502)
+9c68095cd6f836c92558229177b675b0a92b4060 taken fix(scm): only discover PRs opened after the session (#8338)
+d30e2bd2abe45432acc4a8287ad93022f4465fc3 skipped fix(mobile): show the reviewer's resolved model and effort (#8527)
+7738337123e0e98627af4003c9cabdb6be1a83b5 skipped fix(scm): stop the GitHub PR listing from filling the response cache (#8618) — UU: github/observer_provider.go форк-дельта (+161 -7); cache-фикс к #368-аудиту при боли вручную
+0313faaf8959d9d977a2ab33e5bc58d2142e6fbb skipped perf(settings): poll local settings from one observer instead of hundreds (#8620)
+a913a971b290336451d929088cc99da2708a42e7 skipped fix(mobile): keep the pull-to-refresh spinner for pulls so Retry stops sinking the page (#8472)
+c403ae212aaa8419c6bd854202de61426fcad59c skipped fix(mobile): open a new Cloud project after its sheet has closed (#8596)
+e2c2de182943f27fb55f818a57aec0e3a848e421 skipped feat(mobile): resume usage-limited chat turns from the phone (#8604)
+90e3762462ba632c1e61b153107f5eaca2511960 skipped feat(cli): ao session switch, with --force for stuck agents (#8434)
+da52deca13756bad44116761e5789f980c568705 skipped feat(mobile): show merged and closed PRs of ended local sessions (#8547)
+33b151d53c809d27ee07cedd067e74b54b50094c skipped fix(mobile): sync harness logos from the desktop as light/dark pairs (#8627) — mobile-поверхность не берётся (DU по packages/mobile)
+0b7f3575ef56f131e2e598a8bab7f3ab96559f83 skipped fix(mobile): stop the microphone-off notice from sticking (#8626)
+2a02113602e2c4dc6e637395e2c299ccc3ac13ca skipped fix(mobile): point Free and failed-payment plans to the desktop (#8476)
+aa5a5498cc3cf1a4795cd689b7445017bd768fa0 skipped fix(mobile): ink board header icons like the Workers filter on iOS (#8484)
+2dc4b0f2dd9de0241a7b21532f1e506b11feffbf skipped docs: explain Orchestrator disappearing on Linux from a zero realtime limit (#8633)
+1d36425e4b115a38a86efa272a705b7faf10f06b skipped docs(agents): stop leading the Agent adapters page with one harness (#8634)
+46d513802ed2f590c78ee21144bef7753faf8c3a skipped fix(mobile): stop a settled turn's reply drawing over the next turn (#8606)
+db8b650bd6fa9851363605fbd5f2795a042abcd9 skipped feat(mobile): show machine freshness on the machine instead of a stale banner (#8415)
+ed765f56bb4c53fe63a84b6d91629336eccdd919 skipped feat(mobile): decide TLS from the typed address instead of a Use TLS switch (#8510)
+772f1487ed654ebe68f48166c311543b1a4fe91d skipped perf(sidebar): sweep working titles on the compositor (#8639)
+f2e7dab45d0701fa3dfaeffaccb2b643c02de61c skipped feat(chat): fold an inline artifact from its card header (#8215)
+6211d2763dd368bb0827df9c054ebf79ef190793 skipped feat(workspace): copy files named in .worktreeinclude into session worktrees (#8329)
+783ee32c1f5bff1056bcb88a49d0459eb7bf26dd skipped fix(usage): stop endless transcript discovery retries (#8617) — UU: usage collector форк переписал (-238 против апстрим +636); retry-фикс при боли вручную
+b58956c632628b062a8c4fe6b07f6e876887766c skipped fix(mobile): pin the freshness line under the Android bar, clear of its frost (#8650)
+cb352b7d75ae3401ad20608b36279a43c5aa7043 skipped fix(mobile): take focus off the New project form before Create (#8651)
+53a7a56be64ee4341ebc1b06edd34861e831d793 skipped fix(report): bound delivery retries with max attempt limit and terminal failed state (#8525) — UU: report_store.go форк-дельта (+240 -96), DU queries/reports.sql (разбиение queries у форка другое)
+617e879d0067ec96f643cf6c2389b36b75c2ae61 skipped feat(onboarding): isometric line-drawing illustration, CI/CD story, cleaner dependency dialog (#7767)
+134a2f0fee7b7d9267447a85578d6486452890e7 skipped feat(search): search every connected AO machine from Cmd+K (#7378)
+468a1b7869f2dc6d23deb509069ca8b57bd15c60 skipped feat(review): tell the worker when an AO review run finishes (#6955)
