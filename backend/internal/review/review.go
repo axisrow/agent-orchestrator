@@ -1589,7 +1589,9 @@ func (e *Engine) ReapCompletedReviewers(ctx stdctx.Context, workerID domain.Sess
 }
 
 // reapReviewerBudget bounds the detached reap so a wedged pane teardown cannot
-// pin the worker lock forever. It matches the session shutdown budget.
+// pin the worker lock forever. It is bounded like the detached teardown
+// budgets in session_manager (reapSupersededBudget, terminalIntentBudget) —
+// not the session kill-teardown budget.
 const reapReviewerBudget = 15 * time.Second
 
 // reapCompletedReviewer destroys one reviewer's pane when no run of its review
