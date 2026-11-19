@@ -1543,6 +1543,14 @@ func (e *Engine) ReapCompletedReviewers(ctx stdctx.Context, workerID domain.Sess
 	if workerID == "" || len(runs) == 0 {
 		return
 	}
+	// The submit path hands us the reviewer CLI's HTTP request context, which
+	// dies with the CLI process — often between the store reads above and the
+	// pane teardown, so every reap used to fail at Destroy with "context
+	// canceled" (fork issue #371). Run the whole reap on an independent,
+	// bounded context instead: publication already settled, so nothing here
+	// may depend on the caller still being connected.
+	ctx, cancel := stdctx.WithTimeout(stdctx.WithoutCancel(ctx), reapReviewerBudget)
+	defer cancel()
 	// The worker lock keeps the running-run check truthful against a
 	// concurrent trigger: one that is mid-launch holds this lock and its runs
 	// are already inserted before the lock frees.
@@ -1579,6 +1587,10 @@ func (e *Engine) ReapCompletedReviewers(ctx stdctx.Context, workerID domain.Sess
 		e.reapCompletedReviewer(ctx, workerID, review, running)
 	}
 }
+
+// reapReviewerBudget bounds the detached reap so a wedged pane teardown cannot
+// pin the worker lock forever. It matches the session shutdown budget.
+const reapReviewerBudget = 15 * time.Second
 
 // reapCompletedReviewer destroys one reviewer's pane when no run of its review
 // is running any more, and clears the stored handle so the next trigger spawns
