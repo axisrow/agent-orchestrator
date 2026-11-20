@@ -25,7 +25,7 @@ const mocks = vi.hoisted(() => ({
  * decision class — while the restore-gating test keeps the needs_input
  * semantics it pins.
  */
-function notification(title: string, type = "needs_input"): NotificationDTO {
+function notification(title: string, type: NotificationDTO["type"] = "needs_input"): NotificationDTO {
 	return {
 		id: "same-notification",
 		sessionId: "same-session",
