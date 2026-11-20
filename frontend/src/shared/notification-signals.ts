@@ -53,6 +53,18 @@ export function needsHumanFeedback(type: string | undefined): boolean {
 }
 
 /**
+ * Whether the agent behind this row is still blocked waiting on the user. An
+ * unresolved `needs_input` row holds the bell lit no matter what else happens:
+ * reading the conversation is not answering the agent, so the session read
+ * mechanic must not clear the row until the backend resolves it (input
+ * received, session ended) — fork issue #376. Once resolved, the row falls
+ * back to the ordinary read mechanic.
+ */
+export function isPendingInput(notification: { resolvedAt?: string | null; type?: string }): boolean {
+	return notification.type === "needs_input" && !notification.resolvedAt;
+}
+
+/**
  * Whether `AO_NO_QUIET_NOTIFICATIONS` opts this install back into the upstream
  * loud behavior (fork convention: `1`/`true` enables the opt-out, any other
  * value — including unset — keeps quiet-by-default). Main reads the env once;

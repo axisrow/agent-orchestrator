@@ -37,6 +37,7 @@ import { apiClient, apiErrorMessage } from "../lib/api-client";
 import { formatTimeCompact } from "../lib/format-time";
 import { LOCAL_HOST, parseRefKey, refKey, sessionUiKey, type HostId } from "../lib/hosts";
 import {
+	acknowledgeConversationReadNotifications,
 	createNotificationsTransport,
 	getCachedNotifications,
 	isNotificationsCacheFromClear,
@@ -57,7 +58,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { useCloudNotifications } from "../hooks/useCloudNotifications";
 import { clearRemoteNotification, clearRemoteNotifications, connectRemoteNotificationStreams, fetchRemoteNotificationsPage, markRemoteNotificationsRead, remoteNotificationsQueryKey, useRemoteNotificationHosts } from "../hooks/useRemoteNotifications";
-import { bellUnreadCount, panelShowsNotification } from "../../shared/notification-signals";
+import { bellUnreadCount, isPendingInput, panelShowsNotification } from "../../shared/notification-signals";
+import { useSessionReadStore } from "../stores/session-read-store";
 import type { CloudCpNotification } from "../lib/cloud-cp/types";
 
 type SessionMeta = { projectId: string; projectName: string; sessionName: string };
@@ -242,6 +244,36 @@ export function NotificationRuntime() {
 		void aoBridge.notifications.setBadge(unreadCount);
 	}, [unreadCount]);
 
+	// Bell read parity (fork issue #376): the conversation-read event — the
+	// session's view being open while its transcript grows, recorded by
+	// SessionView — also clears the unread bell rows that session produced,
+	// local and remote. A needs_input row whose agent still waits on the user
+	// keeps lit: isPendingInput holds it out of every acknowledge path until
+	// the backend resolves it (input received, session ended).
+	useEffect(() => {
+		return useSessionReadStore.subscribe((state, previous) => {
+			for (const [key, at] of Object.entries(state.readAt)) {
+				if (at <= (previous.readAt[key] ?? 0)) continue;
+				const separator = key.indexOf(":");
+				const hostId = key.slice(0, separator);
+				const sessionId = key.slice(separator + 1);
+				if (!hostId) {
+					// Local rows live only in the local unread cache — a cloud session's
+					// rows never do, so the bare key cannot ack across servers.
+					const rows = getCachedNotifications(queryClient.getQueryData<NotificationsCache>(unreadNotificationsQueryKey))
+						.filter((row) => row.sessionId === sessionId);
+					void acknowledgeConversationReadNotifications(queryClient, rows).catch(() => undefined);
+					continue;
+				}
+				const unreadIds = (queryClient.getQueryData<NotificationsPage>(remoteNotificationsQueryKey(hostId, "unread"))?.notifications ?? [])
+					.filter((row) => row.sessionId === sessionId && row.status === "unread" && !isPendingInput(row))
+					.map((row) => row.id);
+				if (unreadIds.length === 0) continue;
+				void markRemoteNotificationsRead(hostId, unreadIds, queryClient).catch(() => undefined);
+			}
+		});
+	}, [queryClient]);
+
 	useEffect(() => {
 		for (const host of remoteUnread.hosts) {
 			if (!host.data) continue;
@@ -405,10 +437,10 @@ export function NotificationCenter({ style }: NotificationCenterProps) {
 	const visibleUnreadIds = useMemo(() => {
 		const ids = new Set<string>();
 		for (const item of getCachedNotifications(unreadQuery.data)) {
-			if (item.status === "unread") ids.add(item.id);
+			if (item.status === "unread" && !isPendingInput(item)) ids.add(item.id);
 		}
 		for (const item of notifications) {
-			if (item.status === "unread") ids.add(item.id);
+			if (item.status === "unread" && !isPendingInput(item)) ids.add(item.id);
 		}
 		return [...ids];
 	}, [notifications, unreadQuery.data]);
@@ -416,6 +448,8 @@ export function NotificationCenter({ style }: NotificationCenterProps) {
 
 	// Opening the panel acknowledges what has actually been loaded. Later unread
 	// rows are acknowledged as they appear, keeping the unread pagination cursor.
+	// Pending needs_input rows are exempt (fork issue #376): seeing the row is
+	// not answering the agent, so it stays lit until the backend resolves it.
 	useEffect(() => {
 		if (!open) {
 			setHighlightedIds(new Set());
@@ -459,7 +493,7 @@ export function NotificationCenter({ style }: NotificationCenterProps) {
 		for (const host of remoteHostsRef.current) {
 			if (host.notifications.length === 0) continue;
 			const unreadIds = host.notifications
-				.filter((item) => item.status === "unread")
+				.filter((item) => item.status === "unread" && !isPendingInput(item))
 				.map((item) => item.id)
 				.filter((id) => !acknowledgedRemoteIdsRef.current.has(notificationKey(host.hostId, id)));
 			if (unreadIds.length === 0) continue;
@@ -488,7 +522,7 @@ export function NotificationCenter({ style }: NotificationCenterProps) {
 	const markCloudRead = cloudAll.markRead;
 	const cloudLoading = cloudAll.isLoading;
 	const cloudUnreadKey = useMemo(
-		() => visibleCloudItems.filter((item) => item.status === "unread").map((item) => item.id).join("|"),
+		() => visibleCloudItems.filter((item) => item.status === "unread" && !isPendingInput(item)).map((item) => item.id).join("|"),
 		[visibleCloudItems],
 	);
 	useEffect(() => {
@@ -715,16 +749,25 @@ export function NotificationCenter({ style }: NotificationCenterProps) {
 	// drops the non-decision outcomes and review findings (fork issues #283
 	// and #370) from every surface at this one merge point, and the bell count
 	// above counts only the signal classes, so the counter can never point at
-	// a hidden row.
+	// a hidden row. Read parity (fork issue #376) also retires handled rows
+	// from the quiet feed: a row whose issue is resolved and that has been
+	// read has nothing left to decide. A row acknowledged during this panel
+	// opening keeps rendering (highlighted) so rows cannot vanish mid-viewing;
+	// loud mode keeps the upstream full feed.
 	const rows = useMemo(() => {
 		const merged = [
 			...entries.map((entry) => ({ kind: "host" as const, ...entry })),
 			...visibleCloudItems.map((item) => ({ kind: "cloud" as const, item })),
 		];
 		return merged
-			.filter((row) => panelShowsNotification(row.kind === "cloud" ? row.item : row.notification, loud))
+			.filter((row) => {
+				const item = row.kind === "cloud" ? row.item : row.notification;
+				const key = row.kind === "cloud" ? cloudRowKey(item.id) : notificationKey(row.hostId, item.id);
+				const handled = Boolean(item.resolvedAt) && item.status === "read";
+				return panelShowsNotification(item, loud) && (loud || !handled || highlightedIds.has(key));
+			})
 			.sort((a, b) => Date.parse(b.kind === "cloud" ? b.item.createdAt : b.notification.createdAt) - Date.parse(a.kind === "cloud" ? a.item.createdAt : a.notification.createdAt));
-	}, [entries, loud, visibleCloudItems]);
+	}, [entries, highlightedIds, loud, visibleCloudItems]);
 	const isEmpty = rows.length === 0;
 
 	return (

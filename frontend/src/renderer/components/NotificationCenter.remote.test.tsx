@@ -18,13 +18,20 @@ const mocks = vi.hoisted(() => ({
 	fetchOlder: vi.fn(),
 }));
 
-function notification(title: string): NotificationDTO {
+/**
+ * Default fixtures are `needs_input`: an unresolved needs_input row holds the
+ * pending-input exemption (fork issue #376) and never clears on the panel
+ * opening, so the ack-routing tests build `stuck_delivery` rows — an ackable
+ * decision class — while the restore-gating test keeps the needs_input
+ * semantics it pins.
+ */
+function notification(title: string, type = "needs_input"): NotificationDTO {
 	return {
 		id: "same-notification",
 		sessionId: "same-session",
 		projectId: "same-project",
 		prUrl: "",
-		type: "needs_input",
+		type,
 		title,
 		body: `${title} body`,
 		status: "unread",
@@ -33,9 +40,9 @@ function notification(title: string): NotificationDTO {
 	};
 }
 
-const local = notification("Local ping");
-const hostA = notification("A ping");
-const hostB = notification("B ping");
+let local = notification("Local ping");
+let hostA = notification("A ping");
+let hostB = notification("B ping");
 let remoteA: NotificationDTO[] = [hostA];
 let remoteB: NotificationDTO[] = [hostB];
 let unreadOnlyA: NotificationDTO[] = [];
@@ -44,6 +51,7 @@ let remoteSessionsReady = true;
 let remoteWorkspaceFailed = false;
 let remoteTerminatedA = false;
 let remoteErrorB = false;
+const ackable = (title: string) => notification(title, "stuck_delivery");
 const page = (item: NotificationDTO): NotificationsPage => ({
 	notifications: [item], unreadCount: 1, unresolvedCount: 1,
 });
@@ -155,6 +163,13 @@ it("combines unread counts while keeping equal notification and session IDs tied
 });
 
 it("acknowledges each remote inbox on its own host when opened", async () => {
+	// Ackable rows: an unresolved needs_input row would hold the pending-input
+	// exemption and never ack on open (fork issue #376).
+	local = ackable("Local ping");
+	hostA = ackable("A ping");
+	hostB = ackable("B ping");
+	remoteA = [hostA];
+	remoteB = [hostB];
 	render(
 		<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
 			<TooltipProvider><NotificationCenter /></TooltipProvider>
@@ -174,9 +189,10 @@ it("acknowledges each remote inbox on its own host when opened", async () => {
 });
 
 it("shows and acknowledges unread remote rows beyond the first history page", async () => {
+	local = ackable("Local ping");
 	remoteA = [];
 	remoteB = [];
-	unreadOnlyA = [{ ...notification("Older unread A"), id: "older-unread" }];
+	unreadOnlyA = [{ ...ackable("Older unread A"), id: "older-unread" }];
 	render(
 		<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
 			<TooltipProvider><NotificationCenter /></TooltipProvider>
@@ -204,6 +220,11 @@ it("clears each connected host when Clear all is clicked", async () => {
 });
 
 it("waits for Retry after a remote read failure instead of repeatedly sending it", async () => {
+	local = ackable("Local ping");
+	hostA = ackable("A ping");
+	hostB = ackable("B ping");
+	remoteA = [hostA];
+	remoteB = [hostB];
 	mocks.markRemote.mockImplementation(async (hostId: string) => {
 		if (hostId === "host-b") throw new Error("offline");
 		return { data: { updatedCount: 1 } };
@@ -234,7 +255,7 @@ it("warns when one remote inbox fails without hiding healthy rows", async () => 
 
 it("loads and acknowledges older notifications from the correct host", async () => {
 	nextCursorA = "older-a";
-	const older = { ...notification("Older A ping"), id: "older-notification", createdAt: "2026-09-29T10:00:00Z" };
+	const older = { ...ackable("Older A ping"), id: "older-notification", createdAt: "2026-09-29T10:00:00Z" };
 	mocks.fetchOlder.mockResolvedValue(remotePage([older]));
 	render(
 		<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>

@@ -1,8 +1,10 @@
 import type { InfiniteData, QueryClient } from "@tanstack/react-query";
 import type { components } from "../../api/schema";
+import { isPendingInput } from "../../shared/notification-signals";
 import { aoBridge } from "./bridge";
 import { apiClient, apiErrorMessage, getApiBaseUrl, subscribeApiBaseUrl } from "./api-client";
 import { computeSseRetryDelayMs } from "./sse-backoff";
+import { sessionReadKey, useSessionReadStore } from "../stores/session-read-store";
 
 export type NotificationDTO = components["schemas"]["NotificationResponse"];
 export type NotificationsPage = components["schemas"]["ListNotificationsResponse"];
@@ -67,6 +69,38 @@ export function notificationsQueryKey(status: NotificationListStatus): Notificat
 
 function isUnresolved(notification: NotificationDTO): boolean {
 	return UNRESOLVABLE_TYPES.has(notification.type) && !notification.resolvedAt;
+}
+
+/**
+ * Whether the user has had this row's session open since the row arrived —
+ * the conversation-read fact SessionView records in the same store the
+ * session read mechanic serves (fork issue #376).
+ */
+export function isNotificationConversationRead(notification: NotificationDTO): boolean {
+	if (!notification.sessionId) return false;
+	const state = useSessionReadStore.getState();
+	const readUntil = state.readAt[sessionReadKey({ id: notification.sessionId })] ?? state.baseline;
+	const createdAt = Date.parse(notification.createdAt);
+	return Number.isFinite(createdAt) && createdAt <= readUntil;
+}
+
+/**
+ * Bell read parity (fork issue #376): mark the given rows read through the
+ * same acknowledge path the panel-opening uses. Rows whose agent still waits
+ * on the user never clear here — {@link isPendingInput} keeps them lit until
+ * the backend resolves them. Local rows only: a remote host's rows go through
+ * markRemoteNotificationsRead with the same filter at the call site.
+ */
+export async function acknowledgeConversationReadNotifications(
+	queryClient: QueryClient,
+	rows: readonly NotificationDTO[],
+): Promise<void> {
+	const ids = rows
+		.filter((row) => row.status === "unread" && !isPendingInput(row))
+		.map((row) => row.id);
+	if (ids.length === 0) return;
+	const updatedCount = await markAllNotificationsRead(ids);
+	markAllCachedNotificationsRead(queryClient, ids, updatedCount);
 }
 
 export async function fetchNotificationsPage(
@@ -536,6 +570,13 @@ export function createNotificationsTransport(
 				if (event.kind === "resolved") {
 					if (!applyResolvedNotification(queryClient, event.notification)) {
 						void invalidateNotifications();
+					}
+					// Read parity (fork issue #376): the pending-input exemption ends
+					// here, so a conversation the user already read clears the row at
+					// resolution instead of badge-ing until the next panel open. A
+					// conversation never read leaves the row unread, lit while unread.
+					if (event.notification.status === "unread" && isNotificationConversationRead(event.notification)) {
+						void acknowledgeConversationReadNotifications(queryClient, [event.notification]).catch(() => undefined);
 					}
 					return;
 				}
