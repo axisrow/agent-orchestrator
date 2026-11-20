@@ -497,13 +497,15 @@ describe("NotificationCenter", () => {
 	});
 
 	// Opening acknowledges loaded unread ids only, so later unread pages stay
-	// fetchable and highlighted when they appear in the all-list.
-	it("acknowledges loaded unread ids on open and keeps showing them highlighted", async () => {
+	// fetchable and highlighted when they appear in the all-list. An unresolved
+	// needs_input row is exempt (fork issue #376): seeing the panel is not
+	// answering the agent, so the row keeps lighting the bell until the
+	// backend resolves it.
+	it("acknowledges loaded unread ids on open, except pending input, and keeps showing them highlighted", async () => {
 		renderNotificationCenter();
 		await clickOpen();
 
-		expect(markAllMock.mock.calls[0][0]).toEqual(expect.arrayContaining(["ntf_1", "ntf_2"]));
-		expect(markAllMock.mock.calls[0][0]).toHaveLength(2);
+		expect(markAllMock.mock.calls[0][0]).toEqual(["ntf_2"]);
 		expect(screen.queryByRole("button", { name: "Mark all notifications read" })).not.toBeInTheDocument();
 		expect(screen.queryByRole("button", { name: "Mark notification read" })).not.toBeInTheDocument();
 		expect(screen.getByText("Checkout flow needs input")).toBeInTheDocument();
@@ -514,8 +516,59 @@ describe("NotificationCenter", () => {
 		expect(screen.getByText("Docs sweep needs input").className).not.toContain("font-medium");
 	});
 
+	// Read parity (fork issue #376): the quiet feed is the decision inbox. A
+	// row whose issue resolved and that has been read has nothing left to
+	// decide and stops persisting; a resolved row never read stays lit while
+	// unread, and a read row whose decision is still live stays listed.
+	it("retires read resolved rows from the quiet feed and keeps live decisions listed", async () => {
+		const handled: NotificationDTO = {
+			id: "ntf_handled",
+			sessionId: "sess-5",
+			projectId: "proj-1",
+			prUrl: "",
+			type: "needs_input",
+			title: "Handled prompt needs input",
+			body: "The input arrived hours ago.",
+			status: "read",
+			resolvedAt: "2026-07-21T12:00:00Z",
+			createdAt: "2026-07-21T08:00:00Z",
+			target: { kind: "session", sessionId: "sess-5" },
+		};
+		const resolvedUnseen: NotificationDTO = {
+			...handled,
+			id: "ntf_resolved_unseen",
+			sessionId: "sess-6",
+			title: "Resolved but unseen needs input",
+			status: "unread",
+			createdAt: "2026-07-21T09:00:00Z",
+			target: { kind: "session", sessionId: "sess-6" },
+		};
+		notificationQueryMock.mockImplementation((status: NotificationListStatus) =>
+			status === "all"
+				? {
+						...stableAllQuery,
+						data: {
+							pageParams: [""],
+							pages: [{
+								notifications: [handled, resolvedUnseen, ...allNotifications],
+								nextCursor: undefined,
+								unreadCount: 2,
+								unresolvedCount: 2,
+							}],
+						},
+					}
+				: notificationQueryResult(status),
+		);
+		renderNotificationCenter();
+		await clickOpen();
+
+		expect(screen.queryByText("Handled prompt needs input")).not.toBeInTheDocument();
+		expect(screen.getByText("Resolved but unseen needs input")).toBeInTheDocument();
+		expect(screen.getByText("Docs sweep needs input")).toBeInTheDocument();
+	});
+
 	it("retries mark-read after a transient failure without closing the panel", async () => {
-		markAllMock.mockRejectedValueOnce(new Error("network down")).mockResolvedValueOnce(2);
+		markAllMock.mockRejectedValueOnce(new Error("network down")).mockResolvedValueOnce(1);
 		renderNotificationCenter();
 		await clickOpen();
 
@@ -525,8 +578,7 @@ describe("NotificationCenter", () => {
 		await userEvent.click(screen.getByRole("button", { name: "Retry" }));
 
 		await waitFor(() => expect(markAllMock).toHaveBeenCalledTimes(2));
-		expect(markAllMock.mock.calls[1][0]).toEqual(expect.arrayContaining(["ntf_1", "ntf_2"]));
-		expect(markAllMock.mock.calls[1][0]).toHaveLength(2);
+		expect(markAllMock.mock.calls[1][0]).toEqual(["ntf_2"]);
 		await waitFor(() => expect(screen.queryByText("network down")).not.toBeInTheDocument());
 		expect(screen.getByText("Checkout flow needs input").className).toContain("font-medium");
 	});
@@ -537,7 +589,10 @@ describe("NotificationCenter", () => {
 			sessionId: "sess-1",
 			projectId: "proj-1",
 			prUrl: "",
-			type: "needs_input",
+			// A later-page row the open-path can acknowledge: needs_input would be
+			// exempt while its agent waits (fork issue #376), so this page-ack
+			// mechanic is pinned with an ackable decision class.
+			type: "stuck_delivery",
 			title: "Later unread needs input",
 			body: "Still waiting after the first page.",
 			status: "unread",
@@ -620,11 +675,10 @@ describe("NotificationCenter", () => {
 			</QueryClientProvider>,
 		);
 		await clickOpen();
-		expect(markAllMock.mock.calls[0][0]).toEqual(expect.arrayContaining(["ntf_1", "ntf_2"]));
-		expect(markAllMock.mock.calls[0][0]).toHaveLength(2);
-		// Both acknowledged rows and the routine ntf_2 go quiet: the bell (which
-		// now counts rows, not a server tally) shows no unread count.
-		await waitFor(() => expect(screen.getByRole("button", { name: "Notifications" })).toBeInTheDocument());
+		expect(markAllMock.mock.calls[0][0]).toEqual(["ntf_2"]);
+		// Only the pending ntf_1 counts after the open (fork issue #376): ntf_2
+		// was acknowledged, and the later page has not loaded yet.
+		await waitFor(() => expect(screen.getByRole("button", { name: /1 unread notification/ })).toBeInTheDocument());
 		markAllMock.mockClear();
 
 		const list = screen.getByRole("list");
@@ -646,10 +700,10 @@ describe("NotificationCenter", () => {
 
 		expect(await screen.findByText("Later unread needs input")).toHaveClass("font-medium");
 		await waitFor(() => expect(markAllMock).toHaveBeenCalledWith(["ntf_later"]));
-		await waitFor(() => expect(screen.getByRole("button", { name: "Notifications" })).toBeInTheDocument());
-		expect(screen.queryByRole("button", { name: /unread notifications/ })).not.toBeInTheDocument();
+		// The acked later page goes quiet; only the pending needs_input row
+		// still counts (fork issue #376).
+		await waitFor(() => expect(screen.getByRole("button", { name: /1 unread notification/ })).toBeInTheDocument());
 	});
-
 	it("surfaces a failed all-list load instead of claiming success", async () => {
 		notificationQueryMock.mockImplementation((status: NotificationListStatus) =>
 			status === "all"

@@ -75,6 +75,7 @@ import { subscribeSessionEventsBridged } from "../lib/cloud-cp/stream-bridge";
 import { latestScriptRun } from "../lib/cloud-script-runs";
 import { recordCloudScriptStepEvents, useCloudScriptRuns } from "../hooks/useCloudScriptRuns";
 import { useTerminalResetStore } from "../stores/terminal-reset-store";
+import { sessionReadKey, useSessionReadStore } from "../stores/session-read-store";
 import { useSessionHandoffMenu } from "../hooks/useSessionHandoffMenu";
 import { clearSwitchAgentState } from "../hooks/useSwitchAgent";
 import { apiErrorCode, apiErrorMessage } from "../lib/api-client";
@@ -437,6 +438,19 @@ export function SessionView({ sessionId, cloudOrgId, projectId, hostId }: Sessio
 	// Reading a cloud session counts as using it, so it is not idle-paused
 	// under someone who is watching the agent work.
 	useCloudSessionPresence(session?.cloud?.orgId, session?.cloud ? session.id : undefined, Boolean(session?.cloud));
+	// Having the session's view open is the conversation-read event: everything
+	// the transcript has written up to now counts as read, including anything
+	// that lands while it stays open. The notification runtime derives the
+	// bell's read parity (fork issue #376) from this store, clearing the
+	// session's bell rows as they are read — except a needs_input row whose
+	// agent still waits on the user, which stays lit until the backend
+	// resolves it.
+	const markSessionRead = useSessionReadStore((state) => state.markRead);
+	useEffect(() => {
+		if (!session) return;
+		const updated = Date.parse(session.updatedAt);
+		if (Number.isFinite(updated)) markSessionRead(sessionReadKey({ id: session.id, hostId: session.hostId ?? hostId }), updated);
+	}, [hostId, markSessionRead, session]);
 	const { draftBoundaries: chatDraftBoundaries, confirmUnsafeDraftLeave } = interfaceUi;
 	const developerMode = useUiStore((state) => state.developerMode);
 	const remoteHostsEnabled = useUiStore((state) => state.remoteHosts);

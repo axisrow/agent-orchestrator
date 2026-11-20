@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
 	bellUnreadCount,
 	dockBounceType,
+	isPendingInput,
 	loudNotificationsEnabled,
 	needsHumanFeedback,
 	osToastChimeControllable,
@@ -190,6 +191,20 @@ describe("panelShowsNotification", () => {
 		for (const type of [...LISTED_TYPES, ...HIDDEN_TYPES]) {
 			expect(panelShowsNotification({ type }, true)).toBe(true);
 		}
+	});
+});
+
+// Read parity (fork issue #376): an unresolved needs_input row is a live
+// decision — reading its conversation must not clear it. Every other row
+// follows the ordinary read mechanic.
+describe("isPendingInput", () => {
+	it("holds only unresolved needs_input rows", () => {
+		expect(isPendingInput({ type: "needs_input" })).toBe(true);
+		expect(isPendingInput({ type: "needs_input", resolvedAt: null })).toBe(true);
+		expect(isPendingInput({ type: "needs_input", resolvedAt: "2026-11-20T10:00:00Z" })).toBe(false);
+		expect(isPendingInput({ type: "stuck_delivery" })).toBe(false);
+		expect(isPendingInput({ type: "agent_failed", resolvedAt: null })).toBe(false);
+		expect(isPendingInput({})).toBe(false);
 	});
 });
 

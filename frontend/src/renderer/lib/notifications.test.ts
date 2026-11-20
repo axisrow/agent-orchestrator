@@ -6,6 +6,7 @@ import type { NotificationDTO, NotificationsCache, NotificationsPage } from "./n
 const {
 	apiDeleteMock,
 	apiGetMock,
+	apiPostMock,
 	getApiBaseUrlMock,
 	onStatusMock,
 	removeStatusMock,
@@ -15,6 +16,7 @@ const {
 } = vi.hoisted(() => ({
 	apiDeleteMock: vi.fn(),
 	apiGetMock: vi.fn(),
+	apiPostMock: vi.fn(),
 	getApiBaseUrlMock: vi.fn(() => "http://127.0.0.1:3001"),
 	onStatusMock: vi.fn(),
 	removeStatusMock: vi.fn(),
@@ -24,7 +26,7 @@ const {
 }));
 
 vi.mock("./api-client", () => ({
-	apiClient: { DELETE: apiDeleteMock, GET: apiGetMock },
+	apiClient: { DELETE: apiDeleteMock, GET: apiGetMock, POST: apiPostMock },
 	apiErrorMessage: () => "Request failed",
 	getApiBaseUrl: getApiBaseUrlMock,
 	subscribeApiBaseUrl: subscribeApiBaseUrlMock,
@@ -57,6 +59,7 @@ import {
 	rollbackOptimisticNotificationDelete,
 	unreadNotificationsQueryKey,
 } from "./notifications";
+import { useSessionReadStore } from "../stores/session-read-store";
 
 class EventSourceStub {
 	static instances: EventSourceStub[] = [];
@@ -116,6 +119,7 @@ function setWindowState({ focused, visible }: { focused: boolean; visible: boole
 beforeEach(() => {
 	apiDeleteMock.mockReset();
 	apiGetMock.mockReset();
+	apiPostMock.mockReset();
 	EventSourceStub.instances = [];
 	getApiBaseUrlMock.mockReset().mockReturnValue("http://127.0.0.1:3001");
 	onStatusMock.mockReset().mockReturnValue(removeStatusMock);
@@ -123,6 +127,10 @@ beforeEach(() => {
 	showNotificationMock.mockReset().mockResolvedValue(undefined);
 	subscribeApiBaseUrlMock.mockReset().mockReturnValue(unsubscribeBaseUrlMock);
 	unsubscribeBaseUrlMock.mockReset();
+	// Read parity (fork issue #376) reads the sidebar's read times: pin the
+	// baseline before the fixtures so "conversation never opened" is
+	// deterministic instead of inheriting the store's first-run now.
+	useSessionReadStore.setState({ baseline: Date.parse("2026-06-16T00:00:00Z"), readAt: {} });
 	(globalThis as unknown as { EventSource: unknown }).EventSource = EventSourceStub;
 });
 
@@ -634,6 +642,44 @@ describe("createNotificationsTransport", () => {
 		);
 
 		await vi.waitFor(() => expect(invalidateSpy).toHaveBeenCalledTimes(2));
+	});
+
+	// Read parity (fork issue #376): the pending-input exemption ends at
+	// resolution, so a conversation the user already read clears the row at
+	// that moment instead of badge-ing until the next panel open.
+	it("marks a resolved row read when its conversation was already read", async () => {
+		const qc = queryClient();
+		apiPostMock.mockResolvedValue({ data: { updatedCount: 1 } });
+		useSessionReadStore.getState().markRead(":mer-1", Date.parse("2026-06-16T12:00:00Z"));
+		createNotificationsTransport(qc).connect();
+		const source = EventSourceStub.instances[0];
+		source.dispatch("notification_created", notification());
+
+		source.dispatch("notification_resolved", notification({ resolvedAt: "2026-06-16T11:00:00Z" }));
+
+		// Wait on the cache, not on the POST: the cache patch lands one tick
+		// after the request resolves.
+		await vi.waitFor(() =>
+			expect(getCachedNotifications(qc.getQueryData<NotificationsCache>(unreadNotificationsQueryKey))).toEqual([
+				expect.objectContaining({ id: "ntf_1", status: "read", resolvedAt: "2026-06-16T11:00:00Z" }),
+			]),
+		);
+		expect(apiPostMock.mock.calls[0][0]).toBe("/api/v1/notifications/read-all");
+		expect(apiPostMock.mock.calls[0][1]).toEqual({ body: { ids: ["ntf_1"] } });
+	});
+
+	it("keeps a resolved row unread when its conversation was never opened", () => {
+		const qc = queryClient();
+		createNotificationsTransport(qc).connect();
+		const source = EventSourceStub.instances[0];
+		source.dispatch("notification_created", notification());
+
+		source.dispatch("notification_resolved", notification({ resolvedAt: "2026-06-16T11:00:00Z" }));
+
+		expect(apiPostMock).not.toHaveBeenCalled();
+		expect(getCachedNotifications(qc.getQueryData<NotificationsCache>(unreadNotificationsQueryKey))).toEqual([
+			expect.objectContaining({ id: "ntf_1", status: "unread", resolvedAt: "2026-06-16T11:00:00Z" }),
+		]);
 	});
 
 	it("removes a deleted notification from every live cache", async () => {
