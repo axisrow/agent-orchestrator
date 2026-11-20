@@ -25,25 +25,25 @@ export type NotificationType =
 
 /**
  * The only event classes allowed to signal (bell, OS toast, sound, dock
- * bounce, unseen badges): an agent session blocked waiting on the user
- * (`needs_input` — the backend creates it from the session's domain
- * waiting-for-input state, not from text heuristics), a review verdict of
- * changes requested on the user's or curated PRs (`review_changes_requested`;
- * the cloud control plane reports the same verdict as `review_feedback`), a
- * failed agent (`agent_failed`, cloud) that can only resume with the owner's
- * help, and report deliveries stuck past the visibility threshold
- * (`stuck_delivery` — edge-triggered once per (project, cause-class)
- * incident, so it rings at most once per incident, fork issue #211).
- * Deliberately quiet: done/checkpoint reports, `ready_to_merge`
- * and PR outcomes, spawns, panel activity, terminal `delivery_died` records.
- * New types default to quiet — extending this set is an explicit policy decision.
+ * bounce, unseen badges) — the decision classes, per the owner's policy
+ * decision (fork issue #370, 2026-11-20): an agent session blocked waiting on
+ * the user (`needs_input` — the backend creates it from the session's domain
+ * waiting-for-input state, not from text heuristics), report deliveries stuck
+ * past the visibility threshold (`stuck_delivery` — edge-triggered once per
+ * (project, cause-class) incident, so it rings at most once per incident,
+ * fork issue #211), and a failed cloud agent (`agent_failed`) that can only
+ * resume with the owner's help. Review findings are deliberately not signals:
+ * on this fork the workers address review findings automatically, so a
+ * `review_changes_requested` verdict (the cloud control plane reports the
+ * same verdict as `review_feedback`) requires no owner decision. Deliberately
+ * quiet: done/checkpoint reports, `ready_to_merge` and PR outcomes, spawns,
+ * panel activity, terminal `delivery_died` records. New types default to
+ * quiet — extending this set is an explicit policy decision (fork issue #370).
  */
 const HUMAN_FEEDBACK_TYPES: ReadonlySet<string> = new Set<string>([
 	"needs_input",
-	"review_changes_requested",
 	"stuck_delivery",
-	// Cloud control-plane types for the same signal classes.
-	"review_feedback",
+	// Cloud control-plane type for the same signal class.
 	"agent_failed",
 ]);
 
@@ -97,16 +97,26 @@ export function bellUnreadCount(items: readonly { type?: string; status?: string
 }
 
 /**
- * The notification types the quiet bell panel keeps out of the feed: terminal
- * PR/review facts that need no action (`pr_merged`, `review_completed`,
- * `pr_closed_unmerged`; fork issue #283). Attention and error types stay
- * listed, and so does anything not named here — a future action-needed class
- * must stay visible by default, so this is a hide-list, not an allow-list.
+ * The notification types the quiet bell panel keeps out of the feed —
+ * everything that is not a decision or a failure, per the owner's policy
+ * decision (fork issue #370, 2026-11-20, extending fork issue #283): terminal
+ * PR/review facts (`pr_merged`, `pr_closed_unmerged`, `review_completed`,
+ * `ready_to_merge`) and review findings, which the fork's workers address
+ * automatically (`review_changes_requested`; the cloud control plane reports
+ * the same verdict as `review_feedback`). The backend keeps creating and
+ * recording all of these in the feed; only the bell panel leaves them out.
+ * Attention and error types stay listed, and so does anything not named
+ * here — a future action-needed class must stay visible by default, so this
+ * is a hide-list, not an allow-list.
  */
 const QUIET_PANEL_HIDDEN_TYPES: ReadonlySet<string> = new Set([
 	"pr_merged",
 	"pr_closed_unmerged",
 	"review_completed",
+	"ready_to_merge",
+	"review_changes_requested",
+	// Cloud control-plane type for the same verdict as review_changes_requested.
+	"review_feedback",
 ]);
 
 /**

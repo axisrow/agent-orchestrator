@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { NotificationDTO, NotificationsCache } from "../lib/notifications";
 import { NotificationRuntime } from "./NotificationCenter";
 
@@ -36,7 +36,7 @@ const unreadCache: NotificationsCache = {
 	pageParams: [""],
 };
 
-const { setBadge } = vi.hoisted(() => ({ setBadge: vi.fn() }));
+const { modeMock, setBadge } = vi.hoisted(() => ({ modeMock: vi.fn(), setBadge: vi.fn() }));
 
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn(), useParams: () => ({}) }));
 
@@ -52,8 +52,9 @@ vi.mock("../lib/notifications", async (importOriginal) => ({
 vi.mock("../lib/bridge", () => ({
 	aoBridge: {
 		notifications: {
-			// Loud mode: the badge counts every unread row (see notification-signals).
-			mode: async () => true,
+			// Quiet (false) by default; the loud test opts back in (see
+			// notification-signals for the surface policy).
+			mode: () => modeMock(),
 			setBadge,
 			show: vi.fn(),
 			devBounce: vi.fn(),
@@ -73,8 +74,21 @@ function renderRuntimeOnly() {
 }
 
 describe("NotificationRuntime badge sync", () => {
-	it("syncs the launcher badge without the notification bell being mounted", async () => {
+	beforeEach(() => {
 		setBadge.mockClear();
+		modeMock.mockResolvedValue(false);
+	});
+
+	// Quiet by default (fork issue #370): the badge counts only the decision
+	// classes, so an unread ready_to_merge row never lights the launcher.
+	it("counts only the decision classes in quiet mode", async () => {
+		renderRuntimeOnly();
+
+		await waitFor(() => expect(setBadge).toHaveBeenCalledWith(1));
+	});
+
+	it("counts every unread row in loud mode, without the bell being mounted", async () => {
+		modeMock.mockResolvedValue(true);
 
 		renderRuntimeOnly();
 

@@ -457,6 +457,7 @@ type fakeLauncher struct {
 	cancelledHarness domain.ReviewerHarness
 	destroyed        bool
 	destroyedHandle  string
+	destroyCtxErr    error
 	destroyErr       error
 	destroyErrCall   int
 	destroyCalls     int
@@ -559,9 +560,10 @@ func (f *fakeLauncher) Cancel(_ context.Context, handleID string, harness domain
 	f.cancelledHarness = harness
 	return f.cancelErr
 }
-func (f *fakeLauncher) Destroy(_ context.Context, handleID string) error {
+func (f *fakeLauncher) Destroy(ctx context.Context, handleID string) error {
 	f.destroyed = true
 	f.destroyedHandle = handleID
+	f.destroyCtxErr = ctx.Err()
 	f.destroyCalls++
 	if f.destroyCalled != nil {
 		f.destroyCalled <- handleID
@@ -1413,6 +1415,36 @@ func TestReapCompletedReviewersDestroysIdlePane(t *testing.T) {
 	}
 	if launcher.cancelled {
 		t.Fatalf("reap must stop the pane, not interrupt it: %+v", launcher)
+	}
+}
+
+// Fork issue #371: the reap runs on the submit request's context, and the
+// reviewer CLI exits the moment its POST lands, so the context is canceled by
+// the time the pane teardown runs — every reap failed with "context canceled"
+// and the pane stayed visible as TERMINAL ENDED. The reap must detach onto a
+// live, bounded context so the pane is really removed.
+func TestReapCompletedReviewersSurvivesCanceledSubmitContext(t *testing.T) {
+	review := reapReviewRow()
+	wantHandle := review.ReviewerHandleID
+	store := &fakeStore{review: review, runs: []domain.ReviewRun{
+		{ID: "run-1", ReviewID: review.ID, SessionID: review.SessionID, Harness: review.Harness,
+			Status: domain.ReviewRunComplete, Verdict: domain.VerdictChangesRequested},
+	}}
+	launcher := &fakeLauncher{handle: wantHandle}
+	eng := newEngineForTest(store, fakeSessions{}, fakePRs{}, fakeProjects{}, launcher)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	eng.ReapCompletedReviewers(ctx, review.SessionID, []domain.ReviewRun{store.runs[0]})
+
+	if !launcher.destroyed || launcher.destroyedHandle != wantHandle {
+		t.Fatalf("pane not reaped on a canceled submit context: destroyed=%v handle=%q", launcher.destroyed, launcher.destroyedHandle)
+	}
+	if launcher.destroyCtxErr != nil {
+		t.Fatalf("Destroy ran on context %v, want a live context", launcher.destroyCtxErr)
+	}
+	if review.ReviewerHandleID != "" {
+		t.Fatalf("stored handle not cleared after reap: %+v", review)
 	}
 }
 
