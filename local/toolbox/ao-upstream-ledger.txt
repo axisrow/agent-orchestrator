@@ -925,3 +925,27 @@ cb352b7d75ae3401ad20608b36279a43c5aa7043 skipped fix(mobile): take focus off the
 617e879d0067ec96f643cf6c2389b36b75c2ae61 skipped feat(onboarding): isometric line-drawing illustration, CI/CD story, cleaner dependency dialog (#7767)
 134a2f0fee7b7d9267447a85578d6486452890e7 skipped feat(search): search every connected AO machine from Cmd+K (#7378)
 468a1b7869f2dc6d23deb509069ca8b57bd15c60 skipped feat(review): tell the worker when an AO review run finishes (#6955)
+b5f10dd60eb19257a6c476c193679824ba51a989 skipped fix(hermes): read the modern layout's idle terminal as idle (#7910) — hermes-харнес в форке вырезан (владельцу не нужен); смешанный пик (session_manager M-пути) — конфликт
+a47b9916660d3c8f9da2e9d6b5583d8f1c6630f0 skipped fix(chat): stop the view jumping up and riding down after a send (#8719) — ChatWorkspace/useScrollFollow поверх их чат-стека (класс e7eb3df8)
+4b5d3d3f8072f91e52bc9ddc9d9ce86d7988164e skipped fix(gestures): swipes taken by notices, strips and code never navigate (#8709) — swipe-навигация поверх их chat-компонентов (ChatMarkdown/TimelineItems — форк-дельта)
+2d73b33640b4b2c313a263908b15d37ccc5d0c2e skipped fix(review): require evidence for actionable reviewer findings (#6477) — review.go форк-конвейер (+530 дельта), UU гарантирован (класс da36142a)
+3a7b76e1f64e5fd7312c36a81decf560ca8bd0ca skipped fix(review): submit reviews through quoted heredocs instead of shell-quoted strings (#7067) — у форка своя ao review submit --body - (fork-дельта ревью-конвейера); апстрим-механика не нужна
+25bed0d2f689fbf0b87981a7e14f9f289b0ae694 skipped fix(tabs): native fullscreen session tabs use the windowed pill look (#8722) — табы UI поверх их стека (класс e54eb2f5)
+b823d70f6132f41356518eead174cb2c5a99d009 skipped fix(theme): named themes show under transparency, System lands on the OS appearance (#8704) — theme UI-полировка
+4a2cf027d1724f754b5287e73cd4b491213347f9 skipped fix(frontend): show a single session account as text, not a dropdown (#8673) — account-picker поверхность форка другая (класс 22c1220687)
+f5a65c91af56cb17778f68afb278e9d2a6ebbdc4 skipped fix(cli): find the daemon through /healthz when its PID is hidden (#8588) — UU: cli/client.go форк-дельта (+42 -8, свой loopback/healthz discovery)
+4faa45983df1198ffe42d973801d593ce385507e skipped feat(artifacts): shared-with-me list, team and workspace sharing (#8628)
+feaf60a7afc52612b1ab513632113a2453109056 skipped feat(dev): launch the desktop app from a fresh worktree in seconds (dev:warm + cached predev) (#8277)
+065ffa65ca3a7f55a78af8685f9f830c709211a4 skipped docs(dev): make the dev:warm launch the default way agents run the desktop app (#8487)
+8207c224b50092bccacda14604094403f2ec9de4 skipped fix(mobile): open chats waiting on a request, and make Allow Once the approval's primary action (#8674)
+4bcf4c6102f16946a96d7eedfd568787076a81c3 skipped fix(mobile): let an orchestrator's chat switch to another agent (#8689)
+cb00873ae9dde3401f67c8f6133dcee0777c0761 skipped feat(report): flush done batches early once no other worker is working (#6614)
+0d322ae188eff9ad41d50df634fbe78c0af552d2 skipped fix(mobile): open file links in chat replies at the cited line (#8687)
+3a69e1c7ca940a5b2b3f139fde7512a853e7a12a skipped feat(cloud): let a Coder project run its orchestrator on Coder (#8646)
+9946dbf00092abc3319bc7130ad8b533d33e847b skipped feat(sidebar): colour working and unread finished sessions (#8703)
+63d34d920ef7aa60f0d0fd60e80f8a3be5cd6c55 skipped fix(workspace): stop copying non-repository folders into sessions (#8701) — UU: session_manager/manager.go форк +1087 -348 против апстрим +1850 -587; копирование при боли вручную
+fc15acf55a68d530a4b71b5ee357ffd8a6ad36a8 skipped Show the usage limit as a warning sign beside the model picker (#8346)
+8d9a821eee941d55aa1b5a959e90fb0d33e43d97 skipped feat(board): search the board in place, Cmd+F to focus, no lane scrollbars (#8723)
+230e231c1d946c11b57d329fe9c78b0c3705b51d skipped perf(spawn): stop new chats waiting on repeat git downloads (#8720)
+e54c4f0d80bc8307f7a3bad5c300ae69944b1347 skipped feat(telemetry): full desktop onboarding funnel (#8679)
+adf8cea8183aa4ca689c52967f09dc6692314dcf skipped feat(telemetry): field performance summary and launch timings (#8655)
