@@ -122,6 +122,9 @@ type harnessProbe struct {
 	Name       string
 	BinaryName string
 	VersionArg string
+	// DaemonInstalled is true when the running daemon reports the agent
+	// installed.
+	DaemonInstalled bool
 }
 
 type harnessProbeSpec struct {
@@ -258,6 +261,26 @@ func (c *commandContext) runDoctor(ctx context.Context) []doctorCheck {
 	if check, ok := c.checkAOLoginShell(ctx, daemonExe, cfg.DataDir); ok {
 		checks = append(checks, check)
 	}
+	// The daemon launches agents, so its inventory decides what is installed:
+	// it finds agents outside this shell's PATH, and a built-in agent has no
+	// binary to find.
+	daemonInstalled := map[string]bool{}
+	if err == nil && st.State == stateReady {
+		// The daemon re-probes agents whose cached state has expired, which
+		// takes longer than a health probe.
+		inventoryCtx, cancel := context.WithTimeout(ctx, 5*probeTimeout)
+		inventory, err := c.fetchAgentInventory(inventoryCtx, false)
+		cancel()
+		if err != nil {
+			checks = append(checks, doctorCheck{
+				Level: doctorWarn, Section: doctorSectionAgents, Name: "agent-inventory",
+				Message: fmt.Sprintf("could not read the running daemon's agent list (%v); the lines below reflect this shell's PATH only", err),
+			})
+		}
+		for _, agent := range inventory.Installed {
+			daemonInstalled[agent.ID] = true
+		}
+	}
 	for _, ha := range registry.Harnessed() {
 		id := string(ha.Harness)
 		spec := harnessProbeSpecs[id]
@@ -266,9 +289,10 @@ func (c *commandContext) runDoctor(ctx context.Context) []doctorCheck {
 			binaryName = id
 		}
 		checks = append(checks, c.checkHarness(ctx, harnessProbe{
-			Name:       id,
-			BinaryName: binaryName,
-			VersionArg: spec.VersionArg,
+			Name:            id,
+			BinaryName:      binaryName,
+			VersionArg:      spec.VersionArg,
+			DaemonInstalled: daemonInstalled[id],
 		}))
 	}
 	checks = append(checks, c.checkCodexLaunchFlags(ctx), c.checkGitHubToken(ctx), c.checkGitLabToken(ctx))
@@ -702,6 +726,12 @@ func checkHooksLog(dataDir string, now time.Time) doctorCheck {
 func (c *commandContext) checkHarness(ctx context.Context, harness harnessProbe) doctorCheck {
 	path, err := c.deps.LookPath(harness.BinaryName)
 	if err != nil || path == "" {
+		if harness.DaemonInstalled {
+			return doctorCheck{
+				Level: doctorPass, Section: doctorSectionAgents, Name: harness.Name,
+				Message: fmt.Sprintf("installed according to the running daemon (%s is not on this shell's PATH)", harness.BinaryName),
+			}
+		}
 		return doctorCheck{
 			Level: doctorWarn, Section: doctorSectionAgents, Name: harness.Name,
 			Message: fmt.Sprintf("%s not found in PATH", harness.BinaryName),
