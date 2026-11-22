@@ -234,7 +234,7 @@ func TestDoctorTrustsDaemonForInstalledHarness(t *testing.T) {
 		case "/readyz":
 			_, _ = fmt.Fprintf(w, `{"status":"ready","service":"agent-orchestrator-daemon","pid":%d}`, os.Getpid())
 		case "/api/v1/agents/readiness/ensure":
-			_, _ = io.WriteString(w, readinessAgentsJSON("unreal-agent", "installed", "unauthorized"))
+			_, _ = io.WriteString(w, readinessAgentsJSON("omp", "installed", "unauthorized"))
 		default:
 			http.NotFound(w, r)
 		}
@@ -248,8 +248,8 @@ func TestDoctorTrustsDaemonForInstalledHarness(t *testing.T) {
 	c.deps.ProcessAlive = func(int) bool { return true }
 	checks := c.runDoctor(context.Background())
 
-	if check := findDoctorCheck(t, checks, "unreal-agent"); check.Level != doctorPass || !strings.Contains(check.Message, "installed according to the running daemon") {
-		t.Fatalf("unreal-agent check = %+v, want PASS from the daemon's inventory", check)
+	if check := findDoctorCheck(t, checks, "omp"); check.Level != doctorPass || !strings.Contains(check.Message, "installed according to the running daemon") {
+		t.Fatalf("omp check = %+v, want PASS from the daemon's inventory", check)
 	}
 	if check := findDoctorCheck(t, checks, "codex"); check.Level != doctorWarn || !strings.Contains(check.Message, "not found in PATH") {
 		t.Fatalf("codex check = %+v, want WARN missing binary", check)
@@ -283,8 +283,8 @@ func TestDoctorSaysWhenDaemonAgentListIsUnavailable(t *testing.T) {
 	if check := findDoctorCheck(t, checks, "agent-inventory"); check.Level != doctorWarn || !strings.Contains(check.Message, "this shell's PATH only") {
 		t.Fatalf("agent-inventory check = %+v, want WARN naming the fallback", check)
 	}
-	if check := findDoctorCheck(t, checks, "unreal-agent"); check.Level != doctorWarn {
-		t.Fatalf("unreal-agent check = %+v, want the PATH fallback", check)
+	if check := findDoctorCheck(t, checks, "codex"); check.Level != doctorWarn {
+		t.Fatalf("codex check = %+v, want the PATH fallback", check)
 	}
 }
 

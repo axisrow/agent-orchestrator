@@ -302,7 +302,7 @@ func TestKillDoesNotClaimAFreedSlotPastItsDeadline(t *testing.T) {
 // beginAgentOperation, keep refusing at once. On fake time that means no time
 // passes before the refusal.
 func TestOtherOperationsStillRefuseAnInFlightResume(t *testing.T) {
-	for _, kind := range []agentOperationKind{agentOperationKill, agentOperationResume, agentOperationExit, agentOperationRestore, agentOperationProviderSwitch, agentOperationHibernate} {
+	for _, kind := range []agentOperationKind{agentOperationKill, agentOperationResume, agentOperationExit, agentOperationRestore, agentOperationSwitch, agentOperationHibernate} {
 		t.Run(string(kind), func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				m := newInputLeaseTestManager()
