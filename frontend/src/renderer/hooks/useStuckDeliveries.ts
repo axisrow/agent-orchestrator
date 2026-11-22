@@ -26,18 +26,22 @@ export const stuckDeliveriesQueryOptions = {
 };
 
 /** Undelivered report counts per sending session: `deliveries` summed over
- * each session's stuck groups. Absent sessions have nothing undelivered. */
+ * each session's live stuck groups. Terminal (stale) groups are retired
+ * history no one can act on (#379), so they don't count. Absent sessions have
+ * nothing undelivered. */
+export function stuckDeliveriesBySession(groups: StuckDeliveryGroup[]): Map<string, number> {
+	const bySession = new Map<string, number>();
+	for (const group of groups) {
+		if (!group.sessionId || group.terminal) continue;
+		bySession.set(group.sessionId, (bySession.get(group.sessionId) ?? 0) + group.deliveries);
+	}
+	return bySession;
+}
+
 export function useStuckDeliveriesBySession(): Map<string, number> {
 	const query = useQuery({
 		...stuckDeliveriesQueryOptions,
-		select: (groups: StuckDeliveryGroup[]) => {
-			const bySession = new Map<string, number>();
-			for (const group of groups) {
-				if (!group.sessionId) continue;
-				bySession.set(group.sessionId, (bySession.get(group.sessionId) ?? 0) + group.deliveries);
-			}
-			return bySession;
-		},
+		select: stuckDeliveriesBySession,
 	});
 	return query.data ?? new Map<string, number>();
 }
