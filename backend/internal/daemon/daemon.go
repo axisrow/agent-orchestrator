@@ -994,8 +994,14 @@ func Run() error {
 	})
 
 	// Terminal hooks pass the hook process gate: a Claude process other than
-	// the session's own must not replace its activity or transcript.
-	hookActivity := hookprocess.New(lcStack.LCM, store, runtimeAdapter, nil, log)
+	// the session's own must not replace its activity or transcript. The gate
+	// and the lifecycle reducer run off the hook's request: a bulk writer
+	// holding the single SQLite writer must not head-of-line block every
+	// session's activity hook (and with it the agent process) behind the
+	// global lifecycle lock for the length of the stall.
+	hookActivity := controllers.NewActivityIngest(
+		hookprocess.New(lcStack.LCM, store, runtimeAdapter, nil, log), log)
+	go hookActivity.Run(ctx)
 	srv, err := httpd.NewWithDeps(cfg, log, termMgr, httpd.APIDeps{
 		Awake:              awakeSvc,
 		Projects:           projectSvc,
