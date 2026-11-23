@@ -133,6 +133,52 @@ func TestActivityIngest_ApplyErrorsKeepTheQueueDraining(t *testing.T) {
 	}
 }
 
+// panickingRecorder fails the first apply with a panic, like a bug in the
+// gate or the reducer would; the applier must log it and keep draining.
+type panickingRecorder struct {
+	mu    sync.Mutex
+	calls int
+	next  *countingErrorRecorder
+}
+
+func (r *panickingRecorder) ApplyActivitySignal(context.Context, domain.SessionID, ports.ActivitySignal) error {
+	r.mu.Lock()
+	r.calls++
+	first := r.calls == 1
+	r.mu.Unlock()
+	if first {
+		panic("boom in apply path")
+	}
+	return nil
+}
+
+func TestActivityIngest_ApplyPanicDoesNotKillTheApplier(t *testing.T) {
+	rec := &panickingRecorder{}
+	q := controllers.NewActivityIngest(rec, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go q.Run(ctx)
+
+	for i := 0; i < 3; i++ {
+		if err := q.ApplyActivitySignal(ctx, "ao-1", ports.ActivitySignal{Valid: true, State: domain.ActivityIdle}); err != nil {
+			t.Fatalf("enqueue %d: %v", i, err)
+		}
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		rec.mu.Lock()
+		calls := rec.calls
+		rec.mu.Unlock()
+		if calls >= 3 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("applier consumed %d signals after a panic on the first, want 3", calls)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 func TestActivityIngest_FullQueueSurfacesProjectionBusy(t *testing.T) {
 	rec := newBlockingRecorder()
 	q := controllers.NewActivityIngest(rec, slog.New(slog.NewTextHandler(io.Discard, nil)))

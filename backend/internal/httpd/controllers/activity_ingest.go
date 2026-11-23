@@ -3,7 +3,7 @@ package controllers
 import (
 	"context"
 	"log/slog"
-	"time"
+	"runtime/debug"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
@@ -17,12 +17,6 @@ import (
 // behind a stalled write.
 const activityQueueSize = 1024
 
-// activityApplyTimeout bounds one apply on the applier. It mirrors the daemon's
-// REST request timeout (config.DefaultRequestTimeout), which was the implicit
-// ceiling every synchronous apply already lived under; a wedged apply now
-// drops its signal instead of pinning the whole ordered queue forever.
-const activityApplyTimeout = 60 * time.Second
-
 // ActivityIngest decouples the activity HTTP boundary from the store. A hook
 // request validates and queues its signal, then answers; one applier reduces
 // signals in arrival order through the same recorder (the hook-process gate and
@@ -32,9 +26,9 @@ const activityApplyTimeout = 60 * time.Second
 // pool — head-of-line blocks the hooks of every session behind one global
 // lifecycle lock, for as long as the stall lasts.
 type ActivityIngest struct {
-	apply   ActivityRecorder
-	signals chan activityIngestItem
-	log     *slog.Logger
+	recorder ActivityRecorder
+	signals  chan activityIngestItem
+	log      *slog.Logger
 }
 
 type activityIngestItem struct {
@@ -49,9 +43,9 @@ func NewActivityIngest(apply ActivityRecorder, log *slog.Logger) *ActivityIngest
 		log = slog.Default()
 	}
 	return &ActivityIngest{
-		apply:   apply,
-		signals: make(chan activityIngestItem, activityQueueSize),
-		log:     log,
+		recorder: apply,
+		signals:  make(chan activityIngestItem, activityQueueSize),
+		log:      log,
 	}
 }
 
@@ -69,20 +63,35 @@ func (q *ActivityIngest) ApplyActivitySignal(_ context.Context, id domain.Sessio
 }
 
 // Run applies queued signals in arrival order until ctx is done. Applies run
-// detached from the hook request's lifetime — a client that gives up must not
-// abort a half-committed projection — but keep a request-shaped deadline.
+// detached from the hook client's connection lifetime — a client that gives up
+// must not abort a half-committed projection (#259) — under the same generous
+// activityHookBudget the inline projection already lived with, so the window a
+// stalled store has to commit the projection is unchanged. A panic on the
+// apply path (gate, reducer, driver) fails that one signal and is logged, the
+// way a panic inside the HTTP request used to kill only the connection.
 func (q *ActivityIngest) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case item := <-q.signals:
-			applyCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), activityApplyTimeout)
-			if err := q.apply.ApplyActivitySignal(applyCtx, item.id, item.signal); err != nil {
-				q.log.Warn("activity signal apply failed",
-					"session", item.id, "event", item.signal.Event, "err", err)
-			}
-			cancel()
+			q.apply(item)
 		}
+	}
+}
+
+func (q *ActivityIngest) apply(item activityIngestItem) {
+	defer func() {
+		if p := recover(); p != nil {
+			q.log.Warn("activity signal apply panicked",
+				"session", item.id, "event", item.signal.Event,
+				"panic", p, "stack", string(debug.Stack()))
+		}
+	}()
+	applyCtx, cancel := context.WithTimeout(context.Background(), activityHookBudget)
+	defer cancel()
+	if err := q.recorder.ApplyActivitySignal(applyCtx, item.id, item.signal); err != nil {
+		q.log.Warn("activity signal apply failed",
+			"session", item.id, "event", item.signal.Event, "err", err)
 	}
 }
