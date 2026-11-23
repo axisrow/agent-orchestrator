@@ -138,7 +138,6 @@ func TestActivityIngest_ApplyErrorsKeepTheQueueDraining(t *testing.T) {
 type panickingRecorder struct {
 	mu    sync.Mutex
 	calls int
-	next  *countingErrorRecorder
 }
 
 func (r *panickingRecorder) ApplyActivitySignal(context.Context, domain.SessionID, ports.ActivitySignal) error {
