@@ -1822,3 +1822,76 @@ func TestAgentSwitchAndOwnerChangesEmitSessionInvalidationCDC(t *testing.T) {
 		t.Fatalf("owner update events = %+v, want one session_updated", events)
 	}
 }
+
+// Regression (issue #383): the acknowledge timestamp lands in both
+// target_acknowledged_at (NullTime) and updated_at (bare time.Time). A
+// nameless-zone instant — a client offset foreign to the daemon host — is
+// stored as the driver's text form with the zone printed as the numeric
+// offset twice ("... +0700 +0700"), which nothing parses back; every later
+// read of the row died with the beamcraft-433 scan error. Both columns must
+// round-trip regardless of the caller's zone.
+func TestAgentSwitchAcknowledgeNamelessZoneTimestampRoundTrips(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	seedProject(t, s, "switch-ack-zone")
+	session, err := s.CreateSession(ctx, sampleRecord("switch-ack-zone"))
+	if err != nil {
+		t.Fatalf("create AO session: %v", err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	target := domain.AgentNativeSession{
+		ID: "ack-zone-target", AOSessionID: session.ID, Harness: domain.HarnessCodex,
+		NativeSessionID:  "codex-ack-zone",
+		LastGenerationID: "target-generation", CreatedAt: now, LastUsedAt: now,
+	}
+	if _, _, err := s.CreateAgentNativeSession(ctx, target); err != nil {
+		t.Fatalf("create target native session: %v", err)
+	}
+	targetRef := target.ID
+	sw := domain.AgentSwitch{
+		ID: "switch-ack-zone", SessionID: session.ID, IdempotencyKey: "switch-ack-zone",
+		RequestFingerprint: domain.ComputeAgentSwitchRequestFingerprint(session.ID, domain.HarnessCodex, ""),
+		FromHarness:        domain.HarnessClaudeCode,
+		TargetHarness:      domain.HarnessCodex, State: domain.AgentSwitchPreparingHandoff,
+		AgentHandoffStatus: domain.AgentHandoffNotAttempted, SourceGenerationID: "source-generation",
+		RequestedAt: now, UpdatedAt: now,
+	}
+	stored, created, err := s.CreateAgentSwitch(ctx, sw)
+	if err != nil || !created {
+		t.Fatalf("create switch: created=%v err=%v", created, err)
+	}
+	for step, state := range []domain.AgentSwitchState{
+		domain.AgentSwitchStoppingSource,
+		domain.AgentSwitchSourceStopped,
+		domain.AgentSwitchStartingTarget,
+		domain.AgentSwitchTargetReady,
+		domain.AgentSwitchDelivering,
+	} {
+		if state == domain.AgentSwitchStoppingSource {
+			advanceAgentSwitchFixtureWithMutation(ctx, t, s, &stored, state, now.Add(time.Duration(step+1)*time.Second), func(sw *domain.AgentSwitch) {
+				sw.TargetNativeSessionRef = &targetRef
+				sw.TargetStartMode = domain.AgentSwitchTargetStartFresh
+				sw.TargetGenerationID = "target-generation"
+			})
+			continue
+		}
+		advanceAgentSwitchFixture(ctx, t, s, &stored, state, now.Add(time.Duration(step+1)*time.Second))
+	}
+
+	// A +07:00 client offset decoded on an Asia/Shanghai host: the instant is
+	// fixture-relative (the write-once fence compares updated_at), but the
+	// zone is nameless, which is what makes the stored form unparseable.
+	acknowledgedAt := stored.UpdatedAt.Add(time.Minute).In(time.FixedZone("", 7*3600))
+	if ok, err := s.AcknowledgeAgentSwitchTarget(ctx, sw.ID, session.ID, "target-generation", acknowledgedAt); err != nil || !ok {
+		t.Fatalf("target acknowledgement: ok=%v err=%v", ok, err)
+	}
+	got, ok, err := s.GetAgentSwitch(ctx, sw.ID)
+	if err != nil {
+		t.Fatalf("get acknowledged switch: %v", err)
+	} else if !ok {
+		t.Fatal("get acknowledged switch: not found")
+	}
+	if !got.TargetAcknowledgedAt.Equal(acknowledgedAt) || !got.UpdatedAt.Equal(acknowledgedAt) {
+		t.Fatalf("acknowledged timestamps = ack:%v updated:%v, want %v", got.TargetAcknowledgedAt, got.UpdatedAt, acknowledgedAt)
+	}
+}
