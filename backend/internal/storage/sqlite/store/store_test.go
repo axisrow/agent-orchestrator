@@ -2547,3 +2547,38 @@ func TestUpdateSessionDoesNotOverwriteArtifactOutputColumns(t *testing.T) {
 		t.Fatalf("stale UpdateSession clobbered output columns: type=%q dir=%q", got.OutputType, got.Metadata.ArtifactDir)
 	}
 }
+
+// Regression: a hook client running under a non-daemon timezone (review
+// pipeline in a +07:00 container posting to a +08:00 daemon) sends observedAt
+// with that offset; Go decodes it into a nameless fixed zone whose String()
+// form is "2026-11-25 01:00:25.570831 +0700 +0700" — the zone prints as the
+// offset twice. The sqlite driver cannot parse that back, and every read of
+// the row dies with "unsupported Scan, storing driver.Value type string into
+// type *time.Time", which took down beamcraft-433 and the whole projects list
+// on 2026-11-25. Stored timestamps must round-trip regardless of the zone
+// they arrived in.
+func TestSessionTimestampsRoundTripNamelessZone(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	seedProject(t, s, "unnamed-zone")
+	rec := sampleRecord("unnamed-zone")
+	observed := time.Date(2026, 11, 25, 1, 0, 25, 570831000, time.FixedZone("", 7*3600))
+	if got := observed.String(); got != "2026-11-25 01:00:25.570831 +0700 +0700" {
+		t.Fatalf("precondition: String() = %q", got)
+	}
+	rec.Metadata.LatestUserPromptAt = observed
+	rec.Metadata.NativeIdentityObservedAt = observed
+
+	created, err := s.CreateSession(ctx, rec)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if _, ok, err := s.GetSession(ctx, created.ID); err != nil {
+		t.Fatalf("get session: %v", err)
+	} else if !ok {
+		t.Fatal("get session: not found")
+	}
+	if _, err := s.ListSessions(ctx, created.ProjectID); err != nil {
+		t.Fatalf("list sessions: %v", err)
+	}
+}

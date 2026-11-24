@@ -1270,7 +1270,11 @@ func timeToNullTime(t time.Time) sql.NullTime {
 	if t.IsZero() {
 		return sql.NullTime{}
 	}
-	return sql.NullTime{Time: t, Valid: true}
+	// Stored as the driver's text form, so the zone must have a name the
+	// driver can parse back: a nameless fixed zone (a client-supplied offset
+	// the daemon's local zone doesn't share) prints "+0700 +0700" and turns
+	// every later read of the row into a scan error. UTC always round-trips.
+	return sql.NullTime{Time: t.UTC(), Valid: true}
 }
 
 func nullTimeToTimePtr(t sql.NullTime) *time.Time {
@@ -1284,7 +1288,8 @@ func timePtrToNullTime(t *time.Time) sql.NullTime {
 	if t == nil {
 		return sql.NullTime{}
 	}
-	return sql.NullTime{Time: *t, Valid: true}
+	nt := timeToNullTime(*t)
+	return sql.NullTime{Time: nt.Time, Valid: nt.Valid}
 }
 
 func normalActivity(a domain.Activity, fallback time.Time) domain.Activity {
