@@ -98,6 +98,8 @@ type Deps struct {
 	// DoctorGitLabRESTBase lets tests point the doctor GitLab token probe at
 	// httptest without mutating package-global state.
 	DoctorGitLabRESTBase string
+	// OpenAIRESTBase lets tests point the Codex API key check at httptest.
+	OpenAIRESTBase string
 	Now                  func() time.Time
 	Sleep                func(time.Duration)
 }
@@ -119,6 +121,7 @@ func DefaultDeps() Deps {
 		ReadSecret:            readSecret,
 		DoctorGitHubRESTBase:  defaultDoctorGitHubRESTBase,
 		DoctorGitLabRESTBase:  defaultDoctorGitLabRESTBase,
+		OpenAIRESTBase:        defaultOpenAIRESTBase,
 		Now:                   time.Now,
 		Sleep:                 time.Sleep,
 	}
@@ -177,6 +180,9 @@ func (d Deps) withDefaults() Deps {
 	}
 	if d.DoctorGitLabRESTBase == "" {
 		d.DoctorGitLabRESTBase = def.DoctorGitLabRESTBase
+	}
+	if d.OpenAIRESTBase == "" {
+		d.OpenAIRESTBase = def.OpenAIRESTBase
 	}
 	if d.Now == nil {
 		d.Now = def.Now
