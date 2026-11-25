@@ -2740,9 +2740,10 @@ func scanGraphQLSelectionDepth(t *testing.T, doc string) []int {
 	for i := 0; i < len(doc); i++ {
 		c := doc[i]
 		if inString {
-			if c == '\\' {
+			switch c {
+			case '\\':
 				i++
-			} else if c == '"' {
+			case '"':
 				inString = false
 			}
 			continue
