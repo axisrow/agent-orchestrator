@@ -100,8 +100,8 @@ type Deps struct {
 	DoctorGitLabRESTBase string
 	// OpenAIRESTBase lets tests point the Codex API key check at httptest.
 	OpenAIRESTBase string
-	Now                  func() time.Time
-	Sleep                func(time.Duration)
+	Now            func() time.Time
+	Sleep          func(time.Duration)
 }
 
 // DefaultDeps returns production dependencies.
