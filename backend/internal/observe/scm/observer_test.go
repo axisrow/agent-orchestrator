@@ -4031,7 +4031,7 @@ func (p *batchFakeProvider) FetchReviewThreadsBatch(_ context.Context, refs []po
 
 // newBatchTestObserver builds an observer around a batch-capable provider.
 func newBatchTestObserver(store *fakeStore, provider *batchFakeProvider, now time.Time) *Observer {
-	provider.fakeProvider.identity = ports.SCMIdentity{Login: "alice", Human: true}
+	provider.identity = ports.SCMIdentity{Login: "alice", Human: true}
 	return New(provider, store, &fakeLifecycle{}, Config{Clock: func() time.Time { return now }, Tick: time.Hour, Logger: quietSlog(), CacheMax: 128, ScopedIdentityResolver: provider})
 }
 
@@ -4072,8 +4072,8 @@ func TestPoll_ReviewRefreshBatchesAcrossPRs(t *testing.T) {
 	if provider.batchCalls != 1 {
 		t.Fatalf("batch calls = %d, want 1", provider.batchCalls)
 	}
-	if provider.fakeProvider.reviewCalls != 0 {
-		t.Fatalf("per-ref review calls = %d, want 0 when batching", provider.fakeProvider.reviewCalls)
+	if provider.reviewCalls != 0 {
+		t.Fatalf("per-ref review calls = %d, want 0 when batching", provider.reviewCalls)
 	}
 	if len(provider.batchRefs) != 1 || len(provider.batchRefs[0]) != 2 {
 		t.Fatalf("batch refs = %#v, want one chunk of 2", provider.batchRefs)
@@ -4111,8 +4111,8 @@ func TestPoll_ReviewBatchFailureIsPerRef(t *testing.T) {
 	if !persisted2 {
 		t.Fatalf("healthy ref's review not persisted: %#v", store.writes)
 	}
-	if provider.fakeProvider.reviewCalls != 0 {
-		t.Fatalf("failed batch ref must not fall back to per-ref calls within the same poll, got %d", provider.fakeProvider.reviewCalls)
+	if provider.reviewCalls != 0 {
+		t.Fatalf("failed batch ref must not fall back to per-ref calls within the same poll, got %d", provider.reviewCalls)
 	}
 }
 
