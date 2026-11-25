@@ -99,6 +99,15 @@ type Provider interface {
 	FetchReviewThreads(ctx context.Context, ref ports.SCMPRRef) (ports.SCMReviewObservation, error)
 }
 
+// ReviewThreadsBatcher is the optional provider capability of fetching review
+// facts for several PRs in one round trip. Providers without it keep the
+// per-ref FetchReviewThreads path. Results are positionally aligned with
+// refs; a failed ref carries its error in SCMReviewObservation.Error, so a
+// batch never fails wholesale on one bad ref.
+type ReviewThreadsBatcher interface {
+	FetchReviewThreadsBatch(ctx context.Context, refs []ports.SCMPRRef) ([]ports.SCMReviewObservation, error)
+}
+
 // Store is the persistence contract the observer needs for discovery, local
 // hash reads, and transactional SCM writes.
 type Store interface {
@@ -1981,6 +1990,16 @@ func applyStoredFailedLogTails(obs *ports.SCMObservation, checks []domain.PullRe
 }
 
 func (o *Observer) refreshReviews(ctx context.Context, subjects map[string]*subject, observations map[string]ports.SCMObservation, subjectsByPR map[string]*subject, reviewModes map[string]ports.ReviewWriteMode, localOnlyObservations, reviewStale map[string]bool, now time.Time) {
+	// Phase 1 — decide which open PRs need a review refresh. Fetching is
+	// deferred to phase 2 so batch-capable providers can carry the whole set
+	// in one round trip instead of one request per PR.
+	type pendingReview struct {
+		pkey   string
+		s      *subject
+		obs    ports.SCMObservation
+		hasObs bool
+	}
+	var pending []pendingReview
 	for _, s := range subjects {
 		if !s.hasPR || s.known.Number <= 0 {
 			continue
@@ -1998,28 +2017,39 @@ func (o *Observer) refreshReviews(ctx context.Context, subjects map[string]*subj
 		if !o.needsReviewRefresh(pkey, s.known, decision, hasObs, updatedAtProvider, now) {
 			continue
 		}
-		started := time.Now()
-		review, err := o.provider.FetchReviewThreads(ctx, ports.SCMPRRef{Repo: s.repo, Number: s.known.Number, URL: s.known.URL})
-		o.logProviderRequest("fetch_review_threads", repoFullName(s.repo), started, err)
-		if err != nil {
-			o.logger.Error("scm observer: review refresh failed", "pr", s.known.URL, "err", err)
-			o.cacheSetBool(o.Cache.ReviewRefreshFailed, &o.Cache.reviewFailedOrder, pkey, true)
-			if hasObs {
-				obs.Review.Decision = string(s.known.Review)
+		pending = append(pending, pendingReview{pkey: pkey, s: s, obs: obs, hasObs: hasObs})
+	}
+	if len(pending) == 0 {
+		return
+	}
+	refs := make([]ports.SCMPRRef, len(pending))
+	for i, p := range pending {
+		refs[i] = ports.SCMPRRef{Repo: p.s.repo, Number: p.s.known.Number, URL: p.s.known.URL}
+	}
+	results := o.fetchReviewObservations(ctx, refs)
+	for i, p := range pending {
+		review := results[i]
+		if review.Error != nil {
+			o.logger.Error("scm observer: review refresh failed", "pr", p.s.known.URL, "err", review.Error)
+			o.cacheSetBool(o.Cache.ReviewRefreshFailed, &o.Cache.reviewFailedOrder, p.pkey, true)
+			if p.hasObs {
+				obs := p.obs
+				obs.Review.Decision = string(p.s.known.Review)
 				obs.Review.Threads = nil
-				observations[pkey] = obs
-				subjectsByPR[pkey] = s
-				reviewStale[pkey] = true
+				observations[p.pkey] = obs
+				subjectsByPR[p.pkey] = p.s
+				reviewStale[p.pkey] = true
 			}
 			continue
 		}
-		if !hasObs {
-			checks, err := o.store.ListChecks(ctx, s.known.URL)
+		obs := p.obs
+		if !p.hasObs {
+			checks, err := o.store.ListChecks(ctx, p.s.known.URL)
 			if err != nil {
-				o.logger.Error("scm observer: list local checks for review-only refresh failed", "pr", s.known.URL, "err", err)
+				o.logger.Error("scm observer: list local checks for review-only refresh failed", "pr", p.s.known.URL, "err", err)
 			}
-			obs = observationFromLocal(s.repo, s.known, checks)
-			localOnlyObservations[pkey] = true
+			obs = observationFromLocal(p.s.repo, p.s.known, checks)
+			localOnlyObservations[p.pkey] = true
 		}
 		// Precedence guard: don't let FetchReviewThreads downgrade a higher-
 		// priority decision that was set by the fast-path. Only overwrite when
@@ -2032,15 +2062,62 @@ func (o *Observer) refreshReviews(ctx context.Context, subjects map[string]*subj
 		obs.Review.Threads = review.Threads
 		obs.Review.Partial = review.Partial
 		obs.ObservedAt = now
-		observations[pkey] = obs
-		subjectsByPR[pkey] = s
+		observations[p.pkey] = obs
+		subjectsByPR[p.pkey] = p.s
 		if review.Partial {
-			reviewModes[pkey] = ports.ReviewWriteMerge
+			reviewModes[p.pkey] = ports.ReviewWriteMerge
 		} else {
-			reviewModes[pkey] = ports.ReviewWriteReplace
+			reviewModes[p.pkey] = ports.ReviewWriteReplace
 		}
-		cacheDelete(o.Cache.ReviewRefreshFailed, &o.Cache.reviewFailedOrder, pkey)
+		cacheDelete(o.Cache.ReviewRefreshFailed, &o.Cache.reviewFailedOrder, p.pkey)
 	}
+}
+
+// fetchReviewObservations fetches review facts for refs, batching through
+// providers that implement ReviewThreadsBatcher and falling back to per-ref
+// calls otherwise. Results are aligned with refs; a failed ref carries its
+// error in SCMReviewObservation.Error.
+func (o *Observer) fetchReviewObservations(ctx context.Context, refs []ports.SCMPRRef) []ports.SCMReviewObservation {
+	out := make([]ports.SCMReviewObservation, len(refs))
+	if batcher, ok := o.provider.(ReviewThreadsBatcher); ok {
+		for start := 0; start < len(refs); start += BatchSize {
+			end := min(start+BatchSize, len(refs))
+			started := time.Now()
+			batch, err := batcher.FetchReviewThreadsBatch(ctx, refs[start:end])
+			o.logProviderRequest("fetch_review_threads_batch", repoNames(refs[start:end]), started, err)
+			if err != nil {
+				for i := start; i < end; i++ {
+					out[i] = ports.SCMReviewObservation{Error: err}
+				}
+				continue
+			}
+			if len(batch) != end-start {
+				// Positional alignment is the batch contract; a short answer
+				// cannot be attributed to refs, so fail the whole chunk closed.
+				for i := start; i < end; i++ {
+					if i-start >= len(batch) {
+						out[i] = ports.SCMReviewObservation{Error: fmt.Errorf("review batch returned %d of %d results", len(batch), end-start)}
+					} else {
+						out[i] = batch[i-start]
+					}
+				}
+				continue
+			}
+			copy(out[start:end], batch)
+		}
+		return out
+	}
+	for i, ref := range refs {
+		started := time.Now()
+		review, err := o.provider.FetchReviewThreads(ctx, ref)
+		o.logProviderRequest("fetch_review_threads", repoFullName(ref.Repo), started, err)
+		if err != nil {
+			out[i] = ports.SCMReviewObservation{Error: err}
+			continue
+		}
+		out[i] = review
+	}
+	return out
 }
 
 // reviewDecisionPriority returns a numeric priority for a review decision.

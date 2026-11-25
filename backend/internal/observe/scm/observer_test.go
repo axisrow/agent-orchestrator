@@ -3999,3 +3999,149 @@ func TestMergeabilityObservationFromLocalKeepsDerivedBlockers(t *testing.T) {
 		t.Fatalf("state = %q mergeable=%v, want stored mergeable=true", got.State, got.Mergeable)
 	}
 }
+
+// batchFakeProvider adds the ReviewThreadsBatcher capability to fakeProvider
+// so tests can exercise the batched review-refresh path.
+type batchFakeProvider struct {
+	*fakeProvider
+	batchCalls int
+	batchRefs  [][]ports.SCMPRRef
+	batchErr   error
+	refErrors  map[string]error
+}
+
+func (p *batchFakeProvider) FetchReviewThreadsBatch(_ context.Context, refs []ports.SCMPRRef) ([]ports.SCMReviewObservation, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.batchCalls++
+	p.batchRefs = append(p.batchRefs, append([]ports.SCMPRRef(nil), refs...))
+	if p.batchErr != nil {
+		return nil, p.batchErr
+	}
+	out := make([]ports.SCMReviewObservation, len(refs))
+	for i, ref := range refs {
+		if err, ok := p.refErrors[prKey(ref.Repo, ref.Number)]; ok {
+			out[i] = ports.SCMReviewObservation{Error: err}
+			continue
+		}
+		out[i] = p.reviews[prKey(ref.Repo, ref.Number)]
+	}
+	return out, nil
+}
+
+// newBatchTestObserver builds an observer around a batch-capable provider.
+func newBatchTestObserver(store *fakeStore, provider *batchFakeProvider, now time.Time) *Observer {
+	provider.fakeProvider.identity = ports.SCMIdentity{Login: "alice", Human: true}
+	return New(provider, store, &fakeLifecycle{}, Config{Clock: func() time.Time { return now }, Tick: time.Hour, Logger: quietSlog(), CacheMax: 128, ScopedIdentityResolver: provider})
+}
+
+// batchReviewTestSetup wires a session tracking two PRs whose reviews both
+// need a refresh.
+func batchReviewTestSetup(t *testing.T) (*fakeStore, *batchFakeProvider, *Observer) {
+	t.Helper()
+	store := testStoreWithSession()
+	local1 := knownPR(1)
+	local1.ReviewHash = "old"
+	local1.Review = domain.ReviewChangesRequest
+	local2 := knownPR(2)
+	local2.ReviewHash = "old"
+	local2.Review = domain.ReviewChangesRequest
+	store.prs["p-1"] = []domain.PullRequest{local1, local2}
+	review := ports.SCMReviewObservation{
+		Decision: string(domain.ReviewChangesRequest),
+		Threads:  []ports.SCMReviewThreadObservation{{ID: "t-batch", Path: "f.go", Line: 1, Comments: []ports.SCMReviewCommentObservation{{ID: "c1", Body: "fix"}}}},
+	}
+	inner := &fakeProvider{
+		repoGuards:   map[string]ports.SCMGuardResult{prKey(testRepo, 0): {ETag: "repo", NotModified: true}},
+		observations: map[string]ports.SCMObservation{},
+		reviews:      map[string]ports.SCMReviewObservation{prKey(testRepo, 1): review, prKey(testRepo, 2): review},
+	}
+	provider := &batchFakeProvider{fakeProvider: inner}
+	obs := newBatchTestObserver(store, provider, time.Unix(200, 0).UTC())
+	obs.Cache.RepoPRListETag[prKey(testRepo, 0)] = "repo"
+	return store, provider, obs
+}
+
+// Two tracked PRs needing a review refresh must ride one batch call — the
+// per-ref path would have burned one request per PR.
+func TestPoll_ReviewRefreshBatchesAcrossPRs(t *testing.T) {
+	store, provider, obs := batchReviewTestSetup(t)
+	if err := obs.Poll(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if provider.batchCalls != 1 {
+		t.Fatalf("batch calls = %d, want 1", provider.batchCalls)
+	}
+	if provider.fakeProvider.reviewCalls != 0 {
+		t.Fatalf("per-ref review calls = %d, want 0 when batching", provider.fakeProvider.reviewCalls)
+	}
+	if len(provider.batchRefs) != 1 || len(provider.batchRefs[0]) != 2 {
+		t.Fatalf("batch refs = %#v, want one chunk of 2", provider.batchRefs)
+	}
+	persisted := 0
+	for _, w := range store.writes {
+		if len(w.threads) == 1 && w.threads[0].ThreadID == "t-batch" {
+			persisted++
+		}
+	}
+	if persisted != 2 {
+		t.Fatalf("batched reviews persisted for %d PRs, want 2: %#v", persisted, store.writes)
+	}
+}
+
+// A ref that failed inside the batch must not cost the other refs their
+// review refresh: the failed one is marked failed, the healthy one persists.
+func TestPoll_ReviewBatchFailureIsPerRef(t *testing.T) {
+	store, provider, obs := batchReviewTestSetup(t)
+	provider.refErrors = map[string]error{prKey(testRepo, 1): errors.New("boom")}
+	if err := obs.Poll(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !obs.Cache.ReviewRefreshFailed[prKey(testRepo, 1)] {
+		t.Fatalf("failed ref not marked ReviewRefreshFailed")
+	}
+	persisted2 := false
+	for _, w := range store.writes {
+		for _, th := range w.threads {
+			if th.ThreadID == "t-batch" {
+				persisted2 = true
+			}
+		}
+	}
+	if !persisted2 {
+		t.Fatalf("healthy ref's review not persisted: %#v", store.writes)
+	}
+	if provider.fakeProvider.reviewCalls != 0 {
+		t.Fatalf("failed batch ref must not fall back to per-ref calls within the same poll, got %d", provider.fakeProvider.reviewCalls)
+	}
+}
+
+// A provider without the batch capability keeps the per-ref path and the
+// same persistence semantics as before.
+func TestPoll_ReviewRefreshWithoutBatchCapabilityFallsBackPerRef(t *testing.T) {
+	store := testStoreWithSession()
+	local1 := knownPR(1)
+	local1.ReviewHash = "old"
+	local1.Review = domain.ReviewChangesRequest
+	local2 := knownPR(2)
+	local2.ReviewHash = "old"
+	local2.Review = domain.ReviewChangesRequest
+	store.prs["p-1"] = []domain.PullRequest{local1, local2}
+	review := ports.SCMReviewObservation{Decision: string(domain.ReviewChangesRequest)}
+	provider := &fakeProvider{
+		repoGuards:   map[string]ports.SCMGuardResult{prKey(testRepo, 0): {ETag: "repo", NotModified: true}},
+		observations: map[string]ports.SCMObservation{},
+		reviews:      map[string]ports.SCMReviewObservation{prKey(testRepo, 1): review, prKey(testRepo, 2): review},
+	}
+	obs := newTestObserver(store, provider, &fakeLifecycle{}, time.Unix(200, 0).UTC())
+	obs.Cache.RepoPRListETag[prKey(testRepo, 0)] = "repo"
+	if err := obs.Poll(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if provider.reviewCalls != 2 {
+		t.Fatalf("per-ref review calls = %d, want 2 without the batch capability", provider.reviewCalls)
+	}
+	if len(store.writes) == 0 {
+		t.Fatalf("per-ref review refresh not persisted")
+	}
+}

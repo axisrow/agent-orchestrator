@@ -334,6 +334,59 @@ func (p *Provider) FetchReviewThreads(ctx context.Context, ref ports.SCMPRRef) (
 	if err != nil {
 		return ports.SCMReviewObservation{}, err
 	}
+	return p.completeReviewWindow(ctx, ref, latest, reviews, decision, pi)
+}
+
+// reviewThreadsBatchLimit caps one batched review-thread query, matching the
+// alias count the PR-facts batch query carries.
+const reviewThreadsBatchLimit = 25
+
+// FetchReviewThreadsBatch fetches review facts for up to 25 PR refs in one
+// GraphQL request, positionally aligned with refs. A ref whose PR is missing
+// from the response — or whose rare older-window pagination failed — carries
+// its error in SCMReviewObservation.Error instead of failing the whole batch,
+// so one deleted PR can no longer cost every other ref its review refresh
+// (the per-ref failure mode before batching).
+func (p *Provider) FetchReviewThreadsBatch(ctx context.Context, refs []ports.SCMPRRef) ([]ports.SCMReviewObservation, error) {
+	if len(refs) == 0 {
+		return nil, nil
+	}
+	if len(refs) > reviewThreadsBatchLimit {
+		return nil, fmt.Errorf("github scm: batch size %d exceeds %d", len(refs), reviewThreadsBatchLimit)
+	}
+	query, aliases := buildReviewThreadsBatchQuery(refs)
+	data, err := p.client.doGraphQL(ctx, query, nil)
+	if err != nil && data == nil {
+		return nil, err
+	}
+	out := make([]ports.SCMReviewObservation, len(refs))
+	for i, ref := range refs {
+		repoData, _ := data[aliases[i]].(map[string]any)
+		pr, _ := repoData["pullRequest"].(map[string]any)
+		if pr == nil {
+			if err != nil {
+				out[i].Error = err
+			} else {
+				out[i].Error = fmt.Errorf("%w: pull request %s#%d not in review batch response", ErrNotFound, repoFullName(ref.Repo), ref.Number)
+			}
+			continue
+		}
+		threads, reviews, decision, pi := parseReviewThreadNode(pr)
+		obs, pageErr := p.completeReviewWindow(ctx, ref, threads, reviews, decision, pi)
+		if pageErr != nil {
+			out[i].Error = pageErr
+			continue
+		}
+		out[i] = obs
+	}
+	return out, nil
+}
+
+// completeReviewWindow adopts the latest review window and, when the window
+// boundary is an unresolved thread, fetches one older page so active review
+// feedback is not hidden behind the 50-thread cost cap. Shared by the
+// single-ref and batched fetch paths.
+func (p *Provider) completeReviewWindow(ctx context.Context, ref ports.SCMPRRef, latest []ports.SCMReviewThreadObservation, reviews []ports.SCMReviewSummaryObservation, decision string, pi map[string]any) (ports.SCMReviewObservation, error) {
 	if !boolv(pi["hasPreviousPage"]) {
 		return ports.SCMReviewObservation{Decision: decision, Reviews: reviews, Threads: latest}, nil
 	}
@@ -834,6 +887,14 @@ func (p *Provider) fetchReviewThreadPage(ctx context.Context, ref ports.SCMPRRef
 	if pr == nil {
 		return nil, nil, "", nil, fmt.Errorf("%w: pull request not found in review response", ErrNotFound)
 	}
+	threads, reviews, decision, pi := parseReviewThreadNode(pr)
+	return threads, reviews, decision, pi, nil
+}
+
+// parseReviewThreadNode reads one pullRequest node's review facts: the
+// thread list, submitted review summaries, the decision, and the thread
+// pagination info. Shared by the single-ref and batched fetch paths.
+func parseReviewThreadNode(pr map[string]any) ([]ports.SCMReviewThreadObservation, []ports.SCMReviewSummaryObservation, string, map[string]any) {
 	decision := string(reviewDecisionFromGraphQL(pr))
 	reviewSummaries, _ := pr["reviewSummaries"].(map[string]any)
 	reviews := make([]ports.SCMReviewSummaryObservation, 0, len(nodes(reviewSummaries["nodes"])))
@@ -850,7 +911,7 @@ func (p *Provider) fetchReviewThreadPage(ctx context.Context, ref ports.SCMPRRef
 		out = append(out, scmThreadFromGraphQL(th))
 	}
 	pi, _ := threads["pageInfo"].(map[string]any)
-	return out, reviews, decision, pi, nil
+	return out, reviews, decision, pi
 }
 
 func buildReviewThreadsQuery(ref ports.SCMPRRef, beforeCursor string, includeReviews bool) string {
@@ -868,6 +929,26 @@ repo: repository(owner:%s,name:%s){ pullRequest(number:%d){ reviewDecision%s rev
   comments(first:%d){ nodes{ id body url pullRequestReview{ databaseId } author{ login __typename } } }
 } pageInfo{ hasPreviousPage startCursor } } } }
 }`, graphQLString(ref.Repo.Owner), graphQLString(ref.Repo.Name), ref.Number, reviewSelection, githubReviewThreadPageSize, before, githubReviewCommentLimitPerThread)
+}
+
+// buildReviewThreadsBatchQuery builds one query carrying every ref's review
+// facts under an alias, positionally aligned with refs — the same alias
+// pattern as the PR-facts batch query.
+func buildReviewThreadsBatchQuery(refs []ports.SCMPRRef) (string, []string) {
+	aliases := make([]string, len(refs))
+	var b strings.Builder
+	b.WriteString("query{\n")
+	for i, ref := range refs {
+		alias := fmt.Sprintf("pr%d", i)
+		aliases[i] = alias
+		_, _ = fmt.Fprintf(&b, "%s: repository(owner:%s,name:%s){ pullRequest(number:%d){ reviewDecision reviewSummaries: reviews(last:%d, states:[APPROVED,CHANGES_REQUESTED,COMMENTED]){ nodes{ id state url submittedAt body commit{ oid } author{ login __typename } } } reviewThreads(last:%d){ nodes{"+
+			" id isResolved path line"+
+			" comments(first:%d){ nodes{ id body url pullRequestReview{ databaseId } author{ login __typename } } }"+
+			" pageInfo{ hasPreviousPage startCursor } } } }\n",
+			alias, graphQLString(ref.Repo.Owner), graphQLString(ref.Repo.Name), ref.Number, githubReviewSummaryLimit, githubReviewThreadPageSize, githubReviewCommentLimitPerThread)
+	}
+	b.WriteString("}")
+	return b.String(), aliases
 }
 
 func scmReviewSummaryFromGraphQL(review map[string]any) ports.SCMReviewSummaryObservation {
