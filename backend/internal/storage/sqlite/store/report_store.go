@@ -26,7 +26,7 @@ func (s *Store) CreateReport(ctx context.Context, rec domain.ReportRecord) (doma
 			ID: rec.ID, SessionID: string(rec.SessionID), ProjectID: string(rec.ProjectID),
 			State: string(rec.State), Note: rec.Note, Message: rec.Message,
 			CreatedAt: rec.CreatedAt, AvailableAt: rec.AvailableAt,
-			SettlementDeadline: nullTime(rec.SettlementDeadline), RepeatCount: rec.RepeatCount,
+			SettlementDeadline: timeToNullTime(rec.SettlementDeadline), RepeatCount: rec.RepeatCount,
 		})
 		if err != nil {
 			return err
@@ -121,7 +121,7 @@ func (s *Store) ClaimPendingReportBatch(ctx context.Context, projectID domain.Pr
 		}
 		rows, err = q.ClaimPendingReportsByBatch(ctx, gen.ClaimPendingReportsByBatchParams{
 			ProjectID: string(projectID), DeliveryBatchID: batchID,
-			ClaimToken: token, ClaimedAt: nullTime(at),
+			ClaimToken: token, ClaimedAt: timeToNullTime(at),
 		})
 		if err != nil {
 			return err
@@ -161,7 +161,7 @@ func (s *Store) AcknowledgeReportBatch(ctx context.Context, projectID domain.Pro
 	rows, err := s.runDeliveryBatchTransition(ctx, "acknowledge project report batch", at,
 		func(q *gen.Queries) ([]gen.Delivery, error) {
 			return q.AcknowledgeReportBatch(ctx, gen.AcknowledgeReportBatchParams{
-				ProjectID: string(projectID), ClaimToken: token, AcknowledgedAt: nullTime(at),
+				ProjectID: string(projectID), ClaimToken: token, AcknowledgedAt: timeToNullTime(at),
 			})
 		},
 		string(domain.ReportClaimed), string(domain.ReportAcknowledged), domain.DeliveryEventAcknowledged, "")

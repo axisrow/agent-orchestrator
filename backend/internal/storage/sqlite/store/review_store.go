@@ -320,7 +320,7 @@ func (s *Store) MarkReviewRunDelivered(ctx context.Context, id string, delivered
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 	n, err := s.qw.MarkReviewRunDelivered(ctx, gen.MarkReviewRunDeliveredParams{
-		DeliveredAt: sql.NullTime{Time: deliveredAt, Valid: true},
+		DeliveredAt: timeToNullTime(deliveredAt),
 		ID:          id,
 	})
 	if err != nil {

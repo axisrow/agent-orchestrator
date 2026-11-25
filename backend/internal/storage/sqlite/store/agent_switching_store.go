@@ -547,7 +547,7 @@ func (s *Store) AcknowledgeAgentSwitchTarget(ctx context.Context, id domain.Agen
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 	n, err := s.qw.AcknowledgeAgentSwitchTarget(ctx, gen.AcknowledgeAgentSwitchTargetParams{
-		TargetAcknowledgedAt: sql.NullTime{Time: acknowledgedAt, Valid: true},
+		TargetAcknowledgedAt: timeToNullTime(acknowledgedAt),
 		UpdatedAt:            acknowledgedAt, ID: id, SessionID: sessionID,
 		TargetGenerationID: targetGenerationID,
 	})
@@ -994,7 +994,7 @@ func agentSwitchToInsert(rec domain.AgentSwitch) gen.InsertAgentSwitchParams {
 		SourceGenerationID:      rec.SourceGenerationID,
 		TargetGenerationID:      rec.TargetGenerationID,
 		TargetRuntimeHandleID:   rec.TargetRuntimeHandleID,
-		TargetAcknowledgedAt:    timePtrToNull(rec.TargetAcknowledgedAt),
+		TargetAcknowledgedAt:    timePtrToNullTime(rec.TargetAcknowledgedAt),
 		ErrorCode:               string(rec.ErrorCode),
 		FailurePoint:            string(rec.FailurePoint),
 		RequestedAt:             rec.RequestedAt, UpdatedAt: rec.UpdatedAt,
@@ -1051,13 +1051,6 @@ func cloneNativeSessionID(id *domain.AgentNativeSessionID) *domain.AgentNativeSe
 	}
 	copyID := *id
 	return &copyID
-}
-
-func timePtrToNull(value *time.Time) sql.NullTime {
-	if value == nil || value.IsZero() {
-		return sql.NullTime{}
-	}
-	return sql.NullTime{Time: *value, Valid: true}
 }
 
 func nullTimeToPtr(value sql.NullTime) *time.Time {

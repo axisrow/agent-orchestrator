@@ -367,7 +367,7 @@ func (s *Store) MarkHarnessSessionsStale(ctx context.Context, harness domain.Age
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 	rows, err := s.qw.MarkHarnessSessionsStale(ctx, gen.MarkHarnessSessionsStaleParams{
-		Since: sql.NullTime{Time: at, Valid: true}, Version: version, Harness: harness,
+		Since: timeToNullTime(at), Version: version, Harness: harness,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("mark %s sessions stale: %w", harness, err)
@@ -381,7 +381,7 @@ func (s *Store) SetSessionVersionSwitchFailed(ctx context.Context, id domain.Ses
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 	if _, err := s.qw.SetSessionVersionSwitchFailed(ctx, gen.SetSessionVersionSwitchFailedParams{
-		FailedAt: sql.NullTime{Time: at, Valid: true}, Version: version, ID: id,
+		FailedAt: timeToNullTime(at), Version: version, ID: id,
 	}); err != nil {
 		return fmt.Errorf("record version switch failure for %s: %w", id, err)
 	}
@@ -1270,7 +1270,11 @@ func timeToNullTime(t time.Time) sql.NullTime {
 	if t.IsZero() {
 		return sql.NullTime{}
 	}
-	return sql.NullTime{Time: t, Valid: true}
+	// Stored as the driver's text form, so the zone must have a name the
+	// driver can parse back: a nameless fixed zone (a client-supplied offset
+	// the daemon's local zone doesn't share) prints "+0700 +0700" and turns
+	// every later read of the row into a scan error. UTC always round-trips.
+	return sql.NullTime{Time: t.UTC(), Valid: true}
 }
 
 func nullTimeToTimePtr(t sql.NullTime) *time.Time {
@@ -1284,7 +1288,7 @@ func timePtrToNullTime(t *time.Time) sql.NullTime {
 	if t == nil {
 		return sql.NullTime{}
 	}
-	return sql.NullTime{Time: *t, Valid: true}
+	return timeToNullTime(*t)
 }
 
 func normalActivity(a domain.Activity, fallback time.Time) domain.Activity {
