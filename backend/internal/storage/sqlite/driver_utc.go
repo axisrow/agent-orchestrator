@@ -57,13 +57,13 @@ func (c sqliteUTCConn) Prepare(query string) (driver.Stmt, error) {
 
 func (c sqliteUTCConn) Close() error { return c.Conn.Close() }
 
-func (c sqliteUTCConn) Begin() (driver.Tx, error) { return c.Conn.Begin() }
+func (c sqliteUTCConn) Begin() (driver.Tx, error) { return c.Conn.Begin() } //nolint:staticcheck // legacy method required by the driver.Conn interface; database/sql prefers BeginTx below
 
 func (c sqliteUTCConn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, error) {
 	if bt, ok := c.Conn.(driver.ConnBeginTx); ok {
 		return bt.BeginTx(ctx, opts)
 	}
-	return c.Conn.Begin()
+	return c.Conn.Begin() //nolint:staticcheck // fallback only reached when the wrapped conn lacks ConnBeginTx
 }
 
 func (c sqliteUTCConn) PrepareContext(ctx context.Context, query string) (driver.Stmt, error) {
@@ -93,12 +93,12 @@ func (s sqliteUTCStmt) NumInput() int { return s.Stmt.NumInput() }
 
 func (s sqliteUTCStmt) Exec(args []driver.Value) (driver.Result, error) {
 	utcValues(args)
-	return s.Stmt.Exec(args)
+	return s.Stmt.Exec(args) //nolint:staticcheck // legacy method required by the driver.Stmt interface; database/sql prefers StmtExecContext
 }
 
 func (s sqliteUTCStmt) Query(args []driver.Value) (driver.Rows, error) {
 	utcValues(args)
-	return s.Stmt.Query(args)
+	return s.Stmt.Query(args) //nolint:staticcheck // legacy method required by the driver.Stmt interface; database/sql prefers StmtQueryContext
 }
 
 // CheckNamedValue converts each arg through the default converter (which
