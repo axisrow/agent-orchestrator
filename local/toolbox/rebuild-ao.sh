@@ -200,12 +200,16 @@ fi
 #    Gatekeeper/provenance больше не обходится — бандл переподписан в staging
 #    выше, карантин-атрибут на локальной сборке не ставится.
 echo "==> запуск GUI через launchd (open -a, чистый env по белому списку)..."
+# TZ явным значением: с 2026-10-31 системная зона машины = Asia/Bangkok (+07),
+# а владелец и демон — GMT+8; без TZ демону достаётся +07 и автомации уезжают
+# на час (см. память ao-sqlite-nameless-zone-timestamp-poisoning, пересборка 2026-11-25).
 env -i HOME="$HOME" \
     USER="$(id -un)" LOGNAME="$(id -un)" \
     TMPDIR="${TMPDIR:-/tmp}" \
     SHELL="${SHELL:-/bin/zsh}" \
     PATH="/Users/axisrow/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
     AO_RIGHT_PANEL="${AO_RIGHT_PANEL:-expanded}" \
+    TZ=Asia/Shanghai \
     open -a "$APP_DST"
 
 # 6. Post-check: ждём демон ready +全套 проверок (PID сменился, порт тот же, healthz).
