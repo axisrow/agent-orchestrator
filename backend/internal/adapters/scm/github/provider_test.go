@@ -2725,3 +2725,75 @@ func TestFetchReviewThreadsBatchRejectsOversizedBatches(t *testing.T) {
 		t.Fatal("oversized batch accepted")
 	}
 }
+
+// scanGraphQLSelectionDepth lexes a GraphQL document (strings skipped) and
+// returns the brace depth after each line. A per-ref batch line must hand the
+// document back at depth 1 — exactly inside query's selection set — so an
+// unbalanced ref line cannot leave repository open, nest the next alias
+// inside it, and strand the parser inside query at EOF (the "Expected NAME,
+// actual: (none)" batch regression).
+func scanGraphQLSelectionDepth(t *testing.T, doc string) []int {
+	t.Helper()
+	var depths []int
+	depth := 0
+	inString := false
+	for i := 0; i < len(doc); i++ {
+		c := doc[i]
+		if inString {
+			if c == '\\' {
+				i++
+			} else if c == '"' {
+				inString = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inString = true
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth < 0 {
+				t.Fatalf("document closes a selection set that was never opened at byte %d:\n%s", i, doc)
+			}
+		}
+		if c == '\n' || i == len(doc)-1 {
+			depths = append(depths, depth)
+		}
+	}
+	return depths
+}
+
+func TestBuildReviewThreadsBatchQueryDocumentIsValid(t *testing.T) {
+	repo := ports.SCMRepo{Provider: "github", Host: "github.com", Owner: "o", Name: "r", Repo: "o/r"}
+	for _, n := range []int{0, 1, 2, 25} {
+		refs := make([]ports.SCMPRRef, n)
+		for i := range refs {
+			refs[i] = ports.SCMPRRef{Repo: repo, Number: i + 1}
+		}
+		query, aliases := buildReviewThreadsBatchQuery(refs)
+		if len(aliases) != n {
+			t.Fatalf("%d refs: aliases = %d, want %d", n, len(aliases), n)
+		}
+		for i, alias := range aliases {
+			if alias != fmt.Sprintf("pr%d", i) || !strings.Contains(query, alias+": repository(owner:") {
+				t.Fatalf("%d refs: alias %d = %q missing from document:\n%s", n, i, alias, query)
+			}
+		}
+		depths := scanGraphQLSelectionDepth(t, query)
+		if len(depths) != n+2 {
+			t.Fatalf("%d refs: document has %d lines, want %d (query{, refs, }):\n%s", n, len(depths), n+2, query)
+		}
+		// Each ref line must leave the document exactly inside query's
+		// selection set; the document must end fully closed.
+		for line := 1; line <= n; line++ {
+			if d := depths[line]; d != 1 {
+				t.Fatalf("%d refs: depth after ref line %d = %d, want 1 (query's selection set):\n%s", n, line+1, d, query)
+			}
+		}
+		if got := depths[len(depths)-1]; got != 0 {
+			t.Fatalf("%d refs: document ends at depth %d, want 0 (fully closed):\n%s", n, got, query)
+		}
+	}
+}
