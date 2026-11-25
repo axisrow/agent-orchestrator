@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -31,6 +32,125 @@ type readinessFailuresBinder interface {
 // scmHTTPTimeout matches the providers' own default client timeout: an injected
 // *http.Client is taken verbatim, so the wiring owns the deadline.
 const scmHTTPTimeout = 30 * time.Second
+
+// Fast-fail dial budgets for the shared SCM client (issue #368): GitHub
+// unreachable through a broken route must cost seconds, not the default
+// transport's 30s dial plus an unbounded header wait. The 30s client timeout
+// stays the hard cap for slow response bodies (job logs).
+const (
+	scmDialTimeout           = 5 * time.Second
+	scmTLSHandshakeTimeout   = 5 * time.Second
+	scmResponseHeaderTimeout = 15 * time.Second
+	// scmMaxIdleConnsPerHost keeps keep-alive connections warm for the
+	// observer's parallel per-repo guards and batched PR fetches; the
+	// default of 2 would thrash connections under that concurrency.
+	scmMaxIdleConnsPerHost = 8
+	// scmRetryAttempts bounds transport-error retries; scmRetryBackoff holds
+	// the delay before each retry attempt.
+	scmRetryAttempts = 2
+)
+
+// scmDialer fast-fails unreachable routes; the wiring shares it so tests can
+// assert the budgets.
+var scmDialer = &net.Dialer{Timeout: scmDialTimeout, KeepAlive: 30 * time.Second}
+
+// scmRetryBackoff delays before retry attempt i (0-based).
+func scmRetryBackoff(i int) time.Duration {
+	switch i {
+	case 0:
+		return 300 * time.Millisecond
+	default:
+		return 900 * time.Millisecond
+	}
+}
+
+// scmRetryTransport retries transient transport failures with a short
+// backoff. Dial-level failures are retried for every method — a connect that
+// never completed means the server never saw the request, so a retry cannot
+// duplicate a side effect (a review POST through a dead proxy, the lost
+// publication of #373/#374). Other transport errors (a reset after the
+// request was sent) are retried only for body-free GET/HEAD, whose replay
+// cannot double an effect; a response that already started is abandoned, not
+// duplicated. The request context cancels pending retries.
+type scmRetryTransport struct {
+	base       http.RoundTripper
+	maxRetries int
+	sleep      func(time.Duration)
+}
+
+func newSCMRetryTransport(base http.RoundTripper) *scmRetryTransport {
+	return &scmRetryTransport{base: base, maxRetries: scmRetryAttempts, sleep: time.Sleep}
+}
+
+func (t *scmRetryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	for attempt := 0; ; attempt++ {
+		resp, err := t.base.RoundTrip(req)
+		if err == nil || attempt >= t.maxRetries || !scmRetryable(req, err) {
+			return resp, err
+		}
+		timer := time.NewTimer(scmRetryBackoff(attempt))
+		select {
+		case <-req.Context().Done():
+			timer.Stop()
+			return resp, err
+		case <-timer.C:
+		}
+		if req.GetBody != nil {
+			body, bodyErr := req.GetBody()
+			if bodyErr != nil {
+				return resp, err
+			}
+			req.Body = body
+		}
+	}
+}
+
+// scmRetryable reports whether a failed attempt may be retried.
+func scmRetryable(req *http.Request, err error) bool {
+	if req.Context().Err() != nil {
+		return false
+	}
+	// A request body the transport may have partially consumed must be
+	// replayable; otherwise retrying could send a truncated payload. NoBody
+	// is stateless and always replayable.
+	if req.Body != nil && req.Body != http.NoBody && req.GetBody == nil {
+		return false
+	}
+	if isSCMDialFailure(err) {
+		return true
+	}
+	switch req.Method {
+	case http.MethodGet, http.MethodHead:
+		return true
+	}
+	return false
+}
+
+// isSCMDialFailure reports whether the transport error happened while
+// establishing the connection — before any request bytes could reach the
+// server, which is what makes a retry side-effect-free.
+func isSCMDialFailure(err error) bool {
+	var opErr *net.OpError
+	if !errors.As(err, &opErr) {
+		return false
+	}
+	return opErr.Op == "dial"
+}
+
+// newSCMHTTPClient builds the shared outbound client for both SCM providers.
+// The proxy decision is deferred to dial time (scmProxyFunc), so the client and
+// the providers constructed from it can stay singletons for the daemon's life.
+// The transport fast-fails unreachable GitHub routes and retries transient
+// transport errors with a short backoff.
+func newSCMHTTPClient(src scmProxySource, logger *slog.Logger) *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone() //nolint:errcheck // DefaultTransport is always a *http.Transport; the assertion cannot fail
+	transport.Proxy = scmProxyFunc(src, logger)
+	transport.DialContext = scmDialer.DialContext
+	transport.TLSHandshakeTimeout = scmTLSHandshakeTimeout
+	transport.ResponseHeaderTimeout = scmResponseHeaderTimeout
+	transport.MaxIdleConnsPerHost = scmMaxIdleConnsPerHost
+	return &http.Client{Transport: newSCMRetryTransport(transport), Timeout: scmHTTPTimeout}
+}
 
 // scmProxySource supplies the user's explicit SCM proxy URL ("" = environment
 // default). *settingssvc.Service satisfies it structurally.
@@ -63,15 +183,6 @@ func scmProxyFunc(src scmProxySource, logger *slog.Logger) func(*http.Request) (
 		}
 		return parsed, nil
 	}
-}
-
-// newSCMHTTPClient builds the shared outbound client for both SCM providers.
-// The proxy decision is deferred to dial time (scmProxyFunc), so the client and
-// the providers constructed from it can stay singletons for the daemon's life.
-func newSCMHTTPClient(src scmProxySource, logger *slog.Logger) *http.Client {
-	transport := http.DefaultTransport.(*http.Transport).Clone() //nolint:errcheck // DefaultTransport is always a *http.Transport; the assertion cannot fail
-	transport.Proxy = scmProxyFunc(src, logger)
-	return &http.Client{Transport: transport, Timeout: scmHTTPTimeout}
 }
 
 // startSCMObserver wires the provider-neutral SCM observer with both GitHub

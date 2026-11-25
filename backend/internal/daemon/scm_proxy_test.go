@@ -2,13 +2,17 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // fakeScmProxySource serves a canned ScmProxyURL value.
@@ -169,5 +173,196 @@ func TestSCMHTTPClient_CarriesProviderTimeout(t *testing.T) {
 	client := newSCMHTTPClient(fakeScmProxySource{}, slog.Default())
 	if client.Timeout != scmHTTPTimeout {
 		t.Fatalf("timeout=%v, want %v", client.Timeout, scmHTTPTimeout)
+	}
+}
+
+// fakeRoundTripper answers each attempt with the canned errors in order,
+// repeating the last one; a nil entry means success.
+type fakeRoundTripper struct {
+	mu       sync.Mutex
+	attempts int
+	results  []error
+}
+
+func (f *fakeRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	i := f.attempts
+	f.attempts++
+	if i < len(f.results) && f.results[i] != nil {
+		return nil, f.results[i]
+	}
+	return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("ok"))}, nil
+}
+
+func (f *fakeRoundTripper) count() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.attempts
+}
+
+func scmDialErr() error {
+	return &net.OpError{Op: "dial", Err: errors.New("connect: connection refused")}
+}
+
+func scmResetErr() error {
+	return &net.OpError{Op: "read", Err: errors.New("connection reset by peer")}
+}
+
+func scmRetryRequest(t *testing.T, method string, body io.Reader) *http.Request {
+	t.Helper()
+	req, err := http.NewRequest(method, "https://api.github.com/x", body)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	return req
+}
+
+// A dial-level failure means the server never saw the request, so a mutating
+// request must be retried with its body replayed.
+func TestSCMRetryTransport_DialFailureRetriesMutations(t *testing.T) {
+	rt := &fakeRoundTripper{results: []error{scmDialErr(), scmDialErr(), nil}}
+	tr := &scmRetryTransport{base: rt, maxRetries: 2, sleep: func(time.Duration) {}}
+	req := scmRetryRequest(t, http.MethodPost, strings.NewReader("payload"))
+	resp, err := tr.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("POST after dial failures: %v", err)
+	}
+	resp.Body.Close()
+	if rt.count() != 3 {
+		t.Fatalf("attempts = %d, want 3 (initial + 2 retries)", rt.count())
+	}
+}
+
+// A reset after the request was sent leaves the mutation's outcome unknown:
+// retrying could duplicate a side effect (a second review), so a POST is
+// never retried on a non-dial transport error.
+func TestSCMRetryTransport_NoMutationRetryAfterConnectionReset(t *testing.T) {
+	rt := &fakeRoundTripper{results: []error{scmResetErr()}}
+	tr := &scmRetryTransport{base: rt, maxRetries: 2, sleep: func(time.Duration) {}}
+	req := scmRetryRequest(t, http.MethodPost, strings.NewReader("payload"))
+	if _, err := tr.RoundTrip(req); err == nil {
+		t.Fatal("POST reset must surface as an error")
+	}
+	if rt.count() != 1 {
+		t.Fatalf("attempts = %d, want 1 (no retry after the request was sent)", rt.count())
+	}
+}
+
+// GETs are idempotent and their NoBody is replayable, so a reset mid-flight
+// is retried.
+func TestSCMRetryTransport_RetriesGETOnConnectionReset(t *testing.T) {
+	rt := &fakeRoundTripper{results: []error{scmResetErr(), nil}}
+	tr := &scmRetryTransport{base: rt, maxRetries: 2, sleep: func(time.Duration) {}}
+	// The SCM client builds GETs with http.NoBody, which carries GetBody == nil.
+	req := scmRetryRequest(t, http.MethodGet, http.NoBody)
+	resp, err := tr.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("GET after reset: %v", err)
+	}
+	resp.Body.Close()
+	if rt.count() != 2 {
+		t.Fatalf("attempts = %d, want 2", rt.count())
+	}
+}
+
+// A body that cannot be replayed must never be retried — a retry would send
+// an empty or truncated payload.
+func TestSCMRetryTransport_NoRetryWithoutReplayableBody(t *testing.T) {
+	rt := &fakeRoundTripper{results: []error{scmResetErr(), nil}}
+	tr := &scmRetryTransport{base: rt, maxRetries: 2, sleep: func(time.Duration) {}}
+	req := scmRetryRequest(t, http.MethodPost, struct{ io.Reader }{strings.NewReader("opaque")})
+	if _, err := tr.RoundTrip(req); err == nil {
+		t.Fatal("request must fail without a replayable body")
+	}
+	if rt.count() != 1 {
+		t.Fatalf("attempts = %d, want 1", rt.count())
+	}
+}
+
+// A canceled context stops the retry loop.
+func TestSCMRetryTransport_StopsOnCanceledContext(t *testing.T) {
+	rt := &fakeRoundTripper{results: []error{scmDialErr()}}
+	tr := &scmRetryTransport{base: rt, maxRetries: 2, sleep: func(time.Duration) {}}
+	ctx, cancel := context.WithCancel(context.Background())
+	req := scmRetryRequest(t, http.MethodGet, nil)
+	req = req.WithContext(ctx)
+	cancel()
+	if _, err := tr.RoundTrip(req); err == nil {
+		t.Fatal("canceled request must surface as an error")
+	}
+	if rt.count() != 1 {
+		t.Fatalf("attempts = %d, want 1 after cancellation", rt.count())
+	}
+}
+
+// The wiring builds the transport with the fast-fail budgets: a dead route
+// must cost seconds at dial/TLS/header time, not the legacy 30s dial plus an
+// unbounded header wait.
+func TestSCMHTTPClient_CarriesFastFailTimeouts(t *testing.T) {
+	clearProxyEnv(t)
+	client := newSCMHTTPClient(fakeScmProxySource{}, slog.Default())
+	tr, ok := client.Transport.(*scmRetryTransport)
+	if !ok {
+		t.Fatalf("transport = %T, want *scmRetryTransport", client.Transport)
+	}
+	base, ok := tr.base.(*http.Transport)
+	if !ok {
+		t.Fatalf("base transport = %T, want *http.Transport", tr.base)
+	}
+	if base.DialContext == nil {
+		t.Fatal("DialContext must be set on the transport")
+	}
+	if scmDialer.Timeout != scmDialTimeout {
+		t.Fatalf("dial timeout = %v, want %v", scmDialer.Timeout, scmDialTimeout)
+	}
+	if base.TLSHandshakeTimeout != scmTLSHandshakeTimeout {
+		t.Fatalf("TLS handshake timeout = %v, want %v", base.TLSHandshakeTimeout, scmTLSHandshakeTimeout)
+	}
+	if base.ResponseHeaderTimeout != scmResponseHeaderTimeout {
+		t.Fatalf("response header timeout = %v, want %v", base.ResponseHeaderTimeout, scmResponseHeaderTimeout)
+	}
+	if base.MaxIdleConnsPerHost != scmMaxIdleConnsPerHost {
+		t.Fatalf("max idle conns per host = %d, want %d", base.MaxIdleConnsPerHost, scmMaxIdleConnsPerHost)
+	}
+}
+
+// The wired client retries a GET whose connection was reset mid-flight and
+// then succeeds: a transient reset must not cost the request.
+func TestSCMHTTPClient_RetriesGETAcrossResetConnection(t *testing.T) {
+	clearProxyEnv(t)
+	var attempts atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if attempts.Add(1) == 1 {
+			hj, ok := w.(http.Hijacker)
+			if !ok {
+				t.Error("handler does not support hijack")
+				return
+			}
+			conn, _, err := hj.Hijack()
+			if err != nil {
+				t.Errorf("hijack: %v", err)
+				return
+			}
+			conn.Close()
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, "ok")
+	}))
+	defer target.Close()
+
+	client := newSCMHTTPClient(fakeScmProxySource{}, slog.Default())
+	resp, err := client.Get(target.URL)
+	if err != nil {
+		t.Fatalf("GET after reset: %v", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK || string(body) != "ok" {
+		t.Fatalf("status=%d body=%q, want 200 ok", resp.StatusCode, body)
+	}
+	if attempts.Load() != 2 {
+		t.Fatalf("server attempts = %d, want 2 (reset then success)", attempts.Load())
 	}
 }

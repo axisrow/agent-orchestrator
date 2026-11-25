@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -18,8 +19,12 @@ import (
 	aoprocess "github.com/aoagents/agent-orchestrator/backend/internal/process"
 )
 
-func newGitHubTracker() (ports.Tracker, error) {
-	return trackergithub.New(trackergithub.Options{Token: &ghTokenSource{}})
+// newGitHubTracker builds the GitHub issue tracker on the daemon's shared SCM
+// HTTP client, so issue intake rides the same proxy setting, fast-fail
+// timeouts and transport retries as the SCM observer. A nil httpClient leaves
+// the adapter on its default client (tests).
+func newGitHubTracker(httpClient *http.Client) (ports.Tracker, error) {
+	return trackergithub.New(trackergithub.Options{Token: &ghTokenSource{}, HTTPClient: httpClient})
 }
 
 // ghTokenSource mirrors the SCM credential precedence: AO_GITHUB_TOKEN →
@@ -95,21 +100,21 @@ func newGitLabTracker(gitlabCfg config.GitLabConfig) (ports.Tracker, error) {
 // tracker's token is missing, the other still serves issue lookups — the
 // same degrade-gracefully pattern used by newMultiSCMProvider. Callers must
 // tolerate a nil ports.Tracker (the session service's nil-guard handles
-// this).
-func newMultiTracker(gitlabCfg config.GitLabConfig, logger *slog.Logger) ports.Tracker {
+// this). A nil httpClient leaves the GitHub adapter on its default client.
+func newMultiTracker(gitlabCfg config.GitLabConfig, logger *slog.Logger, httpClient *http.Client) ports.Tracker {
 	var named []trackermulti.NamedTracker
 
 	// Probing the environment is a cheap read — no subprocess. Only when no
 	// env token exists do we defer to the gh CLI fallback, lazily.
 	env := trackergithub.EnvTokenSource{EnvVars: []string{"AO_GITHUB_TOKEN"}}
 	if _, err := env.Token(context.Background()); err == nil {
-		if t, err := newGitHubTracker(); err != nil {
+		if t, err := newGitHubTracker(httpClient); err != nil {
 			logTrackerDisabled(logger, "github", err)
 		} else {
 			named = append(named, trackermulti.NamedTracker{Key: "github", Tracker: t})
 		}
 	} else {
-		named = append(named, trackermulti.NamedTracker{Key: "github", Tracker: &lazyTracker{name: "github", logger: logger, build: newGitHubTracker}})
+		named = append(named, trackermulti.NamedTracker{Key: "github", Tracker: &lazyTracker{name: "github", logger: logger, build: func() (ports.Tracker, error) { return newGitHubTracker(httpClient) }}})
 	}
 
 	if t, err := newGitLabTracker(gitlabCfg); err != nil {

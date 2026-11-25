@@ -264,6 +264,12 @@ type SCMReviewObservation struct {
 	// bounded review-thread window instead of a complete PR-lifetime snapshot.
 	// Consumers should treat Threads as a merge/update set in that case.
 	Partial bool
+	// Error classifies a failed review fetch inside a batch result. A nil
+	// Error with zero Threads/Reviews means the PR genuinely has none; a
+	// non-nil Error means the fetch itself failed and the caller must keep
+	// the stored review facts rather than overwrite them with the empty
+	// observation. Mirrors SCMObservation.Error. Not persisted.
+	Error error
 }
 
 // SCMReviewSummaryObservation is one submitted review with its provider summary URL.
