@@ -1034,3 +1034,88 @@ afde2dd37df0177668ae2cbaccee3206438aa4b9 skipped fix(projects): give add-project
 0d22e2cd06e95f80e18fd9b13f7df19a39a9d445 taken fix: show repository name error in full below the field (#8807)
 20595bca93cc43ab78a3368077f4276320087557 skipped feat(share): publish videos browsers can play (#8796)
 7c65ce3cfc0fc0cd9c71d00ad94391d7bf2bc771 skipped fix(harness): explain when a winget package is missing from the catalog (#8823) — winget/инсталлер-поверхность (класс f0ce1323), systeminstall форк-дельта
+
+657cf5e8001918c24595dfa22d39acfa7ad3eb02 skipped feat(devices): watch and drive a session's device from the phone (#8895) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+27b83525315277f2e1b6415bd015c5d2666af162 skipped feat(devices): Device tab in the desktop session inspector (#8894) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+716af8d46c61ff607ede09661eca65cc9e3bf0eb skipped feat(devices): run simulators and emulators for sessions (daemon and CLI) (#8893) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+41a32481c21f155a64ee55af530d475e698dff11 taken fix(db): add index on review(interface_mode, is_archived, updated_at, id) (fixes #9013) (#9020)
+4b1a98b520e43bb3c735d46a24df889594bf99d4 skipped feat(remote): show remote hosts' versions and update them from the desktop (#8446) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+0d91313b812081aceaea3079b45ff00ac5d6a77c taken fix(db): add partial index on review(reviewer_handle_id) (fixes #9012) (#9019)
+94693849463d1b9ba490c325664019467bd02c64 skipped fix(chat): show Antigravity's questions one at a time (#8920) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+4d9015197d34c49c6b95a51c28246885c176b38d skipped fix(chat): let agent questions wait until they are answered (#8050) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+813672ad480910b2fb92c688b9c8081b1ed5c4b3 skipped perf(files): load Files right after launch without waiting behind background reads (#7623) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+51c0565eb57a307b3e692c27685853fbc0616219 taken fix(db): add partial index on review_run(github_review_id) (#9015)
+00f7a8afd7c44f8d60185d357a6264c8e07205b2 skipped feat(chat): show a waiting harness update as a topbar chip (#8913) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+84926bdb374590b915b8ea43de324b030c506820 skipped fix(telemetry): stop false dead and rage clicks, track the composer model picker (#9014) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+872aac692584dd80ae696a81e1ba64aa109244e6 skipped feat(chat): show file-type icons in a turn's changed files card (#9004) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+feac004ab9c37cb1090f4cfecadaa329be119f7f skipped feat(chat): show background tasks in a side panel tab (land #8402 on main) (#9005) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+3bd4155913957c1055cf1ca6cdee59c107a46e88 skipped fix(agent-devin): refuse to overwrite an empty ~/.claude.json (#8929) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+774c3885a6bd346255cfc020bdad85f60edaa67a skipped fix(cloud): wait for a starting session's workspace before asking its worker (#8965) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+1249863f7ac1b572d66380104336d1c17a59e155 skipped fix(kanban): read a session resumed after its PRs merged as building (#8959) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+93e5767bef368060ffcdb07d1966d16f95ee9a4e skipped fix(test): bare-error ratchet ignores .fakes. test doubles (#8964) — уже в форке (пустой черрипик)
+ae4bfedd6320aa9b9b6c168818fd0e4148beb99a taken fix(agentcreds): decode hex keychain output and never send unrecognised values (#8733)
+4e8643f39134b479444f40ff8e9a1c93453510a9 taken fix(cli): check a Codex API key with OpenAI before saving it (#8734) — OpenAIRESTBase взято; PIDMayBeHidden (чужой механизм) отброшено; фейки адаптированы
+a737a88b48d3945ed95a5056098d96a249c4134b skipped feat(sidebar): show pinned sessions at the top of their own group (#8999) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+20b0d6a522b92181161d6e11acefaaf3fa848e23 skipped feat(chat): fold the orchestrator's background turns into one line that says what happened (#8889) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+a4b6e0abe652e66261ee36228e768a278e85a9c0 skipped feat(usage): show the Usage page without Developer Mode (#8996) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+bd073c7743d5d05c9278dcfcac610febafcaa16d skipped fix(rename): show renamed sessions and tabs on the frame the editor closes (#8958) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+56c30f82e8371c16a2d603a16338cac327030582 skipped feat(attribution): credit Orchestrator on session commits and PRs (beta, local) (#7942) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+8b7236bf32bb504a18b0a737c01acec2f2c32fe5 skipped fix(copilot): stop per-session exclude growth (#5580) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+d375054e713b72e4a8d28a5bb2776a01702575e3 skipped perf(chat): keep a saved page for every opened local chat (#8930) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+2c7ed261765ebc39267729731c356f34df753eb0 skipped fix(mobile): draw iOS video artifact controls in the app (#8849) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+a26180e5c3f302d008d329fb41c9c80b2a523790 skipped fix(mobile): keep chat pages, PR cards, the live browser and archive paging through an app switch (#8843) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+86e46e5e13ce9b24e08de8cbfb779f462320971c taken fix(automation): stop scheduling automations of removed projects (#8937)
+c3e75d1057927120436e7821b7bc7aef83b50af2 skipped fix(mobile): show a chat's saved transcript after the phone closes the app (#8368) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+41261ea751f1ae50920c31f4100add436b467256 skipped perf(mobile): start the chat's push without waiting for the transcript (#8361) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+26e844c01bcc100836868bcee1cc5c6ea321b1b1 skipped perf(mobile): re-render only what changed while a chat streams (#8360) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+d90fba95a411344954a97fcd04414838d63d733f skipped feat(session): add project and global defaults for terminate-on-pr-merge (#8597) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+9532f540e0d2140c8f4e66dd97416abe25cabd07 skipped feat(chat): show the Files tree icon on file paths in chat (#8948) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+12727eec0a5117924198d70762716b9c3708b045 skipped fix(inspector): keep a row label's sr-only suffix inside its truncate clip (#8884) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+dfd2cd33ebcc58ca449d155b0108a935ac9eec1c skipped fix(mobile): keep a streaming chat moving, on fast and slow links (#8359) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+d28709e5b93f19ebe1a8bd38bafe380fadd12c81 skipped fix(mobile): publish installed app hosts, not development builds (#8493) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+045612e1439fcff2963fbd3d3b79adac20ede4d8 skipped fix(chat): show old chats' HTML artifact cards instead of ORIGIN_FORBIDDEN (#8954) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+df64461cbab6e35c7a43cb8f0d289bc5bcf5bc47 skipped fix(sidebar): switch Show more / Show less instantly (#8953) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+1f49b466bab01149cef11fc9f8aff15e082ab4e1 skipped fix(agy): accept reasoning-level models on agy 1.5 and show each model once (#8933) — тянет acpsdk.SessionConfigOptionCategoryThoughtLevel, которого в форк-SDK нет
+98486ef5d82e1c11af786c116c1420eb3edc87a3 skipped fix(projects): always give projects a worker and orchestrator agent (#8530) — 52 файла через ui-store/product-ui (горячие форк-поверхности), фичеразмерный
+fab3db9fee1cae3067ba29e9be1fcfd44a8e536a skipped feat(telemetry): UI usage summary, surface views and first-use events (#8923) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+01331a03932172b0dd6cbe31a63ee280d626d8c3 skipped fix(chat): settle Antigravity's own cycles after a background command finishes (#8927) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+300b92a48aa78dfe1a5b41b1d0358fa5376a2ef9 skipped feat(chat): show GitHub PR links as state chips with a hover card (#8924) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+f9d20dc30333be11c37a2f3ec82dfef765cc00ed skipped fix(preview): prevent Cloudflare email obfuscation (#8874) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+6135e552fdc759cee00a5e6d20a90f6c25018198 skipped perf(chat): show a local chat's last page from disk while it loads (#8902) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+1ed69ff561950181f56ca24f6a111145e69e0a06 skipped Group desktop and mobile Sentry errors by code or normalized message (#8898) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+0f515f4ce39c78b2930df5f4c09156e2abf9e454 skipped fix(terminal): stop sending scrollback to pty-host probes (#8856) — conpty = Windows-рантайм, на маке не исполняется
+1d595d19feb491f22185ac00007895c208c2fcba skipped feat(self-hosted): install on Amazon Linux 2023 and other dnf systems (#8917) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+761c04e21080fa7e1f7d85e1002249a49acf3092 skipped feat(chat): report background task commands and output (#8392) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+7498ea1e06e5ff1431a64da0ee062b5a635feeab skipped feat(cloud): choose how long session content is kept (Settings > General) (#8498) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+18aea0b94dd827faba88e830a829bfc8da28bc65 skipped feat(cloud): start a Cloud session with photos and files (#8464) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+fdb7aeb343d3a035c8117e22bd5cc63ed0f0236a skipped fix(cloud): keep Freestyle chat on its conversation while the worker is disconnected (#7830) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+1c56aef52c1384e0c49372d22e1d3c528d7c49ef skipped fix(sidebar): stop Settings icon from flickering in footer on Settings close (#8922) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+7dc9e2801ca0d58d445326acb9f0689473435aaa skipped fix(cloud): open a new Cloud orchestrator centered, not as one being restored (#8653) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+79c05deaf1acd944ac95518d8595776786ed4b01 skipped fix(desktop): refresh a Cloud session's pull requests once per event burst (#8541) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+46c5613d8781e2e126e1350c4d1c8b242815a6aa skipped fix(chat): say a Cloud session is starting or setting up, not Thinking, before its agent takes the turn (#8765) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+5e8118d1a8e9a9430f4e82f1e42fd089ee14d157 skipped fix(billing): trial notice says the card is charged when the trial ends (#8584) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+e77797898c4d00bb76f9a08b7f32cdeb320acd96 taken fix(persistenthost): don't let a provider helper's pipe hold the chat host forever (#8736) — константы в хунке разрешены вручную
+20a881b4238d36defac74905cc8c080c80ca9966 skipped docs(cli): document report note character limit (#8912) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+57e3b03484705dbfe936101fd182819d34ed4194 skipped fix(share): stop offering Everyone at the workspace on artifact links (#8907) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+2834f527323784aa2fa1defc09433d49d1b2dd3a taken fix(cli): say when the Codex CLI cannot start during sign-in (#8706) — ручной перенос: дельта на 4-аргную RunInteractiveCommand форка (без dir)
+e44a814cb61435264bb7570ddf9c59f87afb12e4 skipped fix(claude): don't renew an expired login from AO's own checks (#8732) — фикс поверх неремерженного рефакторинга error-taxonomy agentaccounts (структура reading разошлась)
+c3e7a1dc1ea42995d5e4ee097837c561ebe526cd skipped fix(chat): keep the conversation's settings when an edit or branch relaunches the provider (#8713) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+520d73bd0e0d351a53db1a3c3990f31eb9ab8108 skipped fix(chat): show the restored settings as current after a live ACP reconnect (#8685) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+811fa4f4e4f8991d39e798cc25d2ae3425892bf7 skipped fix(lifecycle): don't let a late prompt hook undo a later Stop (#8735) — lateSignal-fence поверх semanticDeliveryStore, которого в форке нет; блок проекции переписан форком
+3e8769b61a2b887984b0a4557fd9d4f73f434e8a skipped fix(workspace): retain repository paths in change cards (#8858) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+2b51e4a638d3ab60684fdd33a4bbd8f7e1b90c4d skipped fix(claude): stop a slow auth status probe starving model discovery (#8623) — апстрим-auth.go тянет ports.AuthEnvironmentOverrides/claudeAuthReports, которых нет в форке; форк-вариант (12s таймаут) оставлен
+f77740c9bb55e7df2e6bb19fcac0e2a006fadd92 skipped fix(chat): settle a turn's items from a copy, not the live maps (#8629) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+842970d901d9484aa9d7c1ba7e413d3b65f75590 skipped fix(claude): skip the bypass-permissions confirmation AO workers can't answer (#8682) — claudeLaunchSettingsArgs-механизм (Ultracode/autoCompact settings) у форка отсутствует
+413630fb338036e66f0d061f55e653e6dfaf3572 skipped fix(codex): refuse a session on a model the ChatGPT account already refused (#8625) — 1135 строк по launch-пути через session_manager/manager.go с большой форк-дельтой
+1d2531385796b92e346ae472bd2ff153a6c161de skipped fix(chat): switch a Claude chat to Opus 5.5 instead of silently keeping the old model (#8624) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+b99f27315eaa3a4fe80d956c63a69b77762ea0fe skipped fix(settings): use Agents and Accounts labels across locales (#8855) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+ccdeee66a5bbee29d7f7f073ea380ee623c9366c skipped fix(status): use current-head review for changes requested (#8879) — 582 строки через sqlc-gen (gen форка невоспроизводим) + kanban-поверхность
+3a32a872f36f172560bd74d5a2a3bb4f968ac7b1 skipped fix(daemon): run tmux launch prelude with POSIX shell (#8873) — POSIX-prelude поверх writeLaunchEnv-механики, которой в форк-tmux.go нет
+5e185b04ac7a745237f300700ad3010bc1b0afc7 skipped fix(artifacts): refresh pending artifact links (#8870) — целиком фронтовый фикс на разошедшейся SessionArtifactsView
+49f87fb0728134a9101a100700359b05658e9b8c taken fix(downloads): keep collision names within filesystem byte limit (#8857)
+8a15eb945a3e1ebb02b42ac0f551c3b8f6b459fd skipped fix(shell): drop the nightly build-info tooltip background (#8885) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+31ec7b97c777b0788fbb83ebe146b69d4c6a91bb taken fix(api): always include config option choices (#8852) — api-полова; renderer-хунки отброшены (форк-дельта useConversation/i18n)
+b42095d543fcf41003ab061eacb88c7216ade12a skipped feat(self-hosted): run Orchestrator on Linux arm64 hosts (#8901) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+acddfae8c66e03e0312d2819d99adb630698ac9d skipped fix(settings): keep Cline login readable in light mode (#8869) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+e38a12a59855b2c8e0e9bd8e0f2286af15bb99b3 skipped fix(settings): open Cline login URLs in Orchestrator Browser (#8860) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
+1f1362995be6192dade3b28920107166855ac322 skipped fix: preserve Sentry error messages and split issue groups (#8892) — mobile/чат-UI/devices/cloud/feat/телеметрия-UI — вне форк-поверхностей
