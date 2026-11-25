@@ -42,12 +42,15 @@ RUN apt-get update && \
     apt-get install --yes --no-install-recommends \
         build-essential debhelper docbook-to-man fakeroot && \
     rm -rf /var/lib/apt/lists/*
+# Source archives come from snapshot.debian.org, the immutable archive: the
+# live pool deletes files when a new revision is uploaded, and a deleted file
+# turns ADD's checksum pin into a 404 page's hash.
 ADD --checksum=sha256:8c4623c101959b8709a3f0a10c06a40d413dc7a6f5ffad3bc9d0cd010d850956 \
-    https://deb.debian.org/debian/pool/main/e/expat/expat_2.10.0-1.dsc ./
+    https://snapshot.debian.org/archive/debian/20261103T023120Z/pool/main/e/expat/expat_2.10.0-1.dsc ./
 ADD --checksum=sha256:b3644a12f62d7762b62c444f69d169ba0234f13138d0240244bca64cbe35286f \
-    https://deb.debian.org/debian/pool/main/e/expat/expat_2.10.0.orig.tar.gz ./
+    https://snapshot.debian.org/archive/debian/20261103T023120Z/pool/main/e/expat/expat_2.10.0.orig.tar.gz ./
 ADD --checksum=sha256:9be65c3ff79ca0508590970422de0a55f117bb7134a0274dd1ed3261f85631dc \
-    https://deb.debian.org/debian/pool/main/e/expat/expat_2.10.0-1.debian.tar.xz ./
+    https://snapshot.debian.org/archive/debian/20261103T023120Z/pool/main/e/expat/expat_2.10.0-1.debian.tar.xz ./
 COPY test/expat-buffer-bounds.c /build/
 RUN dpkg-source -x expat_2.10.0-1.dsc source && \
     cd source && \
@@ -71,11 +74,11 @@ RUN apt-get update && \
         build-essential cmake debhelper fakeroot && \
     rm -rf /var/lib/apt/lists/*
 ADD --checksum=sha256:39b06802a852629132d549a7f7449dee7f435e801706714a4bc2ea2f15b28f36 \
-    https://deb.debian.org/debian/pool/main/b/brotli/brotli_1.1.0-2.dsc ./
+    https://snapshot.debian.org/archive/debian/20231124T031419Z/pool/main/b/brotli/brotli_1.1.0-2.dsc ./
 ADD --checksum=sha256:10973f4b4199eafa1d5735ef661ddb2ec2f97319ee9fd1824d4aabe08cff5265 \
-    https://deb.debian.org/debian/pool/main/b/brotli/brotli_1.1.0.orig.tar.gz ./
+    https://snapshot.debian.org/archive/debian/20231124T031419Z/pool/main/b/brotli/brotli_1.1.0.orig.tar.gz ./
 ADD --checksum=sha256:3d913a3740bcad9a294007575a6beb1846beadbd62b44fb2bf9fdaeddea3236f \
-    https://deb.debian.org/debian/pool/main/b/brotli/brotli_1.1.0-2.debian.tar.xz ./
+    https://snapshot.debian.org/archive/debian/20231124T031419Z/pool/main/b/brotli/brotli_1.1.0-2.debian.tar.xz ./
 ADD --checksum=sha256:d6f962509000223def7062958229bd08457e5e032e7ed0d1d94fb790b054b1fc \
     https://github.com/google/brotli/commit/0ed4268a4401abcb4472096340477cf4af7d1a2b.patch?full_index=1 \
     ./0ed4268a44-detect-invalid-stream-earlier.patch
