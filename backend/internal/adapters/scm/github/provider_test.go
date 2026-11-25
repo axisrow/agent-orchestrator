@@ -2645,3 +2645,83 @@ func TestListOpenPRsByBranchFiltersOnTheServer(t *testing.T) {
 		t.Fatalf("list requests = %d, want 1", n)
 	}
 }
+
+func TestFetchReviewThreadsBatchServesRefsFromOneQuery(t *testing.T) {
+	fake := newFakeGH(t)
+	fake.on(http.MethodPost, "/graphql", func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if !strings.Contains(string(body), `pr0: repository(owner:`) || !strings.Contains(string(body), `pr1: repository(owner:`) {
+			t.Fatalf("batch query should carry one alias per ref, body=%s", body)
+		}
+		if !strings.Contains(string(body), "reviewThreads(last:50)") {
+			t.Fatalf("batch query should fetch the latest thread window, body=%s", body)
+		}
+		if strings.Contains(string(body), "before:") {
+			t.Fatalf("batch query should fetch the latest window first, body=%s", body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"pr0": map[string]any{"pullRequest": map[string]any{
+					"reviewDecision": "CHANGES_REQUESTED",
+					"reviewSummaries": map[string]any{"nodes": []any{map[string]any{
+						"id": "review-1", "state": "CHANGES_REQUESTED", "url": "https://github.com/o/r/pull/1#pullrequestreview-1",
+						"submittedAt": "2026-06-15T00:00:00Z", "body": "fix", "commit": map[string]any{"oid": "head-sha-1"},
+						"author": map[string]any{"login": "alice", "__typename": "User"},
+					}}},
+					"reviewThreads": map[string]any{"nodes": []any{map[string]any{"id": "t-batch", "path": "main.go", "line": 2, "isResolved": false, "comments": map[string]any{"nodes": []any{map[string]any{
+						"id": "c1", "body": "fix", "url": "https://github.com/o/r/pull/1#discussion_r1", "pullRequestReview": map[string]any{"databaseId": float64(42)}, "author": map[string]any{"login": "alice", "__typename": "User"},
+					}}}}}, "pageInfo": map[string]any{"hasPreviousPage": false}},
+				}},
+				"pr1": nil,
+			},
+		})
+	})
+	p := newProviderForTest(t, fake)
+	repo := ports.SCMRepo{Provider: "github", Host: "github.com", Owner: "o", Name: "r", Repo: "o/r"}
+	got, err := p.FetchReviewThreadsBatch(ctx(), []ports.SCMPRRef{
+		{Repo: repo, Number: 1, URL: "https://github.com/o/r/pull/1"},
+		{Repo: repo, Number: 2, URL: "https://github.com/o/r/pull/2"},
+	})
+	if err != nil {
+		t.Fatalf("FetchReviewThreadsBatch: %v", err)
+	}
+	if got := fake.callsTo(http.MethodPost, "/graphql"); got != 1 {
+		t.Fatalf("graphql calls = %d, want one query for both refs", got)
+	}
+	if len(got) != 2 {
+		t.Fatalf("results = %d, want one per ref", len(got))
+	}
+	if got[0].Error != nil {
+		t.Fatalf("ref 0 unexpectedly failed: %v", got[0].Error)
+	}
+	if got[0].Decision != string(domain.ReviewChangesRequest) || len(got[0].Threads) != 1 || got[0].Threads[0].ID != "t-batch" || got[0].Threads[0].Line != 2 {
+		t.Fatalf("ref 0 review facts = %#v", got[0])
+	}
+	if len(got[0].Threads[0].Comments) != 1 || got[0].Threads[0].Comments[0].ReviewID != "42" {
+		t.Fatalf("ref 0 thread comments = %#v", got[0].Threads[0].Comments)
+	}
+	if len(got[0].Reviews) != 1 || got[0].Reviews[0].Author != "alice" || got[0].Reviews[0].TargetSHA != "head-sha-1" {
+		t.Fatalf("ref 0 review summaries = %#v", got[0].Reviews)
+	}
+	// A ref missing from the response is a per-ref failure, not a batch one.
+	if !errors.Is(got[1].Error, ErrNotFound) {
+		t.Fatalf("missing ref error = %v, want ErrNotFound", got[1].Error)
+	}
+	if got[1].Threads != nil || got[1].Decision != "" {
+		t.Fatalf("failed ref must carry no facts: %#v", got[1])
+	}
+}
+
+func TestFetchReviewThreadsBatchRejectsOversizedBatches(t *testing.T) {
+	fake := newFakeGH(t)
+	p := newProviderForTest(t, fake)
+	repo := ports.SCMRepo{Provider: "github", Host: "github.com", Owner: "o", Name: "r", Repo: "o/r"}
+	refs := make([]ports.SCMPRRef, reviewThreadsBatchLimit+1)
+	for i := range refs {
+		refs[i] = ports.SCMPRRef{Repo: repo, Number: i + 1}
+	}
+	if _, err := p.FetchReviewThreadsBatch(ctx(), refs); err == nil {
+		t.Fatal("oversized batch accepted")
+	}
+}

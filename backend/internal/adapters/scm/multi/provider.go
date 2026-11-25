@@ -207,6 +207,60 @@ func (m *Provider) FetchReviewThreads(ctx context.Context, ref ports.SCMPRRef) (
 	return p.FetchReviewThreads(ctx, ref)
 }
 
+// FetchReviewThreadsBatch partitions refs by provider key and batches each
+// group through a sub-provider implementing scmobserve.ReviewThreadsBatcher,
+// falling back to per-ref calls for the rest (e.g. GitLab). Results are
+// always positionally aligned with refs; a failed ref carries its error in
+// SCMReviewObservation.Error, so one provider's outage never fails another's
+// refs — the same scoping rule as FetchPullRequests.
+func (m *Provider) FetchReviewThreadsBatch(ctx context.Context, refs []ports.SCMPRRef) ([]ports.SCMReviewObservation, error) {
+	groups := make(map[string][]indexedRef)
+	for i, r := range refs {
+		groups[r.Repo.Provider] = append(groups[r.Repo.Provider], indexedRef{idx: i, ref: r})
+	}
+	results := make([]ports.SCMReviewObservation, len(refs))
+	for key, irefs := range groups {
+		p, err := m.resolve(key)
+		if err != nil {
+			for _, ir := range irefs {
+				results[ir.idx] = ports.SCMReviewObservation{Error: err}
+			}
+			continue
+		}
+		batcher, canBatch := p.(scmobserve.ReviewThreadsBatcher)
+		if canBatch {
+			batch := make([]ports.SCMPRRef, len(irefs))
+			for k, ir := range irefs {
+				batch[k] = ir.ref
+			}
+			got, berr := batcher.FetchReviewThreadsBatch(ctx, batch)
+			if berr != nil {
+				for _, ir := range irefs {
+					results[ir.idx] = ports.SCMReviewObservation{Error: berr}
+				}
+				continue
+			}
+			for j, ir := range irefs {
+				if j >= len(got) {
+					results[ir.idx] = ports.SCMReviewObservation{Error: fmt.Errorf("scm multi: review batch returned %d of %d results", len(got), len(irefs))}
+					continue
+				}
+				results[ir.idx] = got[j]
+			}
+			continue
+		}
+		for _, ir := range irefs {
+			review, err := p.FetchReviewThreads(ctx, ir.ref)
+			if err != nil {
+				results[ir.idx] = ports.SCMReviewObservation{Error: err}
+				continue
+			}
+			results[ir.idx] = review
+		}
+	}
+	return results, nil
+}
+
 // RequestReview delegates to the sub-provider matching request.PR.Repo.Provider
 // when that provider supports review-request mutations.
 func (m *Provider) RequestReview(ctx context.Context, request ports.SCMReviewRequest) error {

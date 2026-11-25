@@ -1426,7 +1426,7 @@ func (s *Store) AdoptProviderTurn(
 		ProviderTurnID:       providerTurnID,
 		ControllerGeneration: generation,
 		RequestedAt:          now,
-		StartedAt:            sql.NullTime{Time: now, Valid: true},
+		StartedAt:            timeToNullTime(now),
 	}); err != nil {
 		return fmt.Errorf("adopt provider turn %s: %w", providerTurnID, err)
 	}
@@ -1441,7 +1441,7 @@ func (s *Store) AdoptReviewProviderTurn(ctx context.Context, conversationID stri
 	defer unlock()
 	if err := q.AdoptReviewProviderConversationTurn(ctx, gen.AdoptReviewProviderConversationTurnParams{
 		ID: turnID, ConversationID: conversationID, HandledBySessionID: session, HandledByReviewID: nullableString(reviewID),
-		ProviderTurnID: providerTurnID, ControllerGeneration: generation, RequestedAt: now, StartedAt: sql.NullTime{Time: now, Valid: true},
+		ProviderTurnID: providerTurnID, ControllerGeneration: generation, RequestedAt: now, StartedAt: timeToNullTime(now),
 	}); err != nil {
 		return fmt.Errorf("adopt reviewer provider turn %s: %w", providerTurnID, err)
 	}
@@ -1532,13 +1532,13 @@ func (s *Store) BindTurnToProvider(ctx context.Context, turnID, providerTurnID s
 	defer unlock()
 	if err := q.BindConversationTurnProviderID(ctx, gen.BindConversationTurnProviderIDParams{
 		ProviderTurnID: providerTurnID,
-		StartedAt:      sql.NullTime{Time: now, Valid: true},
+		StartedAt:      timeToNullTime(now),
 		ID:             turnID,
 	}); err != nil {
 		return fmt.Errorf("bind turn %s to provider turn %s: %w", turnID, providerTurnID, err)
 	}
 	if err := q.MarkConversationTurnStarted(ctx, gen.MarkConversationTurnStartedParams{
-		StartedAt: sql.NullTime{Time: now, Valid: true},
+		StartedAt: timeToNullTime(now),
 		ID:        turnID,
 	}); err != nil {
 		return fmt.Errorf("mark turn %s started: %w", turnID, err)
@@ -1600,7 +1600,7 @@ func (s *Store) SettleTurnWithFailureCode(
 		State:        state,
 		ErrorMessage: errMessage,
 		FailureCode:  string(failureCode),
-		CompletedAt:  sql.NullTime{Time: now, Valid: true},
+		CompletedAt:  timeToNullTime(now),
 		ID:           turn.ID,
 	}); err != nil {
 		return fmt.Errorf("settle turn %s: %w", turn.ID, err)
@@ -1729,7 +1729,7 @@ func (s *Store) SettleOrphanedTurns(ctx context.Context, session domain.SessionI
 	}
 	if err := q.SettleOrphanedConversationTurns(ctx,
 		gen.SettleOrphanedConversationTurnsParams{
-			CompletedAt:        sql.NullTime{Time: now, Valid: true},
+			CompletedAt:        timeToNullTime(now),
 			HandledBySessionID: session,
 		}); err != nil {
 		return fmt.Errorf("settle orphaned turns for %s: %w", session, err)
@@ -1754,7 +1754,7 @@ func (s *Store) SettleUnboundRunningTurn(ctx context.Context, conversationID str
 	}
 	if err := q.SettleConversationTurn(ctx, gen.SettleConversationTurnParams{
 		State: domain.TurnStateFailed, ErrorMessage: "provider delivery unconfirmed after reconnect",
-		CompletedAt: sql.NullTime{Time: now, Valid: true}, ID: turnID,
+		CompletedAt: timeToNullTime(now), ID: turnID,
 	}); err != nil {
 		return fmt.Errorf("settle unbound running turn %s: %w", turnID, err)
 	}
@@ -1816,7 +1816,7 @@ func cleanupOwnedControllerWork(
 	}
 	if err := q.SettleOrphanedConversationTurns(ctx,
 		gen.SettleOrphanedConversationTurnsParams{
-			CompletedAt:        sql.NullTime{Time: now, Valid: true},
+			CompletedAt:        timeToNullTime(now),
 			HandledBySessionID: session,
 		}); err != nil {
 		return false, fmt.Errorf("settle orphaned turns for %s: %w", session, err)
@@ -1878,7 +1878,7 @@ func cleanupOwnedReviewControllerWork(
 		return false, fmt.Errorf("settle reviewer activities for %s: %w", reviewID, err)
 	}
 	if err := q.SettleOrphanedReviewTurns(ctx, gen.SettleOrphanedReviewTurnsParams{
-		CompletedAt: sql.NullTime{Time: now, Valid: true}, ConversationID: conversationID, ReviewID: review,
+		CompletedAt: timeToNullTime(now), ConversationID: conversationID, ReviewID: review,
 	}); err != nil {
 		return false, fmt.Errorf("settle reviewer turns for %s: %w", reviewID, err)
 	}
@@ -1943,7 +1943,7 @@ func (s *Store) MarkCompacted(ctx context.Context, conversationID string, at tim
 	q, unlock := s.conversationWriter(ctx)
 	defer unlock()
 	if err := q.MarkConversationCompacted(ctx, gen.MarkConversationCompactedParams{
-		CompactedAt: sql.NullTime{Time: at, Valid: true},
+		CompactedAt: timeToNullTime(at),
 		UpdatedAt:   at,
 		ID:          conversationID,
 	}); err != nil {
@@ -2141,7 +2141,7 @@ func (s *Store) ReconcileConversationAuthentication(ctx context.Context, convers
 	}
 	turn, err := q.SelectVerifiedAuthenticationTurn(ctx, gen.SelectVerifiedAuthenticationTurnParams{
 		ConversationID: conversationID, Generation: generation, ProviderTurnID: providerTurnID,
-		AfterAt: sql.NullTime{Time: cutoff, Valid: true},
+		AfterAt: timeToNullTime(cutoff),
 	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return account, nil
@@ -2373,7 +2373,7 @@ func (s *Store) ReserveQueuedTurnForPromotion(
 	defer s.writeMu.Unlock()
 	rows, err := s.qw.ReserveQueuedConversationTurnForPromotion(ctx,
 		gen.ReserveQueuedConversationTurnForPromotionParams{
-			PromotionStartedAt: sql.NullTime{Time: now, Valid: true},
+			PromotionStartedAt: timeToNullTime(now),
 			ID:                 turnID, ConversationID: conversationID,
 		})
 	if err != nil {
@@ -2439,7 +2439,7 @@ func (s *Store) CompleteQueuedTurnPromotion(
 		}
 		rows, err := q.CompleteQueuedConversationTurnPromotion(ctx,
 			gen.CompleteQueuedConversationTurnPromotionParams{
-				CompletedAt:      sql.NullTime{Time: now, Valid: true},
+				CompletedAt:      timeToNullTime(now),
 				PromotedToTurnID: sql.NullString{String: target.ID, Valid: true},
 				ID:               sourceTurnID,
 				ConversationID:   conversationID,
@@ -2467,7 +2467,7 @@ func (s *Store) CancelQueuedTurns(
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 	if err := s.qw.CancelQueuedConversationTurns(ctx, gen.CancelQueuedConversationTurnsParams{
-		CompletedAt:    sql.NullTime{Time: now, Valid: true},
+		CompletedAt:    timeToNullTime(now),
 		ConversationID: conversationID,
 		RequestedAt:    cutoff,
 	}); err != nil {
@@ -2487,7 +2487,7 @@ func (s *Store) CancelAllQueuedTurns(
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 	if err := s.qw.CancelAllQueuedConversationTurns(ctx, gen.CancelAllQueuedConversationTurnsParams{
-		CompletedAt:    sql.NullTime{Time: now, Valid: true},
+		CompletedAt:    timeToNullTime(now),
 		ConversationID: conversationID,
 	}); err != nil {
 		return fmt.Errorf("cancel all queued turns for %s: %w", conversationID, err)
@@ -2506,7 +2506,7 @@ func (s *Store) CancelQueuedTurnByID(
 	defer s.writeMu.Unlock()
 	rows, err := s.qw.CancelQueuedConversationTurnByID(ctx,
 		gen.CancelQueuedConversationTurnByIDParams{
-			CompletedAt:    sql.NullTime{Time: now, Valid: true},
+			CompletedAt:    timeToNullTime(now),
 			ID:             turnID,
 			ConversationID: conversationID,
 		})
@@ -2674,7 +2674,7 @@ func (s *Store) SettleTurnByID(
 		State:        state,
 		ErrorMessage: errMessage,
 		FailureCode:  "",
-		CompletedAt:  sql.NullTime{Time: now, Valid: true},
+		CompletedAt:  timeToNullTime(now),
 		ID:           turnID,
 	}); err != nil {
 		return fmt.Errorf("settle turn %s: %w", turnID, err)
@@ -3213,7 +3213,7 @@ func (s *Store) RollbackTurns(
 	err = s.inTx(ctx, "roll back turns", func(q *gen.Queries) error {
 		rows, markErr := q.MarkConversationTurnsRolledBack(ctx,
 			gen.MarkConversationTurnsRolledBackParams{
-				RolledBackAt:   sql.NullTime{Time: now, Valid: true},
+				RolledBackAt:   timeToNullTime(now),
 				ConversationID: conversationID,
 				ID:             turnID,
 			})
@@ -3224,7 +3224,7 @@ func (s *Store) RollbackTurns(
 
 		if err := q.InterruptRolledBackQueuedTurns(ctx,
 			gen.InterruptRolledBackQueuedTurnsParams{
-				CompletedAt:    sql.NullTime{Time: now, Valid: true},
+				CompletedAt:    timeToNullTime(now),
 				ConversationID: conversationID,
 			}); err != nil {
 			return fmt.Errorf("interrupt rolled back queued turns: %w", err)
@@ -4246,8 +4246,8 @@ func (s *Store) CompleteEditDelivery(
 				SourceBranchID: sourceBranchID, ActiveBranchID: activeBranchID,
 				TurnID: turn.ID, HandledBySessionID: string(turn.HandledBySessionID),
 				ProviderTurnID: turn.ProviderTurnID, TurnState: string(turn.State),
-				TurnRequestedAt: sql.NullTime{Time: turn.RequestedAt, Valid: !turn.RequestedAt.IsZero()},
-				SettledAt:       sql.NullTime{Time: now, Valid: true},
+				TurnRequestedAt: timeToNullTime(turn.RequestedAt),
+				SettledAt:       timeToNullTime(now),
 				ConversationID:  conversationID, ClientMessageID: clientMessageID,
 			})
 		if err != nil {
@@ -4274,7 +4274,7 @@ func (s *Store) RejectEditDelivery(
 	rows, err := s.qw.RejectConversationEditDelivery(ctx,
 		gen.RejectConversationEditDeliveryParams{
 			RejectionKind: string(kind), RejectionMessage: message,
-			SettledAt:      sql.NullTime{Time: now, Valid: true},
+			SettledAt:      timeToNullTime(now),
 			ConversationID: conversationID, ClientMessageID: clientMessageID,
 		})
 	if err != nil {
@@ -4378,7 +4378,7 @@ func (s *Store) CompleteSteerDelivery(
 		rows, err := q.AcceptConversationSteerDelivery(ctx,
 			gen.AcceptConversationSteerDeliveryParams{
 				ProviderTurnID: providerTurnID, ActivityID: activity.ID,
-				SettledAt:      sql.NullTime{Time: now, Valid: true},
+				SettledAt:      timeToNullTime(now),
 				ConversationID: conversationID, ClientMessageID: clientMessageID,
 			})
 		if err != nil {
@@ -4405,7 +4405,7 @@ func (s *Store) RejectSteerDelivery(
 	rows, err := s.qw.RejectConversationSteerDelivery(ctx,
 		gen.RejectConversationSteerDeliveryParams{
 			RejectionKind: string(kind), RejectionMessage: message,
-			SettledAt:      sql.NullTime{Time: now, Valid: true},
+			SettledAt:      timeToNullTime(now),
 			ConversationID: conversationID, ClientMessageID: clientMessageID,
 		})
 	if err != nil {

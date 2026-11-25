@@ -729,3 +729,72 @@ func TestListOpenPRsByBranchDelegatesOrReportsUnsupported(t *testing.T) {
 		t.Fatalf("err = %v, want ErrSCMUnsupported for a provider without branch listing", err)
 	}
 }
+
+// batchFakeProvider adds the ReviewThreadsBatcher capability to a fake
+// sub-provider.
+type batchFakeProvider struct {
+	*fakeProvider
+	batchCalls int
+	lastRefs   []ports.SCMPRRef
+}
+
+func (f *batchFakeProvider) FetchReviewThreadsBatch(_ context.Context, refs []ports.SCMPRRef) ([]ports.SCMReviewObservation, error) {
+	f.batchCalls++
+	f.lastRefs = append([]ports.SCMPRRef(nil), refs...)
+	out := make([]ports.SCMReviewObservation, len(refs))
+	for i, ref := range refs {
+		out[i] = ports.SCMReviewObservation{Decision: "batched", Reviews: []ports.SCMReviewSummaryObservation{{ID: fmt.Sprintf("%s#%d", f.key, ref.Number)}}}
+	}
+	return out, nil
+}
+
+// The multi dispatcher must carry one provider's refs in one batch call and
+// still serve a provider without the capability per ref.
+func TestFetchReviewThreadsBatchBatchesCapableAndFallsBackForTheRest(t *testing.T) {
+	gh := &batchFakeProvider{fakeProvider: &fakeProvider{key: "github", parseOK: true}}
+	gl := &fakeProvider{key: "gitlab", parseOK: true}
+	m := New(NamedProvider{Key: "github", Provider: gh}, NamedProvider{Key: "gitlab", Provider: gl})
+
+	refs := []ports.SCMPRRef{
+		{Repo: ports.SCMRepo{Provider: "github", Repo: "o/r"}, Number: 1},
+		{Repo: ports.SCMRepo{Provider: "gitlab", Repo: "o/r"}, Number: 2},
+		{Repo: ports.SCMRepo{Provider: "github", Repo: "o/r"}, Number: 3},
+	}
+	got, err := m.FetchReviewThreadsBatch(context.Background(), refs)
+	if err != nil {
+		t.Fatalf("FetchReviewThreadsBatch: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("results = %d, want 3", len(got))
+	}
+	if gh.batchCalls != 1 {
+		t.Fatalf("github batch calls = %d, want 1", gh.batchCalls)
+	}
+	if len(gh.lastRefs) != 2 || gh.lastRefs[0].Number != 1 || gh.lastRefs[1].Number != 3 {
+		t.Fatalf("github batch refs = %#v, want PRs 1 and 3", gh.lastRefs)
+	}
+	if got[0].Decision != "batched" || got[2].Decision != "batched" {
+		t.Fatalf("github refs not served by the batch: %#v", got)
+	}
+	if got[0].Reviews[0].ID != "github#1" || got[2].Reviews[0].ID != "github#3" {
+		t.Fatalf("batch results misaligned with refs: %#v", got)
+	}
+	if got[1].Decision != "none" {
+		t.Fatalf("gitlab ref = %#v, want the per-ref fallback result", got[1])
+	}
+}
+
+// An unknown provider's refs fail individually instead of failing the batch.
+func TestFetchReviewThreadsBatchUnknownProviderFailsPerRef(t *testing.T) {
+	gh := &batchFakeProvider{fakeProvider: &fakeProvider{key: "github", parseOK: true}}
+	m := New(NamedProvider{Key: "github", Provider: gh})
+	got, err := m.FetchReviewThreadsBatch(context.Background(), []ports.SCMPRRef{
+		{Repo: ports.SCMRepo{Provider: "unknown", Repo: "o/r"}, Number: 9},
+	})
+	if err != nil {
+		t.Fatalf("top-level error = %v, want nil with per-ref errors", err)
+	}
+	if got[0].Error == nil {
+		t.Fatal("unknown provider ref must carry a per-ref error")
+	}
+}

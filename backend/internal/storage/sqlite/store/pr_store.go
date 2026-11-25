@@ -56,7 +56,7 @@ func (s *Store) WriteSCMObservation(ctx context.Context, pr domain.PullRequest, 
 func (s *Store) TouchPRSeen(ctx context.Context, prURL string, at time.Time) error {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
-	if err := s.qw.TouchPRSeen(ctx, gen.TouchPRSeenParams{LastSeenAt: nullTime(at), URL: prURL}); err != nil {
+	if err := s.qw.TouchPRSeen(ctx, gen.TouchPRSeenParams{LastSeenAt: timeToNullTime(at), URL: prURL}); err != nil {
 		return fmt.Errorf("touch pr seen %s: %w", prURL, err)
 	}
 	return nil
@@ -70,9 +70,9 @@ func (s *Store) MarkPRMerged(ctx context.Context, prURL, mergeCommitSHA string, 
 	defer s.writeMu.Unlock()
 	rows, err := s.qr.MarkPRMerged(ctx, gen.MarkPRMergedParams{
 		MergeCommitSha: mergeCommitSHA,
-		StateChangedAt: sql.NullTime{Time: mergedAt, Valid: true},
+		StateChangedAt: timeToNullTime(mergedAt),
 		UpdatedAt:      mergedAt,
-		ObservedAt:     sql.NullTime{Time: mergedAt, Valid: true},
+		ObservedAt:     timeToNullTime(mergedAt),
 		URL:            prURL,
 	})
 	if err != nil {
@@ -122,7 +122,7 @@ func (s *Store) ClaimPR(ctx context.Context, pr domain.PullRequest, checks []dom
 		if err := q.ClaimPRForSession(ctx, gen.ClaimPRForSessionParams{
 			URL: pr.URL, SessionID: pr.SessionID, Number: int64(pr.Number), PRState: prState(pr),
 			ReviewDecision: reviewOrDefault(pr.Review), CIState: ciOrDefault(pr.CI), Mergeability: mergeabilityOrDefault(pr.Mergeability), UpdatedAt: pr.UpdatedAt,
-			StateChangedAt: nullTime(initialPRStateChangedAt(pr)), ID: pr.SessionID,
+			StateChangedAt: timeToNullTime(initialPRStateChangedAt(pr)), ID: pr.SessionID,
 		}); err != nil {
 			return err
 		}
@@ -681,7 +681,7 @@ func genPRParams(r domain.PullRequest) gen.UpsertPRParams {
 		CIState:                  ciOrDefault(r.CI),
 		Mergeability:             mergeabilityOrDefault(r.Mergeability),
 		UpdatedAt:                r.UpdatedAt,
-		StateChangedAt:           nullTime(initialPRStateChangedAt(r)),
+		StateChangedAt:           timeToNullTime(initialPRStateChangedAt(r)),
 		Provider:                 r.Provider,
 		Host:                     r.Host,
 		Repo:                     r.Repo,
@@ -704,17 +704,17 @@ func genPRParams(r domain.PullRequest) gen.UpsertPRParams {
 		ProviderMergeable:        r.ProviderMergeable,
 		ProviderMergeStateStatus: r.ProviderMergeStateStatus,
 		HtmlURL:                  r.HTMLURL,
-		CreatedAtProvider:        nullTime(r.CreatedAtProvider),
-		UpdatedAtProvider:        nullTime(r.UpdatedAtProvider),
-		MergedAtProvider:         nullTime(r.MergedAtProvider),
-		ClosedAtProvider:         nullTime(r.ClosedAtProvider),
+		CreatedAtProvider:        timeToNullTime(r.CreatedAtProvider),
+		UpdatedAtProvider:        timeToNullTime(r.UpdatedAtProvider),
+		MergedAtProvider:         timeToNullTime(r.MergedAtProvider),
+		ClosedAtProvider:         timeToNullTime(r.ClosedAtProvider),
 		MetadataHash:             r.MetadataHash,
 		CIHash:                   r.CIHash,
 		ReviewHash:               r.ReviewHash,
-		ObservedAt:               nullTime(r.ObservedAt),
-		CIPendingSince:           nullTime(r.CIPendingSince),
-		CIObservedAt:             nullTime(r.CIObservedAt),
-		ReviewObservedAt:         nullTime(r.ReviewObservedAt),
+		ObservedAt:               timeToNullTime(r.ObservedAt),
+		CIPendingSince:           timeToNullTime(r.CIPendingSince),
+		CIObservedAt:             timeToNullTime(r.CIObservedAt),
+		ReviewObservedAt:         timeToNullTime(r.ReviewObservedAt),
 		ReviewPartial:            r.ReviewPartial,
 		ID:                       r.SessionID,
 	}
@@ -730,11 +730,11 @@ func genLegacyPRParams(r domain.PullRequest) gen.UpsertLegacyPRParams {
 		CIState:          ciOrDefault(r.CI),
 		Mergeability:     mergeabilityOrDefault(r.Mergeability),
 		UpdatedAt:        r.UpdatedAt,
-		StateChangedAt:   nullTime(initialPRStateChangedAt(r)),
+		StateChangedAt:   timeToNullTime(initialPRStateChangedAt(r)),
 		IsDraft:          boolInt(r.Draft),
 		IsMerged:         boolInt(r.Merged),
 		IsClosed:         boolInt(r.Closed),
-		ReviewObservedAt: nullTime(r.ReviewObservedAt),
+		ReviewObservedAt: timeToNullTime(r.ReviewObservedAt),
 		ReviewPartial:    r.ReviewPartial,
 		ID:               r.SessionID,
 	}
