@@ -301,7 +301,7 @@ func TestCodexLoginChecksAnAPIKeyWithOpenAIFirst(t *testing.T) {
 				LookPath:       func(string) (string, error) { return "/usr/local/bin/codex", nil },
 				ReadSecret:     func(io.Reader) ([]byte, error) { return []byte(key), nil },
 				OpenAIRESTBase: base,
-				RunInteractiveCommand: func(context.Context, string, string, []string, io.Reader, io.Writer, io.Writer) error {
+				RunInteractiveCommand: func(context.Context, string, []string, io.Reader, io.Writer, io.Writer) error {
 					saved = true
 					return nil
 				},
