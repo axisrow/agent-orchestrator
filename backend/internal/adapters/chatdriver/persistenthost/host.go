@@ -34,11 +34,6 @@ const (
 	startupTimeout   = 10 * time.Second
 	// Host hello is local control-plane I/O and must not stall daemon recovery.
 	handshakeTimeout = time.Second
-	// A stopped provider gets providerStdinGrace (providerQuickGrace for a quick
-	// stop) to exit on stdin closing, then SIGTERM, then a kill at the deadline.
-	providerStdinGrace   = time.Second
-	providerQuickGrace   = 300 * time.Millisecond
-	providerStopDeadline = 3 * time.Second
 	// After the provider exits, its output gets this long before the pipes are
 	// closed on a descendant that still holds them.
 	providerPipeDrainDelay = 2 * time.Second
