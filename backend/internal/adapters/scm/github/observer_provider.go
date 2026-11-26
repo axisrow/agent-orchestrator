@@ -944,7 +944,7 @@ func buildReviewThreadsBatchQuery(refs []ports.SCMPRRef) (string, []string) {
 		_, _ = fmt.Fprintf(&b, "%s: repository(owner:%s,name:%s){ pullRequest(number:%d){ reviewDecision reviewSummaries: reviews(last:%d, states:[APPROVED,CHANGES_REQUESTED,COMMENTED]){ nodes{ id state url submittedAt body commit{ oid } author{ login __typename } } } reviewThreads(last:%d){ nodes{"+
 			" id isResolved path line"+
 			" comments(first:%d){ nodes{ id body url pullRequestReview{ databaseId } author{ login __typename } } }"+
-			" pageInfo{ hasPreviousPage startCursor } } } }\n",
+			" pageInfo{ hasPreviousPage startCursor } } } } }\n", // five closes: pageInfo, thread nodes, reviewThreads, pullRequest, repository
 			alias, graphQLString(ref.Repo.Owner), graphQLString(ref.Repo.Name), ref.Number, githubReviewSummaryLimit, githubReviewThreadPageSize, githubReviewCommentLimitPerThread)
 	}
 	b.WriteString("}")
