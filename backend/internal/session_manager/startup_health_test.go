@@ -79,9 +79,37 @@ func TestStartupHealthInconclusiveChatProbePreservesSession(t *testing.T) {
 	}
 }
 
-func TestStartupHealthUnavailableRuntimeProbePreservesSession(t *testing.T) {
+// tmux answers "no server running" when its server is gone (a crash, a machine
+// reboot): no session can survive that, so startup must settle the session like
+// a definitive "not alive" instead of leaving it looking live with a dead
+// terminal. 2026-11-28: five tmux-backed orchestrators were skipped this way
+// and showed "TERMINAL ENDED" until resumed by hand.
+func TestStartupHealthUnavailableRuntimeProbeStopsSession(t *testing.T) {
 	m, st, rt, ws := newLifecycleManager()
-	rt.aliveErr = ports.ErrRuntimeUnavailable
+	rt.aliveErr = fmt.Errorf("tmux runtime: probe session tmux-1: %w: no server running", ports.ErrRuntimeUnavailable)
+	rec := domain.SessionRecord{
+		ID: "mer-tui", ProjectID: "mer", Kind: domain.KindWorker, Harness: domain.HarnessClaudeCode,
+		Metadata: domain.SessionMetadata{WorkspacePath: "/ws/tui", Branch: "ao/tui/root", RuntimeHandleID: "tmux-1"},
+		Activity: domain.Activity{State: domain.ActivityIdle},
+	}
+	st.sessions[rec.ID] = rec
+
+	if err := m.checkSessionHealth(context.Background(), rec); err != nil {
+		t.Fatalf("error=%v, want stopped session", err)
+	}
+	if got := st.sessions[rec.ID]; got.Activity.State != domain.ActivityExited || got.IsTerminated {
+		t.Fatalf("session must stay stopped and resumable: %+v", got)
+	}
+	if rt.created != 0 || len(ws.restoreConfigs) != 0 {
+		t.Fatal("startup launched runtime or restored workspace")
+	}
+}
+
+// A probe that cannot conclude (timeout, protocol mismatch) is still not proof
+// of death: the session keeps its state for a later check.
+func TestStartupHealthInconclusiveRuntimeProbePreservesSession(t *testing.T) {
+	m, st, rt, ws := newLifecycleManager()
+	rt.aliveErr = fmt.Errorf("tmux runtime: probe session tmux-1: %w", ports.ErrRuntimeProbeInconclusive)
 	rec := domain.SessionRecord{
 		ID: "mer-tui", ProjectID: "mer", Kind: domain.KindWorker, Harness: domain.HarnessClaudeCode,
 		Metadata: domain.SessionMetadata{WorkspacePath: "/ws/tui", Branch: "ao/tui/root", RuntimeHandleID: "tmux-1"},
@@ -89,12 +117,11 @@ func TestStartupHealthUnavailableRuntimeProbePreservesSession(t *testing.T) {
 	}
 	st.sessions[rec.ID] = rec
 
-	err := m.checkSessionHealth(context.Background(), rec)
-	if !errors.Is(err, ports.ErrRuntimeUnavailable) {
-		t.Fatalf("error=%v, want runtime unavailable", err)
+	if err := m.checkSessionHealth(context.Background(), rec); !errors.Is(err, ports.ErrRuntimeProbeInconclusive) {
+		t.Fatalf("error=%v, want inconclusive probe", err)
 	}
 	if st.sessions[rec.ID].Activity.State != domain.ActivityActive || rt.created != 0 || len(ws.restoreConfigs) != 0 {
-		t.Fatal("unavailable runtime probe changed activity or launched resources")
+		t.Fatal("inconclusive runtime probe changed activity or launched resources")
 	}
 }
 

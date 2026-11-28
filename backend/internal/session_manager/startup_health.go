@@ -58,9 +58,13 @@ func (m *Manager) checkSessionHealth(ctx context.Context, rec domain.SessionReco
 		return m.recordTerminalStoppedAtStartup(ctx, rec)
 	}
 	alive, err := m.runtime.IsAlive(ctx, handle)
-	if err != nil {
+	if err != nil && !errors.Is(err, ports.ErrRuntimeUnavailable) {
 		return fmt.Errorf("check session %s: %w", rec.ID, err)
 	}
+	// A conclusively absent runtime server (tmux: "no server running") holds no
+	// sessions, so this one ended while AO was down. Settle it as stopped and
+	// resumable: skipping it leaves a live-looking session the reaper can never
+	// conclude on, with a dead terminal behind it.
 	if alive {
 		// The start hook may fail without stopping the TUI. Keep a live runtime
 		// intact; its unverified identity will not qualify for native restore.
