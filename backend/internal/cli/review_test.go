@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -749,6 +750,110 @@ func TestReviewListGetsReviews(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("stdout = %q, want %q", out, want)
 		}
+	}
+}
+
+func TestFormatReviewElapsed(t *testing.T) {
+	cases := []struct {
+		d    time.Duration
+		want string
+	}{
+		{d: 0, want: "0s"},
+		{d: -5 * time.Second, want: "0s"},
+		{d: 28 * time.Second, want: "28s"},
+		{d: 24*time.Minute + 28*time.Second, want: "24m 28s"},
+		{d: 2*time.Hour + 5*time.Minute, want: "2h 5m"},
+		{d: 3*24*time.Hour + 4*time.Hour, want: "3d 4h"},
+	}
+	for _, tc := range cases {
+		if got := formatReviewElapsed(tc.d); got != tc.want {
+			t.Errorf("formatReviewElapsed(%v) = %q, want %q", tc.d, got, tc.want)
+		}
+	}
+}
+
+func TestReviewRunElapsed(t *testing.T) {
+	now := time.Date(2026, 11, 28, 8, 15, 49, 0, time.UTC)
+	created := now.Add(-24*time.Minute - 28*time.Second)
+	delivered := created.Add(24*time.Minute + 28*time.Second)
+	cases := []struct {
+		name string
+		run  *reviewRun
+		want string
+	}{
+		{"no run", nil, "-"},
+		{"zero created", &reviewRun{}, "-"},
+		// A running pass has only createdAt: the value is labelled as time since
+		// the run was queued, not claimed as an actual reviewer start.
+		{"running since created", &reviewRun{CreatedAt: created}, "24m 28s since queued"},
+		// Delivered: the final duration is fixed and must not grow on repeat queries.
+		{"delivered final", &reviewRun{CreatedAt: created, DeliveredAt: &delivered}, "24m 28s"},
+	}
+	for _, tc := range cases {
+		if got := reviewRunElapsed(tc.run, now); got != tc.want {
+			t.Errorf("%s: reviewRunElapsed = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestReviewListShowsRunningElapsedTime(t *testing.T) {
+	cfg := setReviewEnv(t)
+	createdAt := time.Now().UTC().Add(-24*time.Minute - 28*time.Second).Format(time.RFC3339)
+	srv, _ := reviewServer(t, http.StatusOK, fmt.Sprintf(`{
+		"reviewerHandleId":"",
+		"reviews":[{
+			"prUrl":"https://github.com/example/repo/pull/42",
+			"prNumber":42,
+			"title":"Fix session resume",
+			"targetSha":"12d17b4abc123",
+			"status":"running",
+			"latestRun":{"id":"run-1","reviewId":"review-1","status":"running","createdAt":%q}
+		}]
+	}`, createdAt))
+	writeRunFileFor(t, cfg, srv)
+
+	out, errOut, err := executeCLI(t, aliveDeps(), "review", "ls", "mer-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v\nstderr=%s", err, errOut)
+	}
+	// The timer belongs to this run: a rerun gets its own. Minute precision
+	// keeps the assertion stable across the second of render drift.
+	for _, want := range []string{"ELAPSED", "24m", "since queued"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("stdout = %q, want %q", out, want)
+		}
+	}
+}
+
+func TestReviewListShowsDeliveredFinalDuration(t *testing.T) {
+	cfg := setReviewEnv(t)
+	now := time.Now().UTC()
+	createdAt := now.Add(-60 * time.Minute).Format(time.RFC3339)
+	deliveredAt := now.Add(-40 * time.Minute).Format(time.RFC3339)
+	srv, _ := reviewServer(t, http.StatusOK, fmt.Sprintf(`{
+		"reviewerHandleId":"",
+		"reviews":[{
+			"prUrl":"https://github.com/example/repo/pull/42",
+			"prNumber":42,
+			"title":"Fix session resume",
+			"targetSha":"12d17b4abc123",
+			"status":"complete",
+			"latestRun":{"id":"run-1","reviewId":"review-1","status":"delivered","verdict":"approved","createdAt":%q,"deliveredAt":%q}
+		}]
+	}`, createdAt, deliveredAt))
+	writeRunFileFor(t, cfg, srv)
+
+	out, errOut, err := executeCLI(t, aliveDeps(), "review", "ls", "mer-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v\nstderr=%s", err, errOut)
+	}
+	// Both timestamps known: the final creation→delivery duration, exactly 20m,
+	// stable across repeat queries — never a growing "since queued".
+	if !strings.Contains(out, "20m 0s") {
+		t.Fatalf("stdout = %q, want the final 20m 0s duration", out)
+	}
+	if strings.Contains(out, "since queued") {
+		t.Fatalf("stdout = %q, must not show a growing timer for a delivered run", out)
 	}
 }
 

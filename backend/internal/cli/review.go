@@ -888,15 +888,16 @@ func writeReviewList(cmd *cobra.Command, session string, res listReviewsResponse
 	}
 
 	tw := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
-	if _, err := fmt.Fprintln(tw, "PR\tSTATUS\tVERDICT\tREVIEWERS\tTITLE"); err != nil {
+	if _, err := fmt.Fprintln(tw, "PR\tSTATUS\tELAPSED\tVERDICT\tREVIEWERS\tTITLE"); err != nil {
 		return err
 	}
+	now := time.Now()
 	for _, review := range res.Reviews {
 		verdict := "-"
 		if review.LatestRun != nil && review.LatestRun.Verdict != "" {
 			verdict = review.LatestRun.Verdict
 		}
-		if _, err := fmt.Fprintf(tw, "#%d\t%s\t%s\t%s\t%s\n", review.PRNumber, review.Status, verdict, reviewersOnHead(res.Runs, review.PRURL, review.TargetSHA), review.Title); err != nil {
+		if _, err := fmt.Fprintf(tw, "#%d\t%s\t%s\t%s\t%s\t%s\n", review.PRNumber, review.Status, reviewRunElapsed(review.LatestRun, now), verdict, reviewersOnHead(res.Runs, review.PRURL, review.TargetSHA), review.Title); err != nil {
 			return err
 		}
 	}
@@ -910,6 +911,43 @@ func writeReviewList(cmd *cobra.Command, session string, res listReviewsResponse
 		return err
 	}
 	return nil
+}
+
+// formatReviewElapsed renders a review duration as its two most significant
+// units ("24m 28s"), the shape the `ao review ls` elapsed column uses.
+func formatReviewElapsed(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	if d < time.Second {
+		return "0s"
+	}
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm %ds", int(d.Minutes()), int(d.Seconds())%60)
+	}
+	if d < 24*time.Hour {
+		return fmt.Sprintf("%dh %dm", int(d.Hours()), int(d.Minutes())%60)
+	}
+	return fmt.Sprintf("%dd %dh", int(d.Hours()/24), int(d.Hours())%24)
+}
+
+// reviewRunElapsed renders the elapsed-time cell for one review run, keyed to
+// that run's own timestamps so a rerun starts its own timer. Once delivery is
+// recorded the cell is the final creation→delivery duration and no longer
+// moves on repeat queries; before that only createdAt is known, so the value
+// is labelled as time since the run was queued rather than claiming an actual
+// reviewer start. "-" when the run carries no usable timestamps.
+func reviewRunElapsed(run *reviewRun, now time.Time) string {
+	if run == nil || run.CreatedAt.IsZero() {
+		return "-"
+	}
+	if run.DeliveredAt != nil {
+		return formatReviewElapsed(run.DeliveredAt.Sub(run.CreatedAt))
+	}
+	return formatReviewElapsed(now.Sub(run.CreatedAt)) + " since queued"
 }
 
 // reviewersOnHead summarizes the distinct reviewers with a live or completed
