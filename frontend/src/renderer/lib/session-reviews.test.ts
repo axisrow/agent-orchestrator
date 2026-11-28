@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { QueryClient, QueryObserver } from "@tanstack/react-query";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { appI18n } from "../i18n";
 import type { PullRequestFacts, WorkspaceSession } from "../types/workspace";
 import {
@@ -11,6 +12,7 @@ import {
 	sessionReviewsQueryOptions,
 	type PRReviewState,
 	type ReviewRunFacts,
+	type ReviewsResponse,
 } from "./session-reviews";
 
 function session(overrides: Partial<WorkspaceSession> = {}): WorkspaceSession {
@@ -174,5 +176,60 @@ describe("historicalReviewStatesFrom", () => {
 			[reviewState(2, "up_to_date")],
 		);
 		expect(states).toEqual([]);
+	});
+});
+
+// Issue 392 regression: an auto review posted after a push happens entirely
+// outside the UI — no mutation, no remount, and window-focus refetching is
+// off. The reviews query is the only path that can deliver the new verdict to
+// the PR card, so a terminal cached verdict must keep polling calmly instead
+// of stopping forever.
+describe("stale verdict refetch", () => {
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it("fetches the new verdict after an auto review posts on a pushed head", async () => {
+		vi.useFakeTimers();
+		const reviewsWith = (status: PRReviewState["status"], verdict: ReviewRunFacts["verdict"], targetSha: string) =>
+			({
+				reviewerHandleId: "",
+				reviews: [{ ...reviewState(42, status), latestRun: run(42, { status: "delivered", verdict, targetSha }) }],
+				runs: [],
+				activeReviewers: [],
+			}) as unknown as ReviewsResponse;
+		let serverResponse: ReviewsResponse = reviewsWith("changes_requested", "changes_requested", "old-sha");
+		const fetchReviews = vi.fn(() => Promise.resolve(serverResponse));
+		// The same query defaults the app installs in query-client.ts.
+		const client = new QueryClient({
+			defaultOptions: { queries: { staleTime: 10_000, refetchOnWindowFocus: false, networkMode: "always" } },
+		});
+		const observer = new QueryObserver(client, {
+			...sessionReviewsQueryOptions(session({ prs: [pr(42)] }), true),
+			queryFn: fetchReviews,
+		});
+		const seen: ReviewsResponse[] = [];
+		const unsubscribe = observer.subscribe((result) => {
+			if (result.data) seen.push(result.data);
+		});
+		try {
+			await vi.advanceTimersByTimeAsync(0);
+			expect(fetchReviews).toHaveBeenCalledTimes(1);
+			expect(seen[0]?.reviews[0]?.status).toBe("changes_requested");
+
+			// A push lands, the daemon auto review approves the new head; none of
+			// that touches the renderer cache.
+			serverResponse = reviewsWith("up_to_date", "approved", "new-sha");
+			await vi.advanceTimersByTimeAsync(60_000);
+
+			const latest = seen[seen.length - 1];
+			expect(fetchReviews.mock.calls.length).toBeGreaterThan(1);
+			expect(latest?.reviews[0]?.status).toBe("up_to_date");
+			expect(latest?.reviews[0]?.latestRun?.verdict).toBe("approved");
+			expect(latest?.reviews[0]?.latestRun?.targetSha).toBe("new-sha");
+		} finally {
+			unsubscribe();
+			client.clear();
+		}
 	});
 });

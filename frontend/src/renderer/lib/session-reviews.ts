@@ -28,7 +28,11 @@ export function sessionReviewsQueryOptions(session: WorkspaceSession, enabled: b
 		refetchInterval: (query) => {
 			const data = query.state.data as ReviewsResponse | undefined;
 			const reviews = data?.reviews ?? [];
-			return reviews.some((review) => review.status === "running") ? 2500 : false;
+			// Poll faster while a run is live. At a terminal verdict keep a calm
+			// poll instead of stopping: the daemon can post a new review outside
+			// the UI (auto review after a push), and with no mutation, remount or
+			// focus refetch this query is the only path that can deliver it.
+			return reviews.some((review) => review.status === "running") ? 2500 : 15_000;
 		},
 		queryFn: async () => {
 			if (usePreviewData) return mockReviewsResponse(session);
